@@ -1,0 +1,20 @@
+project:
+  template: third-person
+  plugins:
+    - EnhancedInput
+    - GameplayTags
+    - Niagara
+  folders:
+    - Content/Blueprints/CoreLoop
+    - Content/Blueprints/Interactables
+    - Content/Maps
+    - Content/UI
+    - Content/Art/Generated
+    - Content/Data
+  maps:
+    - M_Prototype_Greybox
+    - M_Prototype_TestGym
+  validation:
+    commandlets:
+      - MapCheck
+      - AssetAudit

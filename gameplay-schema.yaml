@@ -1,0 +1,275 @@
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://fantasy-agent.local/schemas/gameplay-schema.yaml"
+title: "Fantasy Agent Gameplay DSL"
+type: object
+additionalProperties: false
+required:
+  - schema_version
+  - title
+  - logline
+  - target_session_minutes
+  - player_fantasy
+  - design_pillars
+  - core_verbs
+  - core_loop
+  - systems
+  - progression
+  - win_state
+  - failure_states
+  - level_beats
+  - asset_needs
+  - qa_focus
+  - notes_for_unreal
+  - notes_for_blender
+properties:
+  schema_version:
+    type: string
+    pattern: "^[0-9]+\\.[0-9]+$"
+  title:
+    type: string
+    minLength: 3
+  logline:
+    type: string
+    minLength: 20
+  target_session_minutes:
+    type: integer
+    minimum: 5
+    maximum: 15
+  player_fantasy:
+    type: string
+    minLength: 10
+  design_pillars:
+    type: array
+    minItems: 3
+    maxItems: 5
+    items:
+      type: string
+      minLength: 5
+  core_verbs:
+    type: array
+    minItems: 3
+    items:
+      type: string
+      minLength: 2
+  core_loop:
+    type: array
+    minItems: 3
+    items:
+      $ref: "#/$defs/loop_step"
+  systems:
+    type: array
+    minItems: 3
+    items:
+      $ref: "#/$defs/system_spec"
+  progression:
+    $ref: "#/$defs/progression"
+  win_state:
+    type: string
+    minLength: 10
+  failure_states:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      minLength: 5
+  level_beats:
+    type: array
+    minItems: 2
+    items:
+      $ref: "#/$defs/level_beat"
+  asset_needs:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      minLength: 3
+  qa_focus:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      minLength: 8
+  notes_for_unreal:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      minLength: 8
+  notes_for_blender:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      minLength: 8
+  i18n:
+    $ref: "#/$defs/i18n_bundle"
+  mcp_handoffs:
+    type: array
+    items:
+      $ref: "#/$defs/mcp_handoff"
+$defs:
+  loop_step:
+    type: object
+    additionalProperties: false
+    required:
+      - order
+      - action
+      - player_decision
+      - feedback
+    properties:
+      order:
+        type: integer
+        minimum: 1
+      action:
+        type: string
+        minLength: 3
+      player_decision:
+        type: string
+        minLength: 8
+      feedback:
+        type: string
+        minLength: 8
+  system_spec:
+    type: object
+    additionalProperties: false
+    required:
+      - name
+      - purpose
+      - inputs
+      - outputs
+      - failure_pressure
+    properties:
+      name:
+        type: string
+        minLength: 3
+      purpose:
+        type: string
+        minLength: 10
+      inputs:
+        type: array
+        minItems: 1
+        items:
+          type: string
+      outputs:
+        type: array
+        minItems: 1
+        items:
+          type: string
+      failure_pressure:
+        type: string
+        minLength: 8
+  progression:
+    type: object
+    additionalProperties: false
+    required:
+      - first_minute
+      - midpoint_shift
+      - final_minutes
+      - unlocks
+    properties:
+      first_minute:
+        type: string
+        minLength: 8
+      midpoint_shift:
+        type: string
+        minLength: 8
+      final_minutes:
+        type: string
+        minLength: 8
+      unlocks:
+        type: array
+        items:
+          type: string
+  level_beat:
+    type: object
+    additionalProperties: false
+    required:
+      - name
+      - duration_minutes
+      - gameplay_focus
+      - required_assets
+      - success_condition
+    properties:
+      name:
+        type: string
+        minLength: 3
+      duration_minutes:
+        type: integer
+        minimum: 1
+        maximum: 15
+      gameplay_focus:
+        type: string
+        minLength: 8
+      required_assets:
+        type: array
+        minItems: 1
+        items:
+          type: string
+      success_condition:
+        type: string
+        minLength: 8
+  mcp_handoff:
+    type: object
+    additionalProperties: false
+    required:
+      - server
+      - tool
+      - input_artifact
+      - output_artifact
+      - safety_checks
+    properties:
+      server:
+        enum:
+          - unreal-mcp
+          - blender-mcp
+          - github-mcp
+      tool:
+        type: string
+      input_artifact:
+        type: string
+      output_artifact:
+        type: string
+      safety_checks:
+        type: array
+        minItems: 1
+        items:
+          type: string
+  i18n_bundle:
+    type: object
+    additionalProperties: false
+    required:
+      - source_locale
+      - output_locales
+      - field_translations
+      - term_translations
+    properties:
+      source_locale:
+        $ref: "#/$defs/locale_code"
+      output_locales:
+        type: array
+        minItems: 1
+        items:
+          $ref: "#/$defs/locale_code"
+      field_translations:
+        type: object
+        description: "Field-path keyed translations, for example core_loop.0.action."
+        additionalProperties:
+          $ref: "#/$defs/localized_string"
+      term_translations:
+        type: object
+        description: "Reusable glossary terms for UI, docs, and generated assets."
+        additionalProperties:
+          $ref: "#/$defs/localized_string"
+  localized_string:
+    type: object
+    additionalProperties: false
+    minProperties: 1
+    properties:
+      en:
+        type: string
+      zh-CN:
+        type: string
+  locale_code:
+    enum:
+      - en
+      - zh-CN

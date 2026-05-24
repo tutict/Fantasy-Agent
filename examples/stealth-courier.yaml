@@ -1,0 +1,156 @@
+schema_version: "0.1"
+title: "Stealth Courier Station"
+logline: "A 10-minute stealth prototype where a courier escapes a haunted station by reading patrol routes, distracting threats, and reaching the final train."
+target_session_minutes: 10
+player_fantasy: "Outsmart supernatural guards through timing and route planning."
+design_pillars:
+  - "One readable objective at all times"
+  - "Every sound or light changes stealth decisions"
+  - "Failure teaches the next route"
+  - "Assets clarify danger and safety"
+core_verbs:
+  - scout
+  - hide
+  - distract
+  - extract
+core_loop:
+  - order: 1
+    action: "Scout the platform"
+    player_decision: "Choose whether to wait, cross, or create a distraction."
+    feedback: "Patrol cones and station lights show safe timing."
+  - order: 2
+    action: "Hide behind service props"
+    player_decision: "Spend time staying safe or move before the patrol returns."
+    feedback: "Audio stingers and UI state show detection risk."
+  - order: 3
+    action: "Distract a guard"
+    player_decision: "Use the limited noise item to open a safer path."
+    feedback: "The guard route visibly shifts toward the sound."
+  - order: 4
+    action: "Extract through the train gate"
+    player_decision: "Leave with basic completion or collect the optional parcel."
+    feedback: "Run summary shows time, alerts, and optional completion."
+systems:
+  - name: "Objective State"
+    purpose: "Keeps the player moving toward the exit train."
+    inputs:
+      - player location
+      - parcel pickup
+      - gate interaction
+    outputs:
+      - active objective
+      - completion state
+    failure_pressure: "The exit closes if the pressure clock caps out."
+  - name: "Alert Pressure"
+    purpose: "Turns mistakes into route pressure."
+    inputs:
+      - line of sight
+      - noise events
+      - elapsed time
+    outputs:
+      - patrol intensity
+      - warning UI
+    failure_pressure: "Full alert triggers a station lockdown."
+  - name: "Noise Interaction"
+    purpose: "Lets the player intentionally alter patrol routes."
+    inputs:
+      - thrown item
+      - impact location
+    outputs:
+      - investigation target
+      - temporary opening
+    failure_pressure: "Bad throws pull a patrol toward the player."
+progression:
+  first_minute: "Teach crouch, hiding, and the first safe crossing."
+  midpoint_shift: "Add noise distraction and a route that requires it."
+  final_minutes: "Combine patrol reading, hiding, distraction, and extraction."
+  unlocks:
+    - "Noise item after first platform"
+    - "Optional parcel route after midpoint"
+win_state: "Reach the train gate before station lockdown."
+failure_states:
+  - "Alert pressure reaches lockdown."
+  - "Player is caught while visible in a patrol cone."
+level_beats:
+  - name: "Ticket Hall"
+    duration_minutes: 2
+    gameplay_focus: "Learn sight lines and hiding."
+    required_assets:
+      - start marker
+      - ticket kiosks
+      - patrol cone marker
+    success_condition: "Reach the first platform door."
+  - name: "Platform Crossing"
+    duration_minutes: 5
+    gameplay_focus: "Use distraction to alter patrol timing."
+    required_assets:
+      - platform blockers
+      - noise item
+      - haunted guard proxy
+    success_condition: "Collect the route key and open the train gate."
+  - name: "Final Train"
+    duration_minutes: 3
+    gameplay_focus: "Execute the full stealth loop under alert pressure."
+    required_assets:
+      - train gate
+      - exit trigger
+      - run summary UI
+    success_condition: "Extract through the gate."
+asset_needs:
+  - "Greybox station kit"
+  - "Ticket kiosk cover"
+  - "Noise item prop"
+  - "Patrol marker"
+  - "Exit train gate"
+qa_focus:
+  - "Can the player understand visibility state?"
+  - "Does distraction visibly change patrol behavior?"
+  - "Can the slice finish in 10 minutes?"
+notes_for_unreal:
+  - "Use AI patrol splines and perception cones."
+  - "Expose alert pressure as a component tunable."
+  - "Keep objective state in a map-level director actor."
+notes_for_blender:
+  - "Generate modular station blockers at UE scale."
+  - "Create simple props with readable silhouettes."
+  - "Export collision-friendly meshes."
+i18n:
+  source_locale: en
+  output_locales:
+    - en
+    - zh-CN
+  field_translations:
+    title:
+      en: "Stealth Courier Station"
+      zh-CN: "潜行信使车站"
+    logline:
+      en: "A 10-minute stealth prototype where a courier escapes a haunted station by reading patrol routes, distracting threats, and reaching the final train."
+      zh-CN: "一个 10 分钟潜行原型：信使通过观察巡逻路线、干扰威胁并抵达最后一班列车来逃离闹鬼车站。"
+    player_fantasy:
+      en: "Outsmart supernatural guards through timing and route planning."
+      zh-CN: "通过时机判断和路线规划智胜超自然守卫。"
+    core_verbs.0:
+      en: "scout"
+      zh-CN: "侦察"
+    core_verbs.1:
+      en: "hide"
+      zh-CN: "隐藏"
+    core_verbs.2:
+      en: "distract"
+      zh-CN: "干扰"
+    core_verbs.3:
+      en: "extract"
+      zh-CN: "撤离"
+    win_state:
+      en: "Reach the train gate before station lockdown."
+      zh-CN: "在车站封锁前抵达列车闸门。"
+  term_translations:
+    stealth:
+      en: "stealth"
+      zh-CN: "潜行"
+    vertical_slice:
+      en: "vertical slice"
+      zh-CN: "垂直切片"
+    greybox:
+      en: "greybox"
+      zh-CN: "灰盒"

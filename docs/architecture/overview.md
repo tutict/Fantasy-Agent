@@ -1,0 +1,55 @@
+# Architecture Overview
+
+Fantasy Agent is organized around stable contracts and replaceable workers.
+
+## Flow
+
+```text
+PromptRequest
+  -> Director Agent
+  -> Gameplay Agent
+  -> GameplaySpec
+  -> GDD Writer
+  -> Unreal Builder
+  -> Blender Worker
+  -> QA Agent
+  -> MCP tools
+  -> Playable prototype artifacts
+```
+
+## Shared Contracts
+
+The `fantasy_agent/` package defines the first contract layer:
+
+- `PromptRequest`
+- `GameplaySpec`
+- `GDDDocument`
+- `UnrealProjectPlan`
+- `BlenderAssetPlan`
+- `QAPlan`
+- `DirectorBuildPlan`
+- `MCPToolContract`
+
+These models are the boundary between agents. The implementation behind an agent can change from deterministic Python to LLM calls, LangGraph nodes, or MCP tools without rewriting downstream consumers.
+
+## App Workers
+
+Each app is a small FastAPI service:
+
+- `director-agent`: orchestration boundary
+- `gameplay-agent`: prompt to gameplay DSL
+- `unreal-builder`: UE5 architecture plan
+- `blender-worker`: procedural asset job plan
+- `qa-agent`: playability and packaging checks
+
+## Legacy Inputs
+
+The previous repository contained useful architectural ideas:
+
+- Skill interfaces
+- Streamed agent events
+- State-machine workflow discipline
+- Operational runbooks
+- Guardrail-oriented AI configuration
+
+Those ideas are preserved for reference under `legacy/traffic-management-platform/`.

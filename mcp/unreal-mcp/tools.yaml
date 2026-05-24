@@ -1,0 +1,67 @@
+server: unreal-mcp
+tools:
+  create_project_structure:
+    description: "Create UE project folders and starter assets from an UnrealProjectPlan."
+    input:
+      type: object
+      required:
+        - plan_path
+        - project_dir
+      properties:
+        plan_path:
+          type: string
+        project_dir:
+          type: string
+        engine_version:
+          type: string
+    output:
+      type: object
+      required:
+        - created_paths
+      properties:
+        created_paths:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+  run_editor_commandlet:
+    description: "Run an allowlisted Unreal Editor commandlet and capture logs."
+    input:
+      type: object
+      required:
+        - project_file
+        - commandlet
+        - timeout_seconds
+      properties:
+        project_file:
+          type: string
+        commandlet:
+          enum:
+            - MapCheck
+            - ResavePackages
+            - AssetAudit
+        timeout_seconds:
+          type: integer
+          minimum: 30
+          maximum: 1800
+    output:
+      type: object
+      required:
+        - exit_code
+        - log_path
+      properties:
+        exit_code:
+          type: integer
+        log_path:
+          type: string
+        errors:
+          type: array
+          items:
+            type: string
+safety:
+  - "Project path must be inside the workspace."
+  - "Commandlet must be allowlisted."
+  - "Validation logs must be saved under generated/logs."

@@ -1,20 +1,51 @@
 .idea/
+.vscode/
 
-flutter_app/.dart_tool/
-flutter_app/build/
-flutter_app/.flutter-plugins
-flutter_app/.flutter-plugins-dependencies
-flutter_app/.packages
-flutter_app/*.log
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
 
-flutter_app/android/.gradle/
-flutter_app/android/local.properties
-flutter_app/android/key.properties
+.env
+.env.*
+!.env.example
 
-flutter_app/ios/Flutter/ephemeral/
-flutter_app/ios/Flutter/flutter_export_environment.sh
-flutter_app/ios/Flutter/Generated.xcconfig
+generated/*
+!generated/.gitkeep
 
-flutter_app/linux/flutter/ephemeral/
-flutter_app/macos/Flutter/ephemeral/
-flutter_app/windows/flutter/ephemeral/
+# Unreal generated artifacts
+Saved/
+Intermediate/
+Binaries/
+DerivedDataCache/
+*.sln
+*.suo
+*.opensdf
+*.VC.db
+
+# Blender working files
+*.blend1
+*.blend2
+
+# Legacy Flutter artifacts
+legacy/traffic-management-platform/flutter_app/.dart_tool/
+legacy/traffic-management-platform/flutter_app/build/
+legacy/traffic-management-platform/flutter_app/.flutter-plugins
+legacy/traffic-management-platform/flutter_app/.flutter-plugins-dependencies
+legacy/traffic-management-platform/flutter_app/.packages
+legacy/traffic-management-platform/flutter_app/*.log
+legacy/traffic-management-platform/flutter_app/android/.gradle/
+legacy/traffic-management-platform/flutter_app/android/local.properties
+legacy/traffic-management-platform/flutter_app/android/key.properties
+legacy/traffic-management-platform/flutter_app/ios/Flutter/ephemeral/
+legacy/traffic-management-platform/flutter_app/ios/Flutter/flutter_export_environment.sh
+legacy/traffic-management-platform/flutter_app/ios/Flutter/Generated.xcconfig
+legacy/traffic-management-platform/flutter_app/linux/flutter/ephemeral/
+legacy/traffic-management-platform/flutter_app/macos/Flutter/ephemeral/
+legacy/traffic-management-platform/flutter_app/windows/flutter/ephemeral/

@@ -1,0 +1,37 @@
+server: github-mcp
+tools:
+  publish_prototype_branch:
+    description: "Publish generated prototype artifacts to a review branch."
+    input:
+      type: object
+      required:
+        - branch_name
+        - artifact_paths
+      properties:
+        branch_name:
+          type: string
+          pattern: "^prototype/"
+        artifact_paths:
+          type: array
+          items:
+            type: string
+        pull_request_title:
+          type: string
+    output:
+      type: object
+      required:
+        - branch
+        - pull_request_url
+      properties:
+        branch:
+          type: string
+        pull_request_url:
+          type: string
+        committed_paths:
+          type: array
+          items:
+            type: string
+    safety:
+      - "Refuse .env files and secrets."
+      - "Refuse generated packaged binaries unless explicitly approved."
+      - "Require QA summary in the pull request body."

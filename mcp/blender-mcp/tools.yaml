@@ -1,0 +1,40 @@
+server: blender-mcp
+tools:
+  generate_asset_batch:
+    description: "Run a Blender Python asset batch from a BlenderAssetPlan."
+    input:
+      type: object
+      required:
+        - plan_path
+        - output_dir
+      properties:
+        plan_path:
+          type: string
+          description: "Path to generated/blender-asset-plan.yaml."
+        output_dir:
+          type: string
+          const: "generated/assets"
+        export_format:
+          enum:
+            - fbx
+            - glb
+    output:
+      type: object
+      required:
+        - exported_assets
+        - import_manifest
+      properties:
+        exported_assets:
+          type: array
+          items:
+            type: string
+        import_manifest:
+          type: string
+        logs:
+          type: array
+          items:
+            type: string
+    safety:
+      - "Refuse output paths outside generated/assets."
+      - "Refuse scripts not tracked in apps/blender-worker."
+      - "Capture Blender logs for QA handoff."

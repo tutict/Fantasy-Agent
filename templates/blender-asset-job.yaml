@@ -1,0 +1,9 @@
+job_name: prototype-greybox-pass
+scene_units: centimeters
+export_format: fbx
+jobs:
+  - asset_name: objective_prop
+    purpose: "Readable objective actor for interaction testing."
+    primitive_strategy: "Simple cube/cylinder composition with clear silhouette."
+    export_path: generated/assets/objective_prop.fbx
+    collision_hint: "Simple convex collision."

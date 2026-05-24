@@ -1,0 +1,15 @@
+{
+  "app.name": "Fantasy Agent",
+  "app.tagline": "From imagination to playable worlds.",
+  "agent.director": "Director Agent",
+  "agent.gameplay": "Gameplay Agent",
+  "agent.gdd": "GDD Writer",
+  "agent.unreal": "Unreal Builder",
+  "agent.blender": "Blender Worker",
+  "agent.qa": "QA Agent",
+  "section.summary": "Summary",
+  "section.core_loop": "Core Loop",
+  "section.systems": "Systems",
+  "section.progression": "Progression",
+  "section.qa_focus": "QA Focus"
+}
