@@ -1,0 +1,16 @@
+{
+  "template_name": "material-palette",
+  "description": "Placeholder ComfyUI workflow template for material and color language boards.",
+  "inputs": {
+    "positive_prompt": "{{ prompt }}",
+    "negative_prompt": "{{ negative_prompt }}",
+    "width": 1024,
+    "height": 768,
+    "seed": "{{ seed }}"
+  },
+  "notes": [
+    "Replace this placeholder with an exported ComfyUI workflow JSON.",
+    "Palette outputs must map colors to gameplay states.",
+    "Avoid decorative-only material generation."
+  ]
+}

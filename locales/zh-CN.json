@@ -6,6 +6,7 @@
   "agent.gdd": "GDD 写作智能体",
   "agent.unreal": "Unreal 构建智能体",
   "agent.blender": "Blender 工作智能体",
+  "agent.comfyui": "ComfyUI 工作智能体",
   "agent.qa": "QA 智能体",
   "section.summary": "概要",
   "section.core_loop": "核心循环",

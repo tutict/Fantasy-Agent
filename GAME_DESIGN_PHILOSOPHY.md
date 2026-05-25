@@ -57,8 +57,11 @@ Procedural generation is useful when it accelerates iteration:
 - Hazard markers
 - Modular traversal pieces
 - Export manifests
+- ComfyUI reference boards for reviewed visual direction
 
 It is not useful when it creates volume without play value.
+
+ComfyUI is useful for visual references only after the loop has clear readability needs. It should clarify objectives, hazards, routes, materials, UI feedback, or storyboards; it should not replace greybox playtesting.
 
 ## MCP As Production Infrastructure
 
@@ -68,6 +71,7 @@ MCP integrations should expose real tools:
 - Editor commandlets
 - Asset import
 - Blender Python execution
+- ComfyUI local workflow execution
 - GitHub branch and PR workflows
 
 MCP tools must declare inputs, outputs, side effects, and safety checks before they run.

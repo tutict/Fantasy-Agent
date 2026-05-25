@@ -184,6 +184,11 @@ def design_from_prompt(request: PromptRequest) -> GameplaySpec:
             "Prefer modular props with collision-friendly silhouettes.",
             "Name exports by gameplay role, not visual theme.",
         ],
+        notes_for_comfyui=[
+            "Generate visual references only after gameplay readability needs are known.",
+            "Prioritize objective, hazard, route, material, and UI clarity over style exploration.",
+            "Treat generated images as reviewed references, not direct proof of playable progress.",
+        ],
     )
     spec.i18n = build_i18n_bundle(request, spec, axis, verbs)
     return spec

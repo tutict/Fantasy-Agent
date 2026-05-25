@@ -77,6 +77,7 @@ class GameplaySpec(StrictModel):
     qa_focus: list[str]
     notes_for_unreal: list[str]
     notes_for_blender: list[str]
+    notes_for_comfyui: list[str]
     i18n: I18nBundle | None = None
 
 
@@ -119,6 +120,31 @@ class BlenderAssetPlan(StrictModel):
     handoff_artifacts: list[str]
 
 
+class ComfyUIPromptJob(StrictModel):
+    job_id: str
+    purpose: Literal[
+        "concept_reference",
+        "material_reference",
+        "ui_reference",
+        "texture_seed",
+        "storyboard_frame",
+    ]
+    prompt: str
+    negative_prompt: str
+    workflow_template: str
+    output_path: str
+    gameplay_constraint: str
+
+
+class ComfyUIVisualPlan(StrictModel):
+    plan_name: str
+    endpoint: str = "http://127.0.0.1:8188"
+    jobs: list[ComfyUIPromptJob]
+    workflow_templates: list[str]
+    handoff_artifacts: list[str]
+    usage_rules: list[str]
+
+
 class QAPlan(StrictModel):
     target_session_minutes: int = Field(ge=5, le=15)
     smoke_tests: list[str]
@@ -133,13 +159,14 @@ class DirectorBuildPlan(StrictModel):
     gdd: GDDDocument
     unreal_plan: UnrealProjectPlan
     blender_plan: BlenderAssetPlan
+    comfyui_plan: ComfyUIVisualPlan
     qa_plan: QAPlan
     next_actions: list[str]
 
 
 class MCPToolContract(StrictModel):
     name: str
-    server: Literal["unreal-mcp", "blender-mcp", "github-mcp"]
+    server: Literal["unreal-mcp", "blender-mcp", "comfyui-mcp", "github-mcp"]
     input_schema_ref: str
     output_schema_ref: str
     side_effects: list[str]

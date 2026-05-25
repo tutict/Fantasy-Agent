@@ -25,6 +25,7 @@ Gameplay DSL 是一个 YAML 文档，由 `gameplay-schema.yaml` 校验。
 - `qa_focus`
 - `notes_for_unreal`
 - `notes_for_blender`
+- `notes_for_comfyui`
 
 Optional i18n section:
 
@@ -49,6 +50,7 @@ Optional i18n section:
 - `systems` must include at least three interacting systems.
 - `level_beats` must include onboarding and resolution.
 - `asset_needs` must map to playable interactions or readability.
+- `notes_for_comfyui` must explain how visual generation serves gameplay readability.
 
 - `target_session_minutes` 必须在 5 到 15 之间。
 - `core_loop` 至少包含三个步骤。
@@ -78,6 +80,7 @@ Optional i18n section:
 gameplay-spec.yaml
   -> gdd.md
   -> blender-asset-plan.yaml
+  -> comfyui-visual-plan.yaml
   -> unreal-project-plan.yaml
   -> qa-plan.yaml
 ```

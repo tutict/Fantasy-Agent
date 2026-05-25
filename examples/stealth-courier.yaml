@@ -114,6 +114,10 @@ notes_for_blender:
   - "Generate modular station blockers at UE scale."
   - "Create simple props with readable silhouettes."
   - "Export collision-friendly meshes."
+notes_for_comfyui:
+  - "Generate station readability references only after stealth routes are defined."
+  - "Separate safe cover, patrol danger, objective key, and exit train colors."
+  - "Treat generated station mood images as reference only, not level design."
 i18n:
   source_locale: en
   output_locales:
@@ -144,6 +148,15 @@ i18n:
     win_state:
       en: "Reach the train gate before station lockdown."
       zh-CN: "在车站封锁前抵达列车闸门。"
+    notes_for_comfyui.0:
+      en: "Generate station readability references only after stealth routes are defined."
+      zh-CN: "只在潜行路线确定后生成车站可读性参考图。"
+    notes_for_comfyui.1:
+      en: "Separate safe cover, patrol danger, objective key, and exit train colors."
+      zh-CN: "区分安全掩体、巡逻危险、目标钥匙和出口列车的颜色。"
+    notes_for_comfyui.2:
+      en: "Treat generated station mood images as reference only, not level design."
+      zh-CN: "生成的车站氛围图只作为参考，不作为关卡设计。"
   term_translations:
     stealth:
       en: "stealth"

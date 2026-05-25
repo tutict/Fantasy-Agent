@@ -18,6 +18,7 @@ SECTION_TITLES: dict[str, dict[LocaleCode, str]] = {
     "asset_needs": {"en": "Asset Needs", "zh-CN": "资产需求"},
     "unreal_notes": {"en": "Unreal Notes", "zh-CN": "Unreal 说明"},
     "blender_notes": {"en": "Blender Notes", "zh-CN": "Blender 说明"},
+    "comfyui_notes": {"en": "ComfyUI Notes", "zh-CN": "ComfyUI 说明"},
     "qa_focus": {"en": "QA Focus", "zh-CN": "QA 重点"},
 }
 
@@ -114,6 +115,9 @@ def _render_locale(spec: GameplaySpec, locale: LocaleCode) -> str:
 
 ## {_title("blender_notes", locale)}
 {chr(10).join(f"- {note}" for note in _localized_list(spec, "notes_for_blender", spec.notes_for_blender, locale))}
+
+## {_title("comfyui_notes", locale)}
+{chr(10).join(f"- {note}" for note in _localized_list(spec, "notes_for_comfyui", spec.notes_for_comfyui, locale))}
 
 ## {_title("qa_focus", locale)}
 {chr(10).join(f"- {item}" for item in _localized_list(spec, "qa_focus", spec.qa_focus, locale))}

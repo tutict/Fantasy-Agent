@@ -265,6 +265,14 @@ def build_i18n_bundle(
     for index, note in enumerate(spec.notes_for_blender):
         add(f"notes_for_blender.{index}", note, blender_zh[index])
 
+    comfyui_zh = [
+        "只在玩法可读性需求明确后生成视觉参考。",
+        "优先表现目标、危险、路线、材质和 UI 清晰度，而不是风格探索。",
+        "生成图像只能作为经评审的参考，不能证明原型已经可玩。",
+    ]
+    for index, note in enumerate(spec.notes_for_comfyui):
+        add(f"notes_for_comfyui.{index}", note, comfyui_zh[index])
+
     term_translations = {
         "gameplay-first": {"en": "gameplay-first", "zh-CN": "玩法优先"},
         "vertical slice": {"en": "vertical slice", "zh-CN": "垂直切片"},

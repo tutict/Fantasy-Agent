@@ -30,6 +30,18 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             safety_checks=["export path must be generated/assets", "script must avoid external downloads"],
         ),
         MCPToolContract(
+            name="run_visual_reference_workflow",
+            server="comfyui-mcp",
+            input_schema_ref="mcp/comfyui-mcp/tools.yaml#run_visual_reference_workflow",
+            output_schema_ref="mcp/comfyui-mcp/tools.yaml#run_visual_reference_workflow.output",
+            side_effects=["submits ComfyUI prompt jobs", "writes generated reference images"],
+            safety_checks=[
+                "ComfyUI endpoint must be local or explicitly approved",
+                "output path must be generated/comfyui",
+                "jobs must reference gameplay constraints",
+            ],
+        ),
+        MCPToolContract(
             name="publish_prototype_branch",
             server="github-mcp",
             input_schema_ref="mcp/github-mcp/tools.yaml#publish_prototype_branch",

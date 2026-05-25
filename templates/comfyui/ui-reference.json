@@ -1,0 +1,16 @@
+{
+  "template_name": "ui-reference",
+  "description": "Placeholder ComfyUI workflow template for prototype UI reference frames.",
+  "inputs": {
+    "positive_prompt": "{{ prompt }}",
+    "negative_prompt": "{{ negative_prompt }}",
+    "width": 1024,
+    "height": 768,
+    "seed": "{{ seed }}"
+  },
+  "notes": [
+    "Replace this placeholder with an exported ComfyUI workflow JSON.",
+    "UI references must preserve legibility.",
+    "Do not generate dense decorative HUDs for prototype QA."
+  ]
+}

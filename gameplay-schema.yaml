@@ -21,6 +21,7 @@ required:
   - qa_focus
   - notes_for_unreal
   - notes_for_blender
+  - notes_for_comfyui
 properties:
   schema_version:
     type: string
@@ -96,6 +97,12 @@ properties:
       type: string
       minLength: 8
   notes_for_blender:
+    type: array
+    minItems: 1
+    items:
+      type: string
+      minLength: 8
+  notes_for_comfyui:
     type: array
     minItems: 1
     items:
@@ -222,6 +229,7 @@ $defs:
         enum:
           - unreal-mcp
           - blender-mcp
+          - comfyui-mcp
           - github-mcp
       tool:
         type: string

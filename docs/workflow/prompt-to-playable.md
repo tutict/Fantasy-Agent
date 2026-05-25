@@ -35,15 +35,16 @@ The Gameplay Agent generates a `GameplaySpec` with:
 
 The GDD Writer renders the gameplay spec into markdown. It does not add new scope. It clarifies implementation intent.
 
-## Stage 4: Asset And Engine Handoff
+## Stage 4: Asset, Visual, And Engine Handoff
 
-The Blender Worker prepares procedural asset jobs. The Unreal Builder prepares project structure, maps, Blueprint classes, and automation steps.
+The Blender Worker prepares procedural asset jobs. The ComfyUI Worker prepares visual reference jobs for readability, material language, UI references, and reviewed texture seeds. The Unreal Builder prepares project structure, maps, Blueprint classes, and automation steps.
 
 ## Stage 5: MCP Execution
 
 Future MCP servers execute controlled operations:
 
 - Blender MCP runs `bpy` jobs and exports assets.
+- ComfyUI MCP runs allowlisted visual reference workflows.
 - Unreal MCP creates/imports/validates project content.
 - GitHub MCP publishes review branches and pull requests.
 

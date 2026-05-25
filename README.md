@@ -23,7 +23,8 @@ Fantasy Agent focuses on:
 - Structured GDD and gameplay DSL output
 - UE5 project architecture and Unreal Python automation
 - Blender `bpy` procedural asset workflows
-- MCP contracts for Unreal, Blender, and GitHub tooling
+- ComfyUI visual reference workflows
+- MCP contracts for Unreal, Blender, ComfyUI, and GitHub tooling
 - Multi-agent workflows that can evolve into LangGraph execution
 
 The system is not meant to replace design judgment. It creates scoped, inspectable production steps so a small team can move from idea to a playable prototype quickly.
@@ -69,6 +70,7 @@ Fantasy-Agent/
 |   |-- gameplay-agent/     # Converts prompts into gameplay DSL specs
 |   |-- unreal-builder/     # Prepares UE5 project architecture
 |   |-- blender-worker/     # Prepares Blender procedural asset jobs
+|   |-- comfyui-worker/     # Prepares ComfyUI visual reference jobs
 |   `-- qa-agent/           # Creates smoke, playability, and packaging checks
 |-- fantasy_agent/          # Shared Pydantic contracts and workflow primitives
 |-- skills/
@@ -76,10 +78,12 @@ Fantasy-Agent/
 |   |-- gdd-writer/
 |   |-- level-director/
 |   |-- ue-architect/
-|   `-- blender-generator/
+|   |-- blender-generator/
+|   `-- comfyui-generator/
 |-- mcp/
 |   |-- blender-mcp/
 |   |-- unreal-mcp/
+|   |-- comfyui-mcp/
 |   `-- github-mcp/
 |-- templates/
 |-- generated/
@@ -104,6 +108,7 @@ The first implementation pass defines stable contracts before deep automation:
 - `GDDDocument`: markdown design document generated from the gameplay spec.
 - `UnrealProjectPlan`: project folders, plugins, maps, Blueprint classes, and automation steps.
 - `BlenderAssetPlan`: procedural asset jobs and export handoff paths.
+- `ComfyUIVisualPlan`: visual reference jobs for readability, material language, UI references, and reviewed texture seeds.
 - `QAPlan`: smoke tests, playability checks, packaging checks, and metrics.
 - `DirectorBuildPlan`: combined orchestration output for the full first-pass pipeline.
 

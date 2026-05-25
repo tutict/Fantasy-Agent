@@ -15,6 +15,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - Tool side effects must be explicit before MCP execution.
 - QA checks must run before packaging or visual expansion.
 - English and Simplified Chinese outputs must stay synchronized through the `i18n` bundle.
+- ComfyUI is a visual reference worker, not a gameplay authority.
 
 - 玩法优先于图形。
 - 每个生成资产、机制和自动化步骤都必须服务可玩循环。
@@ -178,6 +179,28 @@ Rules:
 - Generate modular assets first.
 - Use scale-correct exports.
 - Name assets by gameplay role.
+
+## ComfyUI Worker
+
+Responsibility:
+
+- Prepare gameplay-readable visual reference jobs for ComfyUI.
+- Generate concept, material, UI, texture-seed, or storyboard references after gameplay needs are known.
+
+Input:
+
+- `GameplaySpec`
+
+Output:
+
+- `ComfyUIVisualPlan`
+
+Rules:
+
+- Do not block greybox work on image generation.
+- Every prompt must include a gameplay constraint.
+- Generated images require review before becoming Unreal textures or UI assets.
+- Avoid decorative images that do not clarify objectives, hazards, routes, materials, or feedback.
 
 ## QA Agent
 

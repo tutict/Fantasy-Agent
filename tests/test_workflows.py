@@ -20,4 +20,6 @@ def test_director_workflow_creates_playable_slice_plan():
     assert "核心循环" in plan.gdd.markdown_by_locale["zh-CN"]
     assert "M_Prototype_Greybox" in plan.unreal_plan.maps
     assert plan.blender_plan.jobs
+    assert plan.comfyui_plan.jobs
+    assert plan.comfyui_plan.jobs[0].workflow_template.startswith("templates/comfyui/")
     assert "average_session_minutes" in plan.qa_plan.metrics

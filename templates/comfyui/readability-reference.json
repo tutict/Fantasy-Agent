@@ -1,0 +1,16 @@
+{
+  "template_name": "readability-reference",
+  "description": "Placeholder ComfyUI workflow template for gameplay readability concept references.",
+  "inputs": {
+    "positive_prompt": "{{ prompt }}",
+    "negative_prompt": "{{ negative_prompt }}",
+    "width": 1024,
+    "height": 768,
+    "seed": "{{ seed }}"
+  },
+  "notes": [
+    "Replace this placeholder with an exported ComfyUI workflow JSON.",
+    "Keep prompt nodes parameterized for MCP injection.",
+    "Use only after gameplay constraints are reviewed."
+  ]
+}

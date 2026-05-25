@@ -7,6 +7,7 @@ Status: started.
 - Preserve legacy Spring/Flutter project under `legacy/`.
 - Create modular app, skill, MCP, template, generated, examples, and docs structure.
 - Define Pydantic contracts for prompt, gameplay spec, GDD, Unreal plan, Blender plan, QA plan, and director plan.
+- Define ComfyUI visual reference contracts and MCP handoff boundaries.
 - Define `gameplay-schema.yaml`.
 - Provide deterministic first-pass workflow functions.
 - Document orchestration rules and game design philosophy.
@@ -27,7 +28,15 @@ Status: started.
 - Generate import manifests for Unreal.
 - Add asset scale and collision checks.
 
-## Phase 4: Unreal MCP Integration
+## Phase 4: ComfyUI MCP Integration
+
+- Implement ComfyUI MCP server contract.
+- Execute allowlisted ComfyUI workflow templates from `ComfyUIVisualPlan`.
+- Write generated reference images into `generated/comfyui/`.
+- Produce prompt IDs, run manifests, and review notes.
+- Keep ComfyUI outputs downstream of gameplay readability requirements.
+
+## Phase 5: Unreal MCP Integration
 
 - Implement Unreal MCP server contract.
 - Create UE project folders, maps, data assets, and Blueprint stubs.
@@ -35,9 +44,10 @@ Status: started.
 - Run editor validation commandlets.
 - Produce build logs and failure summaries.
 
-## Phase 5: Playable Prototype Automation
+## Phase 6: Playable Prototype Automation
 
 - Chain Director Agent through gameplay, GDD, Blender, Unreal, QA, and GitHub workflows.
+- Include ComfyUI visual references only after greybox needs are reviewed.
 - Package a Windows development build.
 - Run smoke tests against the packaged prototype.
 - Open a GitHub PR containing generated specs, manifests, and automation logs.

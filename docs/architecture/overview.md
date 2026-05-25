@@ -12,6 +12,7 @@ PromptRequest
   -> GDD Writer
   -> Unreal Builder
   -> Blender Worker
+  -> ComfyUI Worker
   -> QA Agent
   -> MCP tools
   -> Playable prototype artifacts
@@ -26,6 +27,7 @@ The `fantasy_agent/` package defines the first contract layer:
 - `GDDDocument`
 - `UnrealProjectPlan`
 - `BlenderAssetPlan`
+- `ComfyUIVisualPlan`
 - `QAPlan`
 - `DirectorBuildPlan`
 - `MCPToolContract`
@@ -40,6 +42,7 @@ Each app is a small FastAPI service:
 - `gameplay-agent`: prompt to gameplay DSL
 - `unreal-builder`: UE5 architecture plan
 - `blender-worker`: procedural asset job plan
+- `comfyui-worker`: gameplay-readable visual reference plan
 - `qa-agent`: playability and packaging checks
 
 ## Legacy Inputs

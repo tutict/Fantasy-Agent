@@ -1,0 +1,45 @@
+server: comfyui-mcp
+tools:
+  run_visual_reference_workflow:
+    description: "Run allowlisted ComfyUI visual reference jobs from a ComfyUIVisualPlan."
+    input:
+      type: object
+      required:
+        - plan_path
+        - endpoint
+        - output_dir
+      properties:
+        plan_path:
+          type: string
+          description: "Path to generated/comfyui/comfyui-visual-plan.yaml."
+        endpoint:
+          type: string
+          default: "http://127.0.0.1:8188"
+        output_dir:
+          type: string
+          const: "generated/comfyui"
+    output:
+      type: object
+      required:
+        - generated_images
+        - run_manifest
+      properties:
+        generated_images:
+          type: array
+          items:
+            type: string
+        run_manifest:
+          type: string
+        prompt_ids:
+          type: array
+          items:
+            type: string
+        logs:
+          type: array
+          items:
+            type: string
+    safety:
+      - "Default endpoint must be localhost."
+      - "Refuse output paths outside generated/comfyui."
+      - "Require each job to include a gameplay_constraint."
+      - "Run only templates from templates/comfyui."

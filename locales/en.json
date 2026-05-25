@@ -6,6 +6,7 @@
   "agent.gdd": "GDD Writer",
   "agent.unreal": "Unreal Builder",
   "agent.blender": "Blender Worker",
+  "agent.comfyui": "ComfyUI Worker",
   "agent.qa": "QA Agent",
   "section.summary": "Summary",
   "section.core_loop": "Core Loop",
