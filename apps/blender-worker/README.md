@@ -1,6 +1,8 @@
 # Blender Worker
 
-The Blender Worker prepares procedural asset jobs for greybox and readability-first asset passes. It targets Blender Python and future Blender MCP execution.
+The Blender Worker prepares procedural asset jobs and generates Blender Python scripts for greybox and readability-first asset passes. It targets Blender Python and future Blender MCP execution.
+
+Blender Worker 会生成面向玩法可读性的程序化资产计划和 Blender Python 脚本，后续可交给 Blender MCP 执行。
 
 Run locally:
 
@@ -13,3 +15,27 @@ Primary endpoint:
 - `POST /assets`
 - Request body: `GameplaySpec`
 - Returns: `BlenderAssetPlan`
+
+Script endpoints:
+
+- `POST /script`
+- Request body: `BlenderAssetPlan`
+- Returns: `BlenderScriptArtifact` with generated `.py` script text and Unreal import manifest.
+
+- `POST /assets/script`
+- Request body: `GameplaySpec`
+- Returns: `BlenderScriptArtifact` after first preparing the asset plan.
+
+Generated asset roles:
+
+- Modular walls
+- Doors
+- Ramps
+- Hazard markers
+- Objective props
+- Exit gates
+- UI proxy meshes
+
+The generated script sets scene units, collections, material color keys, object origins, `UCX_` collision meshes, FBX/GLB exports, and a JSON-compatible Unreal import manifest at `generated/import-manifest.yaml`.
+
+The worker does not launch Blender by itself. Blender MCP should execute the generated script only after the user confirms file-writing side effects.

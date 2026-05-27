@@ -5,6 +5,26 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 LocaleCode = Literal["en", "zh-CN"]
+BlenderAssetKind = Literal[
+    "modular_wall",
+    "door",
+    "ramp",
+    "hazard_marker",
+    "objective_prop",
+    "exit_gate",
+    "ui_proxy_mesh",
+    "generic_greybox",
+]
+BlenderMaterialKey = Literal[
+    "neutral",
+    "safe",
+    "hazard",
+    "objective",
+    "exit",
+    "ui",
+    "door",
+    "ramp",
+]
 
 
 class StrictModel(BaseModel):
@@ -109,6 +129,12 @@ class BlenderAssetJob(StrictModel):
     primitive_strategy: str
     export_path: str
     collision_hint: str
+    asset_kind: BlenderAssetKind = "generic_greybox"
+    dimensions_cm: tuple[float, float, float] = (100.0, 100.0, 100.0)
+    material_key: BlenderMaterialKey = "neutral"
+    collection: str = "GameplayGreybox"
+    unreal_path: str = "/Game/Art/Generated"
+    collision_name: str | None = None
 
 
 class BlenderAssetPlan(StrictModel):
@@ -118,6 +144,35 @@ class BlenderAssetPlan(StrictModel):
     python_entrypoint: str
     export_format: Literal["fbx", "glb"] = "fbx"
     handoff_artifacts: list[str]
+
+
+class UnrealImportAsset(StrictModel):
+    asset_name: str
+    asset_kind: BlenderAssetKind
+    source_file: str
+    destination_path: str
+    collision_object: str
+    material_key: BlenderMaterialKey
+    dimensions_cm: tuple[float, float, float]
+    gameplay_role: str
+
+
+class UnrealImportManifest(StrictModel):
+    schema_version: str = "0.1"
+    generated_by: str = "fantasy-agent.blender-worker"
+    scene_units: Literal["centimeters", "meters"] = "centimeters"
+    import_settings: dict[str, str | bool | float]
+    assets: list[UnrealImportAsset]
+
+
+class BlenderScriptArtifact(StrictModel):
+    plan_name: str
+    script_path: str
+    script: str
+    import_manifest_path: str
+    import_manifest: UnrealImportManifest
+    execution_notes: list[str]
+    side_effects: list[str]
 
 
 class ComfyUIPromptJob(StrictModel):

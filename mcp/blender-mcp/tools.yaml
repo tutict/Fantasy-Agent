@@ -1,7 +1,39 @@
 server: blender-mcp
 tools:
+  generate_blender_script:
+    description: "Generate a Blender Python script and Unreal import manifest from a BlenderAssetPlan."
+    input:
+      type: object
+      required:
+        - plan
+      properties:
+        plan:
+          $ref: "../../gameplay-schema.yaml#/$defs/blender_asset_plan"
+        script_path:
+          type: string
+          default: "generated/blender/<job-name>.py"
+        import_manifest_path:
+          type: string
+          default: "generated/import-manifest.yaml"
+    output:
+      type: object
+      required:
+        - script_path
+        - script
+        - import_manifest
+      properties:
+        script_path:
+          type: string
+        script:
+          type: string
+        import_manifest:
+          type: object
+    safety:
+      - "This tool is read-only unless explicitly asked to write generated files."
+      - "Generated scripts must write only under generated/."
+      - "Generated scripts must keep Blender execution side effects explicit."
   generate_asset_batch:
-    description: "Run a Blender Python asset batch from a BlenderAssetPlan."
+    description: "Run an allowlisted Blender Python asset batch from a BlenderAssetPlan."
     input:
       type: object
       required:
@@ -36,5 +68,6 @@ tools:
             type: string
     safety:
       - "Refuse output paths outside generated/assets."
-      - "Refuse scripts not tracked in apps/blender-worker."
+      - "Refuse scripts outside apps/blender-worker or generated/blender unless explicitly approved."
       - "Capture Blender logs for QA handoff."
+      - "Require user confirmation before launching Blender or writing exports."

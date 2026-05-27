@@ -24,6 +24,9 @@ Status: started.
 
 ## Phase 3: Blender MCP Integration
 
+- Generate Blender Python scripts from `BlenderAssetPlan`.
+- Support modular walls, doors, ramps, hazard markers, objective props, exit gates, and UI proxy meshes.
+- Generate Unreal import manifests with material, collection, dimensions, and collision metadata.
 - Implement Blender MCP server contract.
 - Execute `bpy` procedural asset jobs from `BlenderAssetPlan`.
 - Export FBX or GLB assets into `generated/assets/`.

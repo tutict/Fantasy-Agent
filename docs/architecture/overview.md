@@ -43,7 +43,7 @@ Each app is a small FastAPI service:
 - `chatgpt-workbench`: ChatGPT Apps MCP endpoint and interactive widget
 - `gameplay-agent`: prompt to gameplay DSL
 - `unreal-builder`: UE5 architecture plan
-- `blender-worker`: procedural asset job plan
+- `blender-worker`: procedural asset jobs, Blender Python scripts, and Unreal import manifests
 - `comfyui-worker`: gameplay-readable visual reference plan
 - `qa-agent`: playability and packaging checks
 

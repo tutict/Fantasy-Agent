@@ -122,6 +122,7 @@ The first implementation pass defines stable contracts before deep automation:
 - `GDDDocument`: markdown design document generated from the gameplay spec.
 - `UnrealProjectPlan`: project folders, plugins, maps, Blueprint classes, and automation steps.
 - `BlenderAssetPlan`: procedural asset jobs and export handoff paths.
+- `BlenderScriptArtifact`: generated Blender Python script plus Unreal import manifest.
 - `ComfyUIVisualPlan`: visual reference jobs for readability, material language, UI references, and reviewed texture seeds.
 - `QAPlan`: smoke tests, playability checks, packaging checks, and metrics.
 - `DirectorBuildPlan`: combined orchestration output for the full first-pass pipeline.

@@ -2,8 +2,80 @@ job_name: prototype-greybox-pass
 scene_units: centimeters
 export_format: fbx
 jobs:
+  - asset_name: modular_wall_400
+    asset_kind: modular_wall
+    purpose: "Reusable modular wall for route blocking and sightline tests."
+    primitive_strategy: "Scale-correct cube wall with readability trim."
+    export_path: generated/assets/modular_wall_400.fbx
+    collision_hint: "UCX convex collision generated with matching bounds."
+    dimensions_cm: [400, 30, 300]
+    material_key: neutral
+    collection: FA_Modular_Walls
+    unreal_path: /Game/Art/Generated
+    collision_name: UCX_modular_wall_400_00
+  - asset_name: interaction_door
+    asset_kind: door
+    purpose: "Readable door for route-change and lock/key tests."
+    primitive_strategy: "Door panel plus simple frame pieces."
+    export_path: generated/assets/interaction_door.fbx
+    collision_hint: "UCX convex collision generated with matching bounds."
+    dimensions_cm: [160, 24, 260]
+    material_key: door
+    collection: FA_Doors
+    unreal_path: /Game/Art/Generated
+    collision_name: UCX_interaction_door_00
+  - asset_name: traversal_ramp
+    asset_kind: ramp
+    purpose: "Simple ramp for vertical route readability."
+    primitive_strategy: "Triangular prism ramp with edge readability marker."
+    export_path: generated/assets/traversal_ramp.fbx
+    collision_hint: "UCX convex collision generated with matching bounds."
+    dimensions_cm: [300, 220, 120]
+    material_key: ramp
+    collection: FA_Ramps
+    unreal_path: /Game/Art/Generated
+    collision_name: UCX_traversal_ramp_00
+  - asset_name: hazard_marker
+    asset_kind: hazard_marker
+    purpose: "Readable hazard marker for pressure and failure feedback."
+    primitive_strategy: "Low-poly cone plus base plate."
+    export_path: generated/assets/hazard_marker.fbx
+    collision_hint: "UCX convex collision generated with matching bounds."
+    dimensions_cm: [110, 110, 130]
+    material_key: hazard
+    collection: FA_Hazards
+    unreal_path: /Game/Art/Generated
+    collision_name: UCX_hazard_marker_00
   - asset_name: objective_prop
+    asset_kind: objective_prop
     purpose: "Readable objective actor for interaction testing."
-    primitive_strategy: "Simple cube/cylinder composition with clear silhouette."
+    primitive_strategy: "Cylinder pedestal plus beacon cube."
     export_path: generated/assets/objective_prop.fbx
-    collision_hint: "Simple convex collision."
+    collision_hint: "UCX convex collision generated with matching bounds."
+    dimensions_cm: [120, 120, 170]
+    material_key: objective
+    collection: FA_Objectives
+    unreal_path: /Game/Art/Generated
+    collision_name: UCX_objective_prop_00
+  - asset_name: exit_gate
+    asset_kind: exit_gate
+    purpose: "Readable exit gate for win-state tests."
+    primitive_strategy: "Two posts, header, and trigger plane."
+    export_path: generated/assets/exit_gate.fbx
+    collision_hint: "UCX convex collision generated with matching bounds."
+    dimensions_cm: [240, 40, 300]
+    material_key: exit
+    collection: FA_Exits
+    unreal_path: /Game/Art/Generated
+    collision_name: UCX_exit_gate_00
+  - asset_name: ui_proxy_mesh
+    asset_kind: ui_proxy_mesh
+    purpose: "World-space UI proxy for objective and pressure readability."
+    primitive_strategy: "Thin panel plus objective and pressure slots."
+    export_path: generated/assets/ui_proxy_mesh.fbx
+    collision_hint: "UCX convex collision generated with matching bounds."
+    dimensions_cm: [190, 6, 110]
+    material_key: ui
+    collection: FA_UI_Proxies
+    unreal_path: /Game/Art/Generated
+    collision_name: UCX_ui_proxy_mesh_00

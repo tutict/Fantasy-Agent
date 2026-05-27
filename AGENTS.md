@@ -167,6 +167,7 @@ Future MCP compatibility:
 Responsibility:
 
 - Prepare procedural asset jobs that support greybox playability and readable interactions.
+- Generate Blender Python scripts from approved `BlenderAssetPlan` handoffs.
 
 Input:
 
@@ -181,6 +182,8 @@ Rules:
 - Generate modular assets first.
 - Use scale-correct exports.
 - Name assets by gameplay role.
+- Generate `UCX_` collision objects and Unreal import manifests with every export.
+- Do not run Blender from planning surfaces without explicit side-effect confirmation.
 
 ## ComfyUI Worker
 

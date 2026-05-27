@@ -43,7 +43,7 @@ The GDD Writer renders the gameplay spec into markdown. It does not add new scop
 
 ## Stage 4: Asset, Visual, And Engine Handoff
 
-The Blender Worker prepares procedural asset jobs. The ComfyUI Worker prepares visual reference jobs for readability, material language, UI references, and reviewed texture seeds. The Unreal Builder prepares project structure, maps, Blueprint classes, and automation steps.
+The Blender Worker prepares procedural asset jobs, generates Blender Python scripts, and prepares Unreal import manifests. The ComfyUI Worker prepares visual reference jobs for readability, material language, UI references, and reviewed texture seeds. The Unreal Builder prepares project structure, maps, Blueprint classes, and automation steps.
 
 ## Stage 5: MCP Execution
 

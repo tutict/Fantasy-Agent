@@ -242,6 +242,90 @@ $defs:
         minItems: 1
         items:
           type: string
+  blender_asset_plan:
+    type: object
+    additionalProperties: false
+    required:
+      - job_name
+      - scene_units
+      - jobs
+      - python_entrypoint
+      - export_format
+      - handoff_artifacts
+    properties:
+      job_name:
+        type: string
+      scene_units:
+        enum:
+          - centimeters
+          - meters
+      jobs:
+        type: array
+        minItems: 1
+        items:
+          $ref: "#/$defs/blender_asset_job"
+      python_entrypoint:
+        type: string
+      export_format:
+        enum:
+          - fbx
+          - glb
+      handoff_artifacts:
+        type: array
+        items:
+          type: string
+  blender_asset_job:
+    type: object
+    additionalProperties: false
+    required:
+      - asset_name
+      - purpose
+      - primitive_strategy
+      - export_path
+      - collision_hint
+    properties:
+      asset_name:
+        type: string
+      purpose:
+        type: string
+      primitive_strategy:
+        type: string
+      export_path:
+        type: string
+      collision_hint:
+        type: string
+      asset_kind:
+        enum:
+          - modular_wall
+          - door
+          - ramp
+          - hazard_marker
+          - objective_prop
+          - exit_gate
+          - ui_proxy_mesh
+          - generic_greybox
+      dimensions_cm:
+        type: array
+        minItems: 3
+        maxItems: 3
+        items:
+          type: number
+      material_key:
+        enum:
+          - neutral
+          - safe
+          - hazard
+          - objective
+          - exit
+          - ui
+          - door
+          - ramp
+      collection:
+        type: string
+      unreal_path:
+        type: string
+      collision_name:
+        type: string
   i18n_bundle:
     type: object
     additionalProperties: false
