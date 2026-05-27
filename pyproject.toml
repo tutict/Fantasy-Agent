@@ -27,3 +27,7 @@ target-version = "py311"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.setuptools.packages.find]
+include = ["fantasy_agent*"]
+exclude = ["apps*", "docs*", "examples*", "generated*", "legacy*", "locales*", "mcp*", "skills*", "templates*", "tests*"]

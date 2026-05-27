@@ -66,6 +66,7 @@ Fantasy Agent 支持英文与简体中文并行输出。
 ```text
 Fantasy-Agent/
 |-- apps/
+|   |-- web-console/        # Local browser UI for prompt-to-playable planning
 |   |-- director-agent/     # Orchestrates prompt-to-playable planning
 |   |-- gameplay-agent/     # Converts prompts into gameplay DSL specs
 |   |-- unreal-builder/     # Prepares UE5 project architecture
@@ -138,6 +139,18 @@ Run the Director Agent:
 
 ```bash
 uvicorn app.main:app --reload --app-dir apps/director-agent
+```
+
+Run the Web Console:
+
+```bash
+uvicorn app.main:app --reload --app-dir apps/web-console --host 127.0.0.1 --port 7860
+```
+
+Open:
+
+```text
+http://127.0.0.1:7860
 ```
 
 Example request:

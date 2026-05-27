@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fantasy Agent Console</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="workspace" aria-label="Fantasy Agent production console">
+        <aside class="input-pane">
+          <header class="brand-block">
+            <div>
+              <p class="eyebrow" data-i18n="productLabel">AI-native production console</p>
+              <h1>Fantasy Agent</h1>
+            </div>
+            <div class="locale-switch" aria-label="Interface language">
+              <button class="locale-option active" type="button" data-locale="en">EN</button>
+              <button class="locale-option" type="button" data-locale="zh-CN">中文</button>
+            </div>
+          </header>
+
+          <form id="plan-form" class="prompt-form">
+            <label class="field-label" for="prompt" data-i18n="promptLabel">Gameplay idea</label>
+            <textarea
+              id="prompt"
+              name="prompt"
+              rows="7"
+              data-i18n-placeholder="promptPlaceholder"
+              placeholder="A stealth courier escapes a haunted train station"
+              required
+            >A stealth courier escapes a haunted train station</textarea>
+
+            <div class="form-grid">
+              <label class="field-label compact" for="target_minutes">
+                <span data-i18n="sessionLabel">Session</span>
+                <output id="minute-output">10</output>
+              </label>
+              <input id="target_minutes" name="target_minutes" type="range" min="5" max="15" value="10" />
+
+              <label class="field-label compact" for="engine_version" data-i18n="engineLabel">Engine</label>
+              <input id="engine_version" name="engine_version" type="text" value="UE5" />
+            </div>
+
+            <fieldset class="fieldset">
+              <legend data-i18n="sourceLocale">Source language</legend>
+              <div class="segmented">
+                <label><input type="radio" name="source_locale" value="en" checked /> EN</label>
+                <label><input type="radio" name="source_locale" value="zh-CN" /> 中文</label>
+              </div>
+            </fieldset>
+
+            <fieldset class="fieldset">
+              <legend data-i18n="outputLocales">Output languages</legend>
+              <div class="checks">
+                <label><input type="checkbox" name="output_locales" value="en" checked /> English</label>
+                <label><input type="checkbox" name="output_locales" value="zh-CN" checked /> 简体中文</label>
+              </div>
+            </fieldset>
+
+            <label class="field-label" for="constraints" data-i18n="constraintsLabel">Constraints</label>
+            <textarea
+              id="constraints"
+              name="constraints"
+              rows="4"
+              data-i18n-placeholder="constraintsPlaceholder"
+              placeholder="One map, no online multiplayer, game jam scope"
+            ></textarea>
+
+            <button class="primary-action" type="submit" id="generate-button" data-i18n="generate">
+              Generate plan
+            </button>
+            <p class="form-note" data-i18n="formNote">
+              The console uses the local Director workflow and does not call external model services.
+            </p>
+          </form>
+        </aside>
+
+        <section class="output-pane">
+          <header class="status-bar">
+            <div>
+              <p class="eyebrow" data-i18n="statusLabel">Plan status</p>
+              <h2 id="plan-title" data-i18n="emptyTitle">No plan generated</h2>
+            </div>
+            <div class="status-chip" id="status-chip" data-state="idle" data-i18n="idle">Idle</div>
+          </header>
+
+          <section class="pipeline" aria-label="Agent workflow pipeline">
+            <div class="pipeline-node is-active" data-step="design">
+              <span>01</span>
+              <strong>Design</strong>
+            </div>
+            <div class="pipeline-node" data-step="gdd">
+              <span>02</span>
+              <strong>GDD</strong>
+            </div>
+            <div class="pipeline-node" data-step="unreal">
+              <span>03</span>
+              <strong>Unreal</strong>
+            </div>
+            <div class="pipeline-node" data-step="assets">
+              <span>04</span>
+              <strong>Assets</strong>
+            </div>
+            <div class="pipeline-node" data-step="qa">
+              <span>05</span>
+              <strong>QA</strong>
+            </div>
+          </section>
+
+          <nav class="tabs" aria-label="Plan views">
+            <button class="tab active" type="button" data-tab="overview" data-i18n="tabOverview">Overview</button>
+            <button class="tab" type="button" data-tab="dsl" data-i18n="tabDsl">Gameplay DSL</button>
+            <button class="tab" type="button" data-tab="gdd" data-i18n="tabGdd">GDD</button>
+            <button class="tab" type="button" data-tab="build" data-i18n="tabBuild">Build</button>
+            <button class="tab" type="button" data-tab="visuals" data-i18n="tabVisuals">Visuals</button>
+            <button class="tab" type="button" data-tab="qa" data-i18n="tabQa">QA</button>
+          </nav>
+
+          <section class="panel active" id="overview-panel" data-panel="overview">
+            <div class="empty-state">
+              <div class="signal-map" aria-hidden="true">
+                <div class="signal-line"></div>
+                <div class="signal-dot dot-a"></div>
+                <div class="signal-dot dot-b"></div>
+                <div class="signal-dot dot-c"></div>
+              </div>
+              <h3 data-i18n="emptyHeading">Generate a vertical slice plan</h3>
+              <p data-i18n="emptyBody">Enter a gameplay idea to produce structured outputs for design, engine setup, assets, visuals, and QA.</p>
+            </div>
+            <div class="overview-grid hidden" id="overview-content"></div>
+          </section>
+
+          <section class="panel" id="dsl-panel" data-panel="dsl">
+            <pre id="dsl-output" class="code-output"></pre>
+          </section>
+
+          <section class="panel" id="gdd-panel" data-panel="gdd">
+            <div class="gdd-toolbar">
+              <button class="mini-action active" type="button" data-gdd-locale="en">English</button>
+              <button class="mini-action" type="button" data-gdd-locale="zh-CN">中文</button>
+            </div>
+            <pre id="gdd-output" class="code-output"></pre>
+          </section>
+
+          <section class="panel" id="build-panel" data-panel="build">
+            <div class="split-output" id="build-output"></div>
+          </section>
+
+          <section class="panel" id="visuals-panel" data-panel="visuals">
+            <div class="split-output" id="visuals-output"></div>
+          </section>
+
+          <section class="panel" id="qa-panel" data-panel="qa">
+            <div class="split-output" id="qa-output"></div>
+          </section>
+        </section>
+      </section>
+    </main>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
