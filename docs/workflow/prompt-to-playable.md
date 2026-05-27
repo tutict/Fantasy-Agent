@@ -15,6 +15,12 @@ Output:
 
 - `PromptRequest`
 
+Entry points:
+
+- Local Web Console
+- ChatGPT Workbench MCP tool call
+- Director Agent API
+
 ## Stage 2: Gameplay DSL
 
 The Gameplay Agent generates a `GameplaySpec` with:
@@ -43,6 +49,7 @@ The Blender Worker prepares procedural asset jobs. The ComfyUI Worker prepares v
 
 Future MCP servers execute controlled operations:
 
+- ChatGPT Apps MCP exposes read-only planning tools and widget state.
 - Blender MCP runs `bpy` jobs and exports assets.
 - ComfyUI MCP runs allowlisted visual reference workflows.
 - Unreal MCP creates/imports/validates project content.

@@ -11,6 +11,7 @@ Status: started.
 - Define `gameplay-schema.yaml`.
 - Provide deterministic first-pass workflow functions.
 - Document orchestration rules and game design philosophy.
+- Add a ChatGPT Apps-compatible workbench with read-only MCP planning tools and an interactive widget.
 
 ## Phase 2: Gameplay And GDD Generation
 
@@ -19,6 +20,7 @@ Status: started.
 - Add GDD rendering to `generated/gdd.md`.
 - Add examples for stealth, survival, puzzle, combat, and traversal prototypes.
 - Add tests for loop coherence, required fields, and target session length.
+- Expand ChatGPT Workbench tools from deterministic planning to LLM-backed gameplay and GDD generation while preserving read-only side-effect boundaries.
 
 ## Phase 3: Blender MCP Integration
 
@@ -52,6 +54,14 @@ Status: started.
 - Run smoke tests against the packaged prototype.
 - Open a GitHub PR containing generated specs, manifests, and automation logs.
 - Track iteration metrics across prototype runs.
+
+## Phase 7: ChatGPT Production Workspace
+
+- Add authenticated project sessions for ChatGPT-hosted production plans.
+- Persist approved generated specs, GDDs, and handoff manifests.
+- Add explicit confirmation gates for mutating Unreal, Blender, ComfyUI, GitHub, and packaging tools.
+- Stream production events back into the ChatGPT widget.
+- Prepare a submission-readiness review only after private Developer Mode workflows are stable.
 
 ## Non-Goals
 

@@ -1,0 +1,963 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fantasy Agent Workbench</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #20231f;
+        --muted: #626a62;
+        --line: #d9ddd3;
+        --surface: #f4f6f0;
+        --panel: #ffffff;
+        --soft: #edf1e8;
+        --accent: #1d6d61;
+        --blue: #315f8d;
+        --rust: #96543a;
+        --danger: #9b2e2e;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        background: var(--surface);
+        color: var(--ink);
+        font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        letter-spacing: 0;
+      }
+
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .workbench {
+        display: grid;
+        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+        min-height: 620px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .control-pane {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 16px;
+        border-right: 1px solid var(--line);
+        background: #fbfcf8;
+      }
+
+      .brand-row,
+      .status-row,
+      .button-row,
+      .tabs,
+      .locale-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .brand-row,
+      .status-row {
+        justify-content: space-between;
+      }
+
+      .brand h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.05;
+      }
+
+      .eyebrow {
+        margin: 0 0 4px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .locale-row {
+        flex: 0 0 auto;
+      }
+
+      .locale-row button,
+      .tabs button,
+      .tool-button {
+        min-height: 32px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        padding: 0 10px;
+        font-weight: 750;
+      }
+
+      .locale-row button.active,
+      .tabs button.active {
+        border-color: var(--accent);
+        background: var(--accent);
+        color: #fff;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      textarea,
+      input,
+      select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: #fff;
+        color: var(--ink);
+        outline: none;
+      }
+
+      textarea {
+        min-height: 106px;
+        resize: vertical;
+        padding: 10px;
+      }
+
+      input,
+      select {
+        min-height: 38px;
+        padding: 0 10px;
+      }
+
+      textarea:focus,
+      input:focus,
+      select:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgba(29, 109, 97, 0.14);
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .primary-button {
+        min-height: 42px;
+        border: 0;
+        border-radius: 7px;
+        background: var(--ink);
+        color: #fff;
+        font-weight: 850;
+      }
+
+      .primary-button:hover {
+        background: var(--accent);
+      }
+
+      .primary-button:disabled {
+        cursor: wait;
+        background: var(--muted);
+      }
+
+      .tool-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .tool-button {
+        min-height: 36px;
+        color: var(--ink);
+        background: #fff;
+      }
+
+      .output-pane {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .status-row {
+        min-height: 62px;
+        padding: 14px 16px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .status-row h2 {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.15;
+        overflow-wrap: anywhere;
+      }
+
+      .chip {
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        min-height: 30px;
+        padding: 5px 10px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .chip.ready {
+        border-color: rgba(29, 109, 97, 0.35);
+        background: rgba(29, 109, 97, 0.1);
+        color: var(--accent);
+      }
+
+      .chip.error {
+        border-color: rgba(155, 46, 46, 0.35);
+        background: rgba(155, 46, 46, 0.1);
+        color: var(--danger);
+      }
+
+      .pipeline {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        border-bottom: 1px solid var(--line);
+        background: var(--line);
+        gap: 1px;
+      }
+
+      .node {
+        min-height: 54px;
+        padding: 9px 10px;
+        background: #fbfcf8;
+      }
+
+      .node span {
+        display: block;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .node strong {
+        display: block;
+        margin-top: 3px;
+        font-size: 12px;
+      }
+
+      .node:nth-child(2) {
+        border-top: 3px solid var(--accent);
+      }
+
+      .node:nth-child(4) {
+        border-top: 3px solid var(--blue);
+      }
+
+      .node:nth-child(5) {
+        border-top: 3px solid var(--rust);
+      }
+
+      .tabs {
+        flex-wrap: wrap;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .panel {
+        display: none;
+        flex: 1;
+        overflow: auto;
+        padding: 16px;
+      }
+
+      .panel.active {
+        display: block;
+      }
+
+      .empty {
+        display: grid;
+        min-height: 360px;
+        place-items: center;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .section-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .block {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        padding: 12px;
+      }
+
+      .block.wide {
+        grid-column: 1 / -1;
+      }
+
+      .block h3 {
+        margin: 0 0 8px;
+        font-size: 15px;
+      }
+
+      .block p,
+      .block li {
+        color: var(--muted);
+      }
+
+      .block ul,
+      .block ol {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .block li + li {
+        margin-top: 5px;
+      }
+
+      pre {
+        min-height: 420px;
+        margin: 0;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #171b18;
+        color: #edf3eb;
+        padding: 14px;
+        white-space: pre-wrap;
+        font: 12px/1.55 "Cascadia Code", Consolas, monospace;
+      }
+
+      code {
+        font-family: "Cascadia Code", Consolas, monospace;
+        font-size: 12px;
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      @media (max-width: 820px) {
+        .workbench {
+          grid-template-columns: 1fr;
+        }
+
+        .control-pane {
+          border-right: 0;
+          border-bottom: 1px solid var(--line);
+        }
+
+        .pipeline {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .section-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="workbench">
+      <aside class="control-pane">
+        <div class="brand-row">
+          <div class="brand">
+            <p class="eyebrow" data-i18n="eyebrow">ChatGPT production workbench</p>
+            <h1>Fantasy Agent</h1>
+          </div>
+          <div class="locale-row" aria-label="Locale">
+            <button type="button" data-locale="en">EN</button>
+            <button type="button" data-locale="zh-CN">中文</button>
+          </div>
+        </div>
+
+        <label>
+          <span data-i18n="promptLabel">Gameplay idea</span>
+          <textarea
+            id="prompt"
+            minlength="8"
+            data-i18n-placeholder="promptPlaceholder"
+            placeholder="A stealth courier escapes a haunted train station"
+          ></textarea>
+        </label>
+
+        <div class="grid-2">
+          <label>
+            <span data-i18n="minutesLabel">Minutes</span>
+            <input id="target_minutes" type="number" min="5" max="15" value="10" />
+          </label>
+          <label>
+            <span data-i18n="engineLabel">Engine</span>
+            <input id="engine_version" type="text" value="UE5" />
+          </label>
+        </div>
+
+        <div class="grid-2">
+          <label>
+            <span data-i18n="sourceLabel">Source</span>
+            <select id="source_locale">
+              <option value="en">English</option>
+              <option value="zh-CN">简体中文</option>
+            </select>
+          </label>
+          <label>
+            <span data-i18n="platformLabel">Platform</span>
+            <select id="platform">
+              <option value="Windows">Windows</option>
+              <option value="SteamDeck">Steam Deck</option>
+              <option value="WebPreview">Web preview</option>
+            </select>
+          </label>
+        </div>
+
+        <label>
+          <span data-i18n="constraintsLabel">Constraints</span>
+          <input
+            id="constraints"
+            type="text"
+            data-i18n-placeholder="constraintsPlaceholder"
+            placeholder="One map, no online multiplayer, game jam scope"
+          />
+        </label>
+
+        <button class="primary-button" id="generate" type="button" data-i18n="generate">
+          Generate plan
+        </button>
+
+        <div class="tool-grid" aria-label="Production tools">
+          <button class="tool-button" type="button" data-tool="render_gdd">GDD</button>
+          <button class="tool-button" type="button" data-tool="prepare_unreal_plan">Unreal</button>
+          <button class="tool-button" type="button" data-tool="prepare_blender_plan">Blender</button>
+          <button class="tool-button" type="button" data-tool="prepare_comfyui_plan">ComfyUI</button>
+          <button class="tool-button" type="button" data-tool="prepare_qa_plan">QA</button>
+        </div>
+      </aside>
+
+      <section class="output-pane">
+        <header class="status-row">
+          <div>
+            <p class="eyebrow" data-i18n="statusLabel">Workbench status</p>
+            <h2 id="title" data-i18n="emptyTitle">No production plan loaded</h2>
+          </div>
+          <span id="status" class="chip" data-i18n="idle">Idle</span>
+        </header>
+
+        <div class="pipeline" aria-label="Fantasy Agent pipeline">
+          <div class="node"><span>01</span><strong>Prompt</strong></div>
+          <div class="node"><span>02</span><strong>Gameplay</strong></div>
+          <div class="node"><span>03</span><strong>GDD</strong></div>
+          <div class="node"><span>04</span><strong>Unreal</strong></div>
+          <div class="node"><span>05</span><strong>Assets</strong></div>
+          <div class="node"><span>06</span><strong>QA</strong></div>
+        </div>
+
+        <nav class="tabs" aria-label="Workbench panels">
+          <button type="button" class="active" data-panel-button="overview" data-i18n="tabOverview">
+            Overview
+          </button>
+          <button type="button" data-panel-button="loop" data-i18n="tabLoop">Loop</button>
+          <button type="button" data-panel-button="build" data-i18n="tabBuild">Build</button>
+          <button type="button" data-panel-button="visuals" data-i18n="tabVisuals">Visuals</button>
+          <button type="button" data-panel-button="gdd">GDD</button>
+          <button type="button" data-panel-button="qa">QA</button>
+          <button type="button" data-panel-button="dsl">DSL</button>
+        </nav>
+
+        <section class="panel active" data-panel="overview">
+          <div id="overview" class="empty" data-i18n="emptyState">
+            Generate or call a Fantasy Agent tool to inspect a playable slice plan.
+          </div>
+        </section>
+        <section class="panel" data-panel="loop"><div id="loop" class="section-grid"></div></section>
+        <section class="panel" data-panel="build"><div id="build" class="section-grid"></div></section>
+        <section class="panel" data-panel="visuals"><div id="visuals" class="section-grid"></div></section>
+        <section class="panel" data-panel="gdd"><pre id="gdd"></pre></section>
+        <section class="panel" data-panel="qa"><div id="qa" class="section-grid"></div></section>
+        <section class="panel" data-panel="dsl"><pre id="dsl"></pre></section>
+      </section>
+    </main>
+
+    <script>
+      const strings = {
+        en: {
+          eyebrow: "ChatGPT production workbench",
+          promptLabel: "Gameplay idea",
+          promptPlaceholder: "A stealth courier escapes a haunted train station",
+          minutesLabel: "Minutes",
+          engineLabel: "Engine",
+          sourceLabel: "Source",
+          platformLabel: "Platform",
+          constraintsLabel: "Constraints",
+          constraintsPlaceholder: "One map, no online multiplayer, game jam scope",
+          generate: "Generate plan",
+          statusLabel: "Workbench status",
+          emptyTitle: "No production plan loaded",
+          focusedTitle: "Focused handoff loaded",
+          emptyState: "Generate or call a Fantasy Agent tool to inspect a playable slice plan.",
+          idle: "Idle",
+          running: "Running",
+          ready: "Ready",
+          error: "Error",
+          tabOverview: "Overview",
+          tabLoop: "Loop",
+          tabBuild: "Build",
+          tabVisuals: "Visuals",
+          session: "Target session",
+          pillars: "Design pillars",
+          verbs: "Core verbs",
+          win: "Win state",
+          failure: "Failure states",
+          next: "Next actions",
+          loop: "Core loop",
+          systems: "Systems",
+          beats: "Level beats",
+          unreal: "Unreal plan",
+          blender: "Blender jobs",
+          comfyui: "ComfyUI references",
+          rules: "Usage rules",
+          qa: "QA checks",
+          smoke: "Smoke tests",
+          playability: "Playability",
+          packaging: "Packaging",
+          minutes: "minutes"
+        },
+        "zh-CN": {
+          eyebrow: "ChatGPT 生产工作台",
+          promptLabel: "玩法想法",
+          promptPlaceholder: "一个潜行信使逃离闹鬼火车站",
+          minutesLabel: "分钟",
+          engineLabel: "引擎",
+          sourceLabel: "输入",
+          platformLabel: "平台",
+          constraintsLabel: "约束",
+          constraintsPlaceholder: "一张地图，不做联网多人，game jam 规模",
+          generate: "生成计划",
+          statusLabel: "工作台状态",
+          emptyTitle: "尚未载入生产计划",
+          focusedTitle: "已载入单项交接",
+          emptyState: "生成或调用 Fantasy Agent 工具来检查可玩切片计划。",
+          idle: "空闲",
+          running: "运行中",
+          ready: "就绪",
+          error: "错误",
+          tabOverview: "概览",
+          tabLoop: "循环",
+          tabBuild: "构建",
+          tabVisuals: "视觉",
+          session: "目标时长",
+          pillars: "设计支柱",
+          verbs: "核心动词",
+          win: "胜利状态",
+          failure: "失败状态",
+          next: "下一步",
+          loop: "核心循环",
+          systems: "系统",
+          beats: "关卡节奏",
+          unreal: "Unreal 计划",
+          blender: "Blender 任务",
+          comfyui: "ComfyUI 参考",
+          rules: "使用规则",
+          qa: "QA 检查",
+          smoke: "冒烟测试",
+          playability: "可玩性",
+          packaging: "打包",
+          minutes: "分钟"
+        }
+      };
+
+      const bridge = window.openai;
+      const state = {
+        locale: bridge?.locale?.startsWith("zh") ? "zh-CN" : "en",
+        status: "idle",
+        lastInput: null,
+        plan: null,
+        gdd: null,
+        unrealPlan: null,
+        blenderPlan: null,
+        comfyuiPlan: null,
+        qaPlan: null,
+        activePanel: "overview"
+      };
+
+      const nodes = {
+        prompt: document.querySelector("#prompt"),
+        targetMinutes: document.querySelector("#target_minutes"),
+        engineVersion: document.querySelector("#engine_version"),
+        sourceLocale: document.querySelector("#source_locale"),
+        platform: document.querySelector("#platform"),
+        constraints: document.querySelector("#constraints"),
+        generate: document.querySelector("#generate"),
+        status: document.querySelector("#status"),
+        title: document.querySelector("#title"),
+        overview: document.querySelector("#overview"),
+        loop: document.querySelector("#loop"),
+        build: document.querySelector("#build"),
+        visuals: document.querySelector("#visuals"),
+        gdd: document.querySelector("#gdd"),
+        qa: document.querySelector("#qa"),
+        dsl: document.querySelector("#dsl")
+      };
+
+      function t(key) {
+        return strings[state.locale]?.[key] || strings.en[key] || key;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function list(items) {
+        if (!items || !items.length) return "<p>-</p>";
+        return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+      }
+
+      function numbered(items, mapper) {
+        if (!items || !items.length) return "<p>-</p>";
+        return `<ol>${items.map((item, index) => `<li>${mapper(item, index)}</li>`).join("")}</ol>`;
+      }
+
+      function block(title, body, wide = false) {
+        return `<section class="block${wide ? " wide" : ""}"><h3>${escapeHtml(title)}</h3>${body}</section>`;
+      }
+
+      function applyLocale(locale) {
+        state.locale = locale;
+        document.documentElement.lang = locale;
+        document.querySelectorAll("[data-i18n]").forEach((node) => {
+          node.textContent = t(node.dataset.i18n);
+        });
+        document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+          node.placeholder = t(node.dataset.i18nPlaceholder);
+        });
+        document.querySelectorAll("[data-locale]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.locale === locale);
+        });
+        render();
+      }
+
+      function setStatus(status) {
+        state.status = status;
+        nodes.status.className = `chip ${status === "ready" || status === "error" ? status : ""}`;
+        nodes.status.textContent = t(status);
+      }
+
+      function requestPayload() {
+        const constraints = nodes.constraints.value
+          .split(/\r?\n|,/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+        return {
+          prompt: nodes.prompt.value.trim(),
+          target_minutes: Number(nodes.targetMinutes.value || 10),
+          engine_version: nodes.engineVersion.value.trim() || "UE5",
+          platforms: [nodes.platform.value || "Windows"],
+          jam_scope: true,
+          constraints,
+          source_locale: nodes.sourceLocale.value,
+          output_locales: ["en", "zh-CN"]
+        };
+      }
+
+      async function callTool(name) {
+        const payload = requestPayload();
+        if (!payload.prompt || payload.prompt.length < 8) {
+          nodes.prompt.focus();
+          return;
+        }
+        state.lastInput = payload;
+        setStatus("running");
+        nodes.generate.disabled = true;
+        try {
+          let result;
+          if (bridge?.callTool) {
+            result = await bridge.callTool(name, payload);
+          } else {
+            const response = await fetch(`/debug/tool/${name}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload)
+            });
+            result = await response.json();
+          }
+          ingestToolResult(result);
+          setStatus("ready");
+        } catch (error) {
+          setStatus("error");
+          nodes.title.textContent = error.message || String(error);
+        } finally {
+          nodes.generate.disabled = false;
+        }
+      }
+
+      function ingestToolResult(result) {
+        if (!result) return;
+        const structured = result.structuredContent || result.toolOutput || result;
+        const meta = result._meta || result.toolResponseMetadata || bridge?.toolResponseMetadata || {};
+
+        if (structured.plan || meta.plan) {
+          state.plan = structured.plan || meta.plan;
+          state.gdd = state.plan.gdd;
+          state.unrealPlan = state.plan.unreal_plan;
+          state.blenderPlan = state.plan.blender_plan;
+          state.comfyuiPlan = state.plan.comfyui_plan;
+          state.qaPlan = state.plan.qa_plan;
+        }
+        if (structured.gdd || meta.gdd) state.gdd = structured.gdd || meta.gdd;
+        if (structured.unreal_plan || meta.unrealPlan) state.unrealPlan = structured.unreal_plan || meta.unrealPlan;
+        if (structured.blender_plan || meta.blenderPlan) state.blenderPlan = structured.blender_plan || meta.blenderPlan;
+        if (structured.comfyui_plan || meta.comfyuiPlan) state.comfyuiPlan = structured.comfyui_plan || meta.comfyuiPlan;
+        if (structured.qa_plan || meta.qaPlan) state.qaPlan = structured.qa_plan || meta.qaPlan;
+        if (meta.request) state.lastInput = meta.request;
+        if (meta.activePanel) state.activePanel = meta.activePanel;
+        render();
+        activatePanel(state.activePanel);
+      }
+
+      function render() {
+        const plan = state.plan;
+        const spec = plan?.gameplay_spec;
+        if (!plan && !state.unrealPlan && !state.blenderPlan && !state.comfyuiPlan && !state.qaPlan) {
+          nodes.title.textContent = t("emptyTitle");
+          nodes.overview.className = "empty";
+          nodes.overview.textContent = t("emptyState");
+          nodes.loop.innerHTML = "";
+          nodes.build.innerHTML = "";
+          nodes.visuals.innerHTML = "";
+          nodes.qa.innerHTML = "";
+          nodes.gdd.textContent = "";
+          nodes.dsl.textContent = "";
+          setStatus(state.status);
+          return;
+        }
+
+        if (spec) {
+          const zhTitle = spec.i18n?.field_translations?.title?.["zh-CN"];
+          nodes.title.textContent = state.locale === "zh-CN" && zhTitle ? zhTitle : spec.title;
+          nodes.overview.className = "section-grid";
+          nodes.overview.innerHTML = [
+            block(t("session"), `<p>${spec.target_session_minutes} ${t("minutes")}</p>`),
+            block(t("verbs"), list(spec.core_verbs)),
+            block(t("pillars"), list(spec.design_pillars), true),
+            block(t("win"), `<p>${escapeHtml(spec.win_state)}</p>`),
+            block(t("failure"), list(spec.failure_states)),
+            block(t("next"), list(plan.next_actions), true)
+          ].join("");
+          nodes.loop.innerHTML = [
+            block(
+              t("loop"),
+              numbered(
+                spec.core_loop,
+                (step) =>
+                  `<strong>${escapeHtml(step.action)}</strong><br><span>${escapeHtml(step.player_decision)}</span>`
+              ),
+              true
+            ),
+            block(
+              t("systems"),
+              numbered(
+                spec.systems,
+                (system) =>
+                  `<strong>${escapeHtml(system.name)}</strong><br><span>${escapeHtml(system.purpose)}</span>`
+              ),
+              true
+            ),
+            block(
+              t("beats"),
+              numbered(
+                spec.level_beats,
+                (beat) =>
+                  `<strong>${escapeHtml(beat.name)}</strong><br><span>${escapeHtml(beat.gameplay_focus)}</span>`
+              ),
+              true
+            )
+          ].join("");
+          state.gdd = state.gdd || plan.gdd;
+          state.unrealPlan = state.unrealPlan || plan.unreal_plan;
+          state.blenderPlan = state.blenderPlan || plan.blender_plan;
+          state.comfyuiPlan = state.comfyuiPlan || plan.comfyui_plan;
+          state.qaPlan = state.qaPlan || plan.qa_plan;
+          nodes.dsl.textContent = JSON.stringify(spec, null, 2);
+        } else {
+          nodes.title.textContent = t("focusedTitle");
+          nodes.overview.className = "section-grid";
+          nodes.overview.innerHTML = [
+            state.unrealPlan ? block(t("unreal"), list(state.unrealPlan.maps), true) : "",
+            state.blenderPlan
+              ? block(
+                  t("blender"),
+                  numbered(state.blenderPlan.jobs, (job) => `<strong>${escapeHtml(job.asset_name)}</strong>`)
+                )
+              : "",
+            state.comfyuiPlan
+              ? block(
+                  t("comfyui"),
+                  numbered(state.comfyuiPlan.jobs, (job) => `<strong>${escapeHtml(job.job_id)}</strong>`)
+                )
+              : "",
+            state.qaPlan ? block(t("qa"), list(state.qaPlan.metrics), true) : ""
+          ].join("");
+          nodes.dsl.textContent = JSON.stringify(
+            {
+              unreal_plan: state.unrealPlan,
+              blender_plan: state.blenderPlan,
+              comfyui_plan: state.comfyuiPlan,
+              qa_plan: state.qaPlan
+            },
+            null,
+            2
+          );
+        }
+
+        renderBuild();
+        renderVisuals();
+        renderQa();
+        renderGdd();
+        setStatus(state.status === "running" ? "running" : "ready");
+      }
+
+      function renderBuild() {
+        const unreal = state.unrealPlan;
+        const blender = state.blenderPlan;
+        nodes.build.innerHTML = [
+          unreal
+            ? block(
+                t("unreal"),
+                [
+                  list(unreal.maps),
+                  list(unreal.gameplay_classes),
+                  list(unreal.automation_steps)
+                ].join(""),
+                true
+              )
+            : "",
+          blender
+            ? block(
+                t("blender"),
+                numbered(
+                  blender.jobs,
+                  (job) =>
+                    `<strong>${escapeHtml(job.asset_name)}</strong><br><span>${escapeHtml(job.purpose)}</span><br><code>${escapeHtml(job.export_path)}</code>`
+                ),
+                true
+              )
+            : ""
+        ].join("");
+      }
+
+      function renderVisuals() {
+        const comfy = state.comfyuiPlan;
+        nodes.visuals.innerHTML = comfy
+          ? [
+              block(
+                t("comfyui"),
+                numbered(
+                  comfy.jobs,
+                  (job) =>
+                    `<strong>${escapeHtml(job.job_id)}</strong><br><span>${escapeHtml(job.gameplay_constraint)}</span><br><code>${escapeHtml(job.workflow_template)}</code>`
+                ),
+                true
+              ),
+              block(t("rules"), list(comfy.usage_rules), true)
+            ].join("")
+          : "";
+      }
+
+      function renderQa() {
+        const qa = state.qaPlan;
+        nodes.qa.innerHTML = qa
+          ? [
+              block(t("smoke"), list(qa.smoke_tests)),
+              block(t("playability"), list(qa.playability_checks)),
+              block(t("failure"), list(qa.failure_checks)),
+              block(t("packaging"), list(qa.packaging_checks))
+            ].join("")
+          : "";
+      }
+
+      function renderGdd() {
+        const gdd = state.gdd;
+        if (!gdd) {
+          nodes.gdd.textContent = "";
+          return;
+        }
+        const markdown =
+          state.locale === "zh-CN"
+            ? gdd.markdown_by_locale?.["zh-CN"] || gdd.markdown
+            : gdd.markdown_by_locale?.en || gdd.markdown;
+        nodes.gdd.textContent = markdown || "";
+      }
+
+      function activatePanel(name) {
+        const target = name || "overview";
+        document.querySelectorAll("[data-panel-button]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.panelButton === target);
+        });
+        document.querySelectorAll("[data-panel]").forEach((panel) => {
+          panel.classList.toggle("active", panel.dataset.panel === target);
+        });
+      }
+
+      document.querySelectorAll("[data-locale]").forEach((button) => {
+        button.addEventListener("click", () => applyLocale(button.dataset.locale));
+      });
+
+      document.querySelectorAll("[data-panel-button]").forEach((button) => {
+        button.addEventListener("click", () => {
+          state.activePanel = button.dataset.panelButton;
+          activatePanel(state.activePanel);
+        });
+      });
+
+      nodes.generate.addEventListener("click", () => callTool("generate_game_production_plan"));
+      document.querySelectorAll("[data-tool]").forEach((button) => {
+        button.addEventListener("click", () => callTool(button.dataset.tool));
+      });
+
+      window.addEventListener("message", (event) => {
+        const data = event.data;
+        if (data?.method === "ui/notifications/tool-result") {
+          ingestToolResult(data.params?.result || data.params || {});
+        }
+      });
+
+      if (bridge?.toolInput) {
+        state.lastInput = bridge.toolInput;
+        nodes.prompt.value = bridge.toolInput.prompt || "";
+        nodes.targetMinutes.value = bridge.toolInput.target_minutes || 10;
+        nodes.engineVersion.value = bridge.toolInput.engine_version || "UE5";
+        nodes.sourceLocale.value = bridge.toolInput.source_locale || "en";
+        nodes.platform.value = bridge.toolInput.platforms?.[0] || "Windows";
+        nodes.constraints.value = (bridge.toolInput.constraints || []).join(", ");
+      }
+
+      if (bridge?.toolOutput || bridge?.toolResponseMetadata) {
+        ingestToolResult({
+          structuredContent: bridge.toolOutput || {},
+          _meta: bridge.toolResponseMetadata || {}
+        });
+      }
+
+      applyLocale(state.locale);
+    </script>
+  </body>
+</html>

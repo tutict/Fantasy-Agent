@@ -1,0 +1,42 @@
+server: fantasy-agent-chatgpt-workbench
+transport: json-rpc-over-http
+endpoint: /mcp
+resource:
+  uri: ui://fantasy-agent/workbench.html
+  mime_type: text/html;profile=mcp-app
+tools:
+  - name: generate_game_production_plan
+    read_only: true
+    idempotent: true
+    purpose: Generate a full prompt-to-playable DirectorBuildPlan.
+    side_effects: []
+  - name: render_gdd
+    read_only: true
+    idempotent: true
+    purpose: Generate a structured bilingual markdown GDD.
+    side_effects: []
+  - name: prepare_unreal_plan
+    read_only: true
+    idempotent: true
+    purpose: Prepare a UE5 project architecture handoff without launching Unreal.
+    side_effects: []
+  - name: prepare_blender_plan
+    read_only: true
+    idempotent: true
+    purpose: Prepare procedural greybox asset jobs without launching Blender.
+    side_effects: []
+  - name: prepare_comfyui_plan
+    read_only: true
+    idempotent: true
+    purpose: Prepare gameplay-readable visual reference jobs without calling ComfyUI.
+    side_effects: []
+  - name: prepare_qa_plan
+    read_only: true
+    idempotent: true
+    purpose: Prepare playable-loop smoke, failure, packaging, and metrics checks.
+    side_effects: []
+safety:
+  - ChatGPT tools must not execute Unreal, Blender, ComfyUI, packaging, or GitHub side effects by default.
+  - Future mutating MCP tools require explicit side-effect disclosure and user confirmation.
+  - Gameplay decisions remain upstream of visual reference generation.
+

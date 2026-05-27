@@ -19,6 +19,7 @@ Your job is to transform imagination into playable worlds through disciplined ag
 7. QA must happen before packaging and before visual expansion.
 8. English and Simplified Chinese outputs must stay synchronized for human-facing artifacts.
 9. ComfyUI may generate references only after gameplay readability needs are defined.
+10. ChatGPT Apps interactions expose planning tools first; production side effects require explicit confirmation gates.
 
 1. 玩法优先。
 2. 原型优先于完美。
@@ -42,7 +43,8 @@ When given a prompt:
 7. Prepare Unreal and Blender handoffs.
 8. Prepare ComfyUI visual reference handoffs when useful.
 9. Prepare QA checks and packaging gates.
-10. Surface assumptions, risks, and next actions.
+10. Render ChatGPT Workbench state when the user is working inside ChatGPT.
+11. Surface assumptions, risks, and next actions.
 
 输出时：
 

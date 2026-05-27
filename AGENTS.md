@@ -16,6 +16,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - QA checks must run before packaging or visual expansion.
 - English and Simplified Chinese outputs must stay synchronized through the `i18n` bundle.
 - ComfyUI is a visual reference worker, not a gameplay authority.
+- ChatGPT Apps tools are interactive planning surfaces; they must not execute production side effects without explicit confirmation.
 
 - 玩法优先于图形。
 - 每个生成资产、机制和自动化步骤都必须服务可玩循环。
@@ -26,6 +27,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - MCP 工具副作用必须在执行前声明清楚。
 - QA 检查必须先于打包和视觉扩展。
 - 中英文输出必须通过 `i18n` 翻译包保持同步。
+- ChatGPT Apps 工具是交互式计划入口；没有明确确认时不得执行生产副作用。
 
 ## Locale Rules
 
@@ -201,6 +203,30 @@ Rules:
 - Every prompt must include a gameplay constraint.
 - Generated images require review before becoming Unreal textures or UI assets.
 - Avoid decorative images that do not clarify objectives, hazards, routes, materials, or feedback.
+
+## ChatGPT Workbench
+
+Responsibility:
+
+- Expose Fantasy Agent as a ChatGPT Apps-compatible interactive workbench.
+- Route ChatGPT tool calls into the same structured planning contracts used by local agents.
+- Render gameplay, GDD, Unreal, Blender, ComfyUI, and QA handoffs in a widget.
+
+Input:
+
+- `PromptRequest`
+
+Output:
+
+- `DirectorBuildPlan`
+- Focused sub-plans such as `GDDDocument`, `UnrealProjectPlan`, `BlenderAssetPlan`, `ComfyUIVisualPlan`, or `QAPlan`
+
+Rules:
+
+- Tools must be read-only and idempotent until explicit side-effect gates are implemented.
+- Widget state may summarize plans, but implementation identifiers remain English.
+- ChatGPT interaction must preserve the gameplay-first hierarchy and i18n outputs.
+- Do not launch Unreal, Blender, ComfyUI, package builds, write files, or push GitHub changes from this surface by default.
 
 ## QA Agent
 

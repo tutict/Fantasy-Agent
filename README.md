@@ -24,6 +24,7 @@ Fantasy Agent focuses on:
 - UE5 project architecture and Unreal Python automation
 - Blender `bpy` procedural asset workflows
 - ComfyUI visual reference workflows
+- ChatGPT Apps workbench for interactive MCP tool calls
 - MCP contracts for Unreal, Blender, ComfyUI, and GitHub tooling
 - Multi-agent workflows that can evolve into LangGraph execution
 
@@ -59,6 +60,16 @@ Fantasy Agent 支持英文与简体中文并行输出。
 - `GDDDocument.markdown_by_locale` 保存各语言版本文档。
 - 同时请求中英双语时，`GDDDocument.markdown` 会返回合并后的双语文档。
 
+## ChatGPT Workbench / ChatGPT 工作台
+
+Fantasy Agent now includes a ChatGPT Apps-compatible workbench under `apps/chatgpt-workbench`. It exposes read-only MCP tools for generating and inspecting gameplay-first production plans inside ChatGPT.
+
+Fantasy Agent 现在包含 `apps/chatgpt-workbench`，可作为 ChatGPT Apps 兼容的工作台运行。它通过只读 MCP 工具在 ChatGPT 内生成并检查玩法优先的生产计划。
+
+The first version does not execute Unreal, Blender, ComfyUI, packaging, or GitHub side effects. It prepares structured handoffs first, then future MCP tools can execute allowlisted production steps with explicit approval.
+
+第一版不会执行 Unreal、Blender、ComfyUI、打包或 GitHub 副作用。它先准备结构化交接结果，后续 MCP 工具再在明确确认后执行 allowlist 内的生产步骤。
+
 ## Repository Layout
 
 ## 仓库结构
@@ -67,6 +78,7 @@ Fantasy Agent 支持英文与简体中文并行输出。
 Fantasy-Agent/
 |-- apps/
 |   |-- web-console/        # Local browser UI for prompt-to-playable planning
+|   |-- chatgpt-workbench/  # ChatGPT Apps MCP endpoint and interactive widget
 |   |-- director-agent/     # Orchestrates prompt-to-playable planning
 |   |-- gameplay-agent/     # Converts prompts into gameplay DSL specs
 |   |-- unreal-builder/     # Prepares UE5 project architecture
@@ -82,6 +94,7 @@ Fantasy-Agent/
 |   |-- blender-generator/
 |   `-- comfyui-generator/
 |-- mcp/
+|   |-- chatgpt-apps-mcp/
 |   |-- blender-mcp/
 |   |-- unreal-mcp/
 |   |-- comfyui-mcp/
@@ -151,6 +164,24 @@ Open:
 
 ```text
 http://127.0.0.1:7860
+```
+
+Run the ChatGPT Workbench MCP server:
+
+```bash
+uvicorn app.main:app --reload --app-dir apps/chatgpt-workbench --host 127.0.0.1 --port 8787
+```
+
+Local preview:
+
+```text
+http://127.0.0.1:8787
+```
+
+ChatGPT Developer Mode should connect to an HTTPS-tunneled URL ending in:
+
+```text
+/mcp
 ```
 
 Example request:
