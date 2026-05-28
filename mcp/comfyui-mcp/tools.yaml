@@ -1,5 +1,73 @@
 server: comfyui-mcp
 tools:
+  probe_comfyui_capabilities:
+    description: "Discover the active local ComfyUI endpoint, required txt2img nodes, available checkpoints, and blocking setup issues."
+    input:
+      type: object
+      properties:
+        endpoint:
+          type: string
+          default: "http://127.0.0.1:8188"
+        endpoint_candidates:
+          type: array
+          items:
+            type: string
+          default:
+            - "http://127.0.0.1:8188"
+            - "http://localhost:8188"
+            - "http://127.0.0.1:8001"
+            - "http://localhost:8001"
+        auto_discover_endpoint:
+          type: boolean
+          default: true
+        allow_remote_endpoint:
+          type: boolean
+          default: false
+        require_checkpoint:
+          type: boolean
+          default: true
+        preferred_checkpoint_name:
+          type:
+            - string
+            - "null"
+    output:
+      type: object
+      required:
+        - status
+        - endpoint
+        - required_nodes
+        - checkpoints
+        - blockers
+      properties:
+        status:
+          enum:
+            - ready
+            - degraded
+            - unavailable
+        endpoint:
+          type: string
+        selected_checkpoint:
+          type:
+            - string
+            - "null"
+        required_nodes:
+          type: object
+        checkpoints:
+          type: array
+          items:
+            type: string
+        blockers:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+    safety:
+      - "Read-only capability check."
+      - "Remote ComfyUI endpoints require allow_remote_endpoint=true."
+      - "Do not submit prompts during probing."
   prepare_visual_reference_workflows:
     description: "Prepare allowlisted ComfyUI workflow JSON files and a run manifest from a ComfyUIVisualPlan."
     input:
@@ -12,6 +80,11 @@ tools:
         output_dir:
           type: string
           default: "generated/comfyui"
+        checkpoint_name:
+          type:
+            - string
+            - "null"
+          description: "Optional checkpoint override injected into API workflow templates."
         write_files:
           type: boolean
           default: false
@@ -57,6 +130,21 @@ tools:
         output_dir:
           type: string
           default: "generated/comfyui"
+        checkpoint_name:
+          type:
+            - string
+            - "null"
+          description: "Optional checkpoint override. If omitted, execution probes local checkpoints and auto-selects the first available model."
+        auto_discover_endpoint:
+          type: boolean
+          default: true
+        endpoint_candidates:
+          type: array
+          items:
+            type: string
+        validate_server_capabilities:
+          type: boolean
+          default: true
         confirmed_side_effects:
           type: boolean
           description: "Must be true after explicit user confirmation."
@@ -117,5 +205,6 @@ tools:
       - "Refuse output paths outside generated/comfyui."
       - "Require each job to include a gameplay_constraint."
       - "Run only templates from templates/comfyui."
+      - "Block before queueing when required nodes or checkpoint models are unavailable."
       - "Require confirmed_side_effects before submitting prompts."
       - "Generated images require review before becoming Unreal textures or UI assets."

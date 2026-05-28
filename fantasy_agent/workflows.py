@@ -7,8 +7,10 @@ from fantasy_agent.contracts import (
     ComfyUIPromptJob,
     ComfyUIVisualPlan,
     DirectorBuildPlan,
+    DirectorTaskBreakdown,
     GameplaySpec,
     PromptRequest,
+    ProductionTask,
     QAPlan,
     UnrealProjectPlan,
 )
@@ -42,6 +44,15 @@ BLENDER_KIT_JOBS: tuple[tuple[str, str, BlenderAssetKind], ...] = (
         "ui_proxy_mesh",
     ),
 )
+
+DIRECTOR_NEXT_ACTIONS = [
+    "Review generated gameplay spec for loop coherence",
+    "Export gameplay spec and GDD into generated/",
+    "Run Blender greybox asset job",
+    "Run ComfyUI reference jobs only after gameplay readability needs are approved",
+    "Create UE project structure and import generated assets",
+    "Run QA smoke test before adding visual polish",
+]
 
 
 def prepare_unreal_project(spec: GameplaySpec, engine_version: str = "UE5") -> UnrealProjectPlan:
@@ -243,21 +254,264 @@ def prepare_qa_plan(spec: GameplaySpec) -> QAPlan:
     )
 
 
-def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
+def decompose_production_tasks(request: PromptRequest) -> DirectorTaskBreakdown:
     gameplay_spec = design_from_prompt(request)
-    return DirectorBuildPlan(
-        gameplay_spec=gameplay_spec,
-        gdd=render_gdd(gameplay_spec),
+    return _build_task_breakdown(
+        request=request,
+        spec=gameplay_spec,
         unreal_plan=prepare_unreal_project(gameplay_spec, request.engine_version),
         blender_plan=prepare_blender_assets(gameplay_spec),
         comfyui_plan=prepare_comfyui_visuals(gameplay_spec),
         qa_plan=prepare_qa_plan(gameplay_spec),
-        next_actions=[
-            "Review generated gameplay spec for loop coherence",
-            "Export gameplay spec and GDD into generated/",
-            "Run Blender greybox asset job",
-            "Run ComfyUI reference jobs only after gameplay readability needs are approved",
-            "Create UE project structure and import generated assets",
-            "Run QA smoke test before adding visual polish",
+    )
+
+
+def _task(
+    *,
+    task_id: str,
+    title: str,
+    title_zh: str,
+    agent: str,
+    purpose: str,
+    inputs: list[str],
+    outputs: list[str],
+    side_effects: list[str] | None = None,
+    depends_on: list[str] | None = None,
+    artifacts: list[str] | None = None,
+    status: str = "pending",
+    requires_confirmation: bool = False,
+    risks: list[str] | None = None,
+) -> ProductionTask:
+    return ProductionTask(
+        id=task_id,
+        title=title,
+        title_i18n={"en": title, "zh-CN": title_zh},
+        agent=agent,  # type: ignore[arg-type]
+        purpose=purpose,
+        inputs=inputs,
+        outputs=outputs,
+        side_effects=side_effects or [],
+        depends_on=depends_on or [],
+        artifacts=artifacts or [],
+        status=status,  # type: ignore[arg-type]
+        requires_confirmation=requires_confirmation,
+        risks=risks or [],
+    )
+
+
+def _build_task_breakdown(
+    *,
+    request: PromptRequest,
+    spec: GameplaySpec,
+    unreal_plan: UnrealProjectPlan,
+    blender_plan: BlenderAssetPlan,
+    comfyui_plan: ComfyUIVisualPlan,
+    qa_plan: QAPlan,
+) -> DirectorTaskBreakdown:
+    tasks = [
+        _task(
+            task_id="gameplay_spec_review",
+            title="Gameplay spec review",
+            title_zh="玩法规格审查",
+            agent="gameplay-agent",
+            purpose="Validate the core loop, verbs, pacing, progression, win state, and failure states.",
+            inputs=["PromptRequest", "user constraints"],
+            outputs=["GameplaySpec"],
+            artifacts=["generated/gameplay-spec.yaml"],
+            status="ready",
+            risks=["Reject mechanics that do not change player decisions."],
+        ),
+        _task(
+            task_id="gdd_generation",
+            title="Structured GDD generation",
+            title_zh="结构化 GDD 生成",
+            agent="gdd-writer",
+            purpose="Render implementation-facing markdown without adding unapproved features.",
+            inputs=["GameplaySpec"],
+            outputs=["GDDDocument"],
+            depends_on=["gameplay_spec_review"],
+            artifacts=["generated/gdd.md"],
+            status="ready",
+        ),
+        _task(
+            task_id="level_beat_plan",
+            title="Level beat plan",
+            title_zh="关卡节奏计划",
+            agent="level-director",
+            purpose="Turn the loop into first-minute teaching, midpoint combination, and final challenge beats.",
+            inputs=["GameplaySpec.level_beats", "GameplaySpec.asset_needs"],
+            outputs=["level beat plan", "greybox requirements"],
+            depends_on=["gameplay_spec_review"],
+            artifacts=["generated/level-beats.yaml"],
+            status="ready",
+        ),
+        _task(
+            task_id="blender_asset_plan",
+            title="Blender asset plan",
+            title_zh="Blender 资产计划",
+            agent="blender-worker",
+            purpose=f"Prepare {len(blender_plan.jobs)} modular greybox asset jobs for readable play.",
+            inputs=["GameplaySpec.asset_needs"],
+            outputs=["BlenderAssetPlan", "Unreal import manifest plan"],
+            depends_on=["level_beat_plan"],
+            artifacts=["generated/blender-asset-plan.yaml"],
+            status="ready",
+        ),
+        _task(
+            task_id="blender_asset_generation",
+            title="Generate Blender assets",
+            title_zh="生成 Blender 资产",
+            agent="blender-worker",
+            purpose="Run approved Blender Python to create scale-correct FBX or GLB greybox assets.",
+            inputs=["BlenderAssetPlan"],
+            outputs=["FBX or GLB exports", "UnrealImportManifest"],
+            side_effects=[
+                "launches Blender",
+                "writes generated/blender scripts",
+                "writes generated/assets mesh exports",
+            ],
+            depends_on=["blender_asset_plan"],
+            artifacts=["generated/assets/*.fbx", "generated/import-manifest.yaml"],
+            status="pending",
+            requires_confirmation=True,
+        ),
+        _task(
+            task_id="comfyui_visual_plan",
+            title="ComfyUI visual plan",
+            title_zh="ComfyUI 视觉计划",
+            agent="comfyui-worker",
+            purpose=f"Prepare {len(comfyui_plan.jobs)} gameplay-readable reference jobs.",
+            inputs=["GameplaySpec.notes_for_comfyui", "GameplaySpec.design_pillars"],
+            outputs=["ComfyUIVisualPlan"],
+            depends_on=["gameplay_spec_review"],
+            artifacts=["generated/comfyui/comfyui-visual-plan.yaml"],
+            status="ready",
+        ),
+        _task(
+            task_id="comfyui_reference_generation",
+            title="Generate ComfyUI references",
+            title_zh="生成 ComfyUI 参考图",
+            agent="comfyui-worker",
+            purpose="Submit approved local ComfyUI workflow jobs for readability, material, and UI references.",
+            inputs=["ComfyUIVisualPlan", "local ComfyUI checkpoint"],
+            outputs=["review reference images", "ComfyUIRunManifest"],
+            side_effects=[
+                "submits ComfyUI prompt jobs",
+                "writes generated/comfyui images",
+                "writes generated/logs/comfyui logs",
+            ],
+            depends_on=["comfyui_visual_plan"],
+            artifacts=["generated/comfyui/*/*.png", "generated/comfyui/run-manifest.json"],
+            status="pending",
+            requires_confirmation=True,
+            risks=["References must be reviewed before becoming UE textures or UI assets."],
+        ),
+        _task(
+            task_id="unreal_project_setup",
+            title="Unreal project setup",
+            title_zh="Unreal 项目搭建",
+            agent="unreal-builder",
+            purpose=f"Prepare {unreal_plan.project_name} folders, plugins, maps, classes, and setup scripts.",
+            inputs=["UnrealProjectPlan", "GameplaySpec"],
+            outputs=["UE project structure", "content manifest", "setup script"],
+            side_effects=[
+                "writes generated/unreal project files",
+                "creates generated Unreal content folders",
+            ],
+            depends_on=["gameplay_spec_review", "level_beat_plan"],
+            artifacts=["generated/unreal/**/*.uproject", "generated/unreal/content-manifest.json"],
+            status="pending",
+            requires_confirmation=True,
+            risks=["Requires a compatible local Unreal Engine installation before editor validation."],
+        ),
+        _task(
+            task_id="unreal_asset_ingest",
+            title="Unreal asset ingest",
+            title_zh="Unreal 资产导入",
+            agent="unreal-builder",
+            purpose="Move reviewed Blender and ComfyUI outputs into the generated Unreal project.",
+            inputs=["UnrealAssetIngestManifest", "Blender exports", "reviewed ComfyUI references"],
+            outputs=["imported UE assets", "ingest logs"],
+            side_effects=["launches Unreal Editor", "imports generated assets into Content"],
+            depends_on=[
+                "unreal_project_setup",
+                "blender_asset_generation",
+                "comfyui_reference_generation",
+            ],
+            artifacts=["generated/unreal/*/Content/**", "generated/logs/unreal/*.log"],
+            status="blocked",
+            requires_confirmation=True,
+            risks=["Blocked until source assets exist and the UE project has been generated."],
+        ),
+        _task(
+            task_id="qa_plan",
+            title="QA plan",
+            title_zh="QA 计划",
+            agent="qa-agent",
+            purpose=f"Prepare smoke, playability, failure, and packaging checks for {qa_plan.target_session_minutes} minutes.",
+            inputs=["GameplaySpec", "UnrealProjectPlan"],
+            outputs=["QAPlan"],
+            depends_on=["gameplay_spec_review"],
+            artifacts=["generated/qa-plan.yaml"],
+            status="ready",
+        ),
+        _task(
+            task_id="playability_smoke_test",
+            title="Playability smoke test",
+            title_zh="可玩性冒烟测试",
+            agent="qa-agent",
+            purpose="Verify objective readability, restart flow, collision, map load, and package readiness.",
+            inputs=["generated Unreal project", "imported assets", "QAPlan"],
+            outputs=["QA report", "blocking issues"],
+            side_effects=["runs Unreal commandlets or packaged build checks"],
+            depends_on=["unreal_asset_ingest", "qa_plan"],
+            artifacts=["generated/qa-report.json", "generated/logs/qa/*.log"],
+            status="blocked",
+            requires_confirmation=True,
+            risks=["Run this before visual polish or packaging expansion."],
+        ),
+    ]
+    goal = f"Produce a {spec.target_session_minutes}-minute playable vertical slice for {spec.title}."
+    return DirectorTaskBreakdown(
+        source_prompt=request.prompt,
+        goal=goal,
+        goal_i18n={
+            "en": goal,
+            "zh-CN": f"为 {spec.title} 制作一个 {spec.target_session_minutes} 分钟的可玩垂直切片。",
+        },
+        tasks=tasks,
+        recommended_next_task="gameplay_spec_review",
+        risks=[
+            "Execution tasks require explicit confirmation before local tool side effects.",
+            "Prefer greybox playability before visual expansion.",
+            "Unreal, Blender, and ComfyUI availability should be probed before execution.",
         ],
+        next_actions=DIRECTOR_NEXT_ACTIONS,
+        confirmation_required=any(task.requires_confirmation for task in tasks),
+        i18n=spec.i18n,
+    )
+
+
+def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
+    gameplay_spec = design_from_prompt(request)
+    unreal_plan = prepare_unreal_project(gameplay_spec, request.engine_version)
+    blender_plan = prepare_blender_assets(gameplay_spec)
+    comfyui_plan = prepare_comfyui_visuals(gameplay_spec)
+    qa_plan = prepare_qa_plan(gameplay_spec)
+    return DirectorBuildPlan(
+        gameplay_spec=gameplay_spec,
+        gdd=render_gdd(gameplay_spec),
+        unreal_plan=unreal_plan,
+        blender_plan=blender_plan,
+        comfyui_plan=comfyui_plan,
+        qa_plan=qa_plan,
+        task_breakdown=_build_task_breakdown(
+            request=request,
+            spec=gameplay_spec,
+            unreal_plan=unreal_plan,
+            blender_plan=blender_plan,
+            comfyui_plan=comfyui_plan,
+            qa_plan=qa_plan,
+        ),
+        next_actions=DIRECTOR_NEXT_ACTIONS,
     )

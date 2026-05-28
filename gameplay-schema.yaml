@@ -398,6 +398,11 @@ $defs:
       endpoint:
         type: string
         default: "http://127.0.0.1:8188"
+      checkpoint_name:
+        type:
+          - string
+          - "null"
+        description: "Optional ComfyUI checkpoint model name. If unset, MCP execution probes local checkpoints and blocks when none are available."
       jobs:
         type: array
         minItems: 1
@@ -448,6 +453,122 @@ $defs:
         type: string
       gameplay_constraint:
         type: string
+  director_task_breakdown:
+    type: object
+    additionalProperties: false
+    required:
+      - source
+      - schema_version
+      - source_prompt
+      - goal
+      - tasks
+      - recommended_next_task
+      - risks
+      - next_actions
+      - confirmation_required
+    properties:
+      source:
+        type: string
+        default: director-agent
+      schema_version:
+        type: string
+        default: "0.1"
+      source_prompt:
+        type: string
+      goal:
+        type: string
+      goal_i18n:
+        type: object
+        additionalProperties:
+          type: string
+      tasks:
+        type: array
+        minItems: 1
+        items:
+          $ref: "#/$defs/production_task"
+      recommended_next_task:
+        type: string
+      risks:
+        type: array
+        items:
+          type: string
+      next_actions:
+        type: array
+        items:
+          type: string
+      confirmation_required:
+        type: boolean
+      i18n:
+        $ref: "#/$defs/i18n_bundle"
+  production_task:
+    type: object
+    additionalProperties: false
+    required:
+      - id
+      - title
+      - agent
+      - purpose
+      - inputs
+      - outputs
+      - side_effects
+      - depends_on
+      - artifacts
+      - status
+      - requires_confirmation
+      - risks
+    properties:
+      id:
+        type: string
+      title:
+        type: string
+      title_i18n:
+        type: object
+        additionalProperties:
+          type: string
+      agent:
+        enum:
+          - director-agent
+          - gameplay-agent
+          - gdd-writer
+          - level-director
+          - blender-worker
+          - comfyui-worker
+          - unreal-builder
+          - qa-agent
+      purpose:
+        type: string
+      inputs:
+        type: array
+        items:
+          type: string
+      outputs:
+        type: array
+        items:
+          type: string
+      side_effects:
+        type: array
+        items:
+          type: string
+      depends_on:
+        type: array
+        items:
+          type: string
+      artifacts:
+        type: array
+        items:
+          type: string
+      status:
+        enum:
+          - pending
+          - ready
+          - blocked
+          - done
+      requires_confirmation:
+        type: boolean
+      risks:
+        type: array
+        items:
+          type: string
   i18n_bundle:
     type: object
     additionalProperties: false

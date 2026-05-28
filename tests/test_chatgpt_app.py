@@ -14,6 +14,7 @@ def test_chatgpt_tool_descriptors_are_read_only_and_widget_backed():
     tools = tool_descriptors()
 
     assert {tool["name"] for tool in tools} >= {
+        "decompose_production_tasks",
         "generate_game_production_plan",
         "render_gdd",
         "prepare_unreal_plan",
@@ -35,9 +36,21 @@ def test_generate_game_production_plan_returns_structured_widget_payload():
     assert result["structuredContent"]["kind"] == "director_build_plan"
     plan = result["structuredContent"]["plan"]
     assert plan["gameplay_spec"]["target_session_minutes"] == 10
+    assert plan["task_breakdown"]["recommended_next_task"] == "gameplay_spec_review"
     assert plan["gdd"]["markdown_by_locale"]["zh-CN"]
     assert result["_meta"]["plan"] == plan
     assert result["_meta"]["activePanel"] == "overview"
+
+
+def test_decompose_production_tasks_returns_task_board_payload():
+    result = call_workbench_tool("decompose_production_tasks", _request())
+
+    assert "isError" not in result
+    assert result["structuredContent"]["kind"] == "director_task_breakdown"
+    breakdown = result["structuredContent"]["task_breakdown"]
+    assert breakdown["recommended_next_task"] == "gameplay_spec_review"
+    assert any(task["requires_confirmation"] for task in breakdown["tasks"])
+    assert result["_meta"]["activePanel"] == "tasks"
 
 
 def test_focused_chatgpt_tools_return_subplans_without_side_effects():

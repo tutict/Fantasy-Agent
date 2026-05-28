@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fantasy_agent.comfyui_mcp import ComfyUIMCPBridge, call_comfyui_mcp_tool, tool_descriptors
 from fantasy_agent.contracts import (
+    ComfyUICapabilityProbeRequest,
     ComfyUIMCPExecuteRequest,
     ComfyUIMCPGenerateRequest,
     ComfyUIPromptJob,
@@ -16,12 +17,48 @@ def _template(root: Path) -> None:
     (template_dir / "readability-reference.json").write_text(
         json.dumps(
             {
-                "inputs": {
-                    "positive_prompt": "{{ prompt }}",
-                    "negative_prompt": "{{ negative_prompt }}",
-                    "seed": "{{ seed }}",
-                    "output_path": "{{ output_path }}",
-                }
+                "1": {
+                    "class_type": "CheckpointLoaderSimple",
+                    "inputs": {"ckpt_name": "{{ checkpoint_name }}"},
+                },
+                "2": {
+                    "class_type": "CLIPTextEncode",
+                    "inputs": {"text": "{{ prompt }}", "clip": ["1", 1]},
+                },
+                "3": {
+                    "class_type": "CLIPTextEncode",
+                    "inputs": {"text": "{{ negative_prompt }}", "clip": ["1", 1]},
+                },
+                "4": {
+                    "class_type": "EmptyLatentImage",
+                    "inputs": {"width": 512, "height": 512, "batch_size": 1},
+                },
+                "5": {
+                    "class_type": "KSampler",
+                    "inputs": {
+                        "model": ["1", 0],
+                        "positive": ["2", 0],
+                        "negative": ["3", 0],
+                        "latent_image": ["4", 0],
+                        "seed": "{{ seed }}",
+                        "steps": 4,
+                        "cfg": 5,
+                        "sampler_name": "euler",
+                        "scheduler": "normal",
+                        "denoise": 1,
+                    },
+                },
+                "6": {
+                    "class_type": "VAEDecode",
+                    "inputs": {"samples": ["5", 0], "vae": ["1", 2]},
+                },
+                "7": {
+                    "class_type": "SaveImage",
+                    "inputs": {
+                        "images": ["6", 0],
+                        "filename_prefix": "{{ filename_prefix }}",
+                    },
+                },
             }
         ),
         encoding="utf-8",
@@ -53,6 +90,31 @@ class FakeComfyUIClient:
     def __init__(self, endpoint: str) -> None:
         self.endpoint = endpoint
 
+    def system_stats(self) -> dict:
+        return {
+            "system": {
+                "comfyui_version": "test",
+                "python_version": "test",
+                "pytorch_version": "test",
+            },
+            "devices": [{"name": "cuda:test"}],
+        }
+
+    def object_info(self) -> dict:
+        return {
+            "CheckpointLoaderSimple": {
+                "input": {"required": {"ckpt_name": [["fake-model.safetensors"]]}}
+            },
+            "CLIPTextEncode": {},
+            "EmptyLatentImage": {},
+            "KSampler": {},
+            "VAEDecode": {},
+            "SaveImage": {},
+        }
+
+    def models(self, folder: str) -> list[str]:
+        return ["fake-model.safetensors"] if folder == "checkpoints" else []
+
     def queue_prompt(self, workflow: dict, client_id: str = "fantasy-agent") -> dict:
         return {"prompt_id": f"prompt-{client_id}", "workflow": workflow}
 
@@ -60,7 +122,11 @@ class FakeComfyUIClient:
 def test_comfyui_mcp_descriptors_expose_prepare_and_run_tools():
     names = {tool["name"] for tool in tool_descriptors()}
 
-    assert {"prepare_visual_reference_workflows", "run_visual_reference_workflow"}.issubset(names)
+    assert {
+        "probe_comfyui_capabilities",
+        "prepare_visual_reference_workflows",
+        "run_visual_reference_workflow",
+    }.issubset(names)
 
 
 def test_prepare_visual_reference_workflows_can_write_files(tmp_path: Path):
@@ -80,7 +146,8 @@ def test_prepare_visual_reference_workflows_can_write_files(tmp_path: Path):
         (tmp_path / "generated/comfyui/workflows/comfy_mcp_smoke/concept_readability_reference.json")
         .read_text(encoding="utf-8")
     )
-    assert workflow["inputs"]["positive_prompt"] == "Readable objective and hazard reference."
+    assert workflow["2"]["inputs"]["text"] == "Readable objective and hazard reference."
+    assert workflow["1"]["inputs"]["ckpt_name"] == "__FANTASY_AGENT_CHECKPOINT_REQUIRED__"
 
 
 def test_run_visual_reference_workflow_blocks_without_confirmation(tmp_path: Path):
@@ -106,6 +173,39 @@ def test_run_visual_reference_workflow_queues_with_fake_client(tmp_path: Path):
     assert result.status == "queued"
     assert result.prompt_ids == ["prompt-fantasy-agent-concept_readability_reference"]
     assert (tmp_path / "generated/logs/comfyui/comfy_mcp_smoke.stdout.log").exists()
+    assert result.manifest.endpoint == "http://127.0.0.1:8188"
+    assert result.manifest.jobs[0].workflow["1"]["inputs"]["ckpt_name"] == "fake-model.safetensors"
+
+
+def test_probe_comfyui_capabilities_reports_checkpoint(tmp_path: Path):
+    bridge = ComfyUIMCPBridge(tmp_path, client_factory=FakeComfyUIClient)
+
+    result = bridge.probe_comfyui_capabilities(ComfyUICapabilityProbeRequest())
+
+    assert result.status == "ready"
+    assert result.selected_checkpoint == "fake-model.safetensors"
+
+
+class NoCheckpointComfyUIClient(FakeComfyUIClient):
+    def object_info(self) -> dict:
+        info = super().object_info()
+        info["CheckpointLoaderSimple"] = {"input": {"required": {"ckpt_name": [[]]}}}
+        return info
+
+    def models(self, folder: str) -> list[str]:
+        return []
+
+
+def test_run_visual_reference_workflow_blocks_without_checkpoint(tmp_path: Path):
+    _template(tmp_path)
+    bridge = ComfyUIMCPBridge(tmp_path, client_factory=NoCheckpointComfyUIClient)
+
+    result = bridge.run_visual_reference_workflow(
+        ComfyUIMCPExecuteRequest(plan=_plan(), confirmed_side_effects=True)
+    )
+
+    assert result.status == "blocked"
+    assert "No local checkpoint models" in result.stderr_tail
 
 
 def test_comfyui_mcp_rejects_remote_endpoint_by_default(tmp_path: Path):
@@ -137,4 +237,3 @@ def test_comfyui_mcp_rejects_templates_outside_allowlist(tmp_path: Path):
 
     assert result["isError"] is True
     assert "templates/comfyui" in result["content"][0]["text"]
-

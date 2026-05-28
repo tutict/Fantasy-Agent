@@ -6,8 +6,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from fantasy_agent.contracts import DirectorBuildPlan, PromptRequest
-from fantasy_agent.workflows import run_director_workflow
+from fantasy_agent.contracts import DirectorBuildPlan, DirectorTaskBreakdown, PromptRequest
+from fantasy_agent.workflows import decompose_production_tasks, run_director_workflow
 
 APP_DIR = Path(__file__).resolve().parents[1]
 STATIC_DIR = APP_DIR / "static"
@@ -34,3 +34,8 @@ def health() -> dict[str, str]:
 @app.post("/api/plan", response_model=DirectorBuildPlan)
 def plan(request: PromptRequest) -> DirectorBuildPlan:
     return run_director_workflow(request)
+
+
+@app.post("/api/tasks", response_model=DirectorTaskBreakdown)
+def tasks(request: PromptRequest) -> DirectorTaskBreakdown:
+    return decompose_production_tasks(request)

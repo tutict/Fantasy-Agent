@@ -11,6 +11,8 @@ from pydantic import ValidationError
 
 from fantasy_agent.comfyui_client import ComfyUIClient
 from fantasy_agent.contracts import (
+    ComfyUICapabilityProbeRequest,
+    ComfyUICapabilityProbeResult,
     ComfyUIMCPExecuteRequest,
     ComfyUIMCPGenerateRequest,
     ComfyUIMCPResult,
@@ -27,6 +29,21 @@ DEFAULT_WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 
 def tool_descriptors() -> list[dict[str, Any]]:
     return [
+        {
+            "name": "probe_comfyui_capabilities",
+            "title": "Probe ComfyUI capabilities",
+            "description": (
+                "Use this before execution to discover the active local ComfyUI endpoint, "
+                "required txt2img nodes, available checkpoints, and blocking setup issues."
+            ),
+            "inputSchema": ComfyUICapabilityProbeRequest.model_json_schema(),
+            "annotations": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+        },
         {
             "name": "prepare_visual_reference_workflows",
             "title": "Prepare ComfyUI workflows",
@@ -80,8 +97,13 @@ class ComfyUIMCPBridge:
         request: ComfyUIMCPGenerateRequest,
     ) -> ComfyUIMCPResult:
         self._assert_relative_under(request.output_dir, "generated/comfyui")
-        manifest = self._manifest(request.plan, request.output_dir)
+        checkpoint_name = _configured_checkpoint_name(request.plan, request.checkpoint_name)
+        manifest = self._manifest(request.plan, request.output_dir, checkpoint_name)
         risks = self._validate_manifest(manifest, allow_remote_endpoint=False)
+        if not _has_configured_checkpoint(request.plan, request.checkpoint_name):
+            risks.append(
+                "No ComfyUI checkpoint configured. Execution will probe local checkpoints and block if none exist."
+            )
         written_files: list[str] = []
         if request.write_files:
             written_files = self._write_manifest_artifacts(manifest, request.output_dir)
@@ -100,7 +122,8 @@ class ComfyUIMCPBridge:
         request: ComfyUIMCPExecuteRequest,
     ) -> ComfyUIMCPResult:
         self._assert_relative_under(request.output_dir, "generated/comfyui")
-        manifest = self._manifest(request.plan, request.output_dir)
+        configured_checkpoint = _configured_checkpoint_name(request.plan, request.checkpoint_name)
+        manifest = self._manifest(request.plan, request.output_dir, configured_checkpoint)
         risks = self._validate_manifest(manifest, request.allow_remote_endpoint)
         manifest_path = self._manifest_path(request.output_dir)
         if not request.confirmed_side_effects:
@@ -112,6 +135,39 @@ class ComfyUIMCPBridge:
                 generated_images=[job.output_path for job in manifest.jobs],
                 risks=[*risks, "ComfyUI execution requires confirmed_side_effects=true."],
             )
+
+        if request.validate_server_capabilities:
+            probe = self.probe_comfyui_capabilities(
+                ComfyUICapabilityProbeRequest(
+                    endpoint=request.plan.endpoint,
+                    endpoint_candidates=request.endpoint_candidates,
+                    auto_discover_endpoint=request.auto_discover_endpoint,
+                    allow_remote_endpoint=request.allow_remote_endpoint,
+                    preferred_checkpoint_name=request.checkpoint_name or request.plan.checkpoint_name,
+                    require_checkpoint=True,
+                )
+            )
+            selected_checkpoint = configured_checkpoint
+            if probe.selected_checkpoint:
+                selected_checkpoint = probe.selected_checkpoint
+            runtime_plan = request.plan.model_copy(
+                update={"endpoint": probe.endpoint, "checkpoint_name": selected_checkpoint}
+            )
+            manifest = self._manifest(runtime_plan, request.output_dir, selected_checkpoint)
+            risks = [
+                *self._validate_manifest(manifest, request.allow_remote_endpoint),
+                *probe.warnings,
+            ]
+            if probe.blockers or probe.status != "ready":
+                return ComfyUIMCPResult(
+                    status="blocked",
+                    manifest=manifest,
+                    workflow_files=[job.workflow_path for job in manifest.jobs],
+                    manifest_path=manifest_path,
+                    generated_images=[job.output_path for job in manifest.jobs],
+                    stderr_tail="; ".join(probe.blockers),
+                    risks=[*risks, *probe.blockers],
+                )
 
         workflow_files = self._write_manifest_artifacts(manifest, request.output_dir)
         client = self.client_factory(manifest.endpoint)
@@ -166,8 +222,72 @@ class ComfyUIMCPBridge:
             risks=risks,
         )
 
-    def _manifest(self, plan: ComfyUIVisualPlan, output_dir: str) -> ComfyUIRunManifest:
-        jobs = [self._workflow_artifact(plan, job, output_dir, index) for index, job in enumerate(plan.jobs)]
+    def probe_comfyui_capabilities(
+        self,
+        request: ComfyUICapabilityProbeRequest,
+    ) -> ComfyUICapabilityProbeResult:
+        endpoint, endpoint_warnings = self._resolve_endpoint(request)
+        if endpoint is None:
+            return ComfyUICapabilityProbeResult(
+                status="unavailable",
+                endpoint=request.endpoint,
+                blockers=["No reachable ComfyUI endpoint found."],
+                warnings=endpoint_warnings,
+            )
+
+        client = self.client_factory(endpoint)
+        try:
+            system_stats = client.system_stats()
+            object_info = client.object_info()
+            checkpoints = client.models("checkpoints")
+        except Exception as exc:  # noqa: BLE001 - capability probes must report structured failures
+            return ComfyUICapabilityProbeResult(
+                status="unavailable",
+                endpoint=endpoint,
+                blockers=[f"Failed to read ComfyUI capabilities: {exc}"],
+                warnings=endpoint_warnings,
+            )
+
+        checkpoints = _dedupe([*checkpoints, *_checkpoint_loader_options(object_info)])
+        required_nodes = {node: node in object_info for node in request.required_nodes}
+        selected_checkpoint = _select_checkpoint(request.preferred_checkpoint_name, checkpoints)
+        blockers: list[str] = []
+        missing_nodes = [node for node, present in required_nodes.items() if not present]
+        if missing_nodes:
+            blockers.append(f"Missing required ComfyUI nodes: {', '.join(missing_nodes)}.")
+        if request.require_checkpoint and not selected_checkpoint:
+            blockers.append(
+                "No local checkpoint models are available. Add a .safetensors or .ckpt file under "
+                "ComfyUI/models/checkpoints, then restart or refresh ComfyUI."
+            )
+        system = system_stats.get("system", {}) if isinstance(system_stats, dict) else {}
+        devices = system_stats.get("devices", []) if isinstance(system_stats, dict) else []
+        device_names = [str(device.get("name", "unknown")) for device in devices if isinstance(device, dict)]
+        status = "ready" if not blockers else "degraded"
+        return ComfyUICapabilityProbeResult(
+            status=status,
+            endpoint=endpoint,
+            comfyui_version=system.get("comfyui_version"),
+            python_version=system.get("python_version"),
+            pytorch_version=system.get("pytorch_version"),
+            devices=device_names,
+            required_nodes=required_nodes,
+            checkpoints=checkpoints,
+            selected_checkpoint=selected_checkpoint,
+            blockers=blockers,
+            warnings=endpoint_warnings,
+        )
+
+    def _manifest(
+        self,
+        plan: ComfyUIVisualPlan,
+        output_dir: str,
+        checkpoint_name: str,
+    ) -> ComfyUIRunManifest:
+        jobs = [
+            self._workflow_artifact(plan, job, output_dir, index, checkpoint_name)
+            for index, job in enumerate(plan.jobs)
+        ]
         return ComfyUIRunManifest(
             plan_name=plan.plan_name,
             endpoint=plan.endpoint,
@@ -185,6 +305,7 @@ class ComfyUIMCPBridge:
         job: ComfyUIPromptJob,
         output_dir: str,
         index: int,
+        checkpoint_name: str,
     ) -> ComfyUIWorkflowArtifact:
         template_path = self._resolve_template_path(job.workflow_template)
         template = json.loads(template_path.read_text(encoding="utf-8"))
@@ -199,6 +320,8 @@ class ComfyUIMCPBridge:
                 "output_path": output_path,
                 "job_id": job.job_id,
                 "gameplay_constraint": job.gameplay_constraint,
+                "checkpoint_name": checkpoint_name,
+                "filename_prefix": f"FantasyAgent/{_slug(plan.plan_name)}/{_slug(job.job_id)}",
             },
         )
         workflow_path = (
@@ -236,7 +359,35 @@ class ComfyUIMCPBridge:
             self._assert_relative_under(job.workflow_path, "generated/comfyui")
             self._assert_relative_under(job.output_path, "generated/comfyui")
             self._resolve_template_path(job.workflow_template)
+            errors = _workflow_validation_errors(job.workflow)
+            if errors:
+                raise ComfyUIMCPSafetyError(
+                    f"ComfyUI workflow template is not executable for job {job.job_id}: "
+                    + " ".join(errors)
+                )
         return list(manifest.risks)
+
+    def _resolve_endpoint(
+        self,
+        request: ComfyUICapabilityProbeRequest,
+    ) -> tuple[str | None, list[str]]:
+        candidates = [request.endpoint]
+        if request.auto_discover_endpoint:
+            candidates = _dedupe([request.endpoint, *request.endpoint_candidates])
+        warnings: list[str] = []
+        for endpoint in candidates:
+            if not request.allow_remote_endpoint and not _is_local_endpoint(endpoint):
+                warnings.append(f"Skipped non-local ComfyUI endpoint: {endpoint}")
+                continue
+            try:
+                client = self.client_factory(endpoint)
+                client.system_stats()
+            except Exception:
+                continue
+            if endpoint != request.endpoint:
+                warnings.append(f"Auto-discovered active ComfyUI endpoint: {endpoint}")
+            return endpoint, warnings
+        return None, warnings
 
     def _write_manifest_artifacts(self, manifest: ComfyUIRunManifest, output_dir: str) -> list[str]:
         written: list[str] = []
@@ -343,6 +494,13 @@ def call_comfyui_mcp_tool(
 ) -> dict[str, Any]:
     bridge = ComfyUIMCPBridge(workspace_root)
     try:
+        if name == "probe_comfyui_capabilities":
+            request = ComfyUICapabilityProbeRequest.model_validate(arguments or {})
+            result = bridge.probe_comfyui_capabilities(request)
+            return {
+                "structuredContent": result.model_dump(mode="json"),
+                "content": [{"type": "text", "text": _probe_content_summary(result)}],
+            }
         if name == "prepare_visual_reference_workflows":
             request = ComfyUIMCPGenerateRequest.model_validate(arguments or {})
             result = bridge.prepare_visual_reference_workflows(request)
@@ -360,9 +518,18 @@ def call_comfyui_mcp_tool(
         return _error(str(exc))
 
 
+def _probe_content_summary(result: ComfyUICapabilityProbeResult) -> str:
+    if result.status == "ready":
+        return f"ComfyUI is ready at {result.endpoint} with checkpoint {result.selected_checkpoint}."
+    if result.status == "degraded":
+        return f"ComfyUI is reachable at {result.endpoint}, but setup is incomplete: {' '.join(result.blockers)}"
+    return f"ComfyUI is unavailable at {result.endpoint}: {' '.join(result.blockers)}"
+
+
 def _content_summary(result: ComfyUIMCPResult) -> str:
     if result.status == "blocked":
-        return "ComfyUI MCP blocked execution because side effects were not confirmed."
+        reason = result.stderr_tail or (result.risks[-1] if result.risks else "preflight did not pass.")
+        return f"ComfyUI MCP blocked execution: {reason}"
     if result.status == "failed":
         return "ComfyUI MCP failed. Check returned logs and stderr_tail."
     if result.status == "executed":
@@ -399,6 +566,68 @@ def _stable_seed(value: str) -> int:
     for char in value:
         seed = (seed * 131 + ord(char)) % 2_147_483_647
     return seed or 1
+
+
+def _configured_checkpoint_name(plan: ComfyUIVisualPlan, request_checkpoint: str | None) -> str:
+    return request_checkpoint or plan.checkpoint_name or "__FANTASY_AGENT_CHECKPOINT_REQUIRED__"
+
+
+def _has_configured_checkpoint(plan: ComfyUIVisualPlan, request_checkpoint: str | None) -> bool:
+    return bool((request_checkpoint or plan.checkpoint_name or "").strip())
+
+
+def _checkpoint_loader_options(object_info: dict[str, Any]) -> list[str]:
+    try:
+        options = object_info["CheckpointLoaderSimple"]["input"]["required"]["ckpt_name"][0]
+    except (KeyError, IndexError, TypeError):
+        return []
+    if isinstance(options, list):
+        return [str(item) for item in options if str(item).strip()]
+    return []
+
+
+def _select_checkpoint(preferred: str | None, checkpoints: list[str]) -> str | None:
+    if preferred:
+        for checkpoint in checkpoints:
+            if checkpoint == preferred:
+                return checkpoint
+        return None
+    return checkpoints[0] if checkpoints else None
+
+
+def _dedupe(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def _workflow_validation_errors(workflow: dict[str, Any]) -> list[str]:
+    if "nodes" in workflow and "links" in workflow:
+        return ["Template looks like a ComfyUI UI export; save or convert it to API prompt JSON."]
+    errors: list[str] = []
+    output_node_found = False
+    if not workflow:
+        return ["Workflow graph is empty."]
+    for node_id, node in workflow.items():
+        if not isinstance(node, dict):
+            errors.append(f"Node {node_id} must be an object.")
+            continue
+        class_type = node.get("class_type")
+        inputs = node.get("inputs")
+        if not isinstance(class_type, str) or not class_type:
+            errors.append(f"Node {node_id} is missing class_type.")
+        if not isinstance(inputs, dict):
+            errors.append(f"Node {node_id} is missing inputs.")
+        if class_type in {"SaveImage", "PreviewImage"}:
+            output_node_found = True
+    if not output_node_found:
+        errors.append("Workflow graph needs a SaveImage or PreviewImage output node.")
+    return errors
 
 
 def _slug(value: str) -> str:

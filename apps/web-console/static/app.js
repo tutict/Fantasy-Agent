@@ -1,4 +1,4 @@
-const i18n = {
+﻿const i18n = {
   en: {
     productLabel: "AI-native production console",
     promptLabel: "Gameplay idea",
@@ -17,7 +17,9 @@ const i18n = {
     running: "Generating",
     ready: "Ready",
     failed: "Failed",
+    error: "Error",
     tabOverview: "Overview",
+    tabTasks: "Tasks",
     tabDsl: "Gameplay DSL",
     tabGdd: "GDD",
     tabBuild: "Build",
@@ -29,6 +31,11 @@ const i18n = {
     loop: "Core loop",
     systems: "Systems",
     next: "Next actions",
+    recommended: "Recommended",
+    confirmation: "Confirmation required",
+    sideEffects: "Side effects",
+    dependencies: "Dependencies",
+    artifacts: "Artifacts",
     unreal: "Unreal plan",
     blender: "Blender jobs",
     comfyui: "ComfyUI references",
@@ -51,7 +58,7 @@ const i18n = {
   "zh-CN": {
     productLabel: "AI 原生生产控制台",
     promptLabel: "玩法想法",
-    promptPlaceholder: "一个潜行信使逃离闹鬼车站",
+    promptPlaceholder: "一名潜行信使逃离闹鬼火车站",
     sessionLabel: "时长",
     engineLabel: "引擎",
     sourceLocale: "输入语言",
@@ -64,9 +71,11 @@ const i18n = {
     emptyTitle: "尚未生成计划",
     idle: "空闲",
     running: "生成中",
-    ready: "已就绪",
+    ready: "就绪",
     failed: "失败",
+    error: "错误",
     tabOverview: "概览",
+    tabTasks: "任务",
     tabDsl: "Gameplay DSL",
     tabGdd: "GDD",
     tabBuild: "构建",
@@ -78,6 +87,11 @@ const i18n = {
     loop: "核心循环",
     systems: "系统",
     next: "下一步",
+    recommended: "推荐",
+    confirmation: "需要确认",
+    sideEffects: "副作用",
+    dependencies: "依赖",
+    artifacts: "产物",
     unreal: "Unreal 计划",
     blender: "Blender 任务",
     comfyui: "ComfyUI 参考",
@@ -111,6 +125,7 @@ const planTitle = document.querySelector("#plan-title");
 const generateButton = document.querySelector("#generate-button");
 const overviewContent = document.querySelector("#overview-content");
 const emptyState = document.querySelector(".empty-state");
+const tasksOutput = document.querySelector("#tasks-output");
 const dslOutput = document.querySelector("#dsl-output");
 const gddOutput = document.querySelector("#gdd-output");
 const buildOutput = document.querySelector("#build-output");
@@ -161,7 +176,7 @@ function block(title, body, wide = false) {
 }
 
 function escapeHtml(value) {
-  return value
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
@@ -208,6 +223,7 @@ function renderPlan(plan) {
 
   dslOutput.textContent = JSON.stringify(spec, null, 2);
   renderGdd(plan);
+  renderTasks(plan);
   renderBuild(plan);
   renderVisuals(plan);
   renderQa(plan);
@@ -217,6 +233,47 @@ function renderGdd(plan) {
   const docs = plan.gdd.markdown_by_locale || {};
   const selected = docs[currentGddLocale] || docs.en || plan.gdd.markdown || "";
   gddOutput.textContent = selected;
+}
+
+function localizedTaskTitle(task) {
+  return uiLocale === "zh-CN"
+    ? task.title_i18n?.["zh-CN"] || task.title
+    : task.title_i18n?.en || task.title;
+}
+
+function renderTasks(plan) {
+  const breakdown = plan.task_breakdown;
+  if (!breakdown) {
+    tasksOutput.innerHTML = "";
+    return;
+  }
+  const goal =
+    uiLocale === "zh-CN"
+      ? breakdown.goal_i18n?.["zh-CN"] || breakdown.goal
+      : breakdown.goal_i18n?.en || breakdown.goal;
+  tasksOutput.innerHTML = [
+    `<section class="task-row"><div><h3>${escapeHtml(goal)}</h3><p>${escapeHtml(t("recommended"))}: ${escapeHtml(breakdown.recommended_next_task)}</p></div><span class="task-pill">${breakdown.tasks.length}</span></section>`,
+    ...breakdown.tasks.map((task) => {
+      const detail = [
+        `<span class="task-pill ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>`,
+        `<span class="task-pill">${escapeHtml(task.id)}</span>`,
+        `<span class="task-pill">${escapeHtml(task.agent)}</span>`,
+        task.requires_confirmation ? `<span class="task-pill">${escapeHtml(t("confirmation"))}</span>` : "",
+        task.depends_on?.length
+          ? `<span class="task-pill">${escapeHtml(t("dependencies"))}: ${escapeHtml(task.depends_on.length)}</span>`
+          : "",
+        task.side_effects?.length
+          ? `<span class="task-pill">${escapeHtml(t("sideEffects"))}: ${escapeHtml(task.side_effects.length)}</span>`
+          : "",
+        task.artifacts?.length
+          ? `<span class="task-pill">${escapeHtml(t("artifacts"))}: ${escapeHtml(task.artifacts.length)}</span>`
+          : ""
+      ]
+        .filter(Boolean)
+        .join("");
+      return `<section class="task-row"><div><h3>${escapeHtml(localizedTaskTitle(task))}</h3><p>${escapeHtml(task.purpose)}</p><div class="task-meta">${detail}</div></div></section>`;
+    })
+  ].join("");
 }
 
 function renderBuild(plan) {

@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from fantasy_agent.contracts import DirectorBuildPlan, PromptRequest
 from fantasy_agent.workflows import (
+    decompose_production_tasks,
     prepare_blender_assets,
     prepare_comfyui_visuals,
     prepare_qa_plan as prepare_qa_plan_from_spec,
@@ -72,6 +73,16 @@ def _tool(
 
 def tool_descriptors() -> list[dict[str, Any]]:
     return [
+        _tool(
+            "decompose_production_tasks",
+            "Decompose production tasks",
+            (
+                "Use this when the user wants Fantasy Agent to break a gameplay idea into "
+                "inspectable production tasks before executing any local tools."
+            ),
+            "Decomposing Fantasy Agent tasks",
+            "Fantasy Agent task board ready",
+        ),
         _tool(
             "generate_game_production_plan",
             "Generate game production plan",
@@ -196,6 +207,14 @@ def _text_summary(title: str, plan: DirectorBuildPlan) -> str:
     )
 
 
+def _task_text_summary(task_count: int, recommended_next_task: str) -> str:
+    return (
+        f"Prepared {task_count} production tasks. "
+        f"Recommended next task: {recommended_next_task}. "
+        "Execution tasks still require explicit confirmation."
+    )
+
+
 def _tool_result(
     tool_name: str,
     request: PromptRequest,
@@ -215,10 +234,27 @@ def _tool_result(
     }
 
 
+def decompose_tasks(arguments: dict[str, Any] | None) -> dict[str, Any]:
+    request = _request(arguments)
+    breakdown = decompose_production_tasks(request)
+    payload = breakdown.model_dump(mode="json")
+    return _tool_result(
+        "decompose_production_tasks",
+        request,
+        {
+            "kind": "director_task_breakdown",
+            "task_breakdown": payload,
+        },
+        _task_text_summary(len(breakdown.tasks), breakdown.recommended_next_task),
+        {"taskBreakdown": payload, "activePanel": "tasks"},
+    )
+
+
 def generate_game_production_plan(arguments: dict[str, Any] | None) -> dict[str, Any]:
     request = _request(arguments)
     plan = _plan(request)
     plan_payload = plan.model_dump(mode="json")
+    task_payload = plan.task_breakdown.model_dump(mode="json") if plan.task_breakdown else None
     return _tool_result(
         "generate_game_production_plan",
         request,
@@ -226,9 +262,10 @@ def generate_game_production_plan(arguments: dict[str, Any] | None) -> dict[str,
             "kind": "director_build_plan",
             "summary": _summary_for_plan(plan),
             "plan": plan_payload,
+            "task_breakdown": task_payload,
         },
         _text_summary("Generated full production plan", plan),
-        {"plan": plan_payload, "activePanel": "overview"},
+        {"plan": plan_payload, "taskBreakdown": task_payload, "activePanel": "overview"},
     )
 
 
@@ -318,6 +355,7 @@ def prepare_qa_plan(arguments: dict[str, Any] | None) -> dict[str, Any]:
 
 
 TOOL_HANDLERS: dict[str, Callable[[dict[str, Any] | None], dict[str, Any]]] = {
+    "decompose_production_tasks": decompose_tasks,
     "generate_game_production_plan": generate_game_production_plan,
     "render_gdd": render_gdd,
     "prepare_unreal_plan": prepare_unreal_plan,

@@ -28,6 +28,38 @@ BlenderMaterialKey = Literal[
 UnrealCommandletName = Literal["MapCheck", "ResavePackages", "AssetAudit"]
 UnrealAssetIngestSource = Literal["blender", "comfyui"]
 UnrealAssetIngestType = Literal["static_mesh", "texture_reference"]
+ComfyUICapabilityStatus = Literal["ready", "degraded", "unavailable"]
+ProductionTaskStatus = Literal["pending", "ready", "blocked", "done"]
+ProductionTaskAgent = Literal[
+    "director-agent",
+    "gameplay-agent",
+    "gdd-writer",
+    "level-director",
+    "blender-worker",
+    "comfyui-worker",
+    "unreal-builder",
+    "qa-agent",
+]
+
+
+def default_comfyui_endpoint_candidates() -> list[str]:
+    return [
+        "http://127.0.0.1:8188",
+        "http://localhost:8188",
+        "http://127.0.0.1:8001",
+        "http://localhost:8001",
+    ]
+
+
+def default_comfyui_required_nodes() -> list[str]:
+    return [
+        "CheckpointLoaderSimple",
+        "CLIPTextEncode",
+        "EmptyLatentImage",
+        "KSampler",
+        "VAEDecode",
+        "SaveImage",
+    ]
 
 
 class StrictModel(BaseModel):
@@ -325,6 +357,7 @@ class ComfyUIPromptJob(StrictModel):
 class ComfyUIVisualPlan(StrictModel):
     plan_name: str
     endpoint: str = "http://127.0.0.1:8188"
+    checkpoint_name: str | None = None
     jobs: list[ComfyUIPromptJob]
     workflow_templates: list[str]
     handoff_artifacts: list[str]
@@ -357,12 +390,17 @@ class ComfyUIRunManifest(StrictModel):
 class ComfyUIMCPGenerateRequest(StrictModel):
     plan: ComfyUIVisualPlan
     output_dir: str = "generated/comfyui"
+    checkpoint_name: str | None = None
     write_files: bool = False
 
 
 class ComfyUIMCPExecuteRequest(StrictModel):
     plan: ComfyUIVisualPlan
     output_dir: str = "generated/comfyui"
+    checkpoint_name: str | None = None
+    auto_discover_endpoint: bool = True
+    endpoint_candidates: list[str] = Field(default_factory=default_comfyui_endpoint_candidates)
+    validate_server_capabilities: bool = True
     confirmed_side_effects: bool = False
     wait_for_completion: bool = False
     timeout_seconds: int = Field(default=300, ge=10, le=1800)
@@ -385,6 +423,30 @@ class ComfyUIMCPResult(StrictModel):
     risks: list[str] = Field(default_factory=list)
 
 
+class ComfyUICapabilityProbeRequest(StrictModel):
+    endpoint: str = "http://127.0.0.1:8188"
+    endpoint_candidates: list[str] = Field(default_factory=default_comfyui_endpoint_candidates)
+    auto_discover_endpoint: bool = True
+    allow_remote_endpoint: bool = False
+    required_nodes: list[str] = Field(default_factory=default_comfyui_required_nodes)
+    require_checkpoint: bool = True
+    preferred_checkpoint_name: str | None = None
+
+
+class ComfyUICapabilityProbeResult(StrictModel):
+    status: ComfyUICapabilityStatus
+    endpoint: str
+    comfyui_version: str | None = None
+    python_version: str | None = None
+    pytorch_version: str | None = None
+    devices: list[str] = Field(default_factory=list)
+    required_nodes: dict[str, bool] = Field(default_factory=dict)
+    checkpoints: list[str] = Field(default_factory=list)
+    selected_checkpoint: str | None = None
+    blockers: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class QAPlan(StrictModel):
     target_session_minutes: int = Field(ge=5, le=15)
     smoke_tests: list[str]
@@ -394,6 +456,36 @@ class QAPlan(StrictModel):
     metrics: list[str]
 
 
+class ProductionTask(StrictModel):
+    id: str
+    title: str
+    title_i18n: dict[LocaleCode, str] = Field(default_factory=dict)
+    agent: ProductionTaskAgent
+    purpose: str
+    inputs: list[str]
+    outputs: list[str]
+    side_effects: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
+    artifacts: list[str] = Field(default_factory=list)
+    status: ProductionTaskStatus = "pending"
+    requires_confirmation: bool = False
+    risks: list[str] = Field(default_factory=list)
+
+
+class DirectorTaskBreakdown(StrictModel):
+    source: str = "director-agent"
+    schema_version: str = "0.1"
+    source_prompt: str
+    goal: str
+    goal_i18n: dict[LocaleCode, str] = Field(default_factory=dict)
+    tasks: list[ProductionTask]
+    recommended_next_task: str
+    risks: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
+    confirmation_required: bool = False
+    i18n: I18nBundle | None = None
+
+
 class DirectorBuildPlan(StrictModel):
     gameplay_spec: GameplaySpec
     gdd: GDDDocument
@@ -401,6 +493,7 @@ class DirectorBuildPlan(StrictModel):
     blender_plan: BlenderAssetPlan
     comfyui_plan: ComfyUIVisualPlan
     qa_plan: QAPlan
+    task_breakdown: DirectorTaskBreakdown | None = None
     next_actions: list[str]
 
 

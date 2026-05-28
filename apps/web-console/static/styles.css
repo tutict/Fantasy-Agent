@@ -433,13 +433,15 @@ input[type="range"] {
 }
 
 .overview-grid,
-.split-output {
+.split-output,
+.task-board {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
-.summary-block {
+.summary-block,
+.task-row {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
@@ -468,6 +470,43 @@ input[type="range"] {
 
 .summary-block li + li {
   margin-top: 6px;
+}
+
+.task-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.task-row p {
+  margin: 8px 0 0;
+  color: var(--muted);
+}
+
+.task-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.task-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 9px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.task-pill.ready {
+  border-color: rgba(31, 111, 99, 0.35);
+  color: var(--accent);
+}
+
+.task-pill.blocked {
+  border-color: rgba(154, 45, 45, 0.35);
+  color: var(--danger);
 }
 
 .code-output {
@@ -530,7 +569,8 @@ input[type="range"] {
   }
 
   .overview-grid,
-  .split-output {
+  .split-output,
+  .task-board {
     grid-template-columns: 1fr;
   }
 

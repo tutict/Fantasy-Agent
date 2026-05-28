@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -231,7 +231,7 @@
 
       .pipeline {
         display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-template-columns: repeat(7, minmax(0, 1fr));
         border-bottom: 1px solid var(--line);
         background: var(--line);
         gap: 1px;
@@ -328,6 +328,57 @@
 
       .block li + li {
         margin-top: 5px;
+      }
+
+      .task-board {
+        display: grid;
+        gap: 10px;
+      }
+
+      .task-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        padding: 12px;
+      }
+
+      .task-row h3 {
+        margin: 0 0 5px;
+        font-size: 15px;
+      }
+
+      .task-row p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .task-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+
+      .task-pill {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 3px 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .task-pill.ready {
+        border-color: rgba(29, 109, 97, 0.35);
+        color: var(--accent);
+      }
+
+      .task-pill.blocked {
+        border-color: rgba(155, 46, 46, 0.35);
+        color: var(--danger);
       }
 
       pre {
@@ -440,6 +491,7 @@
         </button>
 
         <div class="tool-grid" aria-label="Production tools">
+          <button class="tool-button" type="button" data-tool="decompose_production_tasks" data-i18n="tasksTool">Tasks</button>
           <button class="tool-button" type="button" data-tool="render_gdd">GDD</button>
           <button class="tool-button" type="button" data-tool="prepare_unreal_plan">Unreal</button>
           <button class="tool-button" type="button" data-tool="prepare_blender_plan">Blender</button>
@@ -459,17 +511,19 @@
 
         <div class="pipeline" aria-label="Fantasy Agent pipeline">
           <div class="node"><span>01</span><strong>Prompt</strong></div>
-          <div class="node"><span>02</span><strong>Gameplay</strong></div>
-          <div class="node"><span>03</span><strong>GDD</strong></div>
-          <div class="node"><span>04</span><strong>Unreal</strong></div>
-          <div class="node"><span>05</span><strong>Assets</strong></div>
-          <div class="node"><span>06</span><strong>QA</strong></div>
+          <div class="node"><span>02</span><strong>Tasks</strong></div>
+          <div class="node"><span>03</span><strong>Gameplay</strong></div>
+          <div class="node"><span>04</span><strong>GDD</strong></div>
+          <div class="node"><span>05</span><strong>Unreal</strong></div>
+          <div class="node"><span>06</span><strong>Assets</strong></div>
+          <div class="node"><span>07</span><strong>QA</strong></div>
         </div>
 
         <nav class="tabs" aria-label="Workbench panels">
           <button type="button" class="active" data-panel-button="overview" data-i18n="tabOverview">
             Overview
           </button>
+          <button type="button" data-panel-button="tasks" data-i18n="tabTasks">Tasks</button>
           <button type="button" data-panel-button="loop" data-i18n="tabLoop">Loop</button>
           <button type="button" data-panel-button="build" data-i18n="tabBuild">Build</button>
           <button type="button" data-panel-button="visuals" data-i18n="tabVisuals">Visuals</button>
@@ -483,6 +537,7 @@
             Generate or call a Fantasy Agent tool to inspect a playable slice plan.
           </div>
         </section>
+        <section class="panel" data-panel="tasks"><div id="tasks" class="task-board"></div></section>
         <section class="panel" data-panel="loop"><div id="loop" class="section-grid"></div></section>
         <section class="panel" data-panel="build"><div id="build" class="section-grid"></div></section>
         <section class="panel" data-panel="visuals"><div id="visuals" class="section-grid"></div></section>
@@ -505,6 +560,7 @@
           constraintsLabel: "Constraints",
           constraintsPlaceholder: "One map, no online multiplayer, game jam scope",
           generate: "Generate plan",
+          tasksTool: "Tasks",
           statusLabel: "Workbench status",
           emptyTitle: "No production plan loaded",
           focusedTitle: "Focused handoff loaded",
@@ -514,6 +570,7 @@
           ready: "Ready",
           error: "Error",
           tabOverview: "Overview",
+          tabTasks: "Tasks",
           tabLoop: "Loop",
           tabBuild: "Build",
           tabVisuals: "Visuals",
@@ -534,19 +591,25 @@
           smoke: "Smoke tests",
           playability: "Playability",
           packaging: "Packaging",
+          recommended: "Recommended",
+          confirmation: "Confirmation required",
+          sideEffects: "Side effects",
+          dependencies: "Dependencies",
+          artifacts: "Artifacts",
           minutes: "minutes"
         },
         "zh-CN": {
           eyebrow: "ChatGPT 生产工作台",
           promptLabel: "玩法想法",
-          promptPlaceholder: "一个潜行信使逃离闹鬼火车站",
+          promptPlaceholder: "一名潜行信使逃离闹鬼火车站",
           minutesLabel: "分钟",
           engineLabel: "引擎",
-          sourceLabel: "输入",
+          sourceLabel: "输入语言",
           platformLabel: "平台",
           constraintsLabel: "约束",
           constraintsPlaceholder: "一张地图，不做联网多人，game jam 规模",
           generate: "生成计划",
+          tasksTool: "任务",
           statusLabel: "工作台状态",
           emptyTitle: "尚未载入生产计划",
           focusedTitle: "已载入单项交接",
@@ -556,6 +619,7 @@
           ready: "就绪",
           error: "错误",
           tabOverview: "概览",
+          tabTasks: "任务",
           tabLoop: "循环",
           tabBuild: "构建",
           tabVisuals: "视觉",
@@ -576,6 +640,11 @@
           smoke: "冒烟测试",
           playability: "可玩性",
           packaging: "打包",
+          recommended: "推荐",
+          confirmation: "需要确认",
+          sideEffects: "副作用",
+          dependencies: "依赖",
+          artifacts: "产物",
           minutes: "分钟"
         }
       };
@@ -586,6 +655,7 @@
         status: "idle",
         lastInput: null,
         plan: null,
+        taskBreakdown: null,
         gdd: null,
         unrealPlan: null,
         blenderPlan: null,
@@ -605,6 +675,7 @@
         status: document.querySelector("#status"),
         title: document.querySelector("#title"),
         overview: document.querySelector("#overview"),
+        tasks: document.querySelector("#tasks"),
         loop: document.querySelector("#loop"),
         build: document.querySelector("#build"),
         visuals: document.querySelector("#visuals"),
@@ -716,11 +787,15 @@
 
         if (structured.plan || meta.plan) {
           state.plan = structured.plan || meta.plan;
+          state.taskBreakdown = state.plan.task_breakdown || structured.task_breakdown || meta.taskBreakdown || state.taskBreakdown;
           state.gdd = state.plan.gdd;
           state.unrealPlan = state.plan.unreal_plan;
           state.blenderPlan = state.plan.blender_plan;
           state.comfyuiPlan = state.plan.comfyui_plan;
           state.qaPlan = state.plan.qa_plan;
+        }
+        if (structured.task_breakdown || meta.taskBreakdown) {
+          state.taskBreakdown = structured.task_breakdown || meta.taskBreakdown;
         }
         if (structured.gdd || meta.gdd) state.gdd = structured.gdd || meta.gdd;
         if (structured.unreal_plan || meta.unrealPlan) state.unrealPlan = structured.unreal_plan || meta.unrealPlan;
@@ -736,10 +811,18 @@
       function render() {
         const plan = state.plan;
         const spec = plan?.gameplay_spec;
-        if (!plan && !state.unrealPlan && !state.blenderPlan && !state.comfyuiPlan && !state.qaPlan) {
+        if (
+          !plan &&
+          !state.taskBreakdown &&
+          !state.unrealPlan &&
+          !state.blenderPlan &&
+          !state.comfyuiPlan &&
+          !state.qaPlan
+        ) {
           nodes.title.textContent = t("emptyTitle");
           nodes.overview.className = "empty";
           nodes.overview.textContent = t("emptyState");
+          nodes.tasks.innerHTML = "";
           nodes.loop.innerHTML = "";
           nodes.build.innerHTML = "";
           nodes.visuals.innerHTML = "";
@@ -796,11 +879,19 @@
           state.blenderPlan = state.blenderPlan || plan.blender_plan;
           state.comfyuiPlan = state.comfyuiPlan || plan.comfyui_plan;
           state.qaPlan = state.qaPlan || plan.qa_plan;
+          state.taskBreakdown = state.taskBreakdown || plan.task_breakdown;
           nodes.dsl.textContent = JSON.stringify(spec, null, 2);
         } else {
           nodes.title.textContent = t("focusedTitle");
           nodes.overview.className = "section-grid";
           nodes.overview.innerHTML = [
+            state.taskBreakdown
+              ? block(
+                  t("tabTasks"),
+                  `<p>${escapeHtml(state.taskBreakdown.goal)}</p>${list(state.taskBreakdown.next_actions)}`,
+                  true
+                )
+              : "",
             state.unrealPlan ? block(t("unreal"), list(state.unrealPlan.maps), true) : "",
             state.blenderPlan
               ? block(
@@ -831,6 +922,7 @@
         renderBuild();
         renderVisuals();
         renderQa();
+        renderTasks();
         renderGdd();
         setStatus(state.status === "running" ? "running" : "ready");
       }
@@ -892,6 +984,49 @@
               block(t("packaging"), list(qa.packaging_checks))
             ].join("")
           : "";
+      }
+
+      function localizedTaskTitle(task) {
+        return state.locale === "zh-CN"
+          ? task.title_i18n?.["zh-CN"] || task.title
+          : task.title_i18n?.en || task.title;
+      }
+
+      function renderTasks() {
+        const breakdown = state.taskBreakdown;
+        if (!breakdown) {
+          nodes.tasks.innerHTML = "";
+          return;
+        }
+        const goal =
+          state.locale === "zh-CN"
+            ? breakdown.goal_i18n?.["zh-CN"] || breakdown.goal
+            : breakdown.goal_i18n?.en || breakdown.goal;
+        nodes.tasks.innerHTML = [
+          `<section class="task-row"><div><h3>${escapeHtml(goal)}</h3><p>${escapeHtml(t("recommended"))}: ${escapeHtml(breakdown.recommended_next_task)}</p></div><span class="task-pill">${breakdown.tasks.length}</span></section>`,
+          ...breakdown.tasks.map((task) => {
+            const detail = [
+              `<span class="task-pill ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>`,
+              `<span class="task-pill">${escapeHtml(task.id)}</span>`,
+              `<span class="task-pill">${escapeHtml(task.agent)}</span>`,
+              task.requires_confirmation
+                ? `<span class="task-pill">${escapeHtml(t("confirmation"))}</span>`
+                : "",
+              task.depends_on?.length
+                ? `<span class="task-pill">${escapeHtml(t("dependencies"))}: ${escapeHtml(task.depends_on.length)}</span>`
+                : "",
+              task.side_effects?.length
+                ? `<span class="task-pill">${escapeHtml(t("sideEffects"))}: ${escapeHtml(task.side_effects.length)}</span>`
+                : "",
+              task.artifacts?.length
+                ? `<span class="task-pill">${escapeHtml(t("artifacts"))}: ${escapeHtml(task.artifacts.length)}</span>`
+                : ""
+            ]
+              .filter(Boolean)
+              .join("");
+            return `<section class="task-row"><div><h3>${escapeHtml(localizedTaskTitle(task))}</h3><p>${escapeHtml(task.purpose)}</p><div class="task-meta">${detail}</div></div></section>`;
+          })
+        ].join("");
       }
 
       function renderGdd() {
@@ -961,3 +1096,4 @@
     </script>
   </body>
 </html>
+

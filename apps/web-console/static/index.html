@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -111,6 +111,7 @@
 
           <nav class="tabs" aria-label="Plan views">
             <button class="tab active" type="button" data-tab="overview" data-i18n="tabOverview">Overview</button>
+            <button class="tab" type="button" data-tab="tasks" data-i18n="tabTasks">Tasks</button>
             <button class="tab" type="button" data-tab="dsl" data-i18n="tabDsl">Gameplay DSL</button>
             <button class="tab" type="button" data-tab="gdd" data-i18n="tabGdd">GDD</button>
             <button class="tab" type="button" data-tab="build" data-i18n="tabBuild">Build</button>
@@ -130,6 +131,10 @@
               <p data-i18n="emptyBody">Enter a gameplay idea to produce structured outputs for design, engine setup, assets, visuals, and QA.</p>
             </div>
             <div class="overview-grid hidden" id="overview-content"></div>
+          </section>
+
+          <section class="panel" id="tasks-panel" data-panel="tasks">
+            <div class="task-board" id="tasks-output"></div>
           </section>
 
           <section class="panel" id="dsl-panel" data-panel="dsl">
@@ -161,3 +166,4 @@
     <script src="/assets/app.js"></script>
   </body>
 </html>
+

@@ -89,6 +89,18 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             ],
         ),
         MCPToolContract(
+            name="probe_comfyui_capabilities",
+            server="comfyui-mcp",
+            input_schema_ref="mcp/comfyui-mcp/tools.yaml#probe_comfyui_capabilities",
+            output_schema_ref="mcp/comfyui-mcp/tools.yaml#probe_comfyui_capabilities.output",
+            side_effects=["reads local ComfyUI HTTP capability endpoints"],
+            safety_checks=[
+                "does not submit prompts",
+                "remote endpoints require explicit approval",
+                "reports missing checkpoint models before execution",
+            ],
+        ),
+        MCPToolContract(
             name="prepare_visual_reference_workflows",
             server="comfyui-mcp",
             input_schema_ref="mcp/comfyui-mcp/tools.yaml#prepare_visual_reference_workflows",
@@ -112,6 +124,7 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
                 "output path must be generated/comfyui",
                 "jobs must reference gameplay constraints",
                 "workflow templates must be templates/comfyui",
+                "required nodes and checkpoints must pass preflight before queueing",
             ],
         ),
         MCPToolContract(
