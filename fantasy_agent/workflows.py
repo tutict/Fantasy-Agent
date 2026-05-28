@@ -91,7 +91,7 @@ def prepare_unreal_project(spec: GameplaySpec, engine_version: str = "UE5") -> U
             "Create content folders",
             "Import generated greybox assets",
             "Create data assets from gameplay DSL",
-            "Run map validation commandlet",
+            "Run asset ingest manifest validation",
         ],
         handoff_artifacts=[
             "generated/gameplay-spec.yaml",

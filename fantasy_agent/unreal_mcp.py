@@ -14,12 +14,14 @@ from fantasy_agent.contracts import (
     ComfyUIRunManifest,
     UnrealAssetIngestJob,
     UnrealAssetIngestManifest,
+    UnrealAssetIngestValidationReport,
     UnrealContentManifest,
     UnrealMCPEditorCommandletRequest,
     UnrealMCPCreateProjectRequest,
     UnrealMCPPrepareAssetIngestRequest,
     UnrealMCPResult,
     UnrealMCPRunAssetIngestRequest,
+    UnrealMCPValidateAssetIngestRequest,
     UnrealImportManifest,
     UnrealProjectArtifact,
     UnrealProjectPlan,
@@ -28,13 +30,12 @@ from fantasy_agent.contracts import (
 SERVER_NAME = "fantasy-agent-unreal-mcp"
 SERVER_VERSION = "0.1.0"
 DEFAULT_WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
-ALLOWED_COMMANDLETS = {"MapCheck", "ResavePackages", "AssetAudit"}
+ALLOWED_COMMANDLETS = {"DataValidation"}
 BUILTIN_MODULE_NAMES = {"GameplayTags"}
 COMMANDLET_DEFAULT_ARGS = {
-    "MapCheck": [],
-    "ResavePackages": ["-ProjectOnly"],
-    "AssetAudit": [],
+    "DataValidation": ["-IncludeOnlyOnDiskAssets"],
 }
+UNREAL_DDC_ARGS = ["-DDC=InstalledNoZenLocalFallback"]
 
 
 def tool_descriptors() -> list[dict[str, Any]]:
@@ -87,11 +88,27 @@ def tool_descriptors() -> list[dict[str, Any]]:
             },
         },
         {
-            "name": "run_editor_commandlet",
-            "title": "Run Unreal Editor commandlet",
+            "name": "validate_asset_ingest",
+            "title": "Validate Unreal asset ingest manifest",
             "description": (
-                "Use this after explicit confirmation to run an allowlisted Unreal Editor "
-                "commandlet against a generated .uproject and capture logs under generated/logs."
+                "Use this before or after Unreal execution to verify generated asset ingest "
+                "manifests, Unreal-safe names, source paths, destination paths, and expected "
+                "UCX collision naming without launching Unreal."
+            ),
+            "inputSchema": UnrealMCPValidateAssetIngestRequest.model_json_schema(),
+            "annotations": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+        },
+        {
+            "name": "run_editor_commandlet",
+            "title": "Run Unreal Editor data validation",
+            "description": (
+                "Use this after explicit confirmation to run Unreal Editor data validation "
+                "against a generated .uproject and capture logs under generated/logs."
             ),
             "inputSchema": UnrealMCPEditorCommandletRequest.model_json_schema(),
             "annotations": {
@@ -195,6 +212,30 @@ class UnrealMCPBridge:
             risks=risks,
         )
 
+    def validate_asset_ingest(
+        self, request: UnrealMCPValidateAssetIngestRequest
+    ) -> UnrealMCPResult:
+        self._assert_relative_under(request.ingest_manifest_path, "generated/unreal")
+        manifest = UnrealAssetIngestManifest.model_validate(
+            self._load_manifest_data(request.ingest_manifest_path)
+        )
+        issues, warnings = self._validate_ingest_manifest(manifest, request)
+        report = UnrealAssetIngestValidationReport(
+            ingest_manifest_path=request.ingest_manifest_path,
+            project_file=manifest.project_file,
+            job_count=len(manifest.jobs),
+            issues=issues,
+            warnings=warnings,
+        )
+        return UnrealMCPResult(
+            status="executed" if not issues else "failed",
+            manifest=manifest,
+            validation_report=report,
+            risks=warnings
+            if not issues
+            else [*warnings, "Unreal asset ingest manifest has validation issues."],
+        )
+
     def run_asset_ingest(self, request: UnrealMCPRunAssetIngestRequest) -> UnrealMCPResult:
         project_file = self._assert_unreal_project_file(request.project_file)
         self._assert_relative_under(request.import_script_path, "generated/unreal")
@@ -210,7 +251,7 @@ class UnrealMCPBridge:
             f"-ExecutePythonScript={import_script_path.as_posix()}",
             "-unattended",
             "-nop4",
-            "-DDC-ForceMemoryCache",
+            *UNREAL_DDC_ARGS,
             f"-ShaderWorkingDir={self._shader_working_dir(project_file).as_posix()}",
             "-log",
         ]
@@ -227,13 +268,14 @@ class UnrealMCPBridge:
 
         stdout_path, stderr_path = self._log_paths(project_file.stem, "asset_ingest")
         self._shader_working_dir(project_file).mkdir(parents=True, exist_ok=True)
+        env = self._unreal_env(project_file)
         project_log_path = self._project_log_path(project_file)
         project_log_offset = project_log_path.stat().st_size if project_log_path.exists() else 0
         try:
             process = self.runner(
                 command,
                 cwd=project_file.parent,
-                env=dict(os.environ),
+                env=env,
                 text=True,
                 encoding="utf-8",
                 errors="replace",
@@ -306,12 +348,12 @@ class UnrealMCPBridge:
             *COMMANDLET_DEFAULT_ARGS[request.commandlet],
             "-unattended",
             "-nop4",
-            "-DDC-ForceMemoryCache",
+            *UNREAL_DDC_ARGS,
             f"-ShaderWorkingDir={self._shader_working_dir(project_file).as_posix()}",
             "-log",
         ]
         risks = [
-            "Unreal commandlets can load project plugins and may write project metadata.",
+            "Unreal editor data validation can load project plugins and asset metadata.",
             "Validation output must be reviewed before packaging or visual expansion.",
         ]
         if not request.confirmed_side_effects:
@@ -323,7 +365,7 @@ class UnrealMCPBridge:
 
         stdout_path, stderr_path = self._log_paths(project_file.stem, request.commandlet)
         self._shader_working_dir(project_file).mkdir(parents=True, exist_ok=True)
-        env = dict(os.environ)
+        env = self._unreal_env(project_file)
         try:
             process = self.runner(
                 command,
@@ -468,6 +510,71 @@ class UnrealMCPBridge:
     def _missing_sources(self, jobs: list[UnrealAssetIngestJob]) -> list[str]:
         return [job.source_file for job in jobs if not self._resolve_workspace_path(job.source_file).exists()]
 
+    def _validate_ingest_manifest(
+        self,
+        manifest: UnrealAssetIngestManifest,
+        request: UnrealMCPValidateAssetIngestRequest,
+    ) -> tuple[list[str], list[str]]:
+        issues: list[str] = []
+        warnings: list[str] = []
+        try:
+            self._assert_unreal_project_file(manifest.project_file)
+        except UnrealMCPSafetyError as exc:
+            issues.append(str(exc))
+        try:
+            self._assert_relative_under(manifest.import_script_path, "generated/unreal")
+        except UnrealMCPSafetyError as exc:
+            issues.append(str(exc))
+
+        seen_packages: set[str] = set()
+        for job in manifest.jobs:
+            if not _is_unreal_identifier(job.asset_name):
+                issues.append(f"invalid Unreal asset_name: {job.asset_name}")
+            if not _is_unreal_game_path(job.destination_path):
+                issues.append(f"invalid Unreal destination_path: {job.destination_path}")
+
+            package_key = f"{job.destination_path.rstrip('/')}/{job.asset_name}".lower()
+            if package_key in seen_packages:
+                issues.append(f"duplicate Unreal destination asset: {package_key}")
+            seen_packages.add(package_key)
+
+            expected_source_root = (
+                "generated/assets" if job.source == "blender" else "generated/comfyui"
+            )
+            try:
+                self._assert_relative_under(job.source_file, expected_source_root)
+            except UnrealMCPSafetyError as exc:
+                issues.append(str(exc))
+
+            if request.require_existing_sources and not self._resolve_workspace_path(
+                job.source_file
+            ).exists():
+                issues.append(f"missing source file: {job.source_file}")
+
+            if job.asset_type == "static_mesh":
+                if not job.source_file.lower().endswith((".fbx", ".glb")):
+                    issues.append(f"static mesh source must be .fbx or .glb: {job.source_file}")
+                collision_object = str(job.import_settings.get("collision_object") or "")
+                if not collision_object:
+                    warnings.append(f"missing UCX collision_object for {job.asset_name}")
+                elif not _is_unreal_identifier(collision_object):
+                    issues.append(f"invalid Unreal collision_object: {collision_object}")
+                elif not collision_object.startswith(f"UCX_{job.asset_name}_"):
+                    issues.append(
+                        "collision_object must match Unreal UCX naming for "
+                        f"{job.asset_name}: {collision_object}"
+                    )
+
+            if job.asset_type == "texture_reference":
+                if not job.source_file.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
+                    issues.append(
+                        f"texture reference source must be an image: {job.source_file}"
+                    )
+                if job.source == "comfyui" and not job.review_required:
+                    warnings.append(f"ComfyUI reference should require review: {job.asset_name}")
+
+        return issues, warnings
+
     def _write_asset_ingest(
         self,
         manifest: UnrealAssetIngestManifest,
@@ -499,7 +606,10 @@ class UnrealMCPBridge:
             project_file=(project_root / f"{project_name}.uproject").as_posix(),
             content_manifest_path=manifest_path,
             setup_script_path=(project_root / "Scripts" / "fantasy_agent_setup.py").as_posix(),
-            config_files=[(project_root / "Config" / "DefaultGame.ini").as_posix()],
+            config_files=[
+                (project_root / "Config" / "DefaultGame.ini").as_posix(),
+                (project_root / "Config" / "DefaultEngine.ini").as_posix(),
+            ],
             content_folders=content_folders,
             side_effects=[
                 "creates generated Unreal project descriptor and Config files",
@@ -567,17 +677,20 @@ class UnrealMCPBridge:
         project_file = self._resolve_workspace_path(artifact.project_file)
         manifest_path = self._resolve_workspace_path(artifact.content_manifest_path)
         setup_script_path = self._resolve_workspace_path(artifact.setup_script_path)
-        config_path = self._resolve_workspace_path(artifact.config_files[0])
+        game_config_path = self._resolve_workspace_path(artifact.config_files[0])
+        engine_config_path = self._resolve_workspace_path(artifact.config_files[1])
 
         self._write_text(project_file, json.dumps(_uproject_descriptor(plan), indent=2))
         self._write_text(manifest_path, json.dumps(manifest.model_dump(mode="json"), indent=2))
         self._write_text(setup_script_path, _setup_script(manifest))
-        self._write_text(config_path, _default_game_ini(plan))
+        self._write_text(game_config_path, _default_game_ini(plan))
+        self._write_text(engine_config_path, _default_engine_ini())
         return [
             self._display_path(project_file),
             self._display_path(manifest_path),
             self._display_path(setup_script_path),
-            self._display_path(config_path),
+            self._display_path(game_config_path),
+            self._display_path(engine_config_path),
         ]
 
     def _assert_unreal_project_file(self, path: str) -> Path:
@@ -617,6 +730,15 @@ class UnrealMCPBridge:
     def _shader_working_dir(self, project_file: Path) -> Path:
         return project_file.parent / "Intermediate" / "Shaders" / "WorkingDirectory"
 
+    def _unreal_env(self, project_file: Path) -> dict[str, str]:
+        env = dict(os.environ)
+        local_ddc = project_file.parent / "DerivedDataCache"
+        local_ddc.mkdir(parents=True, exist_ok=True)
+        env["UE-LocalDataCachePath"] = local_ddc.as_posix()
+        env["UE-SharedDataCachePath"] = "None"
+        env["UE-CloudDataCacheHost"] = "None"
+        return env
+
     def _project_log_tail(self, project_file: Path, start: int = 0, limit: int = 12000) -> str:
         log_path = self._project_log_path(project_file)
         if not log_path.exists():
@@ -646,6 +768,9 @@ def call_unreal_mcp_tool(
         elif name == "prepare_asset_ingest":
             request = UnrealMCPPrepareAssetIngestRequest.model_validate(arguments or {})
             result = bridge.prepare_asset_ingest(request)
+        elif name == "validate_asset_ingest":
+            request = UnrealMCPValidateAssetIngestRequest.model_validate(arguments or {})
+            result = bridge.validate_asset_ingest(request)
         elif name == "run_asset_ingest":
             request = UnrealMCPRunAssetIngestRequest.model_validate(arguments or {})
             result = bridge.run_asset_ingest(request)
@@ -667,9 +792,17 @@ def _content_summary(result: UnrealMCPResult) -> str:
     if result.status == "blocked":
         return "Unreal MCP blocked execution because side effects were not confirmed."
     if result.status == "failed":
+        if result.validation_report is not None:
+            return "Unreal MCP found asset ingest validation issues."
         return "Unreal MCP failed. Check returned logs and stderr_tail."
     if result.status == "executed":
-        return "Unreal MCP executed the commandlet and captured logs."
+        if result.validation_report is not None:
+            return "Unreal MCP validated the asset ingest manifest."
+        if any(item.startswith("-ExecutePythonScript=") for item in result.command):
+            return "Unreal MCP executed asset ingest and captured logs."
+        if any(item == "-run=DataValidation" for item in result.command):
+            return "Unreal MCP executed Unreal editor data validation and captured logs."
+        return "Unreal MCP executed Unreal Editor automation and captured logs."
     if result.status == "written":
         return f"Unreal MCP wrote {len(result.written_files)} generated handoff files."
     return "Unreal MCP prepared a project structure and automation handoff."
@@ -739,6 +872,22 @@ def _default_game_ini(plan: UnrealProjectPlan) -> str:
     )
 
 
+def _default_engine_ini() -> str:
+    return "\n".join(
+        [
+            "[Animation.DefaultObjectSettings]",
+            'BoneCompressionSettings="/ACLPlugin/ACLAnimBoneCompressionSettings"',
+            'BoneCompressionSettingsFallback="/ACLPlugin/ACLAnimBoneCompressionSettings"',
+            'AnimationRecorderBoneCompressionSettings="/ACLPlugin/ACLAnimBoneCompressionSettings"',
+            'AnimationRecorderBoneCompressionSettingsFallback="/ACLPlugin/ACLAnimBoneCompressionSettings"',
+            'CurveCompressionSettings="/ACLPlugin/ACLAnimCurveCompressionSettings"',
+            'CurveCompressionSettingsFallback="/ACLPlugin/ACLAnimCurveCompressionSettings"',
+            'VariableFrameStrippingSettings="/ACLPlugin/ACLAnimBoneCompressionSettings"',
+            "",
+        ]
+    )
+
+
 def _asset_ingest_script(manifest: UnrealAssetIngestManifest) -> str:
     payload = json.dumps(manifest.model_dump(mode="json"), indent=2)
     return f'''"""Fantasy Agent Unreal asset ingest script.
@@ -801,8 +950,11 @@ def mesh_options(job: dict):
 
 def import_job(job: dict) -> None:
     ensure_directory(job["destination_path"])
+    filename = source_path(job)
+    if not Path(filename).exists():
+        raise RuntimeError("Missing source file for Unreal import: {{}}".format(filename))
     task = unreal.AssetImportTask()
-    task.filename = source_path(job)
+    task.filename = filename
     task.destination_path = job["destination_path"]
     task.destination_name = job["asset_name"]
     task.automated = True
@@ -811,7 +963,17 @@ def import_job(job: dict) -> None:
     if job["asset_type"] == "static_mesh" and task.filename.lower().endswith(".fbx"):
         task.options = mesh_options(job)
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
-    unreal.log("Fantasy Agent imported {{}} -> {{}}".format(task.filename, task.destination_path))
+    imported_paths = list(getattr(task, "imported_object_paths", []) or [])
+    if imported_paths:
+        unreal.log(
+            "Fantasy Agent imported {{}} -> {{}}".format(
+                task.filename, ", ".join(imported_paths)
+            )
+        )
+    else:
+        unreal.log_warning(
+            "Fantasy Agent import produced no reported object paths: {{}}".format(task.filename)
+        )
 
 
 for ingest_job in MANIFEST["jobs"]:
@@ -840,6 +1002,19 @@ def _default_ingest_manifest_path(project_file: str) -> str:
 def _assert_game_path(path: str) -> None:
     if not path.startswith("/Game/"):
         raise UnrealMCPSafetyError(f"Unreal destination path must start with /Game/: {path}")
+
+
+def _is_unreal_identifier(value: str) -> bool:
+    if not value or not (value[0].isalpha() or value[0] == "_"):
+        return False
+    return all(ch.isalnum() or ch == "_" for ch in value)
+
+
+def _is_unreal_game_path(path: str) -> bool:
+    if not path.startswith("/Game/"):
+        return False
+    parts = [part for part in path.removeprefix("/Game/").split("/") if part]
+    return bool(parts) and all(_is_unreal_identifier(part) for part in parts)
 
 
 def _slug(value: str) -> str:

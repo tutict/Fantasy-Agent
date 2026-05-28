@@ -169,8 +169,60 @@ tools:
       - "Project file must stay under generated/unreal and end with .uproject."
       - "Import script must stay under generated/unreal."
       - "Logs must be saved under generated/logs/unreal."
+  validate_asset_ingest:
+    description: "Read-only validation for a generated Unreal asset ingest manifest, source paths, Unreal asset names, and UCX collision naming."
+    input:
+      type: object
+      required:
+        - ingest_manifest_path
+      properties:
+        ingest_manifest_path:
+          type: string
+          description: "Generated asset ingest manifest under generated/unreal."
+        require_existing_sources:
+          type: boolean
+          default: true
+    output:
+      type: object
+      required:
+        - status
+        - validation_report
+      properties:
+        status:
+          enum:
+            - executed
+            - failed
+        manifest:
+          type: object
+        validation_report:
+          type: object
+          properties:
+            ingest_manifest_path:
+              type: string
+            project_file:
+              type: string
+            job_count:
+              type: integer
+            issues:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "This tool does not launch Unreal."
+      - "Ingest manifest must stay under generated/unreal."
+      - "Blender sources must stay under generated/assets."
+      - "ComfyUI sources must stay under generated/comfyui."
+      - "Static mesh UCX collision names must match the Unreal asset name."
   run_editor_commandlet:
-    description: "Run an allowlisted Unreal Editor commandlet and capture logs."
+    description: "Run allowlisted Unreal Editor data validation and capture logs. Use manifest validation before editor execution."
     input:
       type: object
       required:
@@ -183,9 +235,7 @@ tools:
           description: "Generated .uproject path under generated/unreal."
         commandlet:
           enum:
-            - MapCheck
-            - ResavePackages
-            - AssetAudit
+            - DataValidation
         unreal_editor_cmd:
           type: string
           default: "UnrealEditor-Cmd"
@@ -229,7 +279,7 @@ tools:
     safety:
       - "Require confirmed_side_effects before launching Unreal."
       - "Project file must stay under generated/unreal and end with .uproject."
-      - "Commandlet must be allowlisted."
+      - "Commandlet allowlist is limited to UE DataValidation."
       - "Validation logs must be saved under generated/logs/unreal."
 safety:
   - "Project path must be inside the workspace."

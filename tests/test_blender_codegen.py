@@ -74,3 +74,29 @@ def test_enrich_blender_plan_supports_glb_exports_and_role_defaults():
     assert job.export_path.endswith(".glb")
     assert manifest["assets"][0]["destination_path"] == "/Game/Art/Generated"
     assert manifest["assets"][0]["collision_object"] == "UCX_test_exit_gate_00"
+
+
+def test_enrich_blender_plan_normalizes_unreal_asset_and_collision_names():
+    plan = BlenderAssetPlan(
+        job_name="unsafe-name-test",
+        python_entrypoint="apps/blender-worker/app/procedural_asset_job.py",
+        handoff_artifacts=[],
+        jobs=[
+            BlenderAssetJob(
+                asset_name="wall-run panel set",
+                purpose="Wall run readability panel.",
+                primitive_strategy="primitive wall",
+                export_path="generated/assets/wall-run_panel_set.fbx",
+                collision_hint="convex",
+            )
+        ],
+    )
+
+    enriched = enrich_blender_plan(plan)
+    manifest = build_import_manifest(enriched.model_dump(mode="json"))
+    job = enriched.jobs[0]
+
+    assert job.asset_name == "wall_run_panel_set"
+    assert job.collision_name == "UCX_wall_run_panel_set_00"
+    assert manifest["assets"][0]["asset_name"] == "wall_run_panel_set"
+    assert manifest["assets"][0]["collision_object"] == "UCX_wall_run_panel_set_00"

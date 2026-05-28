@@ -35,7 +35,21 @@ DEFAULT_DIMENSIONS_CM: dict[str, tuple[float, float, float]] = {
 
 
 def _slug(value: str) -> str:
-    return "".join(ch.lower() if ch.isalnum() else "_" for ch in value).strip("_")
+    slug = "".join(ch.lower() if ch.isalnum() else "_" for ch in value).strip("_")
+    while "__" in slug:
+        slug = slug.replace("__", "_")
+    return slug or "asset"
+
+
+def _unreal_identifier(value: str) -> str:
+    identifier = _slug(value)
+    if not identifier[0].isalpha():
+        identifier = f"fa_{identifier}"
+    return identifier
+
+
+def _asset_name(job: dict[str, Any]) -> str:
+    return _unreal_identifier(str(job["asset_name"]))
 
 
 def _dimensions(job: dict[str, Any]) -> tuple[float, float, float]:
@@ -61,8 +75,12 @@ def _asset_kind(job: dict[str, Any]) -> str:
 def _collision_name(job: dict[str, Any]) -> str:
     explicit = job.get("collision_name")
     if explicit:
-        return str(explicit)
-    return f"UCX_{job['asset_name']}_00"
+        collision_name = _unreal_identifier(str(explicit))
+    else:
+        collision_name = f"ucx_{_asset_name(job)}_00"
+    if not collision_name.startswith("ucx_"):
+        collision_name = f"ucx_{_asset_name(job)}_00"
+    return collision_name.replace("ucx_", "UCX_", 1)
 
 
 def _ensure_dir(filepath: str) -> None:
@@ -80,7 +98,7 @@ def build_import_manifest(plan: dict[str, Any]) -> dict[str, Any]:
     for job in plan.get("jobs", []):
         assets.append(
             {
-                "asset_name": job["asset_name"],
+                "asset_name": _asset_name(job),
                 "asset_kind": _asset_kind(job),
                 "source_file": job["export_path"],
                 "destination_path": job.get("unreal_path") or "/Game/Art/Generated",
@@ -293,7 +311,7 @@ def _create_asset_objects(
     index: int,
     materials: dict[str, Any],
 ) -> list[Any]:
-    asset_name = str(job["asset_name"])
+    asset_name = _asset_name(job)
     kind = _asset_kind(job)
     dims = _dimensions(job)
     material = materials.get(_material_key(job), materials["neutral"])

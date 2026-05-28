@@ -25,7 +25,7 @@ BlenderMaterialKey = Literal[
     "door",
     "ramp",
 ]
-UnrealCommandletName = Literal["MapCheck", "ResavePackages", "AssetAudit"]
+UnrealCommandletName = Literal["DataValidation"]
 UnrealAssetIngestSource = Literal["blender", "comfyui"]
 UnrealAssetIngestType = Literal["static_mesh", "texture_reference"]
 ComfyUICapabilityStatus = Literal["ready", "degraded", "unavailable"]
@@ -226,6 +226,11 @@ class UnrealMCPPrepareAssetIngestRequest(StrictModel):
     require_existing_sources: bool = False
 
 
+class UnrealMCPValidateAssetIngestRequest(StrictModel):
+    ingest_manifest_path: str
+    require_existing_sources: bool = True
+
+
 class UnrealMCPRunAssetIngestRequest(StrictModel):
     project_file: str
     import_script_path: str
@@ -242,10 +247,19 @@ class UnrealMCPEditorCommandletRequest(StrictModel):
     confirmed_side_effects: bool = False
 
 
+class UnrealAssetIngestValidationReport(StrictModel):
+    ingest_manifest_path: str
+    project_file: str
+    job_count: int
+    issues: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class UnrealMCPResult(StrictModel):
     status: Literal["planned", "written", "executed", "failed", "blocked"]
     artifact: UnrealProjectArtifact | None = None
     manifest: UnrealContentManifest | UnrealAssetIngestManifest | None = None
+    validation_report: UnrealAssetIngestValidationReport | None = None
     command: list[str] = Field(default_factory=list)
     created_paths: list[str] = Field(default_factory=list)
     written_files: list[str] = Field(default_factory=list)

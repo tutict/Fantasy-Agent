@@ -25,11 +25,11 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             server="unreal-mcp",
             input_schema_ref="mcp/unreal-mcp/tools.yaml#run_editor_commandlet",
             output_schema_ref="mcp/unreal-mcp/tools.yaml#run_editor_commandlet.output",
-            side_effects=["launches Unreal Editor commandlet"],
+            side_effects=["launches Unreal Editor data validation"],
             safety_checks=[
                 "requires confirmed side effects",
                 "project file must be generated/unreal/*.uproject",
-                "commandlet allowlist",
+                "commandlet allowlist is limited to UE DataValidation",
                 "timeout required",
                 "logs captured under generated/logs/unreal",
             ],
@@ -61,6 +61,19 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
                 "project file must be generated/unreal/*.uproject",
                 "script must be generated/unreal/*.py",
                 "logs captured under generated/logs/unreal",
+            ],
+        ),
+        MCPToolContract(
+            name="validate_asset_ingest",
+            server="unreal-mcp",
+            input_schema_ref="mcp/unreal-mcp/tools.yaml#validate_asset_ingest",
+            output_schema_ref="mcp/unreal-mcp/tools.yaml#validate_asset_ingest.output",
+            side_effects=["reads generated Unreal asset ingest manifest and source file paths"],
+            safety_checks=[
+                "does not launch Unreal",
+                "ingest manifest must be generated/unreal",
+                "asset names and UCX collision names must be Unreal-safe",
+                "source files must stay under generated/assets or generated/comfyui",
             ],
         ),
         MCPToolContract(

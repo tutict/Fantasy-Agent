@@ -44,6 +44,20 @@ def slugify(value: str) -> str:
     return slug or "asset"
 
 
+def unreal_identifier(value: str) -> str:
+    identifier = slugify(value)
+    if not identifier[0].isalpha():
+        identifier = f"fa_{identifier}"
+    return identifier
+
+
+def collision_identifier(value: str | None, asset_name: str) -> str:
+    collision_name = unreal_identifier(value or f"UCX_{asset_name}_00")
+    if not collision_name.lower().startswith("ucx_"):
+        collision_name = f"UCX_{asset_name}_00"
+    return collision_name.replace("ucx_", "UCX_", 1)
+
+
 def classify_asset_kind(asset_name: str, purpose: str) -> BlenderAssetKind:
     text = f"{asset_name} {purpose}".lower()
     if "ui" in text or "hud" in text or "tracker" in text:
@@ -64,9 +78,10 @@ def classify_asset_kind(asset_name: str, purpose: str) -> BlenderAssetKind:
 
 
 def enrich_blender_job(job: BlenderAssetJob, export_format: str = "fbx") -> BlenderAssetJob:
+    asset_name = unreal_identifier(job.asset_name)
     asset_kind = job.asset_kind
     if asset_kind == "generic_greybox":
-        asset_kind = classify_asset_kind(job.asset_name, job.purpose)
+        asset_kind = classify_asset_kind(asset_name, job.purpose)
     extension = "glb" if export_format == "glb" else "fbx"
     export_path = job.export_path
     if not export_path.endswith((".fbx", ".glb")):
@@ -80,9 +95,10 @@ def enrich_blender_job(job: BlenderAssetJob, export_format: str = "fbx") -> Blen
     collection = job.collection
     if collection == "GameplayGreybox":
         collection = KIND_DEFAULT_COLLECTION[asset_kind]
-    collision_name = job.collision_name or f"UCX_{job.asset_name}_00"
+    collision_name = collision_identifier(job.collision_name, asset_name)
     return job.model_copy(
         update={
+            "asset_name": asset_name,
             "asset_kind": asset_kind,
             "dimensions_cm": dimensions,
             "material_key": material_key,

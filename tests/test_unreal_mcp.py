@@ -11,6 +11,7 @@ from fantasy_agent.contracts import (
     UnrealMCPCreateProjectRequest,
     UnrealMCPPrepareAssetIngestRequest,
     UnrealMCPRunAssetIngestRequest,
+    UnrealMCPValidateAssetIngestRequest,
     UnrealProjectPlan,
 )
 from fantasy_agent.unreal_mcp import UnrealMCPBridge, call_unreal_mcp_tool, tool_descriptors
@@ -31,7 +32,7 @@ def _plan() -> UnrealProjectPlan:
         gameplay_classes=["BP_PlayerPrototypePawn", "BP_ObjectiveStateComponent"],
         blueprints=["BP_ObjectiveDirector", "WBP_ObjectiveTracker"],
         maps=["M_Prototype_Greybox"],
-        automation_steps=["Create content folders", "Run map validation commandlet"],
+        automation_steps=["Create content folders", "Run asset ingest manifest validation"],
         handoff_artifacts=["generated/unreal-project-plan.yaml"],
     )
 
@@ -43,6 +44,7 @@ def test_unreal_mcp_descriptors_expose_project_and_commandlet_tools():
         "create_project_structure",
         "prepare_asset_ingest",
         "run_asset_ingest",
+        "validate_asset_ingest",
         "run_editor_commandlet",
     }.issubset(names)
 
@@ -60,9 +62,16 @@ def test_create_project_structure_can_write_handoff_files(tmp_path: Path):
         "generated/unreal/mcpprototype/fantasy-agent-content-manifest.json",
         "generated/unreal/mcpprototype/Scripts/fantasy_agent_setup.py",
         "generated/unreal/mcpprototype/Config/DefaultGame.ini",
+        "generated/unreal/mcpprototype/Config/DefaultEngine.ini",
     ]
     assert (tmp_path / "generated/unreal/mcpprototype/MCPPrototype.uproject").exists()
     assert (tmp_path / "generated/unreal/mcpprototype/Content/Maps").exists()
+    assert (
+        "AnimationRecorderBoneCompressionSettings="
+        in (tmp_path / "generated/unreal/mcpprototype/Config/DefaultEngine.ini").read_text(
+            encoding="utf-8"
+        )
+    )
     descriptor = json.loads(
         (tmp_path / "generated/unreal/mcpprototype/MCPPrototype.uproject").read_text(
             encoding="utf-8"
@@ -78,36 +87,22 @@ def test_run_editor_commandlet_blocks_without_confirmation(tmp_path: Path):
     result = bridge.run_editor_commandlet(
         UnrealMCPEditorCommandletRequest(
             project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
-            commandlet="MapCheck",
+            commandlet="DataValidation",
             confirmed_side_effects=False,
         )
     )
 
     assert result.status == "blocked"
     assert "confirmed_side_effects=true" in result.risks[-1]
-    assert "-run=MapCheck" in result.command
-    assert "-DDC-ForceMemoryCache" in result.command
+    assert "-run=DataValidation" in result.command
+    assert "-IncludeOnlyOnDiskAssets" in result.command
+    assert "-DDC=InstalledNoZenLocalFallback" in result.command
     assert any(item.startswith("-ShaderWorkingDir=") for item in result.command)
-
-
-def test_resave_packages_commandlet_is_project_only(tmp_path: Path):
-    bridge = UnrealMCPBridge(tmp_path)
-    bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
-
-    result = bridge.run_editor_commandlet(
-        UnrealMCPEditorCommandletRequest(
-            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
-            commandlet="ResavePackages",
-            confirmed_side_effects=False,
-        )
-    )
-
-    assert "-ProjectOnly" in result.command
 
 
 def test_run_editor_commandlet_uses_fake_runner_and_captures_logs(tmp_path: Path):
     def fake_runner(*args, **kwargs):
-        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="map ok", stderr="")
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="data ok", stderr="")
 
     bridge = UnrealMCPBridge(tmp_path, runner=fake_runner)
     bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
@@ -115,15 +110,17 @@ def test_run_editor_commandlet_uses_fake_runner_and_captures_logs(tmp_path: Path
     result = bridge.run_editor_commandlet(
         UnrealMCPEditorCommandletRequest(
             project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
-            commandlet="AssetAudit",
+            commandlet="DataValidation",
             confirmed_side_effects=True,
         )
     )
 
     assert result.status == "executed"
     assert result.return_code == 0
-    assert result.stdout_tail == "map ok"
-    assert (tmp_path / "generated/logs/unreal/mcpprototype_AssetAudit.stdout.log").exists()
+    assert result.stdout_tail == "data ok"
+    assert (
+        tmp_path / "generated/logs/unreal/mcpprototype_DataValidation.stdout.log"
+    ).exists()
 
 
 def test_prepare_asset_ingest_writes_blender_and_comfyui_import_script(tmp_path: Path):
@@ -151,6 +148,63 @@ def test_prepare_asset_ingest_writes_blender_and_comfyui_import_script(tmp_path:
     script_text = script.read_text(encoding="utf-8")
     assert "AssetImportTask" in script_text
     assert "MANIFEST = json.loads" in script_text
+    assert "imported_object_paths" in script_text
+
+
+def test_validate_asset_ingest_accepts_unreal_safe_manifest(tmp_path: Path):
+    _write_source_manifests(tmp_path)
+    bridge = UnrealMCPBridge(tmp_path)
+    bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
+    bridge.prepare_asset_ingest(
+        UnrealMCPPrepareAssetIngestRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            blender_import_manifest_path="generated/import-manifest.yaml",
+            write_files=True,
+        )
+    )
+
+    result = bridge.validate_asset_ingest(
+        UnrealMCPValidateAssetIngestRequest(
+            ingest_manifest_path="generated/unreal/mcpprototype/fantasy-agent-asset-ingest.json"
+        )
+    )
+
+    assert result.status == "executed"
+    assert result.validation_report is not None
+    assert result.validation_report.job_count == 1
+    assert result.validation_report.issues == []
+
+
+def test_validate_asset_ingest_rejects_invalid_unreal_names(tmp_path: Path):
+    _write_source_manifests(tmp_path)
+    bridge = UnrealMCPBridge(tmp_path)
+    bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
+    bridge.prepare_asset_ingest(
+        UnrealMCPPrepareAssetIngestRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            blender_import_manifest_path="generated/import-manifest.yaml",
+            write_files=True,
+        )
+    )
+    manifest_path = tmp_path / "generated/unreal/mcpprototype/fantasy-agent-asset-ingest.json"
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data["jobs"][0]["asset_name"] = "wall-run_panel_set"
+    data["jobs"][0]["import_settings"]["collision_object"] = "UCX_wall-run_panel_set_00"
+    manifest_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    result = bridge.validate_asset_ingest(
+        UnrealMCPValidateAssetIngestRequest(
+            ingest_manifest_path="generated/unreal/mcpprototype/fantasy-agent-asset-ingest.json"
+        )
+    )
+
+    assert result.status == "failed"
+    assert result.validation_report is not None
+    assert "invalid Unreal asset_name: wall-run_panel_set" in result.validation_report.issues
+    assert (
+        "invalid Unreal collision_object: UCX_wall-run_panel_set_00"
+        in result.validation_report.issues
+    )
 
 
 def test_run_asset_ingest_blocks_without_confirmation(tmp_path: Path):
@@ -175,7 +229,7 @@ def test_run_asset_ingest_blocks_without_confirmation(tmp_path: Path):
 
     assert result.status == "blocked"
     assert "confirmed_side_effects=true" in result.risks[-1]
-    assert "-DDC-ForceMemoryCache" in result.command
+    assert "-DDC=InstalledNoZenLocalFallback" in result.command
     assert any(item.startswith("-ShaderWorkingDir=") for item in result.command)
 
 
@@ -272,7 +326,7 @@ def test_unreal_mcp_rejects_non_uproject_commandlet_target(tmp_path: Path):
         "run_editor_commandlet",
         {
             "project_file": "generated/unreal/mcpprototype/not-a-project.txt",
-            "commandlet": "MapCheck",
+            "commandlet": "DataValidation",
         },
         workspace_root=tmp_path,
     )
