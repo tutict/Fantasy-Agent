@@ -37,6 +37,8 @@ Status: started.
 ## Phase 4: ComfyUI MCP Integration
 
 - Implement ComfyUI MCP server contract.
+- Expose ComfyUI MCP JSON-RPC endpoint through the ComfyUI Worker.
+- Prepare allowlisted workflow JSON and run manifests from `ComfyUIVisualPlan`.
 - Execute allowlisted ComfyUI workflow templates from `ComfyUIVisualPlan`.
 - Write generated reference images into `generated/comfyui/`.
 - Produce prompt IDs, run manifests, and review notes.

@@ -44,7 +44,7 @@ Each app is a small FastAPI service:
 - `gameplay-agent`: prompt to gameplay DSL
 - `unreal-builder`: UE5 architecture plan
 - `blender-worker`: procedural asset jobs, Blender Python scripts, and Unreal import manifests
-- `comfyui-worker`: gameplay-readable visual reference plan
+- `comfyui-worker`: gameplay-readable visual reference plans, prepared workflows, and controlled ComfyUI MCP execution
 - `qa-agent`: playability and packaging checks
 
 ## ChatGPT Apps Surface

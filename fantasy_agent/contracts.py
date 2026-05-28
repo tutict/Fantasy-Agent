@@ -230,6 +230,60 @@ class ComfyUIVisualPlan(StrictModel):
     usage_rules: list[str]
 
 
+class ComfyUIWorkflowArtifact(StrictModel):
+    job_id: str
+    workflow_template: str
+    workflow_path: str
+    workflow: dict
+    output_path: str
+    prompt: str
+    negative_prompt: str
+    gameplay_constraint: str
+    seed: int
+
+
+class ComfyUIRunManifest(StrictModel):
+    schema_version: str = "0.1"
+    plan_name: str
+    endpoint: str
+    jobs: list[ComfyUIWorkflowArtifact]
+    prompt_ids: list[str] = Field(default_factory=list)
+    generated_images: list[str] = Field(default_factory=list)
+    log_paths: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+
+
+class ComfyUIMCPGenerateRequest(StrictModel):
+    plan: ComfyUIVisualPlan
+    output_dir: str = "generated/comfyui"
+    write_files: bool = False
+
+
+class ComfyUIMCPExecuteRequest(StrictModel):
+    plan: ComfyUIVisualPlan
+    output_dir: str = "generated/comfyui"
+    confirmed_side_effects: bool = False
+    wait_for_completion: bool = False
+    timeout_seconds: int = Field(default=300, ge=10, le=1800)
+    poll_interval_seconds: float = Field(default=2.0, ge=0.2, le=30.0)
+    allow_remote_endpoint: bool = False
+
+
+class ComfyUIMCPResult(StrictModel):
+    status: Literal["planned", "written", "queued", "executed", "failed", "blocked"]
+    manifest: ComfyUIRunManifest
+    workflow_files: list[str] = Field(default_factory=list)
+    manifest_path: str
+    written_files: list[str] = Field(default_factory=list)
+    prompt_ids: list[str] = Field(default_factory=list)
+    generated_images: list[str] = Field(default_factory=list)
+    log_paths: list[str] = Field(default_factory=list)
+    return_code: int | None = None
+    stdout_tail: str = ""
+    stderr_tail: str = ""
+    risks: list[str] = Field(default_factory=list)
+
+
 class QAPlan(StrictModel):
     target_session_minutes: int = Field(ge=5, le=15)
     smoke_tests: list[str]

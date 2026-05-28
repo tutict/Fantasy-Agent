@@ -124,6 +124,7 @@ The first implementation pass defines stable contracts before deep automation:
 - `BlenderAssetPlan`: procedural asset jobs and export handoff paths.
 - `BlenderScriptArtifact`: generated Blender Python script plus Unreal import manifest.
 - `ComfyUIVisualPlan`: visual reference jobs for readability, material language, UI references, and reviewed texture seeds.
+- `ComfyUIRunManifest`: prepared workflow files, prompt IDs, expected outputs, and execution logs for reviewed visual references.
 - `QAPlan`: smoke tests, playability checks, packaging checks, and metrics.
 - `DirectorBuildPlan`: combined orchestration output for the full first-pass pipeline.
 

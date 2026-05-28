@@ -1,45 +1,121 @@
 server: comfyui-mcp
 tools:
+  prepare_visual_reference_workflows:
+    description: "Prepare allowlisted ComfyUI workflow JSON files and a run manifest from a ComfyUIVisualPlan."
+    input:
+      type: object
+      required:
+        - plan
+      properties:
+        plan:
+          $ref: "../../gameplay-schema.yaml#/$defs/comfyui_visual_plan"
+        output_dir:
+          type: string
+          default: "generated/comfyui"
+        write_files:
+          type: boolean
+          default: false
+    output:
+      type: object
+      required:
+        - status
+        - manifest
+        - workflow_files
+        - manifest_path
+      properties:
+        status:
+          enum:
+            - planned
+            - written
+        manifest:
+          type: object
+        workflow_files:
+          type: array
+          items:
+            type: string
+        written_files:
+          type: array
+          items:
+            type: string
+        manifest_path:
+          type: string
+    safety:
+      - "This tool is read-only unless write_files is true."
+      - "Workflow templates must stay under templates/comfyui."
+      - "Workflow JSON and manifests must stay under generated/comfyui."
+      - "Every job must include a gameplay_constraint."
   run_visual_reference_workflow:
     description: "Run allowlisted ComfyUI visual reference jobs from a ComfyUIVisualPlan."
     input:
       type: object
       required:
-        - plan_path
-        - endpoint
-        - output_dir
+        - plan
+        - confirmed_side_effects
       properties:
-        plan_path:
-          type: string
-          description: "Path to generated/comfyui/comfyui-visual-plan.yaml."
-        endpoint:
-          type: string
-          default: "http://127.0.0.1:8188"
+        plan:
+          $ref: "../../gameplay-schema.yaml#/$defs/comfyui_visual_plan"
         output_dir:
           type: string
-          const: "generated/comfyui"
+          default: "generated/comfyui"
+        confirmed_side_effects:
+          type: boolean
+          description: "Must be true after explicit user confirmation."
+        wait_for_completion:
+          type: boolean
+          default: false
+        timeout_seconds:
+          type: integer
+          minimum: 10
+          maximum: 1800
+          default: 300
+        poll_interval_seconds:
+          type: number
+          minimum: 0.2
+          maximum: 30
+          default: 2
+        allow_remote_endpoint:
+          type: boolean
+          default: false
     output:
       type: object
       required:
+        - status
         - generated_images
-        - run_manifest
+        - prompt_ids
+        - log_paths
       properties:
+        status:
+          enum:
+            - queued
+            - executed
+            - failed
+            - blocked
         generated_images:
           type: array
           items:
             type: string
-        run_manifest:
+        manifest_path:
           type: string
         prompt_ids:
           type: array
           items:
             type: string
-        logs:
+        written_files:
           type: array
           items:
             type: string
+        log_paths:
+          type: array
+          items:
+            type: string
+        stdout_tail:
+          type: string
+        stderr_tail:
+          type: string
     safety:
       - "Default endpoint must be localhost."
       - "Refuse output paths outside generated/comfyui."
       - "Require each job to include a gameplay_constraint."
       - "Run only templates from templates/comfyui."
+      - "Require confirmed_side_effects before submitting prompts."
+      - "Generated images require review before becoming Unreal textures or UI assets."

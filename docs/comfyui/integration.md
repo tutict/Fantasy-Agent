@@ -25,6 +25,13 @@ GameplaySpec
   -> reviewed visual references
 ```
 
+## MCP Tools
+
+- `prepare_visual_reference_workflows`: prepares allowlisted workflow JSON and run manifests. It is planning-safe unless `write_files=true`.
+- `run_visual_reference_workflow`: submits prepared jobs to ComfyUI after `confirmed_side_effects=true`.
+
+The MCP bridge uses the local ComfyUI HTTP routes `/prompt`, `/history/{prompt_id}`, and `/view` for queueing, polling, and optional image download.
+
 ## Safety
 
 - Default endpoint is `http://127.0.0.1:8188`.
@@ -32,6 +39,9 @@ GameplaySpec
 - Workflow templates come from `templates/comfyui/`.
 - Each job must include a gameplay constraint.
 - Generated images are reviewed before they become engine assets.
+- Remote ComfyUI endpoints require explicit `allow_remote_endpoint=true`.
+- Prompt submission requires `confirmed_side_effects=true`.
+- Logs stay under `generated/logs/comfyui/`.
 
 ## 中文说明
 

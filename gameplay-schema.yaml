@@ -326,6 +326,72 @@ $defs:
         type: string
       collision_name:
         type: string
+  comfyui_visual_plan:
+    type: object
+    additionalProperties: false
+    required:
+      - plan_name
+      - endpoint
+      - jobs
+      - workflow_templates
+      - handoff_artifacts
+      - usage_rules
+    properties:
+      plan_name:
+        type: string
+      endpoint:
+        type: string
+        default: "http://127.0.0.1:8188"
+      jobs:
+        type: array
+        minItems: 1
+        items:
+          $ref: "#/$defs/comfyui_prompt_job"
+      workflow_templates:
+        type: array
+        minItems: 1
+        items:
+          type: string
+      handoff_artifacts:
+        type: array
+        items:
+          type: string
+      usage_rules:
+        type: array
+        minItems: 1
+        items:
+          type: string
+  comfyui_prompt_job:
+    type: object
+    additionalProperties: false
+    required:
+      - job_id
+      - purpose
+      - prompt
+      - negative_prompt
+      - workflow_template
+      - output_path
+      - gameplay_constraint
+    properties:
+      job_id:
+        type: string
+      purpose:
+        enum:
+          - concept_reference
+          - material_reference
+          - ui_reference
+          - texture_seed
+          - storyboard_frame
+      prompt:
+        type: string
+      negative_prompt:
+        type: string
+      workflow_template:
+        type: string
+      output_path:
+        type: string
+      gameplay_constraint:
+        type: string
   i18n_bundle:
     type: object
     additionalProperties: false

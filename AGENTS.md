@@ -207,6 +207,8 @@ Rules:
 - Every prompt must include a gameplay constraint.
 - Generated images require review before becoming Unreal textures or UI assets.
 - Avoid decorative images that do not clarify objectives, hazards, routes, materials, or feedback.
+- ComfyUI MCP execution must keep templates under `templates/comfyui/`, outputs under `generated/comfyui/`, and logs under `generated/logs/comfyui/`.
+- Do not submit prompts to ComfyUI without explicit side-effect confirmation.
 
 ## ChatGPT Workbench
 

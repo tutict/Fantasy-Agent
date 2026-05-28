@@ -21,6 +21,7 @@ Generate reference imagery plans that support gameplay readability:
 ## Outputs
 
 - ComfyUI workflow job manifest
+- Prepared workflow JSON files
 - Generated reference image paths
 - Run manifest and prompt IDs
 
@@ -30,3 +31,5 @@ Generate reference imagery plans that support gameplay readability:
 - Do not block UE greybox work on image generation.
 - Every image must support objective clarity, hazard readability, route planning, UI feedback, or material language.
 - Generated images require review before becoming engine assets.
+- Do not submit ComfyUI prompts without explicit side-effect confirmation.
+- Keep workflow templates under `templates/comfyui/` and outputs under `generated/comfyui/`.

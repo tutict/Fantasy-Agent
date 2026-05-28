@@ -51,7 +51,7 @@ Future MCP servers execute controlled operations:
 
 - ChatGPT Apps MCP exposes read-only planning tools and widget state.
 - Blender MCP generates allowlisted scripts, requires explicit side-effect confirmation, runs `bpy` jobs, captures logs, and exports assets.
-- ComfyUI MCP runs allowlisted visual reference workflows.
+- ComfyUI MCP prepares allowlisted workflow JSON, requires explicit side-effect confirmation, submits prompt jobs, captures prompt IDs, and optionally downloads reviewed reference outputs.
 - Unreal MCP creates/imports/validates project content.
 - GitHub MCP publishes review branches and pull requests.
 

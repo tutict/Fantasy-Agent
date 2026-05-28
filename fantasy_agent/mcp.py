@@ -47,15 +47,29 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             ],
         ),
         MCPToolContract(
+            name="prepare_visual_reference_workflows",
+            server="comfyui-mcp",
+            input_schema_ref="mcp/comfyui-mcp/tools.yaml#prepare_visual_reference_workflows",
+            output_schema_ref="mcp/comfyui-mcp/tools.yaml#prepare_visual_reference_workflows.output",
+            side_effects=["optionally writes prepared ComfyUI workflow JSON and run manifests"],
+            safety_checks=[
+                "workflow templates must be templates/comfyui",
+                "output path must be generated/comfyui",
+                "jobs must reference gameplay constraints",
+            ],
+        ),
+        MCPToolContract(
             name="run_visual_reference_workflow",
             server="comfyui-mcp",
             input_schema_ref="mcp/comfyui-mcp/tools.yaml#run_visual_reference_workflow",
             output_schema_ref="mcp/comfyui-mcp/tools.yaml#run_visual_reference_workflow.output",
             side_effects=["submits ComfyUI prompt jobs", "writes generated reference images"],
             safety_checks=[
+                "requires confirmed side effects",
                 "ComfyUI endpoint must be local or explicitly approved",
                 "output path must be generated/comfyui",
                 "jobs must reference gameplay constraints",
+                "workflow templates must be templates/comfyui",
             ],
         ),
         MCPToolContract(
