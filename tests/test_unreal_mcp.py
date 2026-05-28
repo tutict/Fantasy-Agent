@@ -78,6 +78,12 @@ def test_create_project_structure_can_write_handoff_files(tmp_path: Path):
             encoding="utf-8"
         )
     )
+    assert (
+        "GameDefaultMap=/Game/Maps/M_Prototype_Greybox"
+        in (tmp_path / "generated/unreal/mcpprototype/Config/DefaultEngine.ini").read_text(
+            encoding="utf-8"
+        )
+    )
     descriptor = json.loads(
         (tmp_path / "generated/unreal/mcpprototype/MCPPrototype.uproject").read_text(
             encoding="utf-8"

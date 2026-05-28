@@ -1200,7 +1200,7 @@ class UnrealMCPBridge:
         self._write_text(manifest_path, json.dumps(manifest.model_dump(mode="json"), indent=2))
         self._write_text(setup_script_path, _setup_script(manifest))
         self._write_text(game_config_path, _default_game_ini(plan))
-        self._write_text(engine_config_path, _default_engine_ini())
+        self._write_text(engine_config_path, _default_engine_ini(plan))
         return [
             self._display_path(project_file),
             self._display_path(manifest_path),
@@ -1404,9 +1404,15 @@ def _default_game_ini(plan: UnrealProjectPlan) -> str:
     )
 
 
-def _default_engine_ini() -> str:
+def _default_engine_ini(plan: UnrealProjectPlan) -> str:
+    first_map = plan.maps[0] if plan.maps else "M_Prototype_Greybox"
+    map_path = f"/Game/Maps/{Path(first_map).stem}"
     return "\n".join(
         [
+            "[/Script/EngineSettings.GameMapsSettings]",
+            f"EditorStartupMap={map_path}",
+            f"GameDefaultMap={map_path}",
+            "",
             "[Animation.DefaultObjectSettings]",
             'BoneCompressionSettings="/ACLPlugin/ACLAnimBoneCompressionSettings"',
             'BoneCompressionSettingsFallback="/ACLPlugin/ACLAnimBoneCompressionSettings"',
