@@ -9,8 +9,11 @@ from fantasy_agent.contracts import (
     UnrealImportManifest,
     UnrealMCPEditorCommandletRequest,
     UnrealMCPCreateProjectRequest,
+    UnrealMCPPrepareLevelAssemblyRequest,
     UnrealMCPPrepareAssetIngestRequest,
     UnrealMCPRunAssetIngestRequest,
+    UnrealMCPRunLevelAssemblyRequest,
+    UnrealMCPValidateLevelAssemblyRequest,
     UnrealMCPValidateAssetIngestRequest,
     UnrealProjectPlan,
 )
@@ -45,6 +48,9 @@ def test_unreal_mcp_descriptors_expose_project_and_commandlet_tools():
         "prepare_asset_ingest",
         "run_asset_ingest",
         "validate_asset_ingest",
+        "prepare_level_assembly",
+        "run_level_assembly",
+        "validate_level_assembly",
         "run_editor_commandlet",
     }.issubset(names)
 
@@ -207,6 +213,150 @@ def test_validate_asset_ingest_rejects_invalid_unreal_names(tmp_path: Path):
     )
 
 
+def test_prepare_level_assembly_writes_map_manifest_and_script(tmp_path: Path):
+    _write_level_source_manifests(tmp_path)
+    bridge = UnrealMCPBridge(tmp_path)
+    bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
+    bridge.prepare_asset_ingest(
+        UnrealMCPPrepareAssetIngestRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            blender_import_manifest_path="generated/level-import-manifest.json",
+            write_files=True,
+        )
+    )
+
+    result = bridge.prepare_level_assembly(
+        UnrealMCPPrepareLevelAssemblyRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            ingest_manifest_path="generated/unreal/mcpprototype/fantasy-agent-asset-ingest.json",
+            write_files=True,
+        )
+    )
+
+    assert result.status == "written"
+    assert result.manifest is not None
+    assert result.written_files == [
+        "generated/unreal/mcpprototype/fantasy-agent-level-assembly.json",
+        "generated/unreal/mcpprototype/Scripts/fantasy_agent_level_assembly.py",
+    ]
+    script = tmp_path / "generated/unreal/mcpprototype/Scripts/fantasy_agent_level_assembly.py"
+    script_text = script.read_text(encoding="utf-8")
+    assert "spawn_player_start" in script_text
+    assert "write_playtest_smoke_report" in script_text
+    assert "/Game/Maps/M_Prototype_Greybox" in script_text
+    assert result.manifest.playtest_report_path == (
+        "generated/unreal/mcpprototype/fantasy-agent-playtest-smoke.json"
+    )
+    assert any(
+        placement.gameplay_role == "objective" for placement in result.manifest.placements
+    )
+    assert any(placement.gameplay_role == "exit" for placement in result.manifest.placements)
+
+
+def test_validate_level_assembly_accepts_playtest_route(tmp_path: Path):
+    _write_level_source_manifests(tmp_path)
+    bridge = UnrealMCPBridge(tmp_path)
+    bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
+    bridge.prepare_asset_ingest(
+        UnrealMCPPrepareAssetIngestRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            blender_import_manifest_path="generated/level-import-manifest.json",
+            write_files=True,
+        )
+    )
+    bridge.prepare_level_assembly(
+        UnrealMCPPrepareLevelAssemblyRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            ingest_manifest_path="generated/unreal/mcpprototype/fantasy-agent-asset-ingest.json",
+            write_files=True,
+        )
+    )
+    _write_fake_imported_assets(tmp_path)
+
+    result = bridge.validate_level_assembly(
+        UnrealMCPValidateLevelAssemblyRequest(
+            level_manifest_path="generated/unreal/mcpprototype/fantasy-agent-level-assembly.json"
+        )
+    )
+
+    assert result.status == "executed"
+    assert result.validation_report is not None
+    assert result.validation_report.placement_count >= 10
+    assert result.validation_report.issues == []
+
+
+def test_run_level_assembly_blocks_without_confirmation(tmp_path: Path):
+    _write_level_source_manifests(tmp_path)
+    bridge = UnrealMCPBridge(tmp_path)
+    bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
+    bridge.prepare_asset_ingest(
+        UnrealMCPPrepareAssetIngestRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            blender_import_manifest_path="generated/level-import-manifest.json",
+            write_files=True,
+        )
+    )
+    bridge.prepare_level_assembly(
+        UnrealMCPPrepareLevelAssemblyRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            ingest_manifest_path="generated/unreal/mcpprototype/fantasy-agent-asset-ingest.json",
+            write_files=True,
+        )
+    )
+
+    result = bridge.run_level_assembly(
+        UnrealMCPRunLevelAssemblyRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            assembly_script_path=(
+                "generated/unreal/mcpprototype/Scripts/fantasy_agent_level_assembly.py"
+            ),
+            confirmed_side_effects=False,
+        )
+    )
+
+    assert result.status == "blocked"
+    assert "confirmed_side_effects=true" in result.risks[-1]
+    assert "-DDC=InstalledNoZenLocalFallback" in result.command
+    assert any(item.startswith("-ShaderWorkingDir=") for item in result.command)
+
+
+def test_run_level_assembly_uses_fake_runner_and_captures_logs(tmp_path: Path):
+    def fake_runner(*args, **kwargs):
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="level ok", stderr="")
+
+    _write_level_source_manifests(tmp_path)
+    bridge = UnrealMCPBridge(tmp_path, runner=fake_runner)
+    bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
+    bridge.prepare_asset_ingest(
+        UnrealMCPPrepareAssetIngestRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            blender_import_manifest_path="generated/level-import-manifest.json",
+            write_files=True,
+        )
+    )
+    bridge.prepare_level_assembly(
+        UnrealMCPPrepareLevelAssemblyRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            ingest_manifest_path="generated/unreal/mcpprototype/fantasy-agent-asset-ingest.json",
+            write_files=True,
+        )
+    )
+
+    result = bridge.run_level_assembly(
+        UnrealMCPRunLevelAssemblyRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            assembly_script_path=(
+                "generated/unreal/mcpprototype/Scripts/fantasy_agent_level_assembly.py"
+            ),
+            confirmed_side_effects=True,
+        )
+    )
+
+    assert result.status == "executed"
+    assert result.stdout_tail == "level ok"
+    assert (tmp_path / "generated/logs/unreal/mcpprototype_level_assembly.stdout.log").exists()
+
+
 def test_run_asset_ingest_blocks_without_confirmation(tmp_path: Path):
     _write_source_manifests(tmp_path)
     bridge = UnrealMCPBridge(tmp_path)
@@ -333,6 +483,62 @@ def test_unreal_mcp_rejects_non_uproject_commandlet_target(tmp_path: Path):
 
     assert result["isError"] is True
     assert ".uproject" in result["content"][0]["text"]
+
+
+LEVEL_ASSETS: tuple[tuple[str, str, str], ...] = (
+    ("modular_rooftop_floor_kit", "generic_greybox", "Floor route kit."),
+    ("traversal_ramp", "ramp", "Traversal ramp."),
+    ("low_vault_blocker_set", "door", "Vault obstacle."),
+    ("wall_run_panel_set", "modular_wall", "Wall-run panel."),
+    ("slide_barrier_set", "modular_wall", "Slide obstacle."),
+    ("boost_pad_marker", "hazard_marker", "Boost route marker."),
+    ("checkpoint_gate", "exit_gate", "Checkpoint gate."),
+    ("fall_hazard_marker_set", "hazard_marker", "Fall hazard markers."),
+    ("objective_prop", "objective_prop", "Objective prop."),
+    ("extraction_gate", "exit_gate", "Extraction gate."),
+    ("route_timer_ui_proxy", "ui_proxy_mesh", "Route timer UI proxy."),
+)
+
+
+def _write_level_source_manifests(root: Path) -> None:
+    (root / "generated/assets").mkdir(parents=True, exist_ok=True)
+    assets: list[UnrealImportAsset] = []
+    for asset_name, asset_kind, gameplay_role in LEVEL_ASSETS:
+        source_file = f"generated/assets/{asset_name}.fbx"
+        (root / source_file).write_text("fbx", encoding="utf-8")
+        assets.append(
+            UnrealImportAsset(
+                asset_name=asset_name,
+                asset_kind=asset_kind,  # type: ignore[arg-type]
+                source_file=source_file,
+                destination_path="/Game/Art/Generated",
+                collision_object=f"UCX_{asset_name}_00",
+                material_key="neutral",
+                dimensions_cm=(120.0, 120.0, 80.0),
+                gameplay_role=gameplay_role,
+            )
+        )
+    blender_manifest = UnrealImportManifest(
+        import_settings={
+            "combine_meshes": False,
+            "generate_missing_collision": False,
+            "import_materials": True,
+            "import_textures": False,
+            "unit_scale": 1.0,
+        },
+        assets=assets,
+    )
+    (root / "generated/level-import-manifest.json").write_text(
+        json.dumps(blender_manifest.model_dump(mode="json"), indent=2),
+        encoding="utf-8",
+    )
+
+
+def _write_fake_imported_assets(root: Path) -> None:
+    content_dir = root / "generated/unreal/mcpprototype/Content/Art/Generated"
+    content_dir.mkdir(parents=True, exist_ok=True)
+    for asset_name, _, _ in LEVEL_ASSETS:
+        (content_dir / f"{asset_name}.uasset").write_text("uasset", encoding="utf-8")
 
 
 def _write_source_manifests(

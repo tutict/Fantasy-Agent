@@ -221,6 +221,172 @@ tools:
       - "Blender sources must stay under generated/assets."
       - "ComfyUI sources must stay under generated/comfyui."
       - "Static mesh UCX collision names must match the Unreal asset name."
+  prepare_level_assembly:
+    description: "Prepare a gameplay-first greybox map assembly manifest and Unreal Python script from a generated asset ingest manifest."
+    input:
+      type: object
+      required:
+        - project_file
+        - ingest_manifest_path
+      properties:
+        project_file:
+          type: string
+          description: "Generated .uproject path under generated/unreal."
+        ingest_manifest_path:
+          type: string
+          description: "Generated asset ingest manifest under generated/unreal."
+        map_name:
+          type: string
+          default: "M_Prototype_Greybox"
+        assembly_script_path:
+          type: string
+          default: "generated/unreal/<project>/Scripts/fantasy_agent_level_assembly.py"
+        level_manifest_path:
+          type: string
+          default: "generated/unreal/<project>/fantasy-agent-level-assembly.json"
+        write_files:
+          type: boolean
+          default: false
+    output:
+      type: object
+      required:
+        - status
+        - manifest
+      properties:
+        status:
+          enum:
+            - planned
+            - written
+        manifest:
+          type: object
+        written_files:
+          type: array
+          items:
+            type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "This tool is read-only unless write_files is true."
+      - "Project file must stay under generated/unreal and end with .uproject."
+      - "Level manifest and script must stay under generated/unreal."
+      - "Map path must stay under /Game/Maps."
+  validate_level_assembly:
+    description: "Read-only validation for a generated Unreal level assembly manifest, route roles, map path, and imported asset references."
+    input:
+      type: object
+      required:
+        - level_manifest_path
+      properties:
+        level_manifest_path:
+          type: string
+          description: "Generated level assembly manifest under generated/unreal."
+        require_imported_assets:
+          type: boolean
+          default: true
+        require_playtest_route:
+          type: boolean
+          default: true
+    output:
+      type: object
+      required:
+        - status
+        - validation_report
+      properties:
+        status:
+          enum:
+            - executed
+            - failed
+        manifest:
+          type: object
+        validation_report:
+          type: object
+          properties:
+            level_manifest_path:
+              type: string
+            project_file:
+              type: string
+            map_path:
+              type: string
+            placement_count:
+              type: integer
+            issues:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "This tool does not launch Unreal."
+      - "Level manifest must stay under generated/unreal."
+      - "Route must include floor, objective, and exit roles."
+      - "Imported asset references must resolve to generated project Content files when required."
+  run_level_assembly:
+    description: "Launch Unreal Editor to execute a generated Fantasy Agent level assembly script and write or update the generated prototype map."
+    input:
+      type: object
+      required:
+        - project_file
+        - assembly_script_path
+      properties:
+        project_file:
+          type: string
+          description: "Generated .uproject path under generated/unreal."
+        assembly_script_path:
+          type: string
+          description: "Generated Python script under generated/unreal."
+        unreal_editor_cmd:
+          type: string
+          default: "UnrealEditor-Cmd"
+        timeout_seconds:
+          type: integer
+          minimum: 30
+          maximum: 3600
+          default: 600
+        confirmed_side_effects:
+          type: boolean
+          description: "Must be true after explicit user confirmation."
+    output:
+      type: object
+      required:
+        - status
+        - log_paths
+      properties:
+        status:
+          enum:
+            - executed
+            - failed
+            - blocked
+        command:
+          type: array
+          items:
+            type: string
+        log_paths:
+          type: array
+          items:
+            type: string
+        return_code:
+          type: integer
+        stdout_tail:
+          type: string
+        stderr_tail:
+          type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "Require confirmed_side_effects before launching Unreal."
+      - "Project file must stay under generated/unreal and end with .uproject."
+      - "Assembly script must stay under generated/unreal."
+      - "Logs must be saved under generated/logs/unreal."
   run_editor_commandlet:
     description: "Run allowlisted Unreal Editor data validation and capture logs. Use manifest validation before editor execution."
     input:

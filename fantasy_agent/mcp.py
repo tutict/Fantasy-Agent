@@ -77,6 +77,47 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             ],
         ),
         MCPToolContract(
+            name="prepare_level_assembly",
+            server="unreal-mcp",
+            input_schema_ref="mcp/unreal-mcp/tools.yaml#prepare_level_assembly",
+            output_schema_ref="mcp/unreal-mcp/tools.yaml#prepare_level_assembly.output",
+            side_effects=[
+                "optionally writes Unreal Python level assembly script",
+                "optionally writes level assembly manifest",
+            ],
+            safety_checks=[
+                "project file must be generated/unreal/*.uproject",
+                "source ingest manifest must be generated/unreal",
+                "map path must stay under /Game/Maps",
+            ],
+        ),
+        MCPToolContract(
+            name="validate_level_assembly",
+            server="unreal-mcp",
+            input_schema_ref="mcp/unreal-mcp/tools.yaml#validate_level_assembly",
+            output_schema_ref="mcp/unreal-mcp/tools.yaml#validate_level_assembly.output",
+            side_effects=["reads generated Unreal level assembly manifest and asset paths"],
+            safety_checks=[
+                "does not launch Unreal",
+                "level manifest must be generated/unreal",
+                "route must include floor, objective, and exit roles",
+                "imported asset paths must resolve to generated project Content files",
+            ],
+        ),
+        MCPToolContract(
+            name="run_level_assembly",
+            server="unreal-mcp",
+            input_schema_ref="mcp/unreal-mcp/tools.yaml#run_level_assembly",
+            output_schema_ref="mcp/unreal-mcp/tools.yaml#run_level_assembly.output",
+            side_effects=["launches Unreal Editor", "writes or updates generated map assets"],
+            safety_checks=[
+                "requires confirmed side effects",
+                "project file must be generated/unreal/*.uproject",
+                "assembly script must be generated/unreal/*.py",
+                "logs captured under generated/logs/unreal",
+            ],
+        ),
+        MCPToolContract(
             name="generate_blender_script",
             server="blender-mcp",
             input_schema_ref="mcp/blender-mcp/tools.yaml#generate_blender_script",

@@ -90,8 +90,10 @@ def prepare_unreal_project(spec: GameplaySpec, engine_version: str = "UE5") -> U
             "Enable required plugins",
             "Create content folders",
             "Import generated greybox assets",
+            "Assemble playable greybox map",
             "Create data assets from gameplay DSL",
             "Run asset ingest manifest validation",
+            "Run level assembly manifest validation",
         ],
         handoff_artifacts=[
             "generated/gameplay-spec.yaml",
@@ -444,6 +446,32 @@ def _build_task_breakdown(
             risks=["Blocked until source assets exist and the UE project has been generated."],
         ),
         _task(
+            task_id="unreal_level_assembly",
+            title="Unreal level assembly",
+            title_zh="Unreal 关卡组装",
+            agent="level-director",
+            purpose=(
+                "Place imported greybox assets into a playable route with spawn, traversal, "
+                "checkpoint, objective, and exit beats."
+            ),
+            inputs=[
+                "UnrealLevelAssemblyManifest",
+                "imported generated assets",
+                "GameplaySpec.level_beats",
+            ],
+            outputs=["generated UE map", "level assembly logs", "playtest route manifest"],
+            side_effects=["launches Unreal Editor", "writes or updates generated .umap files"],
+            depends_on=["unreal_asset_ingest", "qa_plan"],
+            artifacts=[
+                "generated/unreal/*/Content/Maps/*.umap",
+                "generated/unreal/*/fantasy-agent-level-assembly.json",
+                "generated/logs/unreal/*level_assembly*.log",
+            ],
+            status="blocked",
+            requires_confirmation=True,
+            risks=["Run DataValidation after assembly before broader playtesting."],
+        ),
+        _task(
             task_id="qa_plan",
             title="QA plan",
             title_zh="QA 计划",
@@ -464,7 +492,7 @@ def _build_task_breakdown(
             inputs=["generated Unreal project", "imported assets", "QAPlan"],
             outputs=["QA report", "blocking issues"],
             side_effects=["runs Unreal commandlets or packaged build checks"],
-            depends_on=["unreal_asset_ingest", "qa_plan"],
+            depends_on=["unreal_level_assembly", "qa_plan"],
             artifacts=["generated/qa-report.json", "generated/logs/qa/*.log"],
             status="blocked",
             requires_confirmation=True,

@@ -28,6 +28,17 @@ BlenderMaterialKey = Literal[
 UnrealCommandletName = Literal["DataValidation"]
 UnrealAssetIngestSource = Literal["blender", "comfyui"]
 UnrealAssetIngestType = Literal["static_mesh", "texture_reference"]
+UnrealLevelPlacementRole = Literal[
+    "route_floor",
+    "traversal",
+    "obstacle",
+    "hazard",
+    "checkpoint",
+    "objective",
+    "exit",
+    "ui",
+    "lighting",
+]
 ComfyUICapabilityStatus = Literal["ready", "degraded", "unavailable"]
 ProductionTaskStatus = Literal["pending", "ready", "blocked", "done"]
 ProductionTaskAgent = Literal[
@@ -207,6 +218,39 @@ class UnrealAssetIngestManifest(StrictModel):
     risks: list[str] = Field(default_factory=list)
 
 
+class UnrealLevelPlacement(StrictModel):
+    actor_name: str
+    asset_name: str
+    asset_path: str
+    gameplay_role: UnrealLevelPlacementRole
+    location_cm: tuple[float, float, float]
+    rotation_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    scale: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    beat: str
+    notes: str = ""
+
+
+class UnrealPlayerStartPlacement(StrictModel):
+    actor_name: str = "FA_PlayerStart"
+    location_cm: tuple[float, float, float] = (-450.0, 0.0, 160.0)
+    rotation_deg: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+
+class UnrealLevelAssemblyManifest(StrictModel):
+    schema_version: str = "0.1"
+    generated_by: str = "fantasy-agent.unreal-level-assembly"
+    project_file: str
+    map_name: str
+    map_path: str
+    assembly_script_path: str
+    playtest_report_path: str
+    source_ingest_manifest: str
+    player_start: UnrealPlayerStartPlacement = Field(default_factory=UnrealPlayerStartPlacement)
+    placements: list[UnrealLevelPlacement]
+    playtest_checks: list[str]
+    risks: list[str] = Field(default_factory=list)
+
+
 class UnrealMCPCreateProjectRequest(StrictModel):
     plan: UnrealProjectPlan | None = None
     plan_path: str | None = None
@@ -229,6 +273,21 @@ class UnrealMCPPrepareAssetIngestRequest(StrictModel):
 class UnrealMCPValidateAssetIngestRequest(StrictModel):
     ingest_manifest_path: str
     require_existing_sources: bool = True
+
+
+class UnrealMCPPrepareLevelAssemblyRequest(StrictModel):
+    project_file: str
+    ingest_manifest_path: str
+    map_name: str = "M_Prototype_Greybox"
+    assembly_script_path: str | None = None
+    level_manifest_path: str | None = None
+    write_files: bool = False
+
+
+class UnrealMCPValidateLevelAssemblyRequest(StrictModel):
+    level_manifest_path: str
+    require_imported_assets: bool = True
+    require_playtest_route: bool = True
 
 
 class UnrealMCPRunAssetIngestRequest(StrictModel):
@@ -255,11 +314,30 @@ class UnrealAssetIngestValidationReport(StrictModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class UnrealLevelAssemblyValidationReport(StrictModel):
+    level_manifest_path: str
+    project_file: str
+    map_path: str
+    placement_count: int
+    issues: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class UnrealMCPRunLevelAssemblyRequest(StrictModel):
+    project_file: str
+    assembly_script_path: str
+    unreal_editor_cmd: str = "UnrealEditor-Cmd"
+    timeout_seconds: int = Field(default=600, ge=30, le=3600)
+    confirmed_side_effects: bool = False
+
+
 class UnrealMCPResult(StrictModel):
     status: Literal["planned", "written", "executed", "failed", "blocked"]
     artifact: UnrealProjectArtifact | None = None
-    manifest: UnrealContentManifest | UnrealAssetIngestManifest | None = None
-    validation_report: UnrealAssetIngestValidationReport | None = None
+    manifest: UnrealContentManifest | UnrealAssetIngestManifest | UnrealLevelAssemblyManifest | None = None
+    validation_report: (
+        UnrealAssetIngestValidationReport | UnrealLevelAssemblyValidationReport | None
+    ) = None
     command: list[str] = Field(default_factory=list)
     created_paths: list[str] = Field(default_factory=list)
     written_files: list[str] = Field(default_factory=list)

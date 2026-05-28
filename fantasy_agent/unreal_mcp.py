@@ -18,11 +18,18 @@ from fantasy_agent.contracts import (
     UnrealContentManifest,
     UnrealMCPEditorCommandletRequest,
     UnrealMCPCreateProjectRequest,
+    UnrealMCPPrepareLevelAssemblyRequest,
     UnrealMCPPrepareAssetIngestRequest,
     UnrealMCPResult,
     UnrealMCPRunAssetIngestRequest,
+    UnrealMCPRunLevelAssemblyRequest,
+    UnrealMCPValidateLevelAssemblyRequest,
     UnrealMCPValidateAssetIngestRequest,
     UnrealImportManifest,
+    UnrealLevelAssemblyManifest,
+    UnrealLevelAssemblyValidationReport,
+    UnrealLevelPlacement,
+    UnrealPlayerStartPlacement,
     UnrealProjectArtifact,
     UnrealProjectPlan,
 )
@@ -100,6 +107,52 @@ def tool_descriptors() -> list[dict[str, Any]]:
                 "readOnlyHint": True,
                 "destructiveHint": False,
                 "idempotentHint": True,
+                "openWorldHint": False,
+            },
+        },
+        {
+            "name": "prepare_level_assembly",
+            "title": "Prepare Unreal level assembly",
+            "description": (
+                "Use this after asset ingest planning to generate a playable greybox map "
+                "assembly manifest and Unreal Python script. Defaults to in-memory output; "
+                "set write_files only after generated file side effects are approved."
+            ),
+            "inputSchema": UnrealMCPPrepareLevelAssemblyRequest.model_json_schema(),
+            "annotations": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+        },
+        {
+            "name": "validate_level_assembly",
+            "title": "Validate Unreal level assembly manifest",
+            "description": (
+                "Use this before or after Unreal execution to verify map path, route roles, "
+                "spawn/objective/exit coverage, and imported asset availability."
+            ),
+            "inputSchema": UnrealMCPValidateLevelAssemblyRequest.model_json_schema(),
+            "annotations": {
+                "readOnlyHint": True,
+                "destructiveHint": False,
+                "idempotentHint": True,
+                "openWorldHint": False,
+            },
+        },
+        {
+            "name": "run_level_assembly",
+            "title": "Run Unreal level assembly",
+            "description": (
+                "Use this after explicit confirmation to launch Unreal Editor and execute a "
+                "generated Fantasy Agent level assembly Python script."
+            ),
+            "inputSchema": UnrealMCPRunLevelAssemblyRequest.model_json_schema(),
+            "annotations": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": False,
                 "openWorldHint": False,
             },
         },
@@ -236,6 +289,78 @@ class UnrealMCPBridge:
             else [*warnings, "Unreal asset ingest manifest has validation issues."],
         )
 
+    def prepare_level_assembly(
+        self, request: UnrealMCPPrepareLevelAssemblyRequest
+    ) -> UnrealMCPResult:
+        self._assert_unreal_project_file(request.project_file)
+        self._assert_relative_under(request.ingest_manifest_path, "generated/unreal")
+        if not _is_unreal_identifier(request.map_name):
+            raise UnrealMCPSafetyError(f"Invalid Unreal map_name: {request.map_name}")
+
+        assembly_script_path = request.assembly_script_path or _default_level_script_path(
+            request.project_file
+        )
+        level_manifest_path = request.level_manifest_path or _default_level_manifest_path(
+            request.project_file
+        )
+        self._assert_relative_under(assembly_script_path, "generated/unreal")
+        self._assert_relative_under(level_manifest_path, "generated/unreal")
+
+        ingest_manifest = UnrealAssetIngestManifest.model_validate(
+            self._load_manifest_data(request.ingest_manifest_path)
+        )
+        manifest = self._level_assembly_manifest(
+            request=request,
+            ingest_manifest=ingest_manifest,
+            assembly_script_path=assembly_script_path,
+        )
+        issues, warnings = self._validate_level_manifest(
+            manifest,
+            UnrealMCPValidateLevelAssemblyRequest(
+                level_manifest_path=level_manifest_path,
+                require_imported_assets=False,
+            ),
+        )
+        if issues:
+            raise UnrealMCPSafetyError(
+                "Level assembly manifest is invalid: " + "; ".join(issues)
+            )
+
+        written_files: list[str] = []
+        if request.write_files:
+            written_files = self._write_level_assembly(manifest, level_manifest_path)
+        return UnrealMCPResult(
+            status="written" if request.write_files else "planned",
+            manifest=manifest,
+            written_files=written_files,
+            risks=[*manifest.risks, *warnings],
+        )
+
+    def validate_level_assembly(
+        self, request: UnrealMCPValidateLevelAssemblyRequest
+    ) -> UnrealMCPResult:
+        self._assert_relative_under(request.level_manifest_path, "generated/unreal")
+        manifest = UnrealLevelAssemblyManifest.model_validate(
+            self._load_manifest_data(request.level_manifest_path)
+        )
+        issues, warnings = self._validate_level_manifest(manifest, request)
+        report = UnrealLevelAssemblyValidationReport(
+            level_manifest_path=request.level_manifest_path,
+            project_file=manifest.project_file,
+            map_path=manifest.map_path,
+            placement_count=len(manifest.placements),
+            issues=issues,
+            warnings=warnings,
+        )
+        return UnrealMCPResult(
+            status="executed" if not issues else "failed",
+            manifest=manifest,
+            validation_report=report,
+            risks=warnings
+            if not issues
+            else [*warnings, "Unreal level assembly manifest has validation issues."],
+        )
+
     def run_asset_ingest(self, request: UnrealMCPRunAssetIngestRequest) -> UnrealMCPResult:
         project_file = self._assert_unreal_project_file(request.project_file)
         self._assert_relative_under(request.import_script_path, "generated/unreal")
@@ -332,6 +457,112 @@ class UnrealMCPBridge:
                     "Unreal Python asset ingest logged errors."
                     if python_failed
                     else "Unreal asset ingest returned a non-zero code."
+                ),
+            ],
+        )
+
+    def run_level_assembly(
+        self, request: UnrealMCPRunLevelAssemblyRequest
+    ) -> UnrealMCPResult:
+        project_file = self._assert_unreal_project_file(request.project_file)
+        self._assert_relative_under(request.assembly_script_path, "generated/unreal")
+        assembly_script_path = self._resolve_workspace_path(request.assembly_script_path)
+        if assembly_script_path.suffix.lower() != ".py":
+            raise UnrealMCPSafetyError("Unreal level assembly requires a generated Python script.")
+        if not assembly_script_path.exists():
+            raise UnrealMCPSafetyError(
+                f"Unreal level assembly script does not exist: {request.assembly_script_path}"
+            )
+
+        command = [
+            request.unreal_editor_cmd,
+            project_file.as_posix(),
+            f"-ExecutePythonScript={assembly_script_path.as_posix()}",
+            "-unattended",
+            "-nop4",
+            *UNREAL_DDC_ARGS,
+            f"-ShaderWorkingDir={self._shader_working_dir(project_file).as_posix()}",
+            "-log",
+        ]
+        risks = [
+            "Unreal level assembly writes or updates a generated .umap under Content/Maps.",
+            "Greybox assembly validates route readability, not final Blueprint movement logic.",
+        ]
+        if not request.confirmed_side_effects:
+            return UnrealMCPResult(
+                status="blocked",
+                command=command,
+                risks=[*risks, "Unreal level assembly requires confirmed_side_effects=true."],
+            )
+
+        stdout_path, stderr_path = self._log_paths(project_file.stem, "level_assembly")
+        self._shader_working_dir(project_file).mkdir(parents=True, exist_ok=True)
+        env = self._unreal_env(project_file)
+        project_log_path = self._project_log_path(project_file)
+        project_log_offset = project_log_path.stat().st_size if project_log_path.exists() else 0
+        try:
+            process = self.runner(
+                command,
+                cwd=project_file.parent,
+                env=env,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=request.timeout_seconds,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            stderr = f"Unreal Editor command executable not found: {request.unreal_editor_cmd}"
+            self._write_text(stderr_path, stderr)
+            return UnrealMCPResult(
+                status="failed",
+                command=command,
+                log_paths=[self._display_path(stderr_path)],
+                stderr_tail=stderr,
+                risks=[*risks, str(exc)],
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = _to_text(exc.stdout)
+            stderr = _to_text(exc.stderr) or (
+                f"Unreal level assembly timed out after {request.timeout_seconds}s."
+            )
+            self._write_text(stdout_path, stdout)
+            self._write_text(stderr_path, stderr)
+            return UnrealMCPResult(
+                status="failed",
+                command=command,
+                log_paths=[self._display_path(stdout_path), self._display_path(stderr_path)],
+                stdout_tail=_tail(stdout),
+                stderr_tail=_tail(stderr),
+                risks=[*risks, "Unreal level assembly timed out."],
+            )
+
+        self._write_text(stdout_path, _to_text(process.stdout))
+        self._write_text(stderr_path, _to_text(process.stderr))
+        project_log_tail = self._project_log_tail(project_file, project_log_offset)
+        python_failed = (
+            "LogPython: Error" in project_log_tail
+            or "Python script executed with errors" in project_log_tail
+        )
+        stderr_tail = _tail(process.stderr)
+        if python_failed:
+            stderr_tail = project_log_tail
+        return UnrealMCPResult(
+            status="executed" if process.returncode == 0 and not python_failed else "failed",
+            command=command,
+            log_paths=[self._display_path(stdout_path), self._display_path(stderr_path)],
+            return_code=process.returncode,
+            stdout_tail=_tail(process.stdout),
+            stderr_tail=stderr_tail,
+            risks=risks
+            if process.returncode == 0 and not python_failed
+            else [
+                *risks,
+                (
+                    "Unreal Python level assembly logged errors."
+                    if python_failed
+                    else "Unreal level assembly returned a non-zero code."
                 ),
             ],
         )
@@ -575,6 +806,280 @@ class UnrealMCPBridge:
 
         return issues, warnings
 
+    def _level_assembly_manifest(
+        self,
+        *,
+        request: UnrealMCPPrepareLevelAssemblyRequest,
+        ingest_manifest: UnrealAssetIngestManifest,
+        assembly_script_path: str,
+    ) -> UnrealLevelAssemblyManifest:
+        static_jobs = [
+            job for job in ingest_manifest.jobs if job.asset_type == "static_mesh"
+        ]
+        jobs_by_name = {job.asset_name: job for job in static_jobs}
+
+        def pick(*preferred_names: str, contains: tuple[str, ...] = ()) -> str | None:
+            for name in preferred_names:
+                if name in jobs_by_name:
+                    return name
+            for name in jobs_by_name:
+                if all(term in name for term in contains):
+                    return name
+            return None
+
+        floor = pick("modular_rooftop_floor_kit", contains=("floor",))
+        ramp = pick("traversal_ramp", contains=("ramp",))
+        vault = pick("low_vault_blocker_set", contains=("vault",))
+        wall = pick("wall_run_panel_set", contains=("wall",))
+        slide = pick("slide_barrier_set", contains=("slide",))
+        boost = pick("boost_pad_marker", contains=("boost",))
+        checkpoint = pick("checkpoint_gate", contains=("checkpoint",))
+        hazard = pick("fall_hazard_marker_set", contains=("hazard",))
+        objective = pick("objective_prop", contains=("objective",))
+        exit_gate = pick("extraction_gate", "exit_gate", contains=("exit",))
+        ui_proxy = pick("route_timer_ui_proxy", "ui_proxy_mesh", contains=("ui",))
+        fallback_floor = floor or (static_jobs[0].asset_name if static_jobs else None)
+
+        placements: list[UnrealLevelPlacement] = []
+
+        def asset_path(asset_name: str) -> str:
+            job = jobs_by_name[asset_name]
+            return f"{job.destination_path.rstrip('/')}/{job.asset_name}"
+
+        def add(
+            *,
+            actor_name: str,
+            asset_name: str | None,
+            gameplay_role: str,
+            location_cm: tuple[float, float, float],
+            beat: str,
+            rotation_deg: tuple[float, float, float] = (0.0, 0.0, 0.0),
+            scale: tuple[float, float, float] = (1.0, 1.0, 1.0),
+            notes: str = "",
+        ) -> None:
+            if asset_name is None:
+                return
+            placements.append(
+                UnrealLevelPlacement(
+                    actor_name=actor_name,
+                    asset_name=asset_name,
+                    asset_path=asset_path(asset_name),
+                    gameplay_role=gameplay_role,  # type: ignore[arg-type]
+                    location_cm=location_cm,
+                    rotation_deg=rotation_deg,
+                    scale=scale,
+                    beat=beat,
+                    notes=notes,
+                )
+            )
+
+        for index, x in enumerate((0.0, 650.0, 1300.0, 1950.0, 2600.0, 3250.0), start=1):
+            add(
+                actor_name=f"FA_RouteFloor_{index:02d}",
+                asset_name=fallback_floor,
+                gameplay_role="route_floor",
+                location_cm=(x, 0.0, 0.0),
+                beat="primary route",
+                scale=(1.0, 1.0, 0.35),
+                notes="Continuous rooftop runway for greybox movement tuning.",
+            )
+        add(
+            actor_name="FA_Ramp_Teach",
+            asset_name=ramp,
+            gameplay_role="traversal",
+            location_cm=(520.0, -110.0, 70.0),
+            beat="first minute",
+            rotation_deg=(0.0, 0.0, 0.0),
+            notes="Teaches vertical route reading before pressure is added.",
+        )
+        add(
+            actor_name="FA_Vault_Blocker",
+            asset_name=vault,
+            gameplay_role="obstacle",
+            location_cm=(1080.0, 0.0, 110.0),
+            beat="first minute",
+            notes="Forces an early vault decision on the main route.",
+        )
+        add(
+            actor_name="FA_WallRun_Panel",
+            asset_name=wall,
+            gameplay_role="traversal",
+            location_cm=(1620.0, -260.0, 230.0),
+            rotation_deg=(0.0, 0.0, 90.0),
+            beat="midpoint combination",
+            notes="Makes the midpoint combine speed with side-wall commitment.",
+        )
+        add(
+            actor_name="FA_Slide_Barrier",
+            asset_name=slide,
+            gameplay_role="obstacle",
+            location_cm=(2060.0, 0.0, 90.0),
+            beat="midpoint combination",
+            notes="Creates a low-profile timing gate after the wall-run section.",
+        )
+        add(
+            actor_name="FA_Boost_Pad",
+            asset_name=boost,
+            gameplay_role="traversal",
+            location_cm=(2360.0, 0.0, 40.0),
+            beat="midpoint combination",
+            notes="Marks the acceleration moment into the final run.",
+        )
+        add(
+            actor_name="FA_Checkpoint_Gate",
+            asset_name=checkpoint,
+            gameplay_role="checkpoint",
+            location_cm=(2620.0, 0.0, 120.0),
+            beat="checkpoint recovery",
+            notes="Visible recovery point before the final hazard read.",
+        )
+        add(
+            actor_name="FA_Fall_Hazard_Left",
+            asset_name=hazard,
+            gameplay_role="hazard",
+            location_cm=(2960.0, -260.0, 35.0),
+            beat="final run",
+            notes="Failure read on the left edge of the final route.",
+        )
+        add(
+            actor_name="FA_Fall_Hazard_Right",
+            asset_name=hazard,
+            gameplay_role="hazard",
+            location_cm=(2960.0, 260.0, 35.0),
+            beat="final run",
+            notes="Failure read on the right edge of the final route.",
+        )
+        add(
+            actor_name="FA_Objective_Prop",
+            asset_name=objective,
+            gameplay_role="objective",
+            location_cm=(3180.0, 0.0, 120.0),
+            beat="final run",
+            notes="Readable pickup/target before extraction.",
+        )
+        add(
+            actor_name="FA_Exit_Gate",
+            asset_name=exit_gate,
+            gameplay_role="exit",
+            location_cm=(3680.0, 0.0, 130.0),
+            beat="final run",
+            notes="Final win-state affordance.",
+        )
+        add(
+            actor_name="FA_Route_Timer_UI",
+            asset_name=ui_proxy,
+            gameplay_role="ui",
+            location_cm=(-250.0, -260.0, 170.0),
+            rotation_deg=(0.0, 0.0, 12.0),
+            beat="first minute",
+            notes="World-space objective and timer proxy near player start.",
+        )
+
+        risks = [
+            "Generated map assembly is a greybox route for playability tuning, not final art.",
+            "Movement abilities still require Blueprint or C++ implementation before full playtest.",
+        ]
+        if not floor:
+            risks.append("No dedicated floor asset was found; the first static mesh is reused.")
+        if not objective or not exit_gate:
+            risks.append("Objective or exit asset was not found; route completion may be incomplete.")
+
+        map_path = f"/Game/Maps/{request.map_name}"
+        playtest_report_path = (
+            Path(request.project_file.replace("\\", "/")).parent
+            / "fantasy-agent-playtest-smoke.json"
+        ).as_posix()
+        return UnrealLevelAssemblyManifest(
+            project_file=request.project_file,
+            map_name=request.map_name,
+            map_path=map_path,
+            assembly_script_path=assembly_script_path,
+            playtest_report_path=playtest_report_path,
+            source_ingest_manifest=request.ingest_manifest_path,
+            player_start=UnrealPlayerStartPlacement(),
+            placements=placements,
+            playtest_checks=[
+                "Map loads directly from /Game/Maps/M_Prototype_Greybox.",
+                "Player starts facing the route and can see the first traversal affordance.",
+                "Route contains traversal, obstacle, checkpoint, hazard, objective, and exit beats.",
+                "Objective and exit are placed after the midpoint system-combination beat.",
+                "DataValidation returns zero errors before visual expansion.",
+            ],
+            risks=risks,
+        )
+
+    def _validate_level_manifest(
+        self,
+        manifest: UnrealLevelAssemblyManifest,
+        request: UnrealMCPValidateLevelAssemblyRequest,
+    ) -> tuple[list[str], list[str]]:
+        issues: list[str] = []
+        warnings: list[str] = []
+        try:
+            project_file = self._assert_unreal_project_file(manifest.project_file)
+        except UnrealMCPSafetyError as exc:
+            issues.append(str(exc))
+            project_file = self.workspace_root / manifest.project_file
+        try:
+            self._assert_relative_under(manifest.assembly_script_path, "generated/unreal")
+        except UnrealMCPSafetyError as exc:
+            issues.append(str(exc))
+        try:
+            self._assert_relative_under(manifest.playtest_report_path, "generated/unreal")
+        except UnrealMCPSafetyError as exc:
+            issues.append(str(exc))
+        try:
+            self._assert_relative_under(manifest.source_ingest_manifest, "generated/unreal")
+        except UnrealMCPSafetyError as exc:
+            issues.append(str(exc))
+
+        if not _is_unreal_identifier(manifest.map_name):
+            issues.append(f"invalid Unreal map_name: {manifest.map_name}")
+        if not manifest.map_path.startswith("/Game/Maps/"):
+            issues.append(f"map_path must stay under /Game/Maps: {manifest.map_path}")
+        elif not _is_unreal_game_path(manifest.map_path):
+            issues.append(f"invalid Unreal map_path: {manifest.map_path}")
+        if not _is_unreal_identifier(manifest.player_start.actor_name):
+            issues.append(f"invalid player_start actor_name: {manifest.player_start.actor_name}")
+
+        seen_actor_names: set[str] = set()
+        role_counts: dict[str, int] = {}
+        for placement in manifest.placements:
+            if not _is_unreal_identifier(placement.actor_name):
+                issues.append(f"invalid actor_name: {placement.actor_name}")
+            if placement.actor_name in seen_actor_names:
+                issues.append(f"duplicate actor_name: {placement.actor_name}")
+            seen_actor_names.add(placement.actor_name)
+            if not _is_unreal_identifier(placement.asset_name):
+                issues.append(f"invalid asset_name: {placement.asset_name}")
+            if not _is_unreal_game_path(placement.asset_path):
+                issues.append(f"invalid asset_path: {placement.asset_path}")
+            role_counts[placement.gameplay_role] = role_counts.get(placement.gameplay_role, 0) + 1
+            if request.require_imported_assets:
+                asset_file = _game_asset_file(project_file, placement.asset_path)
+                if not asset_file.exists():
+                    issues.append(f"missing imported asset: {placement.asset_path}")
+
+        if request.require_playtest_route:
+            required_roles = {
+                "route_floor": "at least one route floor",
+                "objective": "a readable objective",
+                "exit": "a readable exit gate",
+            }
+            for role, label in required_roles.items():
+                if role_counts.get(role, 0) == 0:
+                    issues.append(f"level assembly requires {label}")
+            if role_counts.get("traversal", 0) < 2:
+                warnings.append("route should include at least two traversal beats")
+            if role_counts.get("obstacle", 0) == 0:
+                warnings.append("route should include at least one obstacle beat")
+            if role_counts.get("hazard", 0) == 0:
+                warnings.append("route should include at least one failure-read hazard")
+            if role_counts.get("checkpoint", 0) == 0:
+                warnings.append("route should include at least one checkpoint")
+
+        return issues, warnings
+
     def _write_asset_ingest(
         self,
         manifest: UnrealAssetIngestManifest,
@@ -584,6 +1089,17 @@ class UnrealMCPBridge:
         script_path = self._resolve_workspace_path(manifest.import_script_path)
         self._write_text(manifest_path, json.dumps(manifest.model_dump(mode="json"), indent=2))
         self._write_text(script_path, _asset_ingest_script(manifest))
+        return [self._display_path(manifest_path), self._display_path(script_path)]
+
+    def _write_level_assembly(
+        self,
+        manifest: UnrealLevelAssemblyManifest,
+        level_manifest_path: str,
+    ) -> list[str]:
+        manifest_path = self._resolve_workspace_path(level_manifest_path)
+        script_path = self._resolve_workspace_path(manifest.assembly_script_path)
+        self._write_text(manifest_path, json.dumps(manifest.model_dump(mode="json"), indent=2))
+        self._write_text(script_path, _level_assembly_script(manifest))
         return [self._display_path(manifest_path), self._display_path(script_path)]
 
     def _artifact(
@@ -771,9 +1287,18 @@ def call_unreal_mcp_tool(
         elif name == "validate_asset_ingest":
             request = UnrealMCPValidateAssetIngestRequest.model_validate(arguments or {})
             result = bridge.validate_asset_ingest(request)
+        elif name == "prepare_level_assembly":
+            request = UnrealMCPPrepareLevelAssemblyRequest.model_validate(arguments or {})
+            result = bridge.prepare_level_assembly(request)
+        elif name == "validate_level_assembly":
+            request = UnrealMCPValidateLevelAssemblyRequest.model_validate(arguments or {})
+            result = bridge.validate_level_assembly(request)
         elif name == "run_asset_ingest":
             request = UnrealMCPRunAssetIngestRequest.model_validate(arguments or {})
             result = bridge.run_asset_ingest(request)
+        elif name == "run_level_assembly":
+            request = UnrealMCPRunLevelAssemblyRequest.model_validate(arguments or {})
+            result = bridge.run_level_assembly(request)
         elif name == "run_editor_commandlet":
             request = UnrealMCPEditorCommandletRequest.model_validate(arguments or {})
             result = bridge.run_editor_commandlet(request)
@@ -793,12 +1318,19 @@ def _content_summary(result: UnrealMCPResult) -> str:
         return "Unreal MCP blocked execution because side effects were not confirmed."
     if result.status == "failed":
         if result.validation_report is not None:
+            if isinstance(result.validation_report, UnrealLevelAssemblyValidationReport):
+                return "Unreal MCP found level assembly validation issues."
             return "Unreal MCP found asset ingest validation issues."
         return "Unreal MCP failed. Check returned logs and stderr_tail."
     if result.status == "executed":
         if result.validation_report is not None:
+            if isinstance(result.validation_report, UnrealLevelAssemblyValidationReport):
+                return "Unreal MCP validated the level assembly manifest."
             return "Unreal MCP validated the asset ingest manifest."
-        if any(item.startswith("-ExecutePythonScript=") for item in result.command):
+        script_args = [item for item in result.command if item.startswith("-ExecutePythonScript=")]
+        if script_args and "level_assembly" in script_args[0].lower():
+            return "Unreal MCP assembled the greybox level and captured logs."
+        if script_args:
             return "Unreal MCP executed asset ingest and captured logs."
         if any(item == "-run=DataValidation" for item in result.command):
             return "Unreal MCP executed Unreal editor data validation and captured logs."
@@ -989,6 +1521,244 @@ unreal.log("Fantasy Agent asset ingest complete: {{}} jobs".format(len(MANIFEST[
 '''
 
 
+def _level_assembly_script(manifest: UnrealLevelAssemblyManifest) -> str:
+    payload = json.dumps(manifest.model_dump(mode="json"), indent=2)
+    script = '''"""Fantasy Agent Unreal level assembly script.
+
+Run inside Unreal Editor Python through Unreal MCP after side effects are confirmed.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import unreal
+
+
+MANIFEST = json.loads(__PAYLOAD__)
+ASSET_LIBRARY = unreal.EditorAssetLibrary
+
+
+def repo_root():
+    script_path = Path(__file__).resolve()
+    for parent in script_path.parents:
+        if (parent / "fantasy_agent").exists():
+            return parent
+    return script_path.parents[3]
+
+
+def vector(values):
+    return unreal.Vector(float(values[0]), float(values[1]), float(values[2]))
+
+
+def rotator(values):
+    return unreal.Rotator(float(values[0]), float(values[1]), float(values[2]))
+
+
+def level_subsystem():
+    cls = getattr(unreal, "LevelEditorSubsystem", None)
+    if cls is None:
+        return None
+    return unreal.get_editor_subsystem(cls)
+
+
+def new_level(map_path):
+    subsystem = level_subsystem()
+    if subsystem and hasattr(subsystem, "new_level"):
+        subsystem.new_level(map_path)
+        return
+    unreal.EditorLevelLibrary.new_level(map_path)
+
+
+def load_level(map_path):
+    subsystem = level_subsystem()
+    if subsystem and hasattr(subsystem, "load_level"):
+        subsystem.load_level(map_path)
+        return
+    unreal.EditorLevelLibrary.load_level(map_path)
+
+
+def open_or_create_level():
+    map_path = MANIFEST["map_path"]
+    if ASSET_LIBRARY.does_asset_exist(map_path):
+        load_level(map_path)
+        unreal.log("Fantasy Agent loaded existing map: " + map_path)
+    else:
+        new_level(map_path)
+        unreal.log("Fantasy Agent created map: " + map_path)
+
+
+def actor_label(actor):
+    if hasattr(actor, "get_actor_label"):
+        return actor.get_actor_label()
+    return actor.get_name()
+
+
+def clear_previous_assembly():
+    for actor in list(unreal.EditorLevelLibrary.get_all_level_actors()):
+        if actor_label(actor).startswith("FA_"):
+            unreal.EditorLevelLibrary.destroy_actor(actor)
+
+
+def set_label(actor, label):
+    if hasattr(actor, "set_actor_label"):
+        actor.set_actor_label(label)
+
+
+def set_tags(actor, *tags):
+    try:
+        actor.tags = [unreal.Name(tag.replace(" ", "_")) for tag in tags if tag]
+    except Exception as exc:
+        unreal.log_warning("Could not set tags on {}: {}".format(actor_label(actor), exc))
+
+
+def load_mesh(asset_path, asset_name):
+    candidates = [asset_path, "{}.{}".format(asset_path, asset_name)]
+    for candidate in candidates:
+        mesh = ASSET_LIBRARY.load_asset(candidate)
+        if mesh:
+            return mesh
+    raise RuntimeError("Missing static mesh asset for level assembly: " + asset_path)
+
+
+def static_mesh_component(actor):
+    if hasattr(actor, "static_mesh_component"):
+        return actor.static_mesh_component
+    components = actor.get_components_by_class(unreal.StaticMeshComponent)
+    if components:
+        return components[0]
+    return None
+
+
+def spawn_mesh(placement):
+    mesh = load_mesh(placement["asset_path"], placement["asset_name"])
+    actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+        unreal.StaticMeshActor,
+        vector(placement["location_cm"]),
+        rotator(placement["rotation_deg"]),
+    )
+    set_label(actor, placement["actor_name"])
+    component = static_mesh_component(actor)
+    if component is None:
+        raise RuntimeError("StaticMeshActor has no StaticMeshComponent: " + placement["actor_name"])
+    component.set_static_mesh(mesh)
+    actor.set_actor_scale3d(vector(placement["scale"]))
+    set_tags(actor, "FantasyAgent", placement["gameplay_role"], placement["beat"])
+    unreal.log(
+        "Fantasy Agent placed {} from {}".format(
+            placement["actor_name"], placement["asset_path"]
+        )
+    )
+
+
+def spawn_player_start():
+    start = MANIFEST["player_start"]
+    actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+        unreal.PlayerStart,
+        vector(start["location_cm"]),
+        rotator(start["rotation_deg"]),
+    )
+    set_label(actor, start["actor_name"])
+    set_tags(actor, "FantasyAgent", "player_start")
+
+
+def spawn_lighting():
+    light_specs = [
+        ("DirectionalLight", "FA_KeyLight", (-600.0, -900.0, 900.0), (-45.0, -35.0, 0.0)),
+        ("SkyLight", "FA_SkyLight", (0.0, 0.0, 600.0), (0.0, 0.0, 0.0)),
+    ]
+    for class_name, label, location, rotation in light_specs:
+        actor_class = getattr(unreal, class_name, None)
+        if actor_class is None:
+            continue
+        actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+            actor_class,
+            vector(location),
+            rotator(rotation),
+        )
+        set_label(actor, label)
+        set_tags(actor, "FantasyAgent", "lighting")
+
+
+def save_current_level():
+    if hasattr(unreal.EditorLevelLibrary, "save_current_level"):
+        unreal.EditorLevelLibrary.save_current_level()
+        return
+    utils = getattr(unreal, "EditorLoadingAndSavingUtils", None)
+    if utils and hasattr(utils, "save_dirty_packages"):
+        utils.save_dirty_packages(True, True)
+        return
+    ASSET_LIBRARY.save_directory("/Game/Maps", only_if_is_dirty=False, recursive=True)
+
+
+def write_playtest_smoke_report():
+    actors = list(unreal.EditorLevelLibrary.get_all_level_actors())
+    labels = [actor_label(actor) for actor in actors]
+    fa_labels = [label for label in labels if label.startswith("FA_")]
+    required_labels = {
+        "FA_PlayerStart",
+        "FA_Checkpoint_Gate",
+        "FA_Objective_Prop",
+        "FA_Exit_Gate",
+    }
+    missing = sorted(required_labels.difference(fa_labels))
+    route_floors = sorted(label for label in fa_labels if label.startswith("FA_RouteFloor_"))
+    hazards = sorted(label for label in fa_labels if label.startswith("FA_Fall_Hazard_"))
+    traversal_labels = sorted(
+        label
+        for label in fa_labels
+        if label
+        in {
+            "FA_Ramp_Teach",
+            "FA_WallRun_Panel",
+            "FA_Boost_Pad",
+        }
+    )
+    issues = []
+    if missing:
+        issues.append("missing required actors: " + ", ".join(missing))
+    if len(route_floors) < 6:
+        issues.append("expected at least 6 route floor segments")
+    if len(hazards) < 2:
+        issues.append("expected at least 2 hazard markers")
+    if len(traversal_labels) < 3:
+        issues.append("expected ramp, wall-run, and boost traversal markers")
+    report = {
+        "map_path": MANIFEST["map_path"],
+        "fa_actor_count": len(fa_labels),
+        "route_floor_count": len(route_floors),
+        "hazard_count": len(hazards),
+        "traversal_marker_count": len(traversal_labels),
+        "required_labels": sorted(required_labels),
+        "missing_required_labels": missing,
+        "issues": issues,
+    }
+    output_path = repo_root() / MANIFEST["playtest_report_path"]
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    if issues:
+        raise RuntimeError("Fantasy Agent playtest smoke failed: " + "; ".join(issues))
+    unreal.log("Fantasy Agent playtest smoke passed: {}".format(json.dumps(report)))
+
+
+open_or_create_level()
+clear_previous_assembly()
+spawn_player_start()
+spawn_lighting()
+for level_placement in MANIFEST["placements"]:
+    spawn_mesh(level_placement)
+save_current_level()
+write_playtest_smoke_report()
+unreal.log(
+    "Fantasy Agent level assembly complete: {} placements into {}".format(
+        len(MANIFEST["placements"]), MANIFEST["map_path"]
+    )
+)
+'''
+    return script.replace("__PAYLOAD__", repr(payload))
+
+
 def _default_ingest_script_path(project_file: str) -> str:
     project_root = Path(project_file.replace("\\", "/")).parent
     return (project_root / "Scripts" / "fantasy_agent_asset_ingest.py").as_posix()
@@ -997,6 +1767,16 @@ def _default_ingest_script_path(project_file: str) -> str:
 def _default_ingest_manifest_path(project_file: str) -> str:
     project_root = Path(project_file.replace("\\", "/")).parent
     return (project_root / "fantasy-agent-asset-ingest.json").as_posix()
+
+
+def _default_level_script_path(project_file: str) -> str:
+    project_root = Path(project_file.replace("\\", "/")).parent
+    return (project_root / "Scripts" / "fantasy_agent_level_assembly.py").as_posix()
+
+
+def _default_level_manifest_path(project_file: str) -> str:
+    project_root = Path(project_file.replace("\\", "/")).parent
+    return (project_root / "fantasy-agent-level-assembly.json").as_posix()
 
 
 def _assert_game_path(path: str) -> None:
@@ -1013,8 +1793,15 @@ def _is_unreal_identifier(value: str) -> bool:
 def _is_unreal_game_path(path: str) -> bool:
     if not path.startswith("/Game/"):
         return False
-    parts = [part for part in path.removeprefix("/Game/").split("/") if part]
+    package_path = path.split(".", maxsplit=1)[0]
+    parts = [part for part in package_path.removeprefix("/Game/").split("/") if part]
     return bool(parts) and all(_is_unreal_identifier(part) for part in parts)
+
+
+def _game_asset_file(project_file: Path, asset_path: str) -> Path:
+    package_path = asset_path.split(".", maxsplit=1)[0]
+    relative_asset = package_path.removeprefix("/Game/").strip("/")
+    return project_file.parent / "Content" / f"{relative_asset}.uasset"
 
 
 def _slug(value: str) -> str:

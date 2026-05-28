@@ -17,5 +17,5 @@ Primary endpoint:
 MCP endpoint:
 
 - `POST /mcp`
-- Tools: `create_project_structure`, `prepare_asset_ingest`, `run_asset_ingest`, `run_editor_commandlet`
+- Tools: `create_project_structure`, `prepare_asset_ingest`, `validate_asset_ingest`, `run_asset_ingest`, `prepare_level_assembly`, `validate_level_assembly`, `run_level_assembly`, `run_editor_commandlet`
 - Unreal execution is blocked unless `confirmed_side_effects=true`.

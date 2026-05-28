@@ -27,6 +27,7 @@ def test_director_workflow_creates_playable_slice_plan():
     assert plan.task_breakdown.recommended_next_task == "gameplay_spec_review"
     assert any(task.requires_confirmation for task in plan.task_breakdown.tasks)
     assert any(task.id == "unreal_asset_ingest" and task.status == "blocked" for task in plan.task_breakdown.tasks)
+    assert any(task.id == "unreal_level_assembly" and task.status == "blocked" for task in plan.task_breakdown.tasks)
 
 
 def test_director_workflow_specializes_parkour_prompts():
