@@ -184,6 +184,7 @@ Rules:
 - Name assets by gameplay role.
 - Generate `UCX_` collision objects and Unreal import manifests with every export.
 - Do not run Blender from planning surfaces without explicit side-effect confirmation.
+- Blender MCP execution must keep scripts under `generated/blender/`, exports under `generated/assets/`, and logs under `generated/logs/blender/`.
 
 ## ComfyUI Worker
 

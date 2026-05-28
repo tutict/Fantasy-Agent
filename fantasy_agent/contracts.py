@@ -175,6 +175,36 @@ class BlenderScriptArtifact(StrictModel):
     side_effects: list[str]
 
 
+class BlenderMCPGenerateScriptRequest(StrictModel):
+    plan: BlenderAssetPlan
+    script_path: str | None = None
+    import_manifest_path: str = "generated/import-manifest.yaml"
+    write_files: bool = False
+
+
+class BlenderMCPExecuteRequest(StrictModel):
+    plan: BlenderAssetPlan
+    script_path: str | None = None
+    import_manifest_path: str = "generated/import-manifest.yaml"
+    blender_executable: str = "blender"
+    timeout_seconds: int = Field(default=300, ge=10, le=1800)
+    confirmed_side_effects: bool = False
+
+
+class BlenderMCPResult(StrictModel):
+    status: Literal["planned", "written", "executed", "failed", "blocked"]
+    artifact: BlenderScriptArtifact
+    command: list[str] = Field(default_factory=list)
+    written_files: list[str] = Field(default_factory=list)
+    exported_assets: list[str] = Field(default_factory=list)
+    import_manifest_path: str
+    log_paths: list[str] = Field(default_factory=list)
+    return_code: int | None = None
+    stdout_tail: str = ""
+    stderr_tail: str = ""
+    risks: list[str] = Field(default_factory=list)
+
+
 class ComfyUIPromptJob(StrictModel):
     job_id: str
     purpose: Literal[

@@ -22,12 +22,29 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             safety_checks=["commandlet allowlist", "timeout required", "logs captured"],
         ),
         MCPToolContract(
+            name="generate_blender_script",
+            server="blender-mcp",
+            input_schema_ref="mcp/blender-mcp/tools.yaml#generate_blender_script",
+            output_schema_ref="mcp/blender-mcp/tools.yaml#generate_blender_script.output",
+            side_effects=["optionally writes generated Blender scripts and import manifests"],
+            safety_checks=[
+                "script path must be generated/blender",
+                "manifest path must be generated",
+                "export paths must be generated/assets",
+            ],
+        ),
+        MCPToolContract(
             name="generate_asset_batch",
             server="blender-mcp",
             input_schema_ref="mcp/blender-mcp/tools.yaml#generate_asset_batch",
             output_schema_ref="mcp/blender-mcp/tools.yaml#generate_asset_batch.output",
             side_effects=["runs Blender Python", "writes mesh exports"],
-            safety_checks=["export path must be generated/assets", "script must avoid external downloads"],
+            safety_checks=[
+                "requires confirmed side effects",
+                "export path must be generated/assets",
+                "script must avoid external downloads",
+                "logs captured under generated/logs/blender",
+            ],
         ),
         MCPToolContract(
             name="run_visual_reference_workflow",

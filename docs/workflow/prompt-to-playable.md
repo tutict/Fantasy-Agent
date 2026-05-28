@@ -50,7 +50,7 @@ The Blender Worker prepares procedural asset jobs, generates Blender Python scri
 Future MCP servers execute controlled operations:
 
 - ChatGPT Apps MCP exposes read-only planning tools and widget state.
-- Blender MCP runs `bpy` jobs and exports assets.
+- Blender MCP generates allowlisted scripts, requires explicit side-effect confirmation, runs `bpy` jobs, captures logs, and exports assets.
 - ComfyUI MCP runs allowlisted visual reference workflows.
 - Unreal MCP creates/imports/validates project content.
 - GitHub MCP publishes review branches and pull requests.

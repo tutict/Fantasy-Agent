@@ -28,6 +28,7 @@ Status: started.
 - Support modular walls, doors, ramps, hazard markers, objective props, exit gates, and UI proxy meshes.
 - Generate Unreal import manifests with material, collection, dimensions, and collision metadata.
 - Implement Blender MCP server contract.
+- Expose Blender MCP JSON-RPC endpoint through the Blender Worker.
 - Execute `bpy` procedural asset jobs from `BlenderAssetPlan`.
 - Export FBX or GLB assets into `generated/assets/`.
 - Generate import manifests for Unreal.

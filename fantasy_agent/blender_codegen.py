@@ -130,6 +130,16 @@ to {import_manifest_path}.
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path.cwd()
+SCRIPT_ROOT = Path(__file__).resolve()
+for candidate in (REPO_ROOT, *SCRIPT_ROOT.parents):
+    if (candidate / "fantasy_agent").exists() and str(candidate) not in sys.path:
+        sys.path.insert(0, str(candidate))
+        break
+
 from fantasy_agent.blender_runtime import run_blender_asset_plan
 
 

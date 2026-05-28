@@ -26,6 +26,15 @@ Script endpoints:
 - Request body: `GameplaySpec`
 - Returns: `BlenderScriptArtifact` after first preparing the asset plan.
 
+MCP endpoint:
+
+- `GET /mcp`
+- `POST /mcp`
+- Transport: JSON-RPC over HTTP
+- Tools:
+  - `generate_blender_script`
+  - `generate_asset_batch`
+
 Generated asset roles:
 
 - Modular walls
@@ -38,4 +47,22 @@ Generated asset roles:
 
 The generated script sets scene units, collections, material color keys, object origins, `UCX_` collision meshes, FBX/GLB exports, and a JSON-compatible Unreal import manifest at `generated/import-manifest.yaml`.
 
-The worker does not launch Blender by itself. Blender MCP should execute the generated script only after the user confirms file-writing side effects.
+The worker does not launch Blender from planning endpoints. Blender MCP execution requires `confirmed_side_effects=true`, writes generated scripts under `generated/blender/`, exports assets under `generated/assets/`, and captures logs under `generated/logs/blender/`.
+
+Example MCP execution payload:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "generate_asset_batch",
+    "arguments": {
+      "plan": {},
+      "confirmed_side_effects": true,
+      "blender_executable": "blender"
+    }
+  }
+}
+```

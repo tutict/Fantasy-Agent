@@ -15,19 +15,24 @@ tools:
         import_manifest_path:
           type: string
           default: "generated/import-manifest.yaml"
+        write_files:
+          type: boolean
+          default: false
     output:
       type: object
       required:
-        - script_path
-        - script
-        - import_manifest
+        - status
+        - artifact
+        - written_files
       properties:
-        script_path:
+        status:
           type: string
-        script:
-          type: string
-        import_manifest:
+        artifact:
           type: object
+        written_files:
+          type: array
+          items:
+            type: string
     safety:
       - "This tool is read-only unless explicitly asked to write generated files."
       - "Generated scripts must write only under generated/."
@@ -37,35 +42,57 @@ tools:
     input:
       type: object
       required:
-        - plan_path
-        - output_dir
+        - plan
+        - confirmed_side_effects
       properties:
-        plan_path:
+        plan:
+          $ref: "../../gameplay-schema.yaml#/$defs/blender_asset_plan"
+        script_path:
           type: string
-          description: "Path to generated/blender-asset-plan.yaml."
-        output_dir:
+          default: "generated/blender/<job-name>.py"
+        import_manifest_path:
           type: string
-          const: "generated/assets"
-        export_format:
-          enum:
-            - fbx
-            - glb
+          default: "generated/import-manifest.yaml"
+        blender_executable:
+          type: string
+          default: "blender"
+        timeout_seconds:
+          type: integer
+          minimum: 10
+          maximum: 1800
+          default: 300
+        confirmed_side_effects:
+          type: boolean
+          description: "Must be true after explicit user confirmation."
     output:
       type: object
       required:
+        - status
         - exported_assets
         - import_manifest
+        - log_paths
       properties:
+        status:
+          enum:
+            - executed
+            - failed
+            - blocked
         exported_assets:
           type: array
           items:
             type: string
         import_manifest:
           type: string
-        logs:
+        log_paths:
           type: array
           items:
             type: string
+        return_code:
+          type: integer
+        stdout_tail:
+          type: string
+        stderr_tail:
+          type: string
     safety:
       - "Refuse output paths outside generated/assets."
       - "Refuse scripts outside apps/blender-worker or generated/blender unless explicitly approved."
