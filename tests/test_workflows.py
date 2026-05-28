@@ -23,3 +23,17 @@ def test_director_workflow_creates_playable_slice_plan():
     assert plan.comfyui_plan.jobs
     assert plan.comfyui_plan.jobs[0].workflow_template.startswith("templates/comfyui/")
     assert "average_session_minutes" in plan.qa_plan.metrics
+
+
+def test_director_workflow_specializes_parkour_prompts():
+    request = PromptRequest(
+        prompt="a rooftop parkour demo with wall-runs, vaults, slides, boost pads, and checkpoints",
+        target_minutes=10,
+    )
+
+    plan = run_director_workflow(request)
+
+    assert plan.gameplay_spec.core_verbs == ["sprint", "vault", "wall-run", "slide"]
+    assert "Momentum Chain" in {system.name for system in plan.gameplay_spec.systems}
+    assert "Wall-run panel set" in plan.gameplay_spec.asset_needs
+    assert any("checkpoint" in beat.gameplay_focus.lower() for beat in plan.gameplay_spec.level_beats)

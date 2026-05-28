@@ -8,6 +8,7 @@ from fantasy_agent.contracts import GameplaySpec, I18nBundle, LocaleCode, Prompt
 SUPPORTED_LOCALES: tuple[LocaleCode, ...] = ("en", "zh-CN")
 
 AXIS_ZH = {
+    "parkour": "\u8dd1\u9177",
     "stealth": "潜行",
     "survival": "生存",
     "puzzle": "解谜",
@@ -17,6 +18,10 @@ AXIS_ZH = {
 }
 
 VERB_ZH = {
+    "sprint": "\u51b2\u523a",
+    "vault": "\u7ffb\u8d8a",
+    "wall-run": "\u5899\u8dd1",
+    "slide": "\u6ed1\u94f2",
     "scout": "侦察",
     "hide": "隐藏",
     "distract": "干扰",
@@ -72,6 +77,9 @@ def build_i18n_bundle(
 ) -> I18nBundle:
     locales = normalize_locales(request.output_locales)
     field_translations: dict[str, dict[LocaleCode, str]] = {}
+
+    def zh_at(values: list[str], index: int, fallback: str) -> str:
+        return values[index] if index < len(values) else fallback
 
     def add(path: str, en: str, zh_cn: str) -> None:
         translations: dict[LocaleCode, str] = {}
@@ -239,7 +247,7 @@ def build_i18n_bundle(
 
     asset_needs_zh = ["灰盒场地套件", "目标道具组", "危险标记组", "可读出口门", "简易 UI 目标追踪器"]
     for index, asset in enumerate(spec.asset_needs):
-        add(f"asset_needs.{index}", asset, asset_needs_zh[index])
+        add(f"asset_needs.{index}", asset, zh_at(asset_needs_zh, index, asset))
 
     qa_zh = [
         "新玩家能否在一到三次尝试内完成？",
