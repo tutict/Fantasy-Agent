@@ -29,6 +29,12 @@ SERVER_NAME = "fantasy-agent-unreal-mcp"
 SERVER_VERSION = "0.1.0"
 DEFAULT_WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_COMMANDLETS = {"MapCheck", "ResavePackages", "AssetAudit"}
+BUILTIN_MODULE_NAMES = {"GameplayTags"}
+COMMANDLET_DEFAULT_ARGS = {
+    "MapCheck": [],
+    "ResavePackages": ["-ProjectOnly"],
+    "AssetAudit": [],
+}
 
 
 def tool_descriptors() -> list[dict[str, Any]]:
@@ -204,6 +210,8 @@ class UnrealMCPBridge:
             f"-ExecutePythonScript={import_script_path.as_posix()}",
             "-unattended",
             "-nop4",
+            "-DDC-ForceMemoryCache",
+            f"-ShaderWorkingDir={self._shader_working_dir(project_file).as_posix()}",
             "-log",
         ]
         risks = [
@@ -218,12 +226,17 @@ class UnrealMCPBridge:
             )
 
         stdout_path, stderr_path = self._log_paths(project_file.stem, "asset_ingest")
+        self._shader_working_dir(project_file).mkdir(parents=True, exist_ok=True)
+        project_log_path = self._project_log_path(project_file)
+        project_log_offset = project_log_path.stat().st_size if project_log_path.exists() else 0
         try:
             process = self.runner(
                 command,
                 cwd=project_file.parent,
                 env=dict(os.environ),
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 capture_output=True,
                 timeout=request.timeout_seconds,
                 check=False,
@@ -252,18 +265,33 @@ class UnrealMCPBridge:
                 risks=[*risks, "Unreal asset ingest timed out."],
             )
 
-        self._write_text(stdout_path, process.stdout)
-        self._write_text(stderr_path, process.stderr)
+        self._write_text(stdout_path, _to_text(process.stdout))
+        self._write_text(stderr_path, _to_text(process.stderr))
+        project_log_tail = self._project_log_tail(project_file, project_log_offset)
+        python_failed = (
+            "LogPython: Error" in project_log_tail
+            or "Python script executed with errors" in project_log_tail
+        )
+        stderr_tail = _tail(process.stderr)
+        if python_failed:
+            stderr_tail = project_log_tail
         return UnrealMCPResult(
-            status="executed" if process.returncode == 0 else "failed",
+            status="executed" if process.returncode == 0 and not python_failed else "failed",
             command=command,
             log_paths=[self._display_path(stdout_path), self._display_path(stderr_path)],
             return_code=process.returncode,
             stdout_tail=_tail(process.stdout),
-            stderr_tail=_tail(process.stderr),
+            stderr_tail=stderr_tail,
             risks=risks
-            if process.returncode == 0
-            else [*risks, "Unreal asset ingest returned a non-zero code."],
+            if process.returncode == 0 and not python_failed
+            else [
+                *risks,
+                (
+                    "Unreal Python asset ingest logged errors."
+                    if python_failed
+                    else "Unreal asset ingest returned a non-zero code."
+                ),
+            ],
         )
 
     def run_editor_commandlet(self, request: UnrealMCPEditorCommandletRequest) -> UnrealMCPResult:
@@ -275,8 +303,11 @@ class UnrealMCPBridge:
             request.unreal_editor_cmd,
             project_file.as_posix(),
             f"-run={request.commandlet}",
+            *COMMANDLET_DEFAULT_ARGS[request.commandlet],
             "-unattended",
             "-nop4",
+            "-DDC-ForceMemoryCache",
+            f"-ShaderWorkingDir={self._shader_working_dir(project_file).as_posix()}",
             "-log",
         ]
         risks = [
@@ -291,6 +322,7 @@ class UnrealMCPBridge:
             )
 
         stdout_path, stderr_path = self._log_paths(project_file.stem, request.commandlet)
+        self._shader_working_dir(project_file).mkdir(parents=True, exist_ok=True)
         env = dict(os.environ)
         try:
             process = self.runner(
@@ -298,6 +330,8 @@ class UnrealMCPBridge:
                 cwd=project_file.parent,
                 env=env,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 capture_output=True,
                 timeout=request.timeout_seconds,
                 check=False,
@@ -326,8 +360,8 @@ class UnrealMCPBridge:
                 risks=[*risks, "Unreal commandlet timed out."],
             )
 
-        self._write_text(stdout_path, process.stdout)
-        self._write_text(stderr_path, process.stderr)
+        self._write_text(stdout_path, _to_text(process.stdout))
+        self._write_text(stderr_path, _to_text(process.stderr))
         return UnrealMCPResult(
             status="executed" if process.returncode == 0 else "failed",
             command=command,
@@ -577,6 +611,20 @@ class UnrealMCPBridge:
         log_dir = self.workspace_root / "generated" / "logs" / "unreal"
         return log_dir / f"{safe_name}.stdout.log", log_dir / f"{safe_name}.stderr.log"
 
+    def _project_log_path(self, project_file: Path) -> Path:
+        return project_file.parent / "Saved" / "Logs" / f"{project_file.stem}.log"
+
+    def _shader_working_dir(self, project_file: Path) -> Path:
+        return project_file.parent / "Intermediate" / "Shaders" / "WorkingDirectory"
+
+    def _project_log_tail(self, project_file: Path, start: int = 0, limit: int = 12000) -> str:
+        log_path = self._project_log_path(project_file)
+        if not log_path.exists():
+            return ""
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            handle.seek(start)
+            return handle.read()[-limit:]
+
     def _write_text(self, path: Path, text: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text, encoding="utf-8")
@@ -637,7 +685,11 @@ def _uproject_descriptor(plan: UnrealProjectPlan) -> dict[str, Any]:
         "EngineAssociation": plan.engine_version,
         "Category": "Fantasy Agent",
         "Description": "Fantasy Agent gameplay-first prototype handoff.",
-        "Plugins": [{"Name": plugin, "Enabled": True} for plugin in plan.plugins],
+        "Plugins": [
+            {"Name": plugin, "Enabled": True}
+            for plugin in plan.plugins
+            if plugin not in BUILTIN_MODULE_NAMES
+        ],
     }
 
 
@@ -696,12 +748,13 @@ Run inside Unreal Editor Python through Unreal MCP after side effects are confir
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import unreal
 
 
-MANIFEST = {payload}
+MANIFEST = json.loads({payload!r})
 
 
 def find_repo_root() -> Path:

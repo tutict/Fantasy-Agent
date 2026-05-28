@@ -12,7 +12,7 @@ from fantasy_agent.contracts import (
     QAPlan,
     UnrealProjectPlan,
 )
-from fantasy_agent.blender_codegen import enrich_blender_plan
+from fantasy_agent.blender_codegen import enrich_blender_plan, slugify
 from fantasy_agent.gdd import render_gdd
 from fantasy_agent.generation import design_from_prompt
 
@@ -94,7 +94,7 @@ def prepare_blender_assets(spec: GameplaySpec) -> BlenderAssetPlan:
     jobs: list[BlenderAssetJob] = []
     seen_kinds: set[BlenderAssetKind] = set()
     for asset in spec.asset_needs:
-        asset_name = asset.lower().replace(" ", "_")
+        asset_name = slugify(asset)
         jobs.append(
             BlenderAssetJob(
                 asset_name=asset_name,

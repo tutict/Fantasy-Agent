@@ -63,6 +63,12 @@ def test_create_project_structure_can_write_handoff_files(tmp_path: Path):
     ]
     assert (tmp_path / "generated/unreal/mcpprototype/MCPPrototype.uproject").exists()
     assert (tmp_path / "generated/unreal/mcpprototype/Content/Maps").exists()
+    descriptor = json.loads(
+        (tmp_path / "generated/unreal/mcpprototype/MCPPrototype.uproject").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert {plugin["Name"] for plugin in descriptor["Plugins"]} == {"EnhancedInput"}
 
 
 def test_run_editor_commandlet_blocks_without_confirmation(tmp_path: Path):
@@ -79,7 +85,24 @@ def test_run_editor_commandlet_blocks_without_confirmation(tmp_path: Path):
 
     assert result.status == "blocked"
     assert "confirmed_side_effects=true" in result.risks[-1]
-    assert result.command[-4] == "-run=MapCheck"
+    assert "-run=MapCheck" in result.command
+    assert "-DDC-ForceMemoryCache" in result.command
+    assert any(item.startswith("-ShaderWorkingDir=") for item in result.command)
+
+
+def test_resave_packages_commandlet_is_project_only(tmp_path: Path):
+    bridge = UnrealMCPBridge(tmp_path)
+    bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
+
+    result = bridge.run_editor_commandlet(
+        UnrealMCPEditorCommandletRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            commandlet="ResavePackages",
+            confirmed_side_effects=False,
+        )
+    )
+
+    assert "-ProjectOnly" in result.command
 
 
 def test_run_editor_commandlet_uses_fake_runner_and_captures_logs(tmp_path: Path):
@@ -125,7 +148,9 @@ def test_prepare_asset_ingest_writes_blender_and_comfyui_import_script(tmp_path:
         "generated/unreal/mcpprototype/Scripts/fantasy_agent_asset_ingest.py",
     ]
     script = tmp_path / "generated/unreal/mcpprototype/Scripts/fantasy_agent_asset_ingest.py"
-    assert "AssetImportTask" in script.read_text(encoding="utf-8")
+    script_text = script.read_text(encoding="utf-8")
+    assert "AssetImportTask" in script_text
+    assert "MANIFEST = json.loads" in script_text
 
 
 def test_run_asset_ingest_blocks_without_confirmation(tmp_path: Path):
@@ -150,6 +175,8 @@ def test_run_asset_ingest_blocks_without_confirmation(tmp_path: Path):
 
     assert result.status == "blocked"
     assert "confirmed_side_effects=true" in result.risks[-1]
+    assert "-DDC-ForceMemoryCache" in result.command
+    assert any(item.startswith("-ShaderWorkingDir=") for item in result.command)
 
 
 def test_run_asset_ingest_uses_fake_runner_and_captures_logs(tmp_path: Path):
@@ -178,6 +205,39 @@ def test_run_asset_ingest_uses_fake_runner_and_captures_logs(tmp_path: Path):
     assert result.status == "executed"
     assert result.stdout_tail == "ingest ok"
     assert (tmp_path / "generated/logs/unreal/mcpprototype_asset_ingest.stdout.log").exists()
+
+
+def test_run_asset_ingest_detects_unreal_python_log_errors(tmp_path: Path):
+    def fake_runner(*args, **kwargs):
+        log_dir = Path(kwargs["cwd"]) / "Saved" / "Logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        (log_dir / "MCPPrototype.log").write_text(
+            "LogPython: Error: import failed\nPython script executed with errors\n",
+            encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="", stderr="")
+
+    _write_source_manifests(tmp_path)
+    bridge = UnrealMCPBridge(tmp_path, runner=fake_runner)
+    bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
+    bridge.prepare_asset_ingest(
+        UnrealMCPPrepareAssetIngestRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            blender_import_manifest_path="generated/import-manifest.yaml",
+            write_files=True,
+        )
+    )
+
+    result = bridge.run_asset_ingest(
+        UnrealMCPRunAssetIngestRequest(
+            project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
+            import_script_path="generated/unreal/mcpprototype/Scripts/fantasy_agent_asset_ingest.py",
+            confirmed_side_effects=True,
+        )
+    )
+
+    assert result.status == "failed"
+    assert "Unreal Python asset ingest logged errors." in result.risks
 
 
 def test_unreal_mcp_rejects_project_dir_outside_generated_unreal(tmp_path: Path):
