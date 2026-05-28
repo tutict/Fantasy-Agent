@@ -10,8 +10,15 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             server="unreal-mcp",
             input_schema_ref="mcp/unreal-mcp/tools.yaml#create_project_structure",
             output_schema_ref="mcp/unreal-mcp/tools.yaml#create_project_structure.output",
-            side_effects=["creates UE project folders", "writes content manifests"],
-            safety_checks=["project path must be inside workspace", "engine version must be explicit"],
+            side_effects=[
+                "optionally writes generated .uproject, Config, setup script, and content manifest",
+                "optionally creates generated Unreal content folders",
+            ],
+            safety_checks=[
+                "project path must be generated/unreal",
+                "content folders must start with Content/",
+                "engine version must be explicit",
+            ],
         ),
         MCPToolContract(
             name="run_editor_commandlet",
@@ -19,7 +26,42 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             input_schema_ref="mcp/unreal-mcp/tools.yaml#run_editor_commandlet",
             output_schema_ref="mcp/unreal-mcp/tools.yaml#run_editor_commandlet.output",
             side_effects=["launches Unreal Editor commandlet"],
-            safety_checks=["commandlet allowlist", "timeout required", "logs captured"],
+            safety_checks=[
+                "requires confirmed side effects",
+                "project file must be generated/unreal/*.uproject",
+                "commandlet allowlist",
+                "timeout required",
+                "logs captured under generated/logs/unreal",
+            ],
+        ),
+        MCPToolContract(
+            name="prepare_asset_ingest",
+            server="unreal-mcp",
+            input_schema_ref="mcp/unreal-mcp/tools.yaml#prepare_asset_ingest",
+            output_schema_ref="mcp/unreal-mcp/tools.yaml#prepare_asset_ingest.output",
+            side_effects=[
+                "optionally writes Unreal Python import script",
+                "optionally writes asset ingest manifest",
+            ],
+            safety_checks=[
+                "project file must be generated/unreal/*.uproject",
+                "Blender assets must be generated/assets",
+                "ComfyUI images must be generated/comfyui",
+                "ComfyUI imports remain review references",
+            ],
+        ),
+        MCPToolContract(
+            name="run_asset_ingest",
+            server="unreal-mcp",
+            input_schema_ref="mcp/unreal-mcp/tools.yaml#run_asset_ingest",
+            output_schema_ref="mcp/unreal-mcp/tools.yaml#run_asset_ingest.output",
+            side_effects=["launches Unreal Editor", "imports assets into project content"],
+            safety_checks=[
+                "requires confirmed side effects",
+                "project file must be generated/unreal/*.uproject",
+                "script must be generated/unreal/*.py",
+                "logs captured under generated/logs/unreal",
+            ],
         ),
         MCPToolContract(
             name="generate_blender_script",

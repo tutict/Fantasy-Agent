@@ -13,3 +13,9 @@ Primary endpoint:
 - `POST /prepare`
 - Request body: `GameplaySpec`
 - Returns: `UnrealProjectPlan`
+
+MCP endpoint:
+
+- `POST /mcp`
+- Tools: `create_project_structure`, `prepare_asset_ingest`, `run_asset_ingest`, `run_editor_commandlet`
+- Unreal execution is blocked unless `confirmed_side_effects=true`.

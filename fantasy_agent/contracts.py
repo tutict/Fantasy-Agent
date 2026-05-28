@@ -25,6 +25,9 @@ BlenderMaterialKey = Literal[
     "door",
     "ramp",
 ]
+UnrealCommandletName = Literal["MapCheck", "ResavePackages", "AssetAudit"]
+UnrealAssetIngestSource = Literal["blender", "comfyui"]
+UnrealAssetIngestType = Literal["static_mesh", "texture_reference"]
 
 
 class StrictModel(BaseModel):
@@ -121,6 +124,104 @@ class UnrealProjectPlan(StrictModel):
     maps: list[str]
     automation_steps: list[str]
     handoff_artifacts: list[str]
+
+
+class UnrealContentManifest(StrictModel):
+    schema_version: str = "0.1"
+    generated_by: str = "fantasy-agent.unreal-builder"
+    project_name: str
+    engine_version: str
+    template: str
+    plugins: list[str]
+    content_folders: list[str]
+    gameplay_classes: list[str]
+    blueprints: list[str]
+    maps: list[str]
+    automation_steps: list[str]
+    import_manifests: list[str] = Field(default_factory=list)
+
+
+class UnrealProjectArtifact(StrictModel):
+    project_name: str
+    project_dir: str
+    project_file: str
+    content_manifest_path: str
+    setup_script_path: str
+    config_files: list[str]
+    content_folders: list[str]
+    side_effects: list[str]
+
+
+class UnrealAssetIngestJob(StrictModel):
+    job_id: str
+    source: UnrealAssetIngestSource
+    asset_type: UnrealAssetIngestType
+    source_file: str
+    destination_path: str
+    asset_name: str
+    gameplay_role: str
+    source_manifest: str
+    import_settings: dict[str, str | bool | float] = Field(default_factory=dict)
+    review_required: bool = False
+
+
+class UnrealAssetIngestManifest(StrictModel):
+    schema_version: str = "0.1"
+    generated_by: str = "fantasy-agent.unreal-asset-ingest"
+    project_file: str
+    import_script_path: str
+    jobs: list[UnrealAssetIngestJob]
+    source_manifests: list[str]
+    risks: list[str] = Field(default_factory=list)
+
+
+class UnrealMCPCreateProjectRequest(StrictModel):
+    plan: UnrealProjectPlan | None = None
+    plan_path: str | None = None
+    project_dir: str | None = None
+    content_manifest_path: str | None = None
+    import_manifest_paths: list[str] = Field(default_factory=list)
+    write_files: bool = False
+
+
+class UnrealMCPPrepareAssetIngestRequest(StrictModel):
+    project_file: str
+    blender_import_manifest_path: str | None = None
+    comfyui_run_manifest_path: str | None = None
+    import_script_path: str | None = None
+    ingest_manifest_path: str | None = None
+    write_files: bool = False
+    require_existing_sources: bool = False
+
+
+class UnrealMCPRunAssetIngestRequest(StrictModel):
+    project_file: str
+    import_script_path: str
+    unreal_editor_cmd: str = "UnrealEditor-Cmd"
+    timeout_seconds: int = Field(default=600, ge=30, le=3600)
+    confirmed_side_effects: bool = False
+
+
+class UnrealMCPEditorCommandletRequest(StrictModel):
+    project_file: str
+    commandlet: UnrealCommandletName
+    unreal_editor_cmd: str = "UnrealEditor-Cmd"
+    timeout_seconds: int = Field(default=300, ge=30, le=1800)
+    confirmed_side_effects: bool = False
+
+
+class UnrealMCPResult(StrictModel):
+    status: Literal["planned", "written", "executed", "failed", "blocked"]
+    artifact: UnrealProjectArtifact | None = None
+    manifest: UnrealContentManifest | UnrealAssetIngestManifest | None = None
+    command: list[str] = Field(default_factory=list)
+    created_paths: list[str] = Field(default_factory=list)
+    written_files: list[str] = Field(default_factory=list)
+    log_paths: list[str] = Field(default_factory=list)
+    return_code: int | None = None
+    stdout_tail: str = ""
+    stderr_tail: str = ""
+    risks: list[str] = Field(default_factory=list)
 
 
 class BlenderAssetJob(StrictModel):

@@ -1,32 +1,174 @@
 server: unreal-mcp
 tools:
   create_project_structure:
-    description: "Create UE project folders and starter assets from an UnrealProjectPlan."
+    description: "Prepare or write a UE project descriptor, content folders, setup script, and content manifest from an UnrealProjectPlan."
     input:
       type: object
-      required:
-        - plan_path
-        - project_dir
       properties:
+        plan:
+          $ref: "../../gameplay-schema.yaml#/$defs/unreal_project_plan"
         plan_path:
           type: string
+          description: "Optional generated YAML/JSON UnrealProjectPlan path when plan is not provided."
         project_dir:
           type: string
-        engine_version:
+          default: "generated/unreal/<project-name>"
+        content_manifest_path:
           type: string
+          default: "generated/unreal/<project-name>/fantasy-agent-content-manifest.json"
+        import_manifest_paths:
+          type: array
+          items:
+            type: string
+        write_files:
+          type: boolean
+          default: false
     output:
       type: object
       required:
+        - status
+        - artifact
+        - manifest
         - created_paths
       properties:
+        status:
+          enum:
+            - planned
+            - written
+        artifact:
+          type: object
+        manifest:
+          type: object
         created_paths:
           type: array
           items:
             type: string
-        warnings:
+        written_files:
           type: array
           items:
             type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "This tool is read-only unless write_files is true."
+      - "Project directory must stay under generated/unreal."
+      - "Content folders must start with Content/."
+      - "Import manifests must stay under generated/."
+  prepare_asset_ingest:
+    description: "Prepare Unreal Python import automation for Blender mesh exports and reviewed ComfyUI reference images."
+    input:
+      type: object
+      required:
+        - project_file
+      properties:
+        project_file:
+          type: string
+          description: "Generated .uproject path under generated/unreal."
+        blender_import_manifest_path:
+          type: string
+          description: "Optional Blender Unreal import manifest under generated/."
+        comfyui_run_manifest_path:
+          type: string
+          description: "Optional ComfyUI run manifest under generated/comfyui."
+        import_script_path:
+          type: string
+          default: "generated/unreal/<project>/Scripts/fantasy_agent_asset_ingest.py"
+        ingest_manifest_path:
+          type: string
+          default: "generated/unreal/<project>/fantasy-agent-asset-ingest.json"
+        write_files:
+          type: boolean
+          default: false
+        require_existing_sources:
+          type: boolean
+          default: false
+    output:
+      type: object
+      required:
+        - status
+        - manifest
+      properties:
+        status:
+          enum:
+            - planned
+            - written
+        manifest:
+          type: object
+        written_files:
+          type: array
+          items:
+            type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "This tool is read-only unless write_files is true."
+      - "Project file must stay under generated/unreal and end with .uproject."
+      - "Blender source assets must stay under generated/assets."
+      - "ComfyUI source images must stay under generated/comfyui."
+      - "ComfyUI images are imported as review references by default."
+  run_asset_ingest:
+    description: "Launch Unreal Editor to execute a generated Fantasy Agent asset ingest script."
+    input:
+      type: object
+      required:
+        - project_file
+        - import_script_path
+      properties:
+        project_file:
+          type: string
+          description: "Generated .uproject path under generated/unreal."
+        import_script_path:
+          type: string
+          description: "Generated Python script under generated/unreal."
+        unreal_editor_cmd:
+          type: string
+          default: "UnrealEditor-Cmd"
+        timeout_seconds:
+          type: integer
+          minimum: 30
+          maximum: 3600
+          default: 600
+        confirmed_side_effects:
+          type: boolean
+          description: "Must be true after explicit user confirmation."
+    output:
+      type: object
+      required:
+        - status
+        - log_paths
+      properties:
+        status:
+          enum:
+            - executed
+            - failed
+            - blocked
+        command:
+          type: array
+          items:
+            type: string
+        log_paths:
+          type: array
+          items:
+            type: string
+        return_code:
+          type: integer
+        stdout_tail:
+          type: string
+        stderr_tail:
+          type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "Require confirmed_side_effects before launching Unreal."
+      - "Project file must stay under generated/unreal and end with .uproject."
+      - "Import script must stay under generated/unreal."
+      - "Logs must be saved under generated/logs/unreal."
   run_editor_commandlet:
     description: "Run an allowlisted Unreal Editor commandlet and capture logs."
     input:
@@ -38,30 +180,58 @@ tools:
       properties:
         project_file:
           type: string
+          description: "Generated .uproject path under generated/unreal."
         commandlet:
           enum:
             - MapCheck
             - ResavePackages
             - AssetAudit
+        unreal_editor_cmd:
+          type: string
+          default: "UnrealEditor-Cmd"
         timeout_seconds:
           type: integer
           minimum: 30
           maximum: 1800
+          default: 300
+        confirmed_side_effects:
+          type: boolean
+          description: "Must be true after explicit user confirmation."
     output:
       type: object
       required:
-        - exit_code
-        - log_path
+        - status
+        - log_paths
       properties:
-        exit_code:
-          type: integer
-        log_path:
-          type: string
-        errors:
+        status:
+          enum:
+            - executed
+            - failed
+            - blocked
+        command:
           type: array
           items:
             type: string
+        log_paths:
+          type: array
+          items:
+            type: string
+        return_code:
+          type: integer
+        stdout_tail:
+          type: string
+        stderr_tail:
+          type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "Require confirmed_side_effects before launching Unreal."
+      - "Project file must stay under generated/unreal and end with .uproject."
+      - "Commandlet must be allowlisted."
+      - "Validation logs must be saved under generated/logs/unreal."
 safety:
   - "Project path must be inside the workspace."
   - "Commandlet must be allowlisted."
-  - "Validation logs must be saved under generated/logs."
+  - "Validation logs must be saved under generated/logs/unreal."
