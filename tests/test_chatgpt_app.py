@@ -15,6 +15,7 @@ def test_chatgpt_tool_descriptors_are_read_only_and_widget_backed():
 
     assert {tool["name"] for tool in tools} >= {
         "decompose_production_tasks",
+        "extract_idea_seed",
         "generate_game_production_plan",
         "prepare_production_pipeline",
         "render_gdd",
@@ -46,6 +47,40 @@ def test_generate_game_production_plan_returns_structured_widget_payload():
     assert result["_meta"]["plan"] == plan
     assert result["_meta"]["productionPipeline"] == plan["production_pipeline"]
     assert result["_meta"]["activePanel"] == "overview"
+
+
+def test_extract_idea_seed_returns_prompt_request_for_chatgpt_refinement():
+    result = call_workbench_tool(
+        "extract_idea_seed",
+        {
+            "raw_idea": "a rooftop parkour game with risky wall-runs",
+            "target_minutes": 10,
+            "answers": [
+                {
+                    "question_id": "core_action",
+                    "question": "first action",
+                    "answer": "chain wall-runs and vaults across short rooftop gaps",
+                },
+                {
+                    "question_id": "must_keep",
+                    "question": "must keep",
+                    "answer": "wall-runs, checkpoint recovery",
+                },
+            ],
+            "source_locale": "en",
+            "output_locales": ["en", "zh-CN"],
+        },
+    )
+
+    assert "isError" not in result
+    assert result["structuredContent"]["kind"] == "idea_seed"
+    seed = result["structuredContent"]["idea_seed"]
+    assert seed["source"] == "idea-discovery-agent"
+    assert "wall-runs" in seed["core_action"]
+    assert "checkpoint recovery" in seed["must_keep"]
+    prompt_request = result["structuredContent"]["prompt_request"]
+    assert prompt_request["prompt"] == seed["next_prompt"]
+    assert result["_meta"]["activePanel"] == "discovery"
 
 
 def test_decompose_production_tasks_returns_task_board_payload():

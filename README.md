@@ -277,6 +277,7 @@ Available read-only tools include:
 
 当前只读工具包括：
 
+- `extract_idea_seed`
 - `generate_game_production_plan`
 - `decompose_production_tasks`
 - `prepare_production_pipeline`

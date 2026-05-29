@@ -47,8 +47,10 @@
 
       .workbench {
         display: grid;
-        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1fr) minmax(340px, 430px);
+        height: 100vh;
         min-height: 620px;
+        overflow: hidden;
         border: 1px solid var(--line);
         background: var(--panel);
       }
@@ -56,10 +58,13 @@
       .control-pane {
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: 12px;
+        min-width: 0;
+        min-height: 0;
+        overflow: hidden;
         padding: 16px;
         border-right: 1px solid var(--line);
-        background: #fbfcf8;
+        background: #fff;
       }
 
       .brand-row,
@@ -172,7 +177,7 @@
       }
 
       .primary-button:disabled {
-        cursor: wait;
+        cursor: not-allowed;
         background: var(--muted);
       }
 
@@ -188,10 +193,146 @@
         background: #fff;
       }
 
+      .chat-shell {
+        display: grid;
+        grid-template-rows: minmax(0, 1fr) auto;
+        gap: 12px;
+        min-height: 0;
+        flex: 1;
+      }
+
+      .interview-panel,
+      .seed-review-panel {
+        display: grid;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--soft);
+        padding: 12px;
+      }
+
+      .seed-review-panel {
+        margin: 12px;
+        background: #fbfcf8;
+      }
+
+      .interview-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .interview-header h2 {
+        margin: 0;
+        font-size: 15px;
+      }
+
+      .interview-header span {
+        flex: 0 0 auto;
+        border: 1px solid rgba(29, 109, 97, 0.26);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--accent);
+        padding: 3px 8px;
+        font-size: 11px;
+        font-weight: 850;
+      }
+
+      .interview-thread {
+        display: grid;
+        gap: 8px;
+        align-content: start;
+        min-height: 0;
+        overflow: auto;
+      }
+
+      .interview-message {
+        display: grid;
+        gap: 4px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        max-width: min(680px, 88%);
+        padding: 10px 12px;
+      }
+
+      .interview-message.user {
+        justify-self: end;
+        border-color: rgba(49, 95, 141, 0.2);
+        background: #f6f9fc;
+      }
+
+      .interview-message.agent {
+        justify-self: start;
+        border-color: rgba(29, 109, 97, 0.22);
+      }
+
+      .interview-message strong {
+        font-size: 12px;
+      }
+
+      .interview-message p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .chat-composer {
+        display: grid;
+        gap: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcf8;
+        padding: 12px;
+      }
+
+      .chat-composer textarea {
+        min-height: 72px;
+      }
+
+      .seed-status {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .seed-fields {
+        display: grid;
+        gap: 10px;
+        max-height: 42vh;
+        overflow: auto;
+        padding-right: 2px;
+      }
+
+      .seed-fields textarea {
+        min-height: 72px;
+      }
+
+      .seed-fields .compact-textarea {
+        min-height: 48px;
+      }
+
+      .confirm-button {
+        min-height: 38px;
+        border: 1px solid rgba(29, 109, 97, 0.35);
+        border-radius: 7px;
+        background: rgba(29, 109, 97, 0.1);
+        color: var(--accent);
+        font-weight: 850;
+      }
+
+      .confirm-button:disabled,
+      .tool-button:disabled {
+        cursor: not-allowed;
+        color: var(--muted);
+        background: #f3f4f0;
+      }
+
       .output-pane {
         min-width: 0;
         display: flex;
         flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
       }
 
       .status-row {
@@ -232,7 +373,7 @@
 
       .pipeline {
         display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-template-columns: repeat(7, minmax(0, 1fr));
         border-bottom: 1px solid var(--line);
         background: var(--line);
         gap: 1px;
@@ -438,69 +579,30 @@
           </div>
         </div>
 
-        <label>
-          <span data-i18n="promptLabel">Gameplay idea</span>
-          <textarea
-            id="prompt"
-            minlength="8"
-            data-i18n-placeholder="promptPlaceholder"
-            placeholder="A stealth courier escapes a haunted train station"
-          ></textarea>
-        </label>
-
-        <div class="grid-2">
-          <label>
-            <span data-i18n="minutesLabel">Minutes</span>
-            <input id="target_minutes" type="number" min="5" max="15" value="10" />
-          </label>
-          <label>
-            <span data-i18n="engineLabel">Engine</span>
-            <input id="engine_version" type="text" value="UE5" />
-          </label>
-        </div>
-
-        <div class="grid-2">
-          <label>
-            <span data-i18n="sourceLabel">Source</span>
-            <select id="source_locale">
-              <option value="en">English</option>
-              <option value="zh-CN">简体中文</option>
-            </select>
-          </label>
-          <label>
-            <span data-i18n="platformLabel">Platform</span>
-            <select id="platform">
-              <option value="Windows">Windows</option>
-              <option value="SteamDeck">Steam Deck</option>
-              <option value="WebPreview">Web preview</option>
-            </select>
-          </label>
-        </div>
-
-        <label>
-          <span data-i18n="constraintsLabel">Constraints</span>
-          <input
-            id="constraints"
-            type="text"
-            data-i18n-placeholder="constraintsPlaceholder"
-            placeholder="One map, no online multiplayer, game jam scope"
-          />
-        </label>
-
-        <button class="primary-button" id="generate" type="button" data-i18n="generate">
-          Generate plan
-        </button>
-
-        <div class="tool-grid" aria-label="Production tools">
-          <button class="tool-button" type="button" data-tool="prepare_production_pipeline" data-i18n="pipelineTool">Pipeline</button>
-          <button class="tool-button" type="button" data-tool="decompose_production_tasks" data-i18n="tasksTool">Tasks</button>
-          <button class="tool-button" type="button" data-tool="render_gdd">GDD</button>
-          <button class="tool-button" type="button" data-tool="prepare_unreal_plan">Unreal</button>
-          <button class="tool-button" type="button" data-tool="prepare_blender_plan">Blender</button>
-          <button class="tool-button" type="button" data-tool="prepare_comfyui_plan">ComfyUI</button>
-          <button class="tool-button" type="button" data-tool="prepare_creative_review_plan" data-i18n="reviewTool">Review</button>
-          <button class="tool-button" type="button" data-tool="prepare_qa_plan">QA</button>
-        </div>
+        <section class="chat-shell" aria-label="Idea discovery conversation">
+          <div id="discovery-thread" class="interview-thread"></div>
+          <div class="chat-composer">
+            <label>
+              <span data-i18n="promptLabel">Gameplay idea</span>
+              <textarea
+                id="prompt"
+                minlength="8"
+                data-i18n-placeholder="promptPlaceholder"
+                placeholder="A stealth courier escapes a haunted train station"
+              ></textarea>
+            </label>
+            <textarea
+              id="interview-answer"
+              rows="3"
+              data-i18n-placeholder="answerPlaceholder"
+              placeholder="Answer the current question in one or two concrete sentences."
+            ></textarea>
+            <div class="button-row">
+              <button class="tool-button" type="button" id="save-answer" data-i18n="saveAnswer">Save answer</button>
+              <button class="tool-button" type="button" id="extract-seed" data-i18n="extractSeed">Extract seed</button>
+            </div>
+          </div>
+        </section>
       </aside>
 
       <section class="output-pane">
@@ -511,6 +613,106 @@
           </div>
           <span id="status" class="chip" data-i18n="idle">Idle</span>
         </header>
+
+        <section class="seed-review-panel" aria-label="Enriched idea preview">
+          <div class="interview-header">
+            <h2 data-i18n="seedPreviewTitle">Enriched idea preview</h2>
+            <span id="seed-state" data-i18n="seedDraft">Draft</span>
+          </div>
+          <div id="idea_seed" class="seed-status" data-i18n="seedEmpty">
+            Answer the interview questions, extract an IdeaSeed, then generate the production plan.
+          </div>
+          <div class="seed-fields">
+            <label>
+              <span data-i18n="playerFantasy">Player fantasy</span>
+              <textarea id="seed-player-fantasy"></textarea>
+            </label>
+            <label>
+              <span data-i18n="coreAction">Core action</span>
+              <textarea id="seed-core-action"></textarea>
+            </label>
+            <label>
+              <span data-i18n="emotionalTarget">Emotional target</span>
+              <textarea id="seed-emotional-target" class="compact-textarea"></textarea>
+            </label>
+            <label>
+              <span data-i18n="tensionSource">Tension source</span>
+              <textarea id="seed-tension-source" class="compact-textarea"></textarea>
+            </label>
+            <label>
+              <span data-i18n="mustKeep">Must keep</span>
+              <textarea id="seed-must-keep" class="compact-textarea"></textarea>
+            </label>
+            <label>
+              <span data-i18n="canCut">Can cut</span>
+              <textarea id="seed-can-cut" class="compact-textarea"></textarea>
+            </label>
+            <label>
+              <span data-i18n="referenceFeel">Reference feel</span>
+              <textarea id="seed-reference-feel" class="compact-textarea"></textarea>
+            </label>
+            <label>
+              <span data-i18n="playableLoop">Playable loop candidate</span>
+              <textarea id="seed-playable-loop"></textarea>
+            </label>
+          </div>
+
+          <div class="grid-2">
+            <label>
+              <span data-i18n="minutesLabel">Minutes</span>
+              <input id="target_minutes" type="number" min="5" max="15" value="10" />
+            </label>
+            <label>
+              <span data-i18n="engineLabel">Engine</span>
+              <input id="engine_version" type="text" value="UE5" />
+            </label>
+          </div>
+
+          <div class="grid-2">
+            <label>
+              <span data-i18n="sourceLabel">Source</span>
+              <select id="source_locale">
+                <option value="en">English</option>
+                <option value="zh-CN">简体中文</option>
+              </select>
+            </label>
+            <label>
+              <span data-i18n="platformLabel">Platform</span>
+              <select id="platform">
+                <option value="Windows">Windows</option>
+                <option value="SteamDeck">Steam Deck</option>
+                <option value="WebPreview">Web preview</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            <span data-i18n="constraintsLabel">Constraints</span>
+            <input
+              id="constraints"
+              type="text"
+              data-i18n-placeholder="constraintsPlaceholder"
+              placeholder="One map, no online multiplayer, game jam scope"
+            />
+          </label>
+
+          <button class="confirm-button" id="confirm-seed" type="button" data-i18n="confirmSeed">
+            Confirm idea
+          </button>
+          <button class="primary-button" id="generate" type="button" data-i18n="generate">
+            Generate plan
+          </button>
+          <div class="tool-grid" aria-label="Production tools">
+            <button class="tool-button" type="button" data-tool="prepare_production_pipeline" data-i18n="pipelineTool">Pipeline</button>
+            <button class="tool-button" type="button" data-tool="decompose_production_tasks" data-i18n="tasksTool">Tasks</button>
+            <button class="tool-button" type="button" data-tool="render_gdd">GDD</button>
+            <button class="tool-button" type="button" data-tool="prepare_unreal_plan">Unreal</button>
+            <button class="tool-button" type="button" data-tool="prepare_blender_plan">Blender</button>
+            <button class="tool-button" type="button" data-tool="prepare_comfyui_plan">ComfyUI</button>
+            <button class="tool-button" type="button" data-tool="prepare_creative_review_plan" data-i18n="reviewTool">Review</button>
+            <button class="tool-button" type="button" data-tool="prepare_qa_plan">QA</button>
+          </div>
+        </section>
 
         <div class="pipeline" aria-label="Fantasy Agent pipeline">
           <div class="node"><span>01</span><strong>Gameplay</strong></div>
@@ -523,7 +725,10 @@
         </div>
 
         <nav class="tabs" aria-label="Planning panels">
-          <button type="button" class="active" data-panel-button="overview" data-i18n="tabOverview">
+          <button type="button" class="active" data-panel-button="discovery" data-i18n="tabDiscovery">
+            Discovery
+          </button>
+          <button type="button" data-panel-button="overview" data-i18n="tabOverview">
             Overview
           </button>
           <button type="button" data-panel-button="pipeline" data-i18n="tabPipeline">Pipeline</button>
@@ -536,7 +741,8 @@
           <button type="button" data-panel-button="dsl">DSL</button>
         </nav>
 
-        <section class="panel active" data-panel="overview">
+        <section class="panel active" data-panel="discovery"><div id="idea_seed_panel" class="empty" data-i18n="seedEmpty"></div></section>
+        <section class="panel" data-panel="overview">
           <div id="overview" class="empty" data-i18n="emptyState">
             Generate or call a Fantasy Agent tool to inspect a playable slice plan.
           </div>
@@ -564,6 +770,15 @@
           platformLabel: "Platform",
           constraintsLabel: "Constraints",
           constraintsPlaceholder: "One map, no online multiplayer, game jam scope",
+          discoveryTitle: "Creative interview",
+          discoveryAgentLabel: "Idea Discovery Agent",
+          answerPlaceholder: "Answer the current question in one or two concrete sentences.",
+          saveAnswer: "Save answer",
+          extractSeed: "Extract seed",
+          seedPreviewTitle: "Enriched idea preview",
+          seedDraft: "Draft",
+          seedConfirmed: "Confirmed",
+          confirmSeed: "Confirm idea",
           generate: "Generate plan",
           pipelineTool: "Pipeline",
           tasksTool: "Tasks",
@@ -576,6 +791,7 @@
           running: "Running",
           ready: "Ready",
           error: "Error",
+          tabDiscovery: "Discovery",
           tabOverview: "Overview",
           tabPipeline: "Pipeline",
           tabTasks: "Tasks",
@@ -592,6 +808,18 @@
           loop: "Core loop",
           systems: "Systems",
           beats: "Level beats",
+          ideaSeed: "Idea seed",
+          playerFantasy: "Player fantasy",
+          emotionalTarget: "Emotional target",
+          coreAction: "Core action",
+          tensionSource: "Tension source",
+          mustKeep: "Must keep",
+          canCut: "Can cut",
+          referenceFeel: "Reference feel",
+          playableLoop: "Playable loop candidate",
+          openQuestions: "Open questions",
+          seedReadyTitle: "Idea seed ready",
+          seedEmpty: "Answer the interview questions, extract an IdeaSeed, edit the preview, then confirm it before generating the production plan.",
           unreal: "Unreal plan",
           blender: "Blender jobs",
           comfyui: "ComfyUI references",
@@ -625,6 +853,15 @@
           platformLabel: "平台",
           constraintsLabel: "约束",
           constraintsPlaceholder: "一张地图，不做联网多人，game jam 规模",
+          discoveryTitle: "创意访谈",
+          discoveryAgentLabel: "创意提取 Agent",
+          answerPlaceholder: "用一两句具体回答当前问题。",
+          saveAnswer: "保存回答",
+          extractSeed: "提取创意",
+          seedPreviewTitle: "点子预览与修改",
+          seedDraft: "草稿",
+          seedConfirmed: "已确认",
+          confirmSeed: "确认创意",
           generate: "生成计划",
           pipelineTool: "流水线",
           tasksTool: "任务",
@@ -637,6 +874,7 @@
           running: "运行中",
           ready: "就绪",
           error: "错误",
+          tabDiscovery: "访谈",
           tabOverview: "概览",
           tabPipeline: "流水线",
           tabTasks: "任务",
@@ -653,6 +891,18 @@
           loop: "核心循环",
           systems: "系统",
           beats: "关卡节奏",
+          ideaSeed: "创意种子",
+          playerFantasy: "玩家幻想",
+          emotionalTarget: "情绪目标",
+          coreAction: "核心动作",
+          tensionSource: "张力来源",
+          mustKeep: "必须保留",
+          canCut: "可以砍掉",
+          referenceFeel: "参考气质",
+          playableLoop: "可玩循环候选",
+          openQuestions: "待追问问题",
+          seedReadyTitle: "创意种子已就绪",
+          seedEmpty: "先回答访谈问题，提取创意种子；在右侧修改并确认后，才能生成生产计划。",
           unreal: "Unreal 计划",
           blender: "Blender 任务",
           comfyui: "ComfyUI 参考",
@@ -695,6 +945,9 @@
         locale: initialLocale(),
         status: "idle",
         lastInput: null,
+        ideaSeed: null,
+        seedConfirmed: false,
+        interviewAnswers: [],
         plan: null,
         productionPipeline: null,
         taskBreakdown: null,
@@ -704,11 +957,27 @@
         comfyuiPlan: null,
         creativeReview: null,
         qaPlan: null,
-        activePanel: "overview"
+        activePanel: "discovery"
       };
 
       const nodes = {
         prompt: document.querySelector("#prompt"),
+        interviewAnswer: document.querySelector("#interview-answer"),
+        saveAnswer: document.querySelector("#save-answer"),
+        extractSeed: document.querySelector("#extract-seed"),
+        discoveryThread: document.querySelector("#discovery-thread"),
+        ideaSeed: document.querySelector("#idea_seed"),
+        ideaSeedPanel: document.querySelector("#idea_seed_panel"),
+        seedState: document.querySelector("#seed-state"),
+        confirmSeed: document.querySelector("#confirm-seed"),
+        seedPlayerFantasy: document.querySelector("#seed-player-fantasy"),
+        seedEmotionalTarget: document.querySelector("#seed-emotional-target"),
+        seedCoreAction: document.querySelector("#seed-core-action"),
+        seedTensionSource: document.querySelector("#seed-tension-source"),
+        seedMustKeep: document.querySelector("#seed-must-keep"),
+        seedCanCut: document.querySelector("#seed-can-cut"),
+        seedReferenceFeel: document.querySelector("#seed-reference-feel"),
+        seedPlayableLoop: document.querySelector("#seed-playable-loop"),
         targetMinutes: document.querySelector("#target_minutes"),
         engineVersion: document.querySelector("#engine_version"),
         sourceLocale: document.querySelector("#source_locale"),
@@ -755,6 +1024,208 @@
         return `<section class="block${wide ? " wide" : ""}"><h3>${escapeHtml(title)}</h3>${body}</section>`;
       }
 
+      function interviewQuestions() {
+        if (state.locale === "zh-CN") {
+          return [
+            { id: "player_fantasy", text: "玩家在这个游戏里最想成为谁，或者最想完成什么幻想？" },
+            { id: "core_action", text: "玩家进入游戏前 30 秒，应该立刻做的第一个动作是什么？" },
+            { id: "emotional_target", text: "你希望玩家主要感受到紧张、掌控、探索、破坏、解谜，还是表演？" },
+            { id: "tension_source", text: "失败来自哪里？时间压力、空间危险、敌人、资源，还是判断错误？" },
+            { id: "must_keep", text: "哪些机制或表达必须保留？用逗号分隔即可。" },
+            { id: "can_cut", text: "为了 5 到 15 分钟 demo，哪些内容可以先砍掉？" }
+          ];
+        }
+        return [
+          { id: "player_fantasy", text: "Who should the player feel they are becoming, or what fantasy must they perform?" },
+          { id: "core_action", text: "What is the first concrete action the player should perform in the first 30 seconds?" },
+          { id: "emotional_target", text: "Should the player mainly feel tension, mastery, exploration, destruction, puzzle-solving, or performance?" },
+          { id: "tension_source", text: "Where does failure come from: time pressure, spatial danger, enemies, resources, or misreading the situation?" },
+          { id: "must_keep", text: "Which mechanics or expressions must be preserved? A comma-separated list is fine." },
+          { id: "can_cut", text: "For a 5 to 15 minute demo, what can be cut first?" }
+        ];
+      }
+
+      function currentInterviewQuestion() {
+        const questions = interviewQuestions();
+        return questions[Math.min(state.interviewAnswers.length, questions.length - 1)];
+      }
+
+      function renderDiscoveryThread() {
+        const questions = interviewQuestions();
+        const idea = nodes.prompt.value.trim();
+        const ideaHtml = idea
+          ? `<div class="interview-message user"><strong>${escapeHtml(t("promptLabel"))}</strong><p>${escapeHtml(idea)}</p></div>`
+          : "";
+        const answered = state.interviewAnswers
+          .map(
+            (answer) =>
+              `<div class="interview-message user"><strong>${escapeHtml(answer.question)}</strong><p>${escapeHtml(answer.answer)}</p></div>`
+          )
+          .join("");
+        const current = questions[state.interviewAnswers.length];
+        const currentHtml = current
+          ? `<div class="interview-message agent"><strong>${escapeHtml(t("discoveryAgentLabel"))}</strong><p>${escapeHtml(current.text)}</p></div>`
+          : `<div class="interview-message agent"><strong>${escapeHtml(t("discoveryAgentLabel"))}</strong><p>${escapeHtml(t("extractSeed"))}</p></div>`;
+        nodes.discoveryThread.innerHTML = `${ideaHtml}${answered}${currentHtml}`;
+      }
+
+      function saveInterviewAnswer() {
+        const question = currentInterviewQuestion();
+        const answer = nodes.interviewAnswer.value.trim();
+        if (!question || !answer) {
+          nodes.interviewAnswer.focus();
+          return;
+        }
+        state.interviewAnswers = [
+          ...state.interviewAnswers,
+          { question_id: question.id, question: question.text, answer }
+        ].slice(0, interviewQuestions().length);
+        nodes.interviewAnswer.value = "";
+        renderDiscoveryThread();
+      }
+
+      function renderIdeaSeed() {
+        const seed = state.ideaSeed;
+        if (!seed) {
+          nodes.ideaSeed.className = "seed-status";
+          nodes.ideaSeed.textContent = t("seedEmpty");
+          nodes.ideaSeedPanel.className = "empty";
+          nodes.ideaSeedPanel.textContent = t("seedEmpty");
+          nodes.seedState.textContent = t("seedDraft");
+          updateActionStates();
+          return;
+        }
+        nodes.ideaSeed.className = "seed-status";
+        nodes.ideaSeed.textContent = state.seedConfirmed ? t("seedConfirmed") : t("seedReadyTitle");
+        nodes.ideaSeedPanel.className = "section-grid";
+        nodes.ideaSeedPanel.innerHTML = [
+          block(t("playerFantasy"), `<p>${escapeHtml(seed.player_fantasy)}</p>`),
+          block(t("emotionalTarget"), `<p>${escapeHtml(seed.emotional_target)}</p>`),
+          block(t("coreAction"), `<p>${escapeHtml(seed.core_action)}</p>`, true),
+          block(t("tensionSource"), `<p>${escapeHtml(seed.tension_source)}</p>`),
+          block(t("referenceFeel"), `<p>${escapeHtml(seed.reference_feel)}</p>`),
+          block(t("mustKeep"), list(seed.must_keep), true),
+          block(t("canCut"), list(seed.can_cut), true),
+          block(t("playableLoop"), `<p>${escapeHtml(seed.playable_loop_candidate)}</p>`, true),
+          block(t("openQuestions"), list(seed.open_questions), true)
+        ].join("");
+        nodes.seedState.textContent = state.seedConfirmed ? t("seedConfirmed") : t("seedDraft");
+        updateActionStates();
+      }
+
+      function joinLines(items) {
+        return (items || []).join("\n");
+      }
+
+      function splitLines(value) {
+        return String(value || "")
+          .split(/\r?\n|,|，|;|；/)
+          .map((item) => item.trim())
+          .filter(Boolean);
+      }
+
+      function syncSeedEditor(seed) {
+        nodes.seedPlayerFantasy.value = seed?.player_fantasy || "";
+        nodes.seedEmotionalTarget.value = seed?.emotional_target || "";
+        nodes.seedCoreAction.value = seed?.core_action || "";
+        nodes.seedTensionSource.value = seed?.tension_source || "";
+        nodes.seedMustKeep.value = joinLines(seed?.must_keep);
+        nodes.seedCanCut.value = joinLines(seed?.can_cut);
+        nodes.seedReferenceFeel.value = seed?.reference_feel || "";
+        nodes.seedPlayableLoop.value = seed?.playable_loop_candidate || "";
+      }
+
+      function seedFromEditor() {
+        const rawIdea = nodes.prompt.value.trim();
+        const mustKeep = splitLines(nodes.seedMustKeep.value);
+        const canCut = splitLines(nodes.seedCanCut.value);
+        const coreAction = nodes.seedCoreAction.value.trim();
+        const tensionSource = nodes.seedTensionSource.value.trim();
+        return {
+          ...(state.ideaSeed || {}),
+          source: "idea-discovery-agent",
+          schema_version: "0.1",
+          raw_idea: rawIdea,
+          player_fantasy: nodes.seedPlayerFantasy.value.trim(),
+          emotional_target: nodes.seedEmotionalTarget.value.trim(),
+          core_action: coreAction,
+          tension_source: tensionSource,
+          must_keep: mustKeep,
+          can_cut: canCut,
+          reference_feel: nodes.seedReferenceFeel.value.trim(),
+          playable_loop_candidate: nodes.seedPlayableLoop.value.trim(),
+          constraints: splitLines(nodes.constraints.value),
+          open_questions: state.ideaSeed?.open_questions || [],
+          next_prompt: [
+            `Create a ${Number(nodes.targetMinutes.value || 10)}-minute ${nodes.engineVersion.value.trim() || "UE5"} playable prototype from this idea seed.`,
+            `Player fantasy: ${nodes.seedPlayerFantasy.value.trim()}.`,
+            `Emotional target: ${nodes.seedEmotionalTarget.value.trim()}.`,
+            `Core action: ${coreAction}.`,
+            `Tension source: ${tensionSource}.`,
+            `Playable loop: ${nodes.seedPlayableLoop.value.trim()}.`,
+            `Must keep: ${mustKeep.join(", ")}.`,
+            `Can cut: ${canCut.join(", ")}.`,
+            `Reference feel: ${nodes.seedReferenceFeel.value.trim()}.`,
+            "Prioritize a coherent greybox loop over visual polish."
+          ].join(" ")
+        };
+      }
+
+      function promptRequestFromEditor(seed) {
+        return {
+          prompt: seed.next_prompt,
+          target_minutes: Number(nodes.targetMinutes.value || 10),
+          engine_version: nodes.engineVersion.value.trim() || "UE5",
+          platforms: [nodes.platform.value || "Windows"],
+          jam_scope: true,
+          constraints: seed.constraints || [],
+          source_locale: nodes.sourceLocale.value,
+          output_locales: ["en", "zh-CN"]
+        };
+      }
+
+      function markSeedDirty() {
+        if (!state.ideaSeed) return;
+        state.seedConfirmed = false;
+        renderIdeaSeed();
+      }
+
+      function confirmSeed() {
+        if (!state.ideaSeed) {
+          nodes.extractSeed.focus();
+          return;
+        }
+        const seed = seedFromEditor();
+        if (!seed.player_fantasy || !seed.core_action || !seed.playable_loop_candidate) {
+          nodes.seedPlayerFantasy.focus();
+          return;
+        }
+        state.ideaSeed = seed;
+        state.seedConfirmed = true;
+        state.lastInput = promptRequestFromEditor(seed);
+        renderIdeaSeed();
+        setStatus("ready");
+      }
+
+      function updateActionStates() {
+        const canGenerate = Boolean(state.ideaSeed && state.seedConfirmed);
+        nodes.confirmSeed.disabled = !state.ideaSeed;
+        nodes.generate.disabled = !canGenerate;
+        document.querySelectorAll("[data-tool]").forEach((button) => {
+          button.disabled = !canGenerate;
+        });
+      }
+
+      function applyPromptRequest(payload) {
+        if (!payload) return;
+        nodes.prompt.value = payload.prompt || nodes.prompt.value;
+        nodes.targetMinutes.value = payload.target_minutes || nodes.targetMinutes.value;
+        nodes.engineVersion.value = payload.engine_version || nodes.engineVersion.value;
+        nodes.sourceLocale.value = payload.source_locale || nodes.sourceLocale.value;
+        nodes.platform.value = payload.platforms?.[0] || nodes.platform.value;
+        nodes.constraints.value = (payload.constraints || []).join(", ");
+      }
+
       function applyLocale(locale) {
         state.locale = locale;
         localStorage.setItem("fantasy-agent-chatgpt-workbench-locale", locale);
@@ -768,6 +1239,7 @@
         document.querySelectorAll("[data-locale]").forEach((button) => {
           button.classList.toggle("active", button.dataset.locale === locale);
         });
+        renderDiscoveryThread();
         render();
       }
 
@@ -805,6 +1277,9 @@
       }
 
       function requestPayload() {
+        if (state.ideaSeed && state.seedConfirmed) {
+          return promptRequestFromEditor(seedFromEditor());
+        }
         const constraints = nodes.constraints.value
           .split(/\r?\n|,/)
           .map((item) => item.trim())
@@ -821,15 +1296,24 @@
         };
       }
 
-      async function callTool(name) {
+      function ideaDiscoveryPayload() {
         const payload = requestPayload();
-        if (!payload.prompt || payload.prompt.length < 8) {
-          nodes.prompt.focus();
-          return;
-        }
+        return {
+          raw_idea: nodes.prompt.value.trim(),
+          answers: state.interviewAnswers,
+          target_minutes: payload.target_minutes,
+          engine_version: payload.engine_version,
+          platforms: payload.platforms,
+          constraints: payload.constraints,
+          source_locale: payload.source_locale,
+          output_locales: payload.output_locales
+        };
+      }
+
+      async function callToolWithPayload(name, payload, button) {
         state.lastInput = payload;
         setStatus("running");
-        nodes.generate.disabled = true;
+        if (button) button.disabled = true;
         try {
           let result;
           if (bridge?.callTool) {
@@ -848,8 +1332,29 @@
           setStatus("error");
           nodes.title.textContent = error.message || String(error);
         } finally {
-          nodes.generate.disabled = false;
+          if (button) button.disabled = false;
         }
+      }
+
+      async function callTool(name) {
+        const payload = requestPayload();
+        if (!payload.prompt || payload.prompt.length < 8) {
+          nodes.prompt.focus();
+          return;
+        }
+        await callToolWithPayload(name, payload, nodes.generate);
+      }
+
+      async function extractSeed() {
+        if (nodes.interviewAnswer.value.trim()) {
+          saveInterviewAnswer();
+        }
+        const payload = ideaDiscoveryPayload();
+        if (!payload.raw_idea || payload.raw_idea.length < 4) {
+          nodes.prompt.focus();
+          return;
+        }
+        await callToolWithPayload("extract_idea_seed", payload, nodes.extractSeed);
       }
 
       function ingestToolResult(result) {
@@ -857,6 +1362,13 @@
         const structured = result.structuredContent || result.toolOutput || result;
         const meta = result._meta || result.toolResponseMetadata || bridge?.toolResponseMetadata || {};
 
+        const ideaSeed = structured.idea_seed || meta.ideaSeed;
+        if (ideaSeed) {
+          state.ideaSeed = ideaSeed;
+          state.seedConfirmed = false;
+          syncSeedEditor(ideaSeed);
+          state.lastInput = structured.prompt_request || meta.promptRequest || state.lastInput;
+        }
         const fullPlan = structured.plan || meta.plan;
         if (fullPlan) {
           state.plan = fullPlan;
@@ -889,9 +1401,12 @@
       }
 
       function render() {
+        renderDiscoveryThread();
+        renderIdeaSeed();
         const plan = state.plan;
         const spec = plan?.gameplay_spec;
         if (
+          !state.ideaSeed &&
           !plan &&
           !state.productionPipeline &&
           !state.taskBreakdown &&
@@ -913,6 +1428,23 @@
           nodes.gdd.textContent = "";
           nodes.dsl.textContent = "";
           setStatus(state.status);
+          return;
+        }
+
+        if (state.ideaSeed && !plan && !state.productionPipeline && !state.taskBreakdown) {
+          nodes.title.textContent = t("seedReadyTitle");
+          nodes.overview.className = "section-grid";
+          nodes.overview.innerHTML = [
+            block(t("ideaSeed"), `<p>${escapeHtml(state.ideaSeed.next_prompt)}</p>`, true),
+            block(t("next"), list([t("generate")]), true)
+          ].join("");
+          nodes.dsl.textContent = JSON.stringify(state.ideaSeed, null, 2);
+          renderBuild();
+          renderVisuals();
+          renderQa();
+          renderTasks();
+          renderGdd();
+          setStatus("ready");
           return;
         }
 
@@ -1246,6 +1778,32 @@
       });
 
       nodes.generate.addEventListener("click", () => callTool("generate_game_production_plan"));
+      nodes.saveAnswer.addEventListener("click", saveInterviewAnswer);
+      nodes.extractSeed.addEventListener("click", extractSeed);
+      nodes.confirmSeed.addEventListener("click", confirmSeed);
+      nodes.prompt.addEventListener("input", () => {
+        state.seedConfirmed = false;
+        renderDiscoveryThread();
+        updateActionStates();
+      });
+      [
+        nodes.seedPlayerFantasy,
+        nodes.seedEmotionalTarget,
+        nodes.seedCoreAction,
+        nodes.seedTensionSource,
+        nodes.seedMustKeep,
+        nodes.seedCanCut,
+        nodes.seedReferenceFeel,
+        nodes.seedPlayableLoop,
+        nodes.targetMinutes,
+        nodes.engineVersion,
+        nodes.sourceLocale,
+        nodes.platform,
+        nodes.constraints
+      ].forEach((node) => node.addEventListener("input", markSeedDirty));
+      [nodes.sourceLocale, nodes.platform].forEach((node) => {
+        node.addEventListener("change", markSeedDirty);
+      });
       document.querySelectorAll("[data-tool]").forEach((button) => {
         button.addEventListener("click", () => callTool(button.dataset.tool));
       });

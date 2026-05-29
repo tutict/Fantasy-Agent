@@ -120,6 +120,41 @@ class I18nBundle(StrictModel):
     term_translations: dict[str, dict[LocaleCode, str]] = Field(default_factory=dict)
 
 
+class IdeaDiscoveryAnswer(StrictModel):
+    question_id: str
+    question: str = ""
+    answer: str = Field(min_length=1)
+
+
+class IdeaDiscoveryRequest(StrictModel):
+    raw_idea: str = Field(min_length=4, description="Unstructured initial game idea.")
+    answers: list[IdeaDiscoveryAnswer] = Field(default_factory=list)
+    target_minutes: int = Field(default=10, ge=5, le=15)
+    engine_version: str = Field(default="UE5")
+    platforms: list[str] = Field(default_factory=lambda: ["Windows"])
+    constraints: list[str] = Field(default_factory=list)
+    source_locale: LocaleCode = "en"
+    output_locales: list[LocaleCode] = Field(default_factory=lambda: ["en", "zh-CN"])
+
+
+class IdeaSeed(StrictModel):
+    source: str = "idea-discovery-agent"
+    schema_version: str = "0.1"
+    raw_idea: str
+    player_fantasy: str
+    emotional_target: str
+    core_action: str
+    tension_source: str
+    must_keep: list[str]
+    can_cut: list[str]
+    reference_feel: str
+    playable_loop_candidate: str
+    constraints: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    next_prompt: str
+    i18n: I18nBundle | None = None
+
+
 class LoopStep(StrictModel):
     order: int = Field(ge=1)
     action: str

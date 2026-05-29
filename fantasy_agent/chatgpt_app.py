@@ -5,7 +5,8 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from fantasy_agent.contracts import DirectorBuildPlan, PromptRequest
+from fantasy_agent.contracts import DirectorBuildPlan, IdeaDiscoveryRequest, PromptRequest
+from fantasy_agent.idea_discovery import extract_idea_seed, prompt_request_from_seed
 from fantasy_agent.workflows import (
     decompose_production_tasks,
     prepare_blender_assets,
@@ -41,6 +42,16 @@ def prompt_request_schema() -> dict[str, Any]:
     return schema
 
 
+def idea_discovery_schema() -> dict[str, Any]:
+    schema = IdeaDiscoveryRequest.model_json_schema()
+    schema["title"] = "Fantasy Agent Idea Discovery Request"
+    schema["description"] = (
+        "Interview answers used to extract an IdeaSeed before ChatGPT and Fantasy Agent "
+        "turn it into a playable production plan."
+    )
+    return schema
+
+
 def _base_tool_meta(invoking: str, invoked: str) -> dict[str, Any]:
     return {
         "openai/outputTemplate": WIDGET_URI,
@@ -56,12 +67,13 @@ def _tool(
     description: str,
     invoking: str,
     invoked: str,
+    input_schema: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "name": name,
         "title": title,
         "description": description,
-        "inputSchema": prompt_request_schema(),
+        "inputSchema": input_schema or prompt_request_schema(),
         "annotations": {
             "readOnlyHint": True,
             "destructiveHint": False,
@@ -74,6 +86,17 @@ def _tool(
 
 def tool_descriptors() -> list[dict[str, Any]]:
     return [
+        _tool(
+            "extract_idea_seed",
+            "Extract idea seed",
+            (
+                "Use this when the user has a loose game idea and wants an interview-style "
+                "IdeaSeed before ChatGPT refines it into a production plan."
+            ),
+            "Extracting Fantasy Agent idea seed",
+            "Idea seed ready",
+            idea_discovery_schema(),
+        ),
         _tool(
             "decompose_production_tasks",
             "Decompose production tasks",
@@ -240,21 +263,44 @@ def _task_text_summary(task_count: int, recommended_next_task: str) -> str:
 
 def _tool_result(
     tool_name: str,
-    request: PromptRequest,
+    request: Any,
     structured_content: dict[str, Any],
     content_text: str,
     meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    request_payload = request.model_dump(mode="json") if hasattr(request, "model_dump") else request
     return {
         "structuredContent": structured_content,
         "content": [{"type": "text", "text": content_text}],
         "_meta": {
             "toolName": tool_name,
-            "request": request.model_dump(mode="json"),
+            "request": request_payload,
             "widgetUri": WIDGET_URI,
             **(meta or {}),
         },
     }
+
+
+def extract_idea_seed_tool(arguments: dict[str, Any] | None) -> dict[str, Any]:
+    request = IdeaDiscoveryRequest.model_validate(arguments or {})
+    seed = extract_idea_seed(request)
+    prompt_request = prompt_request_from_seed(seed, request)
+    seed_payload = seed.model_dump(mode="json")
+    prompt_payload = prompt_request.model_dump(mode="json")
+    return _tool_result(
+        "extract_idea_seed",
+        request,
+        {
+            "kind": "idea_seed",
+            "idea_seed": seed_payload,
+            "prompt_request": prompt_payload,
+        },
+        (
+            "Extracted an IdeaSeed for ChatGPT refinement. "
+            f"Core action: {seed.core_action}. Next step: generate a production plan from the seed."
+        ),
+        {"ideaSeed": seed_payload, "promptRequest": prompt_payload, "activePanel": "discovery"},
+    )
 
 
 def decompose_tasks(arguments: dict[str, Any] | None) -> dict[str, Any]:
@@ -428,6 +474,7 @@ def prepare_qa_plan(arguments: dict[str, Any] | None) -> dict[str, Any]:
 
 
 TOOL_HANDLERS: dict[str, Callable[[dict[str, Any] | None], dict[str, Any]]] = {
+    "extract_idea_seed": extract_idea_seed_tool,
     "decompose_production_tasks": decompose_tasks,
     "generate_game_production_plan": generate_game_production_plan,
     "render_gdd": render_gdd,

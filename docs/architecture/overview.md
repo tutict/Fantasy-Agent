@@ -49,9 +49,9 @@ Each app is a small FastAPI service:
 
 ## ChatGPT Apps Surface
 
-The Planning Workbench is an interactive MCP surface over the same contracts. It provides read-only tools for plan generation, GDD rendering, Unreal planning, Blender planning, ComfyUI planning, and QA planning. It does not execute production side effects in Phase 1.
+The Planning Workbench is an interactive MCP surface over the same contracts. It provides read-only tools for idea discovery, plan generation, GDD rendering, Unreal planning, Blender planning, ComfyUI planning, and QA planning. It does not execute production side effects in Phase 1.
 
-策划工作台复用同一套合约，提供计划生成、GDD 渲染、Unreal 计划、Blender 计划、ComfyUI 计划和 QA 计划等只读工具。第一阶段不执行生产副作用。
+策划工作台复用同一套合约，提供创意提取、计划生成、GDD 渲染、Unreal 计划、Blender 计划、ComfyUI 计划和 QA 计划等只读工具。第一阶段不执行生产副作用。
 
 ## Legacy Inputs
 

@@ -29,6 +29,7 @@ All tools are read-only and idempotent in the first implementation.
 
 所有工具在第一版中都是只读且幂等的。
 
+- `extract_idea_seed`: interview-style creative discovery before plan generation.
 - `generate_game_production_plan`: full prompt-to-playable plan.
 - `render_gdd`: bilingual markdown GDD.
 - `prepare_unreal_plan`: UE5 project architecture plan only.

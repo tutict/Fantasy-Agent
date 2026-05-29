@@ -16,6 +16,7 @@ Fantasy Agent 策划工作台把游戏生产管线暴露为 ChatGPT Apps 可连�
 
 | Tool | Purpose |
 | --- | --- |
+| `extract_idea_seed` | Interview-style creative discovery that turns loose answers into an IdeaSeed and production prompt. |
 | `decompose_production_tasks` | Inspectable task board before execution. |
 | `generate_game_production_plan` | Full Director workflow with gameplay DSL, GDD, Unreal, Blender, ComfyUI, QA, and next actions. |
 | `prepare_production_pipeline` | Staged gameplay, ComfyUI, Blender, integration, Unreal, and QA pipeline. |
