@@ -498,6 +498,7 @@
           <button class="tool-button" type="button" data-tool="prepare_unreal_plan">Unreal</button>
           <button class="tool-button" type="button" data-tool="prepare_blender_plan">Blender</button>
           <button class="tool-button" type="button" data-tool="prepare_comfyui_plan">ComfyUI</button>
+          <button class="tool-button" type="button" data-tool="prepare_creative_review_plan" data-i18n="reviewTool">Review</button>
           <button class="tool-button" type="button" data-tool="prepare_qa_plan">QA</button>
         </div>
       </aside>
@@ -515,9 +516,10 @@
           <div class="node"><span>01</span><strong>Gameplay</strong></div>
           <div class="node"><span>02</span><strong>ComfyUI</strong></div>
           <div class="node"><span>03</span><strong>Blender</strong></div>
-          <div class="node"><span>04</span><strong>Integrate</strong></div>
-          <div class="node"><span>05</span><strong>Unreal</strong></div>
-          <div class="node"><span>06</span><strong>QA</strong></div>
+          <div class="node"><span>04</span><strong>Review</strong></div>
+          <div class="node"><span>05</span><strong>Integrate</strong></div>
+          <div class="node"><span>06</span><strong>Unreal</strong></div>
+          <div class="node"><span>07</span><strong>QA</strong></div>
         </div>
 
         <nav class="tabs" aria-label="Workbench panels">
@@ -565,6 +567,7 @@
           generate: "Generate plan",
           pipelineTool: "Pipeline",
           tasksTool: "Tasks",
+          reviewTool: "Review",
           statusLabel: "Workbench status",
           emptyTitle: "No production plan loaded",
           focusedTitle: "Focused handoff loaded",
@@ -592,6 +595,9 @@
           unreal: "Unreal plan",
           blender: "Blender jobs",
           comfyui: "ComfyUI references",
+          creativeReview: "Creative review",
+          approvalGate: "Approval gate",
+          reviewQuestions: "Review questions",
           rules: "Usage rules",
           qa: "QA checks",
           smoke: "Smoke tests",
@@ -622,6 +628,7 @@
           generate: "生成计划",
           pipelineTool: "流水线",
           tasksTool: "任务",
+          reviewTool: "审阅",
           statusLabel: "工作台状态",
           emptyTitle: "尚未载入生产计划",
           focusedTitle: "已载入单项交接",
@@ -649,6 +656,9 @@
           unreal: "Unreal 计划",
           blender: "Blender 任务",
           comfyui: "ComfyUI 参考",
+          creativeReview: "创意审阅",
+          approvalGate: "审批门",
+          reviewQuestions: "审阅问题",
           rules: "使用规则",
           qa: "QA 检查",
           smoke: "冒烟测试",
@@ -691,6 +701,7 @@
         unrealPlan: null,
         blenderPlan: null,
         comfyuiPlan: null,
+        creativeReview: null,
         qaPlan: null,
         activePanel: "overview"
       };
@@ -826,6 +837,7 @@
           state.unrealPlan = state.plan.unreal_plan;
           state.blenderPlan = state.plan.blender_plan;
           state.comfyuiPlan = state.plan.comfyui_plan;
+          state.creativeReview = state.plan.creative_review;
           state.qaPlan = state.plan.qa_plan;
         }
         if (structured.production_pipeline || meta.productionPipeline) {
@@ -838,6 +850,7 @@
         if (structured.unreal_plan || meta.unrealPlan) state.unrealPlan = structured.unreal_plan || meta.unrealPlan;
         if (structured.blender_plan || meta.blenderPlan) state.blenderPlan = structured.blender_plan || meta.blenderPlan;
         if (structured.comfyui_plan || meta.comfyuiPlan) state.comfyuiPlan = structured.comfyui_plan || meta.comfyuiPlan;
+        if (structured.creative_review || meta.creativeReview) state.creativeReview = structured.creative_review || meta.creativeReview;
         if (structured.qa_plan || meta.qaPlan) state.qaPlan = structured.qa_plan || meta.qaPlan;
         if (meta.request) state.lastInput = meta.request;
         if (meta.activePanel) state.activePanel = meta.activePanel;
@@ -855,6 +868,7 @@
           !state.unrealPlan &&
           !state.blenderPlan &&
           !state.comfyuiPlan &&
+          !state.creativeReview &&
           !state.qaPlan
         ) {
           nodes.title.textContent = t("emptyTitle");
@@ -927,6 +941,7 @@
           state.unrealPlan = state.unrealPlan || plan.unreal_plan;
           state.blenderPlan = state.blenderPlan || plan.blender_plan;
           state.comfyuiPlan = state.comfyuiPlan || plan.comfyui_plan;
+          state.creativeReview = state.creativeReview || plan.creative_review;
           state.qaPlan = state.qaPlan || plan.qa_plan;
           state.taskBreakdown = state.taskBreakdown || plan.task_breakdown;
           state.productionPipeline = state.productionPipeline || plan.production_pipeline;
@@ -961,6 +976,12 @@
                   numbered(state.comfyuiPlan.jobs, (job) => `<strong>${escapeHtml(job.job_id)}</strong>`)
                 )
               : "",
+            state.creativeReview
+              ? block(
+                  t("creativeReview"),
+                  numbered(state.creativeReview.items, (item) => `<strong>${escapeHtml(item.asset_id)}</strong>`)
+                )
+              : "",
             state.qaPlan ? block(t("qa"), list(state.qaPlan.metrics), true) : ""
           ].join("");
           nodes.dsl.textContent = JSON.stringify(
@@ -969,6 +990,7 @@
               unreal_plan: state.unrealPlan,
               blender_plan: state.blenderPlan,
               comfyui_plan: state.comfyuiPlan,
+              creative_review: state.creativeReview,
               qa_plan: state.qaPlan
             },
             null,
@@ -1069,19 +1091,38 @@
 
       function renderVisuals() {
         const comfy = state.comfyuiPlan;
-        nodes.visuals.innerHTML = comfy
+        const review = state.creativeReview;
+        nodes.visuals.innerHTML =
+          comfy || review
           ? [
+              review
+                ? block(
+                    t("creativeReview"),
+                    [
+                      `<p>${escapeHtml(t("approvalGate"))}: ${escapeHtml(review.approval_gate)}</p>`,
+                      numbered(
+                        review.items,
+                        (item) =>
+                          `<strong>${escapeHtml(item.asset_id)}</strong><br><span>${escapeHtml(item.source)} / ${escapeHtml(item.approval_status)}</span><br><code>${escapeHtml(item.asset_path)}</code>`
+                      )
+                    ].join(""),
+                    true
+                  )
+                : "",
+              review?.art_direction
+                ? block(t("reviewQuestions"), list(review.art_direction.user_review_questions), true)
+                : "",
               block(
                 t("comfyui"),
                 numbered(
-                  comfy.jobs,
+                  comfy?.jobs || [],
                   (job) =>
                     `<strong>${escapeHtml(job.job_id)}</strong><br><span>${escapeHtml(job.gameplay_constraint)}</span><br><code>${escapeHtml(job.workflow_template)}</code>`
                 ),
                 true
               ),
-              block(t("rules"), list(comfy.usage_rules), true)
-            ].join("")
+              comfy ? block(t("rules"), list(comfy.usage_rules), true) : ""
+            ].filter(Boolean).join("")
           : "";
       }
 

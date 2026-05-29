@@ -4,6 +4,9 @@ from fantasy_agent.contracts import (
     BlenderAssetJob,
     BlenderAssetPlan,
     BlenderAssetKind,
+    ArtDirectionBrief,
+    CreativeReviewItem,
+    CreativeReviewReport,
     ComfyUIPromptJob,
     ComfyUIVisualPlan,
     DirectorBuildPlan,
@@ -52,6 +55,7 @@ DIRECTOR_NEXT_ACTIONS = [
     "Export gameplay spec and GDD into generated/",
     "Run Blender greybox asset job",
     "Run ComfyUI reference jobs only after gameplay readability needs are approved",
+    "Review ComfyUI and Blender outputs with the user before Unreal ingest",
     "Create UE project structure and import generated assets",
     "Run QA smoke test before adding visual polish",
 ]
@@ -262,6 +266,118 @@ def prepare_comfyui_visuals(spec: GameplaySpec) -> ComfyUIVisualPlan:
     )
 
 
+def prepare_creative_review(
+    spec: GameplaySpec,
+    blender_plan: BlenderAssetPlan,
+    comfyui_plan: ComfyUIVisualPlan,
+) -> CreativeReviewReport:
+    art_direction = ArtDirectionBrief(
+        title=f"{spec.title} Creative Review Brief",
+        visual_intent=(
+            f"Keep visual decisions subordinate to the playable fantasy: {spec.player_fantasy}. "
+            f"Every accepted asset must improve route, hazard, objective, feedback, or verb clarity."
+        ),
+        style_keywords=[
+            *spec.design_pillars[:3],
+            "readable silhouette",
+            "gameplay-state color coding",
+            "greybox-first composition",
+        ],
+        avoid_keywords=[
+            "decorative-only detail",
+            "busy visual noise",
+            "unreadable silhouettes",
+            "single-hue mood board",
+            "fake AAA key art",
+        ],
+        gameplay_readability_rules=[
+            "Safe route, hazard, objective, interactable, and exit states must be visually distinct.",
+            "Character and prop silhouettes must remain readable from gameplay camera distance.",
+            "Mesh scale, origin, collision naming, and export paths must survive Unreal import.",
+            "Reference images can guide art direction but cannot replace greybox playability checks.",
+        ],
+        user_review_questions=[
+            "Does this asset match the intended player fantasy and tone?",
+            "Can the player immediately read what this asset means during play?",
+            "Should this become an Unreal import candidate, a revision request, or a rejected reference?",
+            "What concrete style or proportion change would make it closer to your art direction?",
+        ],
+        i18n=spec.i18n,
+    )
+
+    items: list[CreativeReviewItem] = []
+    for job in comfyui_plan.jobs:
+        items.append(
+            CreativeReviewItem(
+                asset_id=job.job_id,
+                source="comfyui",
+                asset_path=job.output_path,
+                gameplay_role=job.purpose,
+                intended_use=job.gameplay_constraint,
+                review_dimensions=[
+                    "gameplay_readability",
+                    "style_alignment",
+                    "silhouette_clarity",
+                    "cohesion_with_gameplay",
+                ],
+                user_prompt=(
+                    f"Review {job.job_id}: approve, revise, or reject this reference for "
+                    f"{job.gameplay_constraint}"
+                ),
+                revision_prompt=(
+                    f"Revise {job.job_id} to improve gameplay readability for {spec.title}. "
+                    f"Preserve the role: {job.gameplay_constraint}. Avoid: {job.negative_prompt}."
+                ),
+                risks=[
+                    "ComfyUI output is a visual reference only and may need style revision.",
+                    "Do not import as a UE texture until the user approves the reference.",
+                ],
+            )
+        )
+
+    for job in blender_plan.jobs:
+        items.append(
+            CreativeReviewItem(
+                asset_id=job.asset_name,
+                source="blender",
+                asset_path=job.export_path,
+                gameplay_role=job.asset_kind,
+                intended_use=job.purpose,
+                review_dimensions=[
+                    "gameplay_readability",
+                    "cohesion_with_gameplay",
+                    "technical_usability",
+                ],
+                user_prompt=(
+                    f"Review {job.asset_name}: confirm this mesh is readable and useful for "
+                    f"{job.purpose}"
+                ),
+                revision_prompt=(
+                    f"Revise {job.asset_name} as a modular {job.asset_kind} for {spec.title}. "
+                    "Keep UE centimeter scale, clear origin, collision naming, and gameplay role."
+                ),
+                risks=[
+                    "Mesh should stay modular and scale-correct before Unreal import.",
+                    "Reject if the shape does not support a playable route, hazard, objective, or UI role.",
+                ],
+            )
+        )
+
+    return CreativeReviewReport(
+        art_direction=art_direction,
+        items=items,
+        required_user_decisions=[
+            "Approve, revise, or reject each ComfyUI reference before it can become a UE texture or UI asset.",
+            "Approve Blender meshes for readability, scale, origin, and collision before UE import.",
+            "Record concrete revision prompts for anything that does not match the intended art direction.",
+        ],
+        handoff_artifacts=[
+            "generated/creative-review-report.yaml",
+            "generated/asset-approval-manifest.yaml",
+        ],
+    )
+
+
 def prepare_qa_plan(spec: GameplaySpec) -> QAPlan:
     return QAPlan(
         target_session_minutes=spec.target_session_minutes,
@@ -340,6 +456,7 @@ def prepare_production_pipeline(
     unreal_plan: UnrealProjectPlan,
     blender_plan: BlenderAssetPlan,
     comfyui_plan: ComfyUIVisualPlan,
+    creative_review: CreativeReviewReport,
     qa_plan: QAPlan,
 ) -> ProductionPipeline:
     goal = (
@@ -454,12 +571,53 @@ def prepare_production_pipeline(
             risks=[f"{len(blender_plan.jobs)} planned mesh jobs must stay modular and reusable."],
         ),
         _pipeline_stage(
-            stage_id="asset_integration",
+            stage_id="creative_review",
             order=4,
+            title="Creative review",
+            title_zh="创意审阅",
+            owner_agent="creative-review-agent",
+            participating_agents=["director-agent", "comfyui-worker", "blender-worker"],
+            purpose=(
+                "Compare generated ComfyUI references and Blender meshes against user art direction, "
+                "gameplay readability, and Unreal ingest readiness before production assets move forward."
+            ),
+            inputs=[
+                "CreativeReviewReport",
+                "ComfyUIRunManifest",
+                "UnrealImportManifest",
+                "user art direction decisions",
+            ],
+            outputs=["review decisions", "revision prompts", "AssetApprovalManifest"],
+            artifacts=[
+                "generated/creative-review-report.yaml",
+                "generated/asset-approval-manifest.yaml",
+            ],
+            quality_gates=[
+                "Every candidate has approve, revise, or reject status.",
+                "User taste and art direction override generated visual references.",
+                "Approved assets still serve route, hazard, objective, feedback, or verb readability.",
+            ],
+            side_effects=["asks the user for asset approval decisions"],
+            depends_on=["comfyui_visual_production", "blender_modeling"],
+            status="blocked",
+            requires_confirmation=True,
+            risks=[
+                f"{len(creative_review.items)} review items block Unreal ingest until decisions exist.",
+                "Revision requests may return work to ComfyUI or Blender before UE import.",
+            ],
+        ),
+        _pipeline_stage(
+            stage_id="asset_integration",
+            order=5,
             title="Asset integration",
             title_zh="资产整合",
             owner_agent="unreal-builder",
-            participating_agents=["blender-worker", "comfyui-worker", "qa-agent"],
+            participating_agents=[
+                "creative-review-agent",
+                "blender-worker",
+                "comfyui-worker",
+                "qa-agent",
+            ],
             purpose=(
                 "Move reviewed Blender exports and approved ComfyUI references into the UE project "
                 "through explicit manifests."
@@ -482,14 +640,14 @@ def prepare_production_pipeline(
                 "Imported meshes retain valid collision and gameplay role metadata.",
             ],
             side_effects=["launches Unreal Editor", "imports generated assets into Content"],
-            depends_on=["comfyui_visual_production", "blender_modeling"],
+            depends_on=["creative_review"],
             status="blocked",
             requires_confirmation=True,
-            risks=["Blocked until Blender exports and reviewed ComfyUI outputs exist."],
+            risks=["Blocked until Blender exports and user-approved visual decisions exist."],
         ),
         _pipeline_stage(
             stage_id="unreal_production",
-            order=5,
+            order=6,
             title="Unreal production",
             title_zh="UE 制作",
             owner_agent="unreal-builder",
@@ -527,7 +685,7 @@ def prepare_production_pipeline(
         ),
         _pipeline_stage(
             stage_id="optimization_testing",
-            order=6,
+            order=7,
             title="Optimization and testing",
             title_zh="优化与测试",
             owner_agent="qa-agent",
@@ -580,12 +738,16 @@ def prepare_production_pipeline(
 
 def decompose_production_tasks(request: PromptRequest) -> DirectorTaskBreakdown:
     gameplay_spec = design_from_prompt(request)
+    blender_plan = prepare_blender_assets(gameplay_spec)
+    comfyui_plan = prepare_comfyui_visuals(gameplay_spec)
+    creative_review = prepare_creative_review(gameplay_spec, blender_plan, comfyui_plan)
     return _build_task_breakdown(
         request=request,
         spec=gameplay_spec,
         unreal_plan=prepare_unreal_project(gameplay_spec, request.engine_version),
-        blender_plan=prepare_blender_assets(gameplay_spec),
-        comfyui_plan=prepare_comfyui_visuals(gameplay_spec),
+        blender_plan=blender_plan,
+        comfyui_plan=comfyui_plan,
+        creative_review=creative_review,
         qa_plan=prepare_qa_plan(gameplay_spec),
     )
 
@@ -630,6 +792,7 @@ def _build_task_breakdown(
     unreal_plan: UnrealProjectPlan,
     blender_plan: BlenderAssetPlan,
     comfyui_plan: ComfyUIVisualPlan,
+    creative_review: CreativeReviewReport,
     qa_plan: QAPlan,
 ) -> DirectorTaskBreakdown:
     tasks = [
@@ -731,6 +894,48 @@ def _build_task_breakdown(
             risks=["References must be reviewed before becoming UE textures or UI assets."],
         ),
         _task(
+            task_id="creative_review_plan",
+            title="Creative review plan",
+            title_zh="创意审阅计划",
+            agent="creative-review-agent",
+            purpose=(
+                f"Prepare {len(creative_review.items)} review items that compare generated outputs "
+                "against gameplay readability and user art direction."
+            ),
+            inputs=["GameplaySpec", "BlenderAssetPlan", "ComfyUIVisualPlan"],
+            outputs=["CreativeReviewReport", "review questions", "revision prompt templates"],
+            depends_on=["blender_asset_plan", "comfyui_visual_plan"],
+            artifacts=["generated/creative-review-report.yaml"],
+            status="ready",
+        ),
+        _task(
+            task_id="creative_asset_review",
+            title="Review generated assets",
+            title_zh="审阅生成资产",
+            agent="creative-review-agent",
+            purpose=(
+                "Ask the user to approve, revise, or reject generated ComfyUI references and Blender "
+                "meshes before Unreal import."
+            ),
+            inputs=[
+                "CreativeReviewReport",
+                "generated ComfyUI images",
+                "generated Blender exports",
+                "user art direction",
+            ],
+            outputs=["AssetApprovalManifest", "revision prompts", "rejected asset list"],
+            side_effects=["asks the user for approval decisions"],
+            depends_on=[
+                "creative_review_plan",
+                "blender_asset_generation",
+                "comfyui_reference_generation",
+            ],
+            artifacts=["generated/asset-approval-manifest.yaml"],
+            status="blocked",
+            requires_confirmation=True,
+            risks=["Unapproved visuals or meshes must loop back to ComfyUI or Blender before UE import."],
+        ),
+        _task(
             task_id="unreal_project_setup",
             title="Unreal project setup",
             title_zh="Unreal 项目搭建",
@@ -754,18 +959,26 @@ def _build_task_breakdown(
             title_zh="Unreal 资产导入",
             agent="unreal-builder",
             purpose="Move reviewed Blender and ComfyUI outputs into the generated Unreal project.",
-            inputs=["UnrealAssetIngestManifest", "Blender exports", "reviewed ComfyUI references"],
+            inputs=[
+                "UnrealAssetIngestManifest",
+                "AssetApprovalManifest",
+                "Blender exports",
+                "reviewed ComfyUI references",
+            ],
             outputs=["imported UE assets", "ingest logs"],
             side_effects=["launches Unreal Editor", "imports generated assets into Content"],
             depends_on=[
                 "unreal_project_setup",
                 "blender_asset_generation",
                 "comfyui_reference_generation",
+                "creative_asset_review",
             ],
             artifacts=["generated/unreal/*/Content/**", "generated/logs/unreal/*.log"],
             status="blocked",
             requires_confirmation=True,
-            risks=["Blocked until source assets exist and the UE project has been generated."],
+            risks=[
+                "Blocked until source assets exist, the UE project exists, and user approvals are recorded."
+            ],
         ),
         _task(
             task_id="unreal_level_assembly",
@@ -847,6 +1060,7 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
     unreal_plan = prepare_unreal_project(gameplay_spec, request.engine_version)
     blender_plan = prepare_blender_assets(gameplay_spec)
     comfyui_plan = prepare_comfyui_visuals(gameplay_spec)
+    creative_review = prepare_creative_review(gameplay_spec, blender_plan, comfyui_plan)
     qa_plan = prepare_qa_plan(gameplay_spec)
     production_pipeline = prepare_production_pipeline(
         request=request,
@@ -854,6 +1068,7 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
         unreal_plan=unreal_plan,
         blender_plan=blender_plan,
         comfyui_plan=comfyui_plan,
+        creative_review=creative_review,
         qa_plan=qa_plan,
     )
     return DirectorBuildPlan(
@@ -862,6 +1077,7 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
         unreal_plan=unreal_plan,
         blender_plan=blender_plan,
         comfyui_plan=comfyui_plan,
+        creative_review=creative_review,
         qa_plan=qa_plan,
         task_breakdown=_build_task_breakdown(
             request=request,
@@ -869,6 +1085,7 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
             unreal_plan=unreal_plan,
             blender_plan=blender_plan,
             comfyui_plan=comfyui_plan,
+            creative_review=creative_review,
             qa_plan=qa_plan,
         ),
         production_pipeline=production_pipeline,

@@ -16,6 +16,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - QA checks must run before packaging or visual expansion.
 - English and Simplified Chinese outputs must stay synchronized through the `i18n` bundle.
 - ComfyUI is a visual reference worker, not a gameplay authority.
+- ComfyUI and Blender outputs must pass Creative Review before Unreal ingest.
 - ChatGPT Apps tools are interactive planning surfaces; they must not execute production side effects without explicit confirmation.
 
 - 玩法优先于图形。
@@ -209,6 +210,28 @@ Rules:
 - Avoid decorative images that do not clarify objectives, hazards, routes, materials, or feedback.
 - ComfyUI MCP execution must keep templates under `templates/comfyui/`, outputs under `generated/comfyui/`, and logs under `generated/logs/comfyui/`.
 - Do not submit prompts to ComfyUI without explicit side-effect confirmation.
+
+## Creative Review Agent
+
+Responsibility:
+
+- Review ComfyUI references and Blender meshes with the user before Unreal ingest.
+- Convert user taste, art direction, gameplay readability, and technical import checks into structured approval decisions.
+- Send rejected or unclear assets back as concrete ComfyUI or Blender revision prompts.
+
+Input:
+
+- `CreativeReviewRequest`
+
+Output:
+
+- `CreativeReviewReport`
+
+Rules:
+
+- User approval is required before generated references or meshes become Unreal import candidates.
+- The review gate blocks Unreal ingest until assets are approved, revised, or rejected.
+- Feedback must name the asset, the gameplay role, and the concrete revision request.
 
 ## ChatGPT Workbench
 

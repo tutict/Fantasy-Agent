@@ -22,17 +22,24 @@ def test_director_workflow_creates_playable_slice_plan():
     assert plan.blender_plan.jobs
     assert plan.comfyui_plan.jobs
     assert plan.comfyui_plan.jobs[0].workflow_template.startswith("templates/comfyui/")
+    assert plan.creative_review.items
+    assert plan.creative_review.approval_gate == "blocks_unreal_ingest"
+    assert {"comfyui", "blender"} <= {item.source for item in plan.creative_review.items}
     assert "average_session_minutes" in plan.qa_plan.metrics
     assert plan.task_breakdown is not None
     assert plan.task_breakdown.recommended_next_task == "gameplay_spec_review"
     assert any(task.requires_confirmation for task in plan.task_breakdown.tasks)
+    assert any(task.id == "creative_asset_review" and task.status == "blocked" for task in plan.task_breakdown.tasks)
     assert any(task.id == "unreal_asset_ingest" and task.status == "blocked" for task in plan.task_breakdown.tasks)
+    ingest_task = next(task for task in plan.task_breakdown.tasks if task.id == "unreal_asset_ingest")
+    assert "creative_asset_review" in ingest_task.depends_on
     assert any(task.id == "unreal_level_assembly" and task.status == "blocked" for task in plan.task_breakdown.tasks)
     assert plan.production_pipeline is not None
     assert [stage.id for stage in plan.production_pipeline.stages] == [
         "gameplay_orchestration",
         "comfyui_visual_production",
         "blender_modeling",
+        "creative_review",
         "asset_integration",
         "unreal_production",
         "optimization_testing",
@@ -47,6 +54,8 @@ def test_director_workflow_creates_playable_slice_plan():
         stage.id == "asset_integration" and stage.status == "blocked"
         for stage in plan.production_pipeline.stages
     )
+    asset_stage = next(stage for stage in plan.production_pipeline.stages if stage.id == "asset_integration")
+    assert asset_stage.depends_on == ["creative_review"]
 
 
 def test_director_workflow_specializes_parkour_prompts():

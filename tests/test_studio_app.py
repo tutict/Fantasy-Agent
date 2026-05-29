@@ -34,6 +34,10 @@ def test_studio_shell_includes_bilingual_ui_controls():
 
     assert 'data-locale="en"' in html
     assert 'data-locale="zh-CN"' in html
+    assert "sidebar-resizer" in html
+    assert 'id="sidebar-toggle"' in html
+    assert 'data-target="console"' in html
+    assert 'data-target="workbench"' in html
     assert "Production Console" in html
     assert "生产控制台" in html
     assert "fantasy-agent-studio-locale" in html

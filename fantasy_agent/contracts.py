@@ -40,6 +40,21 @@ UnrealLevelPlacementRole = Literal[
     "lighting",
 ]
 ComfyUICapabilityStatus = Literal["ready", "degraded", "unavailable"]
+CreativeReviewSource = Literal["comfyui", "blender"]
+CreativeReviewStatus = Literal[
+    "pending_user_review",
+    "approved",
+    "needs_revision",
+    "rejected",
+    "approved_for_unreal_ingest",
+]
+CreativeReviewDimension = Literal[
+    "gameplay_readability",
+    "style_alignment",
+    "silhouette_clarity",
+    "cohesion_with_gameplay",
+    "technical_usability",
+]
 ProductionTaskStatus = Literal["pending", "ready", "blocked", "done"]
 ProductionTaskAgent = Literal[
     "director-agent",
@@ -48,6 +63,7 @@ ProductionTaskAgent = Literal[
     "level-director",
     "blender-worker",
     "comfyui-worker",
+    "creative-review-agent",
     "unreal-builder",
     "qa-agent",
 ]
@@ -55,6 +71,7 @@ ProductionPipelineStageId = Literal[
     "gameplay_orchestration",
     "comfyui_visual_production",
     "blender_modeling",
+    "creative_review",
     "asset_integration",
     "unreal_production",
     "optimization_testing",
@@ -547,6 +564,50 @@ class ComfyUICapabilityProbeResult(StrictModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ArtDirectionBrief(StrictModel):
+    source: str = "creative-review-agent"
+    schema_version: str = "0.1"
+    title: str
+    visual_intent: str
+    style_keywords: list[str]
+    avoid_keywords: list[str]
+    gameplay_readability_rules: list[str]
+    user_review_questions: list[str]
+    i18n: I18nBundle | None = None
+
+
+class CreativeReviewItem(StrictModel):
+    asset_id: str
+    source: CreativeReviewSource
+    asset_path: str
+    gameplay_role: str
+    intended_use: str
+    review_dimensions: list[CreativeReviewDimension]
+    approval_status: CreativeReviewStatus = "pending_user_review"
+    user_prompt: str
+    revision_prompt: str | None = None
+    risks: list[str] = Field(default_factory=list)
+
+
+class CreativeReviewReport(StrictModel):
+    source: str = "creative-review-agent"
+    schema_version: str = "0.1"
+    art_direction: ArtDirectionBrief
+    items: list[CreativeReviewItem]
+    required_user_decisions: list[str]
+    approval_gate: Literal["blocks_unreal_ingest"] = "blocks_unreal_ingest"
+    approved_asset_ids: list[str] = Field(default_factory=list)
+    revision_asset_ids: list[str] = Field(default_factory=list)
+    rejected_asset_ids: list[str] = Field(default_factory=list)
+    handoff_artifacts: list[str] = Field(default_factory=list)
+
+
+class CreativeReviewRequest(StrictModel):
+    gameplay_spec: GameplaySpec
+    blender_plan: BlenderAssetPlan
+    comfyui_plan: ComfyUIVisualPlan
+
+
 class QAPlan(StrictModel):
     target_session_minutes: int = Field(ge=5, le=15)
     smoke_tests: list[str]
@@ -625,6 +686,7 @@ class DirectorBuildPlan(StrictModel):
     unreal_plan: UnrealProjectPlan
     blender_plan: BlenderAssetPlan
     comfyui_plan: ComfyUIVisualPlan
+    creative_review: CreativeReviewReport
     qa_plan: QAPlan
     task_breakdown: DirectorTaskBreakdown | None = None
     production_pipeline: ProductionPipeline | None = None

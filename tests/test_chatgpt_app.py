@@ -21,6 +21,7 @@ def test_chatgpt_tool_descriptors_are_read_only_and_widget_backed():
         "prepare_unreal_plan",
         "prepare_blender_plan",
         "prepare_comfyui_plan",
+        "prepare_creative_review_plan",
         "prepare_qa_plan",
     }
     for tool in tools:
@@ -37,6 +38,7 @@ def test_generate_game_production_plan_returns_structured_widget_payload():
     assert result["structuredContent"]["kind"] == "director_build_plan"
     plan = result["structuredContent"]["plan"]
     assert plan["gameplay_spec"]["target_session_minutes"] == 10
+    assert plan["creative_review"]["approval_gate"] == "blocks_unreal_ingest"
     assert plan["task_breakdown"]["recommended_next_task"] == "gameplay_spec_review"
     assert plan["production_pipeline"]["next_stage"] == "comfyui_visual_production"
     assert result["structuredContent"]["production_pipeline"] == plan["production_pipeline"]
@@ -67,6 +69,7 @@ def test_prepare_production_pipeline_returns_pipeline_payload():
         "gameplay_orchestration",
         "comfyui_visual_production",
         "blender_modeling",
+        "creative_review",
         "asset_integration",
         "unreal_production",
         "optimization_testing",
@@ -80,6 +83,7 @@ def test_focused_chatgpt_tools_return_subplans_without_side_effects():
     unreal = call_workbench_tool("prepare_unreal_plan", _request())
     blender = call_workbench_tool("prepare_blender_plan", _request())
     comfyui = call_workbench_tool("prepare_comfyui_plan", _request())
+    review = call_workbench_tool("prepare_creative_review_plan", _request())
     qa = call_workbench_tool("prepare_qa_plan", _request())
 
     assert unreal["structuredContent"]["unreal_plan"]["maps"] == [
@@ -88,6 +92,8 @@ def test_focused_chatgpt_tools_return_subplans_without_side_effects():
     ]
     assert blender["structuredContent"]["blender_plan"]["jobs"]
     assert comfyui["structuredContent"]["comfyui_plan"]["jobs"][0]["gameplay_constraint"]
+    assert review["structuredContent"]["creative_review"]["items"]
+    assert review["_meta"]["activePanel"] == "visuals"
     assert "average_session_minutes" in qa["structuredContent"]["qa_plan"]["metrics"]
 
 

@@ -16,6 +16,7 @@
         --accent: #1d6d61;
         --blue: #315f8d;
         --danger: #9b2e2e;
+        --sidebar-width: 248px;
       }
 
       * {
@@ -41,17 +42,49 @@
 
       .shell {
         display: grid;
-        grid-template-columns: 248px minmax(0, 1fr);
+        grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
         height: 100vh;
+        transition: grid-template-columns 160ms ease;
+      }
+
+      .shell.sidebar-collapsed {
+        --sidebar-width: 64px;
+      }
+
+      .shell.resizing {
+        transition: none;
+      }
+
+      body.is-resizing {
+        cursor: col-resize;
+        user-select: none;
+      }
+
+      .shell.resizing iframe {
+        pointer-events: none;
       }
 
       .sidebar {
+        position: relative;
         display: flex;
         flex-direction: column;
-        gap: 18px;
+        gap: 14px;
+        min-width: 0;
         border-right: 1px solid var(--line);
         background: #fff;
-        padding: 18px;
+        padding: 14px;
+      }
+
+      .sidebar-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .brand {
+        min-width: 0;
       }
 
       .brand p {
@@ -66,6 +99,21 @@
         margin: 0;
         font-size: 24px;
         line-height: 1.05;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .collapse-button {
+        flex: 0 0 auto;
+        width: 32px;
+        min-height: 32px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcf8;
+        color: var(--muted);
+        cursor: pointer;
+        font-weight: 850;
       }
 
       .locale-switch {
@@ -97,6 +145,9 @@
 
       .nav button,
       .link-button {
+        display: flex;
+        align-items: center;
+        gap: 10px;
         min-height: 40px;
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -106,6 +157,26 @@
         text-align: left;
         padding: 9px 10px;
         text-decoration: none;
+      }
+
+      .nav-icon {
+        display: inline-grid;
+        flex: 0 0 28px;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        border-radius: 7px;
+        background: #edf1e8;
+        color: var(--ink);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .nav-label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .nav button.active {
@@ -133,6 +204,58 @@
         overflow-wrap: anywhere;
         color: var(--muted);
         font-size: 12px;
+      }
+
+      .sidebar-resizer {
+        position: absolute;
+        top: 0;
+        right: -4px;
+        z-index: 4;
+        width: 8px;
+        height: 100%;
+        cursor: col-resize;
+      }
+
+      .sidebar-resizer::after {
+        position: absolute;
+        top: 0;
+        left: 3px;
+        width: 1px;
+        height: 100%;
+        content: "";
+        background: transparent;
+      }
+
+      .sidebar-resizer:hover::after,
+      .shell.resizing .sidebar-resizer::after {
+        background: rgba(29, 109, 97, 0.45);
+      }
+
+      .shell.sidebar-collapsed .sidebar {
+        align-items: stretch;
+        padding: 12px 10px;
+      }
+
+      .shell.sidebar-collapsed .sidebar-header {
+        justify-content: center;
+      }
+
+      .shell.sidebar-collapsed .brand,
+      .shell.sidebar-collapsed .locale-switch,
+      .shell.sidebar-collapsed .status,
+      .shell.sidebar-collapsed .nav-label {
+        display: none;
+      }
+
+      .shell.sidebar-collapsed .nav button {
+        justify-content: center;
+        padding: 6px;
+      }
+
+      .shell.sidebar-collapsed .nav-icon {
+        flex-basis: 32px;
+        width: 32px;
+        height: 32px;
       }
 
       .workspace {
@@ -235,8 +358,28 @@
         }
 
         .sidebar {
+          align-items: stretch;
           border-right: 0;
           border-bottom: 1px solid var(--line);
+          padding: 14px;
+        }
+
+        .sidebar-resizer {
+          display: none;
+        }
+
+        .shell.sidebar-collapsed .brand,
+        .shell.sidebar-collapsed .status,
+        .shell.sidebar-collapsed .nav-label {
+          display: block;
+        }
+
+        .shell.sidebar-collapsed .locale-switch {
+          display: grid;
+        }
+
+        .shell.sidebar-collapsed .sidebar-header {
+          justify-content: space-between;
         }
 
         .workspace {
@@ -252,9 +395,14 @@
   <body>
     <main class="shell">
       <aside class="sidebar">
-        <div class="brand">
-          <p data-i18n="productLabel">Desktop Studio</p>
-          <h1>Fantasy Agent</h1>
+        <div class="sidebar-header">
+          <div class="brand">
+            <p data-i18n="productLabel">Desktop Studio</p>
+            <h1>Fantasy Agent</h1>
+          </div>
+          <button class="collapse-button" id="sidebar-toggle" type="button" aria-expanded="true">
+            <span id="sidebar-toggle-icon" aria-hidden="true">&lt;</span>
+          </button>
         </div>
 
         <div class="locale-switch" aria-label="Interface language">
@@ -263,24 +411,31 @@
         </div>
 
         <nav class="nav" aria-label="Studio panels">
-          <button class="active" type="button" data-target="console" data-i18n="consoleTitle">Production Console</button>
-          <button type="button" data-target="workbench" data-i18n="workbenchTitle">ChatGPT Workbench</button>
-          <button type="button" data-target="mcp" data-i18n="mcpTitle">MCP Endpoint</button>
+          <button class="active" type="button" data-target="console">
+            <span class="nav-icon" aria-hidden="true">PC</span>
+            <span class="nav-label" data-i18n="consoleTitle">Production Console</span>
+          </button>
+          <button type="button" data-target="workbench">
+            <span class="nav-icon" aria-hidden="true">GPT</span>
+            <span class="nav-label" data-i18n="workbenchTitle">ChatGPT Workbench</span>
+          </button>
+          <button type="button" data-target="mcp">
+            <span class="nav-icon" aria-hidden="true">MCP</span>
+            <span class="nav-label" data-i18n="mcpTitle">MCP Endpoint</span>
+          </button>
         </nav>
-
-        <a class="link-button" href="/web-console" target="_blank" rel="noreferrer" data-link="console" data-i18n="openConsole">Open console tab</a>
-        <a class="link-button" href="/workbench" target="_blank" rel="noreferrer" data-link="workbench" data-i18n="openWorkbench">Open workbench tab</a>
 
         <div class="status">
           <strong data-i18n="localServer">Local server</strong>
           <code id="server-url">http://127.0.0.1</code>
         </div>
+
+        <div class="sidebar-resizer" id="sidebar-resizer" aria-hidden="true"></div>
       </aside>
 
       <section class="workspace">
         <header class="topbar">
           <h2 id="panel-title">Production Console</h2>
-          <a id="panel-link" href="/web-console" target="_blank" rel="noreferrer" data-i18n="openSeparately">Open separately</a>
         </header>
 
         <section class="panel active" data-panel="console">
@@ -344,7 +499,9 @@
           flowReview: "Review ComfyUI, Blender, Unreal, and QA handoffs.",
           flowExecute: "Execute MCP production steps only after confirming side effects.",
           consoleFrameTitle: "Fantasy Agent Production Console",
-          workbenchFrameTitle: "Fantasy Agent ChatGPT Workbench"
+          workbenchFrameTitle: "Fantasy Agent ChatGPT Workbench",
+          collapseSidebar: "Collapse sidebar",
+          expandSidebar: "Expand sidebar"
         },
         "zh-CN": {
           documentTitle: "Fantasy Agent 工作室",
@@ -380,6 +537,12 @@
       let activePanel = "console";
       let uiLocale = initialLocale();
       const origin = window.location.origin;
+      const shell = document.querySelector(".shell");
+      const sidebarToggle = document.querySelector("#sidebar-toggle");
+      const sidebarToggleIcon = document.querySelector("#sidebar-toggle-icon");
+      const sidebarResizer = document.querySelector("#sidebar-resizer");
+      const sidebarMinWidth = 184;
+      const sidebarMaxWidth = 380;
       document.querySelector("#server-url").textContent = origin;
       document.querySelector("#mcp-url").textContent = `${origin}/mcp`;
 
@@ -419,8 +582,7 @@
         document.querySelectorAll("[data-locale]").forEach((button) => {
           button.classList.toggle("active", button.dataset.locale === uiLocale);
         });
-        document.querySelector('[data-link="console"]').href = localizedHref("/web-console");
-        document.querySelector('[data-link="workbench"]').href = localizedHref("/workbench");
+        updateSidebarToggle();
         if (options.reloadFrames) {
           updateFrames();
         }
@@ -437,7 +599,26 @@
           node.classList.toggle("active", node.dataset.panel === target);
         });
         document.querySelector("#panel-title").textContent = t(panel.titleKey);
-        document.querySelector("#panel-link").href = localizedHref(panel.href);
+      }
+
+      function setSidebarWidth(width) {
+        const clamped = Math.max(sidebarMinWidth, Math.min(sidebarMaxWidth, width));
+        shell.style.setProperty("--sidebar-width", `${clamped}px`);
+        localStorage.setItem("fantasy-agent-studio-sidebar-width", String(clamped));
+      }
+
+      function setSidebarCollapsed(collapsed) {
+        shell.classList.toggle("sidebar-collapsed", collapsed);
+        localStorage.setItem("fantasy-agent-studio-sidebar-collapsed", collapsed ? "1" : "0");
+        updateSidebarToggle();
+      }
+
+      function updateSidebarToggle() {
+        const collapsed = shell.classList.contains("sidebar-collapsed");
+        sidebarToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        sidebarToggle.title = collapsed ? t("expandSidebar") : t("collapseSidebar");
+        sidebarToggle.setAttribute("aria-label", sidebarToggle.title);
+        sidebarToggleIcon.textContent = collapsed ? ">" : "<";
       }
 
       document.querySelectorAll("[data-target]").forEach((button) => {
@@ -448,6 +629,41 @@
         button.addEventListener("click", () => applyLocale(button.dataset.locale, { reloadFrames: true }));
       });
 
+      sidebarToggle.addEventListener("click", () => {
+        setSidebarCollapsed(!shell.classList.contains("sidebar-collapsed"));
+      });
+
+      let isResizingSidebar = false;
+      sidebarResizer.addEventListener("pointerdown", (event) => {
+        if (shell.classList.contains("sidebar-collapsed")) {
+          setSidebarCollapsed(false);
+        }
+        isResizingSidebar = true;
+        sidebarResizer.setPointerCapture(event.pointerId);
+        shell.classList.add("resizing");
+        document.body.classList.add("is-resizing");
+      });
+
+      sidebarResizer.addEventListener("pointermove", (event) => {
+        if (!isResizingSidebar) return;
+        setSidebarWidth(event.clientX);
+      });
+
+      function stopSidebarResize() {
+        if (!isResizingSidebar) return;
+        isResizingSidebar = false;
+        shell.classList.remove("resizing");
+        document.body.classList.remove("is-resizing");
+      }
+
+      sidebarResizer.addEventListener("pointerup", stopSidebarResize);
+      sidebarResizer.addEventListener("pointercancel", stopSidebarResize);
+
+      const storedSidebarWidth = Number(localStorage.getItem("fantasy-agent-studio-sidebar-width"));
+      if (Number.isFinite(storedSidebarWidth) && storedSidebarWidth > 0) {
+        setSidebarWidth(storedSidebarWidth);
+      }
+      setSidebarCollapsed(localStorage.getItem("fantasy-agent-studio-sidebar-collapsed") === "1");
       updateFrames();
       applyLocale(uiLocale);
     </script>

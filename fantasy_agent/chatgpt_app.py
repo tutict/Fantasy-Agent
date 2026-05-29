@@ -10,6 +10,7 @@ from fantasy_agent.workflows import (
     decompose_production_tasks,
     prepare_blender_assets,
     prepare_comfyui_visuals,
+    prepare_creative_review as prepare_creative_review_from_plans,
     prepare_qa_plan as prepare_qa_plan_from_spec,
     prepare_unreal_project,
     run_director_workflow,
@@ -132,6 +133,16 @@ def tool_descriptors() -> list[dict[str, Any]]:
             ),
             "Preparing ComfyUI references",
             "ComfyUI references ready",
+        ),
+        _tool(
+            "prepare_creative_review_plan",
+            "Prepare creative review plan",
+            (
+                "Use this when the user wants an approval and revision checklist for generated "
+                "ComfyUI references and Blender meshes before Unreal ingest."
+            ),
+            "Preparing creative review",
+            "Creative review ready",
         ),
         _tool(
             "prepare_qa_plan",
@@ -376,6 +387,29 @@ def prepare_comfyui_plan(arguments: dict[str, Any] | None) -> dict[str, Any]:
     )
 
 
+def prepare_creative_review_plan(arguments: dict[str, Any] | None) -> dict[str, Any]:
+    request = _request(arguments)
+    spec = _plan(request).gameplay_spec
+    blender_plan = prepare_blender_assets(spec)
+    comfyui_plan = prepare_comfyui_visuals(spec)
+    creative_review = prepare_creative_review_from_plans(spec, blender_plan, comfyui_plan)
+    payload = creative_review.model_dump(mode="json")
+    return _tool_result(
+        "prepare_creative_review_plan",
+        request,
+        {
+            "kind": "creative_review_report",
+            "gameplay_title": spec.title,
+            "creative_review": payload,
+        },
+        (
+            f"Prepared {len(creative_review.items)} creative review items for {spec.title}. "
+            "Unreal ingest remains blocked until user approvals are recorded."
+        ),
+        {"creativeReview": payload, "activePanel": "visuals"},
+    )
+
+
 def prepare_qa_plan(arguments: dict[str, Any] | None) -> dict[str, Any]:
     request = _request(arguments)
     spec = _plan(request).gameplay_spec
@@ -400,6 +434,7 @@ TOOL_HANDLERS: dict[str, Callable[[dict[str, Any] | None], dict[str, Any]]] = {
     "prepare_unreal_plan": prepare_unreal_plan,
     "prepare_blender_plan": prepare_blender_plan,
     "prepare_comfyui_plan": prepare_comfyui_plan,
+    "prepare_creative_review_plan": prepare_creative_review_plan,
     "prepare_qa_plan": prepare_qa_plan,
     "prepare_production_pipeline": prepare_production_pipeline_tool,
 }

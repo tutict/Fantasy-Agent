@@ -24,6 +24,7 @@ Fantasy Agent focuses on:
 - UE5 project architecture and Unreal Python automation
 - Blender `bpy` procedural asset workflows
 - ComfyUI visual reference workflows
+- Creative review gates for generated images and meshes
 - ChatGPT Apps workbench for interactive MCP tool calls
 - MCP contracts for Unreal, Blender, ComfyUI, and GitHub tooling
 - Multi-agent workflows that can evolve into LangGraph execution
@@ -85,6 +86,7 @@ Fantasy-Agent/
 |   |-- unreal-builder/     # Prepares UE5 project architecture
 |   |-- blender-worker/     # Prepares Blender procedural asset jobs
 |   |-- comfyui-worker/     # Prepares ComfyUI visual reference jobs
+|   |-- creative-review-agent/ # Prepares user approval gates for generated outputs
 |   `-- qa-agent/           # Creates smoke, playability, and packaging checks
 |-- fantasy_agent/          # Shared Pydantic contracts and workflow primitives
 |-- skills/
@@ -93,7 +95,8 @@ Fantasy-Agent/
 |   |-- level-director/
 |   |-- ue-architect/
 |   |-- blender-generator/
-|   `-- comfyui-generator/
+|   |-- comfyui-generator/
+|   `-- creative-reviewer/
 |-- mcp/
 |   |-- chatgpt-apps-mcp/
 |   |-- blender-mcp/
@@ -125,6 +128,7 @@ The first implementation pass defines stable contracts before deep automation:
 - `BlenderAssetPlan`: procedural asset jobs and export handoff paths.
 - `BlenderScriptArtifact`: generated Blender Python script plus Unreal import manifest.
 - `ComfyUIVisualPlan`: visual reference jobs for readability, material language, UI references, and reviewed texture seeds.
+- `CreativeReviewReport`: approval, revision, and rejection gate for ComfyUI and Blender outputs before Unreal ingest.
 - `ComfyUIRunManifest`: prepared workflow files, prompt IDs, expected outputs, and execution logs for reviewed visual references.
 - `QAPlan`: smoke tests, playability checks, packaging checks, and metrics.
 - `DirectorBuildPlan`: combined orchestration output for the full first-pass pipeline.
