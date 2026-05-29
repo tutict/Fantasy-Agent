@@ -16,7 +16,9 @@ Fantasy Agent ChatGPT 工作台把游戏生产管线暴露为 ChatGPT Apps 可�
 
 | Tool | Purpose |
 | --- | --- |
+| `decompose_production_tasks` | Inspectable task board before execution. |
 | `generate_game_production_plan` | Full Director workflow with gameplay DSL, GDD, Unreal, Blender, ComfyUI, QA, and next actions. |
+| `prepare_production_pipeline` | Staged gameplay, ComfyUI, Blender, integration, Unreal, and QA pipeline. |
 | `render_gdd` | Structured bilingual markdown GDD. |
 | `prepare_unreal_plan` | UE5 project folders, plugins, maps, Blueprint classes, and automation steps. |
 | `prepare_blender_plan` | Procedural greybox asset jobs and export paths. |
@@ -66,4 +68,3 @@ This app is a production workbench, not a one-click game generator. The first ve
 - https://developers.openai.com/apps-sdk/build/chatgpt-ui
 - https://developers.openai.com/apps-sdk/plan/tools
 - https://developers.openai.com/apps-sdk/reference
-

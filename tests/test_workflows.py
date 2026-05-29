@@ -28,6 +28,25 @@ def test_director_workflow_creates_playable_slice_plan():
     assert any(task.requires_confirmation for task in plan.task_breakdown.tasks)
     assert any(task.id == "unreal_asset_ingest" and task.status == "blocked" for task in plan.task_breakdown.tasks)
     assert any(task.id == "unreal_level_assembly" and task.status == "blocked" for task in plan.task_breakdown.tasks)
+    assert plan.production_pipeline is not None
+    assert [stage.id for stage in plan.production_pipeline.stages] == [
+        "gameplay_orchestration",
+        "comfyui_visual_production",
+        "blender_modeling",
+        "asset_integration",
+        "unreal_production",
+        "optimization_testing",
+    ]
+    assert plan.production_pipeline.next_stage == "comfyui_visual_production"
+    assert any(
+        "character" in output.lower()
+        for stage in plan.production_pipeline.stages
+        for output in stage.outputs
+    )
+    assert any(
+        stage.id == "asset_integration" and stage.status == "blocked"
+        for stage in plan.production_pipeline.stages
+    )
 
 
 def test_director_workflow_specializes_parkour_prompts():

@@ -5,10 +5,20 @@ resource:
   uri: ui://fantasy-agent/workbench.html
   mime_type: text/html;profile=mcp-app
 tools:
+  - name: decompose_production_tasks
+    read_only: true
+    idempotent: true
+    purpose: Break a gameplay idea into inspectable production tasks before execution.
+    side_effects: []
   - name: generate_game_production_plan
     read_only: true
     idempotent: true
     purpose: Generate a full prompt-to-playable DirectorBuildPlan.
+    side_effects: []
+  - name: prepare_production_pipeline
+    read_only: true
+    idempotent: true
+    purpose: Prepare the staged gameplay, ComfyUI, Blender, integration, Unreal, and QA pipeline.
     side_effects: []
   - name: render_gdd
     read_only: true
@@ -39,4 +49,3 @@ safety:
   - ChatGPT tools must not execute Unreal, Blender, ComfyUI, packaging, or GitHub side effects by default.
   - Future mutating MCP tools require explicit side-effect disclosure and user confirmation.
   - Gameplay decisions remain upstream of visual reference generation.
-

@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Fantasy Agent Workbench</title>
+    <link rel="icon" href="data:," />
     <style>
       :root {
         color-scheme: light;
@@ -231,7 +232,7 @@
 
       .pipeline {
         display: grid;
-        grid-template-columns: repeat(7, minmax(0, 1fr));
+        grid-template-columns: repeat(6, minmax(0, 1fr));
         border-bottom: 1px solid var(--line);
         background: var(--line);
         gap: 1px;
@@ -491,6 +492,7 @@
         </button>
 
         <div class="tool-grid" aria-label="Production tools">
+          <button class="tool-button" type="button" data-tool="prepare_production_pipeline" data-i18n="pipelineTool">Pipeline</button>
           <button class="tool-button" type="button" data-tool="decompose_production_tasks" data-i18n="tasksTool">Tasks</button>
           <button class="tool-button" type="button" data-tool="render_gdd">GDD</button>
           <button class="tool-button" type="button" data-tool="prepare_unreal_plan">Unreal</button>
@@ -510,19 +512,19 @@
         </header>
 
         <div class="pipeline" aria-label="Fantasy Agent pipeline">
-          <div class="node"><span>01</span><strong>Prompt</strong></div>
-          <div class="node"><span>02</span><strong>Tasks</strong></div>
-          <div class="node"><span>03</span><strong>Gameplay</strong></div>
-          <div class="node"><span>04</span><strong>GDD</strong></div>
+          <div class="node"><span>01</span><strong>Gameplay</strong></div>
+          <div class="node"><span>02</span><strong>ComfyUI</strong></div>
+          <div class="node"><span>03</span><strong>Blender</strong></div>
+          <div class="node"><span>04</span><strong>Integrate</strong></div>
           <div class="node"><span>05</span><strong>Unreal</strong></div>
-          <div class="node"><span>06</span><strong>Assets</strong></div>
-          <div class="node"><span>07</span><strong>QA</strong></div>
+          <div class="node"><span>06</span><strong>QA</strong></div>
         </div>
 
         <nav class="tabs" aria-label="Workbench panels">
           <button type="button" class="active" data-panel-button="overview" data-i18n="tabOverview">
             Overview
           </button>
+          <button type="button" data-panel-button="pipeline" data-i18n="tabPipeline">Pipeline</button>
           <button type="button" data-panel-button="tasks" data-i18n="tabTasks">Tasks</button>
           <button type="button" data-panel-button="loop" data-i18n="tabLoop">Loop</button>
           <button type="button" data-panel-button="build" data-i18n="tabBuild">Build</button>
@@ -537,6 +539,7 @@
             Generate or call a Fantasy Agent tool to inspect a playable slice plan.
           </div>
         </section>
+        <section class="panel" data-panel="pipeline"><div id="production_pipeline" class="task-board"></div></section>
         <section class="panel" data-panel="tasks"><div id="tasks" class="task-board"></div></section>
         <section class="panel" data-panel="loop"><div id="loop" class="section-grid"></div></section>
         <section class="panel" data-panel="build"><div id="build" class="section-grid"></div></section>
@@ -560,6 +563,7 @@
           constraintsLabel: "Constraints",
           constraintsPlaceholder: "One map, no online multiplayer, game jam scope",
           generate: "Generate plan",
+          pipelineTool: "Pipeline",
           tasksTool: "Tasks",
           statusLabel: "Workbench status",
           emptyTitle: "No production plan loaded",
@@ -570,6 +574,7 @@
           ready: "Ready",
           error: "Error",
           tabOverview: "Overview",
+          tabPipeline: "Pipeline",
           tabTasks: "Tasks",
           tabLoop: "Loop",
           tabBuild: "Build",
@@ -580,6 +585,7 @@
           win: "Win state",
           failure: "Failure states",
           next: "Next actions",
+          pipeline: "Production pipeline",
           loop: "Core loop",
           systems: "Systems",
           beats: "Level beats",
@@ -596,6 +602,11 @@
           sideEffects: "Side effects",
           dependencies: "Dependencies",
           artifacts: "Artifacts",
+          owner: "Owner",
+          tools: "MCP tools",
+          outputs: "Outputs",
+          quality: "Quality gates",
+          risks: "Risks",
           minutes: "minutes"
         },
         "zh-CN": {
@@ -609,6 +620,7 @@
           constraintsLabel: "约束",
           constraintsPlaceholder: "一张地图，不做联网多人，game jam 规模",
           generate: "生成计划",
+          pipelineTool: "流水线",
           tasksTool: "任务",
           statusLabel: "工作台状态",
           emptyTitle: "尚未载入生产计划",
@@ -619,6 +631,7 @@
           ready: "就绪",
           error: "错误",
           tabOverview: "概览",
+          tabPipeline: "流水线",
           tabTasks: "任务",
           tabLoop: "循环",
           tabBuild: "构建",
@@ -629,6 +642,7 @@
           win: "胜利状态",
           failure: "失败状态",
           next: "下一步",
+          pipeline: "生产流水线",
           loop: "核心循环",
           systems: "系统",
           beats: "关卡节奏",
@@ -645,6 +659,11 @@
           sideEffects: "副作用",
           dependencies: "依赖",
           artifacts: "产物",
+          owner: "负责人",
+          tools: "MCP 工具",
+          outputs: "产出",
+          quality: "质量门",
+          risks: "风险",
           minutes: "分钟"
         }
       };
@@ -655,6 +674,7 @@
         status: "idle",
         lastInput: null,
         plan: null,
+        productionPipeline: null,
         taskBreakdown: null,
         gdd: null,
         unrealPlan: null,
@@ -675,6 +695,7 @@
         status: document.querySelector("#status"),
         title: document.querySelector("#title"),
         overview: document.querySelector("#overview"),
+        productionPipeline: document.querySelector("#production_pipeline"),
         tasks: document.querySelector("#tasks"),
         loop: document.querySelector("#loop"),
         build: document.querySelector("#build"),
@@ -788,11 +809,15 @@
         if (structured.plan || meta.plan) {
           state.plan = structured.plan || meta.plan;
           state.taskBreakdown = state.plan.task_breakdown || structured.task_breakdown || meta.taskBreakdown || state.taskBreakdown;
+          state.productionPipeline = state.plan.production_pipeline || structured.production_pipeline || meta.productionPipeline || state.productionPipeline;
           state.gdd = state.plan.gdd;
           state.unrealPlan = state.plan.unreal_plan;
           state.blenderPlan = state.plan.blender_plan;
           state.comfyuiPlan = state.plan.comfyui_plan;
           state.qaPlan = state.plan.qa_plan;
+        }
+        if (structured.production_pipeline || meta.productionPipeline) {
+          state.productionPipeline = structured.production_pipeline || meta.productionPipeline;
         }
         if (structured.task_breakdown || meta.taskBreakdown) {
           state.taskBreakdown = structured.task_breakdown || meta.taskBreakdown;
@@ -813,6 +838,7 @@
         const spec = plan?.gameplay_spec;
         if (
           !plan &&
+          !state.productionPipeline &&
           !state.taskBreakdown &&
           !state.unrealPlan &&
           !state.blenderPlan &&
@@ -822,6 +848,7 @@
           nodes.title.textContent = t("emptyTitle");
           nodes.overview.className = "empty";
           nodes.overview.textContent = t("emptyState");
+          nodes.productionPipeline.innerHTML = "";
           nodes.tasks.innerHTML = "";
           nodes.loop.innerHTML = "";
           nodes.build.innerHTML = "";
@@ -843,8 +870,18 @@
             block(t("pillars"), list(spec.design_pillars), true),
             block(t("win"), `<p>${escapeHtml(spec.win_state)}</p>`),
             block(t("failure"), list(spec.failure_states)),
+            state.productionPipeline
+              ? block(
+                  t("pipeline"),
+                  numbered(
+                    state.productionPipeline.stages,
+                    (stage) => `<strong>${escapeHtml(localizedStageTitle(stage))}</strong> <span>${escapeHtml(stage.status)}</span>`
+                  ),
+                  true
+                )
+              : "",
             block(t("next"), list(plan.next_actions), true)
-          ].join("");
+          ].filter(Boolean).join("");
           nodes.loop.innerHTML = [
             block(
               t("loop"),
@@ -880,11 +917,18 @@
           state.comfyuiPlan = state.comfyuiPlan || plan.comfyui_plan;
           state.qaPlan = state.qaPlan || plan.qa_plan;
           state.taskBreakdown = state.taskBreakdown || plan.task_breakdown;
+          state.productionPipeline = state.productionPipeline || plan.production_pipeline;
           nodes.dsl.textContent = JSON.stringify(spec, null, 2);
         } else {
           nodes.title.textContent = t("focusedTitle");
           nodes.overview.className = "section-grid";
           nodes.overview.innerHTML = [
+            state.productionPipeline
+              ? block(
+                  t("pipeline"),
+                  `<p>${escapeHtml(state.productionPipeline.goal)}</p>${numbered(state.productionPipeline.stages, (stage) => `<strong>${escapeHtml(localizedStageTitle(stage))}</strong>`)}`
+                )
+              : "",
             state.taskBreakdown
               ? block(
                   t("tabTasks"),
@@ -909,6 +953,7 @@
           ].join("");
           nodes.dsl.textContent = JSON.stringify(
             {
+              production_pipeline: state.productionPipeline,
               unreal_plan: state.unrealPlan,
               blender_plan: state.blenderPlan,
               comfyui_plan: state.comfyuiPlan,
@@ -919,12 +964,66 @@
           );
         }
 
+        renderPipeline();
         renderBuild();
         renderVisuals();
         renderQa();
         renderTasks();
         renderGdd();
         setStatus(state.status === "running" ? "running" : "ready");
+      }
+
+      function localizedStageTitle(stage) {
+        return state.locale === "zh-CN"
+          ? stage.title_i18n?.["zh-CN"] || stage.title
+          : stage.title_i18n?.en || stage.title;
+      }
+
+      function renderPipeline() {
+        const pipeline = state.productionPipeline;
+        if (!pipeline) {
+          nodes.productionPipeline.innerHTML = "";
+          return;
+        }
+        const goal =
+          state.locale === "zh-CN"
+            ? pipeline.goal_i18n?.["zh-CN"] || pipeline.goal
+            : pipeline.goal_i18n?.en || pipeline.goal;
+        nodes.productionPipeline.innerHTML = [
+          `<section class="task-row"><div><h3>${escapeHtml(goal)}</h3><p>${escapeHtml(t("recommended"))}: ${escapeHtml(pipeline.next_stage)}</p><div class="task-meta"><span class="task-pill">${escapeHtml(pipeline.project_name)}</span><span class="task-pill">${escapeHtml(pipeline.current_stage)}</span><span class="task-pill">${escapeHtml(pipeline.stages.length)} stages</span></div></div></section>`,
+          ...pipeline.stages.map((stage) => {
+            const detail = [
+              `<span class="task-pill ${escapeHtml(stage.status)}">${escapeHtml(stage.status)}</span>`,
+              `<span class="task-pill">${escapeHtml(stage.id)}</span>`,
+              `<span class="task-pill">${escapeHtml(t("owner"))}: ${escapeHtml(stage.owner_agent)}</span>`,
+              stage.requires_confirmation
+                ? `<span class="task-pill">${escapeHtml(t("confirmation"))}</span>`
+                : "",
+              stage.depends_on?.length
+                ? `<span class="task-pill">${escapeHtml(t("dependencies"))}: ${escapeHtml(stage.depends_on.join(", "))}</span>`
+                : "",
+              stage.mcp_tools?.length
+                ? `<span class="task-pill">${escapeHtml(t("tools"))}: ${escapeHtml(stage.mcp_tools.length)}</span>`
+                : ""
+            ]
+              .filter(Boolean)
+              .join("");
+            const body = [
+              `<p>${escapeHtml(stage.purpose)}</p>`,
+              stage.outputs?.length ? `<h4>${escapeHtml(t("outputs"))}</h4>${list(stage.outputs)}` : "",
+              stage.quality_gates?.length
+                ? `<h4>${escapeHtml(t("quality"))}</h4>${list(stage.quality_gates)}`
+                : "",
+              stage.side_effects?.length
+                ? `<h4>${escapeHtml(t("sideEffects"))}</h4>${list(stage.side_effects)}`
+                : "",
+              stage.risks?.length ? `<h4>${escapeHtml(t("risks"))}</h4>${list(stage.risks)}` : ""
+            ]
+              .filter(Boolean)
+              .join("");
+            return `<section class="task-row"><div><h3>${String(stage.order).padStart(2, "0")} ${escapeHtml(localizedStageTitle(stage))}</h3><div class="task-meta">${detail}</div>${body}</div></section>`;
+          })
+        ].join("");
       }
 
       function renderBuild() {

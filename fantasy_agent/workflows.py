@@ -10,6 +10,8 @@ from fantasy_agent.contracts import (
     DirectorTaskBreakdown,
     GameplaySpec,
     PromptRequest,
+    ProductionPipeline,
+    ProductionPipelineStage,
     ProductionTask,
     QAPlan,
     UnrealProjectPlan,
@@ -181,6 +183,40 @@ def prepare_comfyui_visuals(spec: GameplaySpec) -> ComfyUIVisualPlan:
                 gameplay_constraint="Must clarify objective, hazard, route, or player feedback.",
             ),
             ComfyUIPromptJob(
+                job_id="character_readability_portrait",
+                purpose="concept_reference",
+                prompt=(
+                    f"Playable character portrait and silhouette sheet for {spec.title}. "
+                    "Show a readable full-body pose, clear traversal affordances, and simple "
+                    "shape language that remains legible in third-person gameplay."
+                ),
+                negative_prompt=(
+                    "fashion-only portrait, tiny props, unreadable silhouette, photorealistic noise, "
+                    "cinematic crop, decorative costume without gameplay readability"
+                ),
+                workflow_template="templates/comfyui/readability-reference.json",
+                output_path=f"generated/comfyui/{title_slug}/character_readability_portrait.png",
+                gameplay_constraint=(
+                    "Character reference must improve player silhouette and verb readability."
+                ),
+            ),
+            ComfyUIPromptJob(
+                job_id="game_logo_reference",
+                purpose="ui_reference",
+                prompt=(
+                    f"Prototype game logo reference for {spec.title}. "
+                    "Use bold readable lettering, a simple mark tied to the core loop, "
+                    "and a layout that can fit a start screen or build splash."
+                ),
+                negative_prompt=(
+                    "overly ornate logo, illegible typography, busy background, fake AAA key art, "
+                    "tiny subtitle text, unrelated decorative symbols"
+                ),
+                workflow_template="templates/comfyui/ui-reference.json",
+                output_path=f"generated/comfyui/{title_slug}/game_logo_reference.png",
+                gameplay_constraint="Logo reference must communicate the playable fantasy and genre quickly.",
+            ),
+            ComfyUIPromptJob(
                 job_id="material_palette_reference",
                 purpose="material_reference",
                 prompt=(
@@ -253,6 +289,292 @@ def prepare_qa_plan(spec: GameplaySpec) -> QAPlan:
             "failure_reason_distribution",
             "average_session_minutes",
         ],
+    )
+
+
+def _pipeline_stage(
+    *,
+    stage_id: str,
+    order: int,
+    title: str,
+    title_zh: str,
+    purpose: str,
+    owner_agent: str,
+    participating_agents: list[str],
+    inputs: list[str],
+    outputs: list[str],
+    artifacts: list[str] | None = None,
+    mcp_tools: list[str] | None = None,
+    quality_gates: list[str] | None = None,
+    side_effects: list[str] | None = None,
+    depends_on: list[str] | None = None,
+    status: str = "pending",
+    requires_confirmation: bool = False,
+    risks: list[str] | None = None,
+) -> ProductionPipelineStage:
+    return ProductionPipelineStage(
+        id=stage_id,  # type: ignore[arg-type]
+        order=order,
+        title=title,
+        title_i18n={"en": title, "zh-CN": title_zh},
+        purpose=purpose,
+        owner_agent=owner_agent,  # type: ignore[arg-type]
+        participating_agents=participating_agents,  # type: ignore[arg-type]
+        inputs=inputs,
+        outputs=outputs,
+        artifacts=artifacts or [],
+        mcp_tools=mcp_tools or [],
+        quality_gates=quality_gates or [],
+        side_effects=side_effects or [],
+        depends_on=depends_on or [],  # type: ignore[arg-type]
+        status=status,  # type: ignore[arg-type]
+        requires_confirmation=requires_confirmation,
+        risks=risks or [],
+    )
+
+
+def prepare_production_pipeline(
+    *,
+    request: PromptRequest,
+    spec: GameplaySpec,
+    unreal_plan: UnrealProjectPlan,
+    blender_plan: BlenderAssetPlan,
+    comfyui_plan: ComfyUIVisualPlan,
+    qa_plan: QAPlan,
+) -> ProductionPipeline:
+    goal = (
+        f"Orchestrate gameplay, visual references, modular assets, Unreal assembly, "
+        f"and QA into a {spec.target_session_minutes}-minute playable slice for {spec.title}."
+    )
+    stages = [
+        _pipeline_stage(
+            stage_id="gameplay_orchestration",
+            order=1,
+            title="Gameplay orchestration",
+            title_zh="玩法编排",
+            owner_agent="director-agent",
+            participating_agents=["gameplay-agent", "gdd-writer", "level-director"],
+            purpose=(
+                "Turn the prompt into a coherent loop, level beats, implementation GDD, "
+                "and task board before any visual or engine work expands scope."
+            ),
+            inputs=["PromptRequest", "target session length", "platform constraints"],
+            outputs=["GameplaySpec", "GDDDocument", "DirectorTaskBreakdown"],
+            artifacts=[
+                "generated/gameplay-spec.yaml",
+                "generated/gdd.md",
+                "generated/level-beats.yaml",
+            ],
+            quality_gates=[
+                "Core loop has at least three testable decisions.",
+                "First minute teaches the loop in greybox form.",
+                "Win and failure states can be validated without final art.",
+            ],
+            status="ready",
+            risks=["Reject disconnected mechanics even if they look visually interesting."],
+        ),
+        _pipeline_stage(
+            stage_id="comfyui_visual_production",
+            order=2,
+            title="ComfyUI visual production",
+            title_zh="ComfyUI 视觉生产",
+            owner_agent="comfyui-worker",
+            participating_agents=["director-agent"],
+            purpose=(
+                "Generate gameplay-readable references for character portrait, game logo, "
+                "UI, material palette, and feedback language after the loop is known."
+            ),
+            inputs=["GameplaySpec.notes_for_comfyui", "ComfyUIVisualPlan", "local checkpoint"],
+            outputs=[
+                "character readability portrait reference",
+                "game logo reference",
+                "UI objective reference",
+                "material palette reference",
+                "ComfyUIRunManifest",
+            ],
+            artifacts=[
+                "generated/comfyui/comfyui-visual-plan.yaml",
+                "generated/comfyui/*/*.png",
+                "generated/comfyui/run-manifest.yaml",
+            ],
+            mcp_tools=[
+                "probe_comfyui_capabilities",
+                "prepare_visual_reference_workflows",
+                "run_visual_reference_workflow",
+            ],
+            quality_gates=[
+                "Every prompt includes a gameplay constraint.",
+                "References clarify objective, hazard, route, feedback, or brand readability.",
+                "Generated images are reviewed before becoming Unreal textures or UI assets.",
+            ],
+            side_effects=[
+                "submits local ComfyUI prompt jobs",
+                "writes generated/comfyui images and run manifests",
+            ],
+            depends_on=["gameplay_orchestration"],
+            status="pending",
+            requires_confirmation=True,
+            risks=[
+                "ComfyUI is a reference worker and must not block greybox UE playability.",
+                f"{len(comfyui_plan.jobs)} planned jobs require a usable local checkpoint.",
+            ],
+        ),
+        _pipeline_stage(
+            stage_id="blender_modeling",
+            order=3,
+            title="Blender procedural modeling",
+            title_zh="Blender 程序化建模",
+            owner_agent="blender-worker",
+            participating_agents=["level-director", "unreal-builder"],
+            purpose=(
+                "Generate modular wall, door, ramp, hazard, objective, exit, and UI proxy meshes "
+                "that make the route playable before polish."
+            ),
+            inputs=["BlenderAssetPlan", "GameplaySpec.level_beats", "GameplaySpec.asset_needs"],
+            outputs=["Blender Python script", "FBX or GLB exports", "UnrealImportManifest"],
+            artifacts=[
+                "generated/blender/*.py",
+                "generated/assets/*.fbx",
+                "generated/import-manifest.yaml",
+            ],
+            mcp_tools=["generate_blender_script"],
+            quality_gates=[
+                "Assets use UE centimeter scale.",
+                "Each gameplay mesh has a UCX collision object.",
+                "Asset names describe gameplay role rather than visual polish.",
+            ],
+            side_effects=[
+                "writes generated/blender scripts",
+                "launches Blender when execution is confirmed",
+                "writes generated/assets exports",
+            ],
+            depends_on=["gameplay_orchestration"],
+            status="pending",
+            requires_confirmation=True,
+            risks=[f"{len(blender_plan.jobs)} planned mesh jobs must stay modular and reusable."],
+        ),
+        _pipeline_stage(
+            stage_id="asset_integration",
+            order=4,
+            title="Asset integration",
+            title_zh="资产整合",
+            owner_agent="unreal-builder",
+            participating_agents=["blender-worker", "comfyui-worker", "qa-agent"],
+            purpose=(
+                "Move reviewed Blender exports and approved ComfyUI references into the UE project "
+                "through explicit manifests."
+            ),
+            inputs=[
+                "UnrealProjectPlan",
+                "UnrealImportManifest",
+                "ComfyUIRunManifest",
+                "review decisions",
+            ],
+            outputs=["UnrealAssetIngestManifest", "imported static meshes", "reviewed texture references"],
+            artifacts=[
+                "generated/unreal/*/fantasy-agent-asset-ingest.json",
+                "generated/logs/unreal/*asset_ingest*.log",
+            ],
+            mcp_tools=["prepare_asset_ingest", "run_asset_ingest"],
+            quality_gates=[
+                "No ComfyUI image imports without review_required handling.",
+                "Source paths stay inside generated/assets or generated/comfyui.",
+                "Imported meshes retain valid collision and gameplay role metadata.",
+            ],
+            side_effects=["launches Unreal Editor", "imports generated assets into Content"],
+            depends_on=["comfyui_visual_production", "blender_modeling"],
+            status="blocked",
+            requires_confirmation=True,
+            risks=["Blocked until Blender exports and reviewed ComfyUI outputs exist."],
+        ),
+        _pipeline_stage(
+            stage_id="unreal_production",
+            order=5,
+            title="Unreal production",
+            title_zh="UE 制作",
+            owner_agent="unreal-builder",
+            participating_agents=["level-director", "qa-agent"],
+            purpose=(
+                "Create the UE project, assemble the greybox map, wire objective flow, and keep "
+                "the default map playable in editor and packaged builds."
+            ),
+            inputs=["UnrealProjectPlan", "UnrealAssetIngestManifest", "GameplaySpec.level_beats"],
+            outputs=["UE project structure", "M_Prototype_Greybox", "level assembly manifest"],
+            artifacts=[
+                "generated/unreal/**/*.uproject",
+                "generated/unreal/*/Content/Maps/M_Prototype_Greybox.umap",
+                "generated/unreal/*/fantasy-agent-level-assembly.json",
+            ],
+            mcp_tools=[
+                "prepare_level_assembly",
+                "run_level_assembly",
+                "DataValidation",
+            ],
+            quality_gates=[
+                f"Default map opens to {', '.join(unreal_plan.maps[:1])}.",
+                "Spawn, route, hazards, checkpoints, objective, and exit are present.",
+                "DataValidation returns zero blocking errors before packaging.",
+            ],
+            side_effects=[
+                "writes generated Unreal project files",
+                "launches Unreal Editor",
+                "writes or updates generated .umap files",
+            ],
+            depends_on=["asset_integration"],
+            status="blocked",
+            requires_confirmation=True,
+            risks=["Requires a compatible local Unreal Engine installation."],
+        ),
+        _pipeline_stage(
+            stage_id="optimization_testing",
+            order=6,
+            title="Optimization and testing",
+            title_zh="优化与测试",
+            owner_agent="qa-agent",
+            participating_agents=["unreal-builder", "director-agent"],
+            purpose=(
+                "Run playability, failure-feedback, performance, and packaged-build checks before "
+                "visual polish expands the prototype."
+            ),
+            inputs=["QAPlan", "assembled UE map", "packaged build candidate"],
+            outputs=["QA report", "performance notes", "blocking issue list", "package readiness decision"],
+            artifacts=[
+                "generated/qa-report.json",
+                "generated/logs/qa/*.log",
+                "generated/logs/unreal/*.log",
+            ],
+            mcp_tools=["DataValidation"],
+            quality_gates=[
+                f"Average session remains within {qa_plan.target_session_minutes} minutes.",
+                "A first-time player can understand failure reason and restart.",
+                "Packaged build opens directly into the prototype map.",
+            ],
+            side_effects=["runs Unreal commandlets or packaged build checks"],
+            depends_on=["unreal_production"],
+            status="blocked",
+            requires_confirmation=True,
+            risks=["Run this before broad visual expansion or packaging distribution."],
+        ),
+    ]
+    return ProductionPipeline(
+        project_name=unreal_plan.project_name,
+        goal=goal,
+        goal_i18n={
+            "en": goal,
+            "zh-CN": (
+                f"把玩法、视觉参考、模块化资产、UE 组装和 QA 编排成 "
+                f"{spec.title} 的 {spec.target_session_minutes} 分钟可玩切片。"
+            ),
+        },
+        stages=stages,
+        current_stage="gameplay_orchestration",
+        next_stage="comfyui_visual_production",
+        risks=[
+            "Execution stages require explicit confirmation before MCP side effects.",
+            "Greybox playability remains the production priority over visual polish.",
+            f"Requested locales: {', '.join(request.output_locales)}.",
+        ],
+        i18n=spec.i18n,
     )
 
 
@@ -526,6 +848,14 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
     blender_plan = prepare_blender_assets(gameplay_spec)
     comfyui_plan = prepare_comfyui_visuals(gameplay_spec)
     qa_plan = prepare_qa_plan(gameplay_spec)
+    production_pipeline = prepare_production_pipeline(
+        request=request,
+        spec=gameplay_spec,
+        unreal_plan=unreal_plan,
+        blender_plan=blender_plan,
+        comfyui_plan=comfyui_plan,
+        qa_plan=qa_plan,
+    )
     return DirectorBuildPlan(
         gameplay_spec=gameplay_spec,
         gdd=render_gdd(gameplay_spec),
@@ -541,5 +871,6 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
             comfyui_plan=comfyui_plan,
             qa_plan=qa_plan,
         ),
+        production_pipeline=production_pipeline,
         next_actions=DIRECTOR_NEXT_ACTIONS,
     )

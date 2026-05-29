@@ -16,6 +16,7 @@ def test_chatgpt_tool_descriptors_are_read_only_and_widget_backed():
     assert {tool["name"] for tool in tools} >= {
         "decompose_production_tasks",
         "generate_game_production_plan",
+        "prepare_production_pipeline",
         "render_gdd",
         "prepare_unreal_plan",
         "prepare_blender_plan",
@@ -37,8 +38,11 @@ def test_generate_game_production_plan_returns_structured_widget_payload():
     plan = result["structuredContent"]["plan"]
     assert plan["gameplay_spec"]["target_session_minutes"] == 10
     assert plan["task_breakdown"]["recommended_next_task"] == "gameplay_spec_review"
+    assert plan["production_pipeline"]["next_stage"] == "comfyui_visual_production"
+    assert result["structuredContent"]["production_pipeline"] == plan["production_pipeline"]
     assert plan["gdd"]["markdown_by_locale"]["zh-CN"]
     assert result["_meta"]["plan"] == plan
+    assert result["_meta"]["productionPipeline"] == plan["production_pipeline"]
     assert result["_meta"]["activePanel"] == "overview"
 
 
@@ -51,6 +55,25 @@ def test_decompose_production_tasks_returns_task_board_payload():
     assert breakdown["recommended_next_task"] == "gameplay_spec_review"
     assert any(task["requires_confirmation"] for task in breakdown["tasks"])
     assert result["_meta"]["activePanel"] == "tasks"
+
+
+def test_prepare_production_pipeline_returns_pipeline_payload():
+    result = call_workbench_tool("prepare_production_pipeline", _request())
+
+    assert "isError" not in result
+    assert result["structuredContent"]["kind"] == "production_pipeline"
+    pipeline = result["structuredContent"]["production_pipeline"]
+    assert [stage["id"] for stage in pipeline["stages"]] == [
+        "gameplay_orchestration",
+        "comfyui_visual_production",
+        "blender_modeling",
+        "asset_integration",
+        "unreal_production",
+        "optimization_testing",
+    ]
+    assert pipeline["next_stage"] == "comfyui_visual_production"
+    assert result["_meta"]["productionPipeline"] == pipeline
+    assert result["_meta"]["activePanel"] == "pipeline"
 
 
 def test_focused_chatgpt_tools_return_subplans_without_side_effects():

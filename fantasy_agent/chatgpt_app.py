@@ -143,6 +143,16 @@ def tool_descriptors() -> list[dict[str, Any]]:
             "Preparing QA checks",
             "QA checks ready",
         ),
+        _tool(
+            "prepare_production_pipeline",
+            "Prepare production pipeline",
+            (
+                "Use this when the user wants the full staged pipeline from gameplay orchestration "
+                "through ComfyUI, Blender, Unreal integration, and optimization testing."
+            ),
+            "Preparing production pipeline",
+            "Production pipeline ready",
+        ),
     ]
 
 
@@ -185,6 +195,7 @@ def _plan(request: PromptRequest) -> DirectorBuildPlan:
 
 def _summary_for_plan(plan: DirectorBuildPlan) -> dict[str, Any]:
     spec = plan.gameplay_spec
+    pipeline = plan.production_pipeline
     return {
         "title": spec.title,
         "logline": spec.logline,
@@ -194,6 +205,7 @@ def _summary_for_plan(plan: DirectorBuildPlan) -> dict[str, Any]:
         "win_state": spec.win_state,
         "failure_states": spec.failure_states,
         "next_actions": plan.next_actions,
+        "production_pipeline_stages": [stage.title for stage in pipeline.stages] if pipeline else [],
     }
 
 
@@ -255,6 +267,9 @@ def generate_game_production_plan(arguments: dict[str, Any] | None) -> dict[str,
     plan = _plan(request)
     plan_payload = plan.model_dump(mode="json")
     task_payload = plan.task_breakdown.model_dump(mode="json") if plan.task_breakdown else None
+    pipeline_payload = (
+        plan.production_pipeline.model_dump(mode="json") if plan.production_pipeline else None
+    )
     return _tool_result(
         "generate_game_production_plan",
         request,
@@ -263,9 +278,33 @@ def generate_game_production_plan(arguments: dict[str, Any] | None) -> dict[str,
             "summary": _summary_for_plan(plan),
             "plan": plan_payload,
             "task_breakdown": task_payload,
+            "production_pipeline": pipeline_payload,
         },
         _text_summary("Generated full production plan", plan),
-        {"plan": plan_payload, "taskBreakdown": task_payload, "activePanel": "overview"},
+        {
+            "plan": plan_payload,
+            "taskBreakdown": task_payload,
+            "productionPipeline": pipeline_payload,
+            "activePanel": "overview",
+        },
+    )
+
+
+def prepare_production_pipeline_tool(arguments: dict[str, Any] | None) -> dict[str, Any]:
+    request = _request(arguments)
+    plan = _plan(request)
+    pipeline = plan.production_pipeline
+    pipeline_payload = pipeline.model_dump(mode="json") if pipeline else None
+    return _tool_result(
+        "prepare_production_pipeline",
+        request,
+        {
+            "kind": "production_pipeline",
+            "summary": _summary_for_plan(plan),
+            "production_pipeline": pipeline_payload,
+        },
+        _text_summary("Prepared production pipeline", plan),
+        {"productionPipeline": pipeline_payload, "activePanel": "pipeline"},
     )
 
 
@@ -362,6 +401,7 @@ TOOL_HANDLERS: dict[str, Callable[[dict[str, Any] | None], dict[str, Any]]] = {
     "prepare_blender_plan": prepare_blender_plan,
     "prepare_comfyui_plan": prepare_comfyui_plan,
     "prepare_qa_plan": prepare_qa_plan,
+    "prepare_production_pipeline": prepare_production_pipeline_tool,
 }
 
 

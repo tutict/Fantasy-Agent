@@ -51,6 +51,14 @@ ProductionTaskAgent = Literal[
     "unreal-builder",
     "qa-agent",
 ]
+ProductionPipelineStageId = Literal[
+    "gameplay_orchestration",
+    "comfyui_visual_production",
+    "blender_modeling",
+    "asset_integration",
+    "unreal_production",
+    "optimization_testing",
+]
 
 
 def default_comfyui_endpoint_candidates() -> list[str]:
@@ -564,6 +572,39 @@ class ProductionTask(StrictModel):
     risks: list[str] = Field(default_factory=list)
 
 
+class ProductionPipelineStage(StrictModel):
+    id: ProductionPipelineStageId
+    order: int = Field(ge=1)
+    title: str
+    title_i18n: dict[LocaleCode, str] = Field(default_factory=dict)
+    purpose: str
+    owner_agent: ProductionTaskAgent
+    participating_agents: list[ProductionTaskAgent] = Field(default_factory=list)
+    inputs: list[str]
+    outputs: list[str]
+    artifacts: list[str] = Field(default_factory=list)
+    mcp_tools: list[str] = Field(default_factory=list)
+    quality_gates: list[str] = Field(default_factory=list)
+    side_effects: list[str] = Field(default_factory=list)
+    depends_on: list[ProductionPipelineStageId] = Field(default_factory=list)
+    status: ProductionTaskStatus = "pending"
+    requires_confirmation: bool = False
+    risks: list[str] = Field(default_factory=list)
+
+
+class ProductionPipeline(StrictModel):
+    source: str = "director-agent"
+    schema_version: str = "0.1"
+    project_name: str
+    goal: str
+    goal_i18n: dict[LocaleCode, str] = Field(default_factory=dict)
+    stages: list[ProductionPipelineStage]
+    current_stage: ProductionPipelineStageId = "gameplay_orchestration"
+    next_stage: ProductionPipelineStageId = "gameplay_orchestration"
+    risks: list[str] = Field(default_factory=list)
+    i18n: I18nBundle | None = None
+
+
 class DirectorTaskBreakdown(StrictModel):
     source: str = "director-agent"
     schema_version: str = "0.1"
@@ -586,6 +627,7 @@ class DirectorBuildPlan(StrictModel):
     comfyui_plan: ComfyUIVisualPlan
     qa_plan: QAPlan
     task_breakdown: DirectorTaskBreakdown | None = None
+    production_pipeline: ProductionPipeline | None = None
     next_actions: list[str]
 
 
