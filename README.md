@@ -1,240 +1,361 @@
 # Fantasy Agent
 
-Fantasy Agent is **an AI-native multi-agent game production platform**.
+**An AI-native multi-agent game production platform.**
 
-Fantasy Agent 是一个 **AI 原生的多智能体游戏生产平台**。
+**Fantasy Agent 是一个 AI 原生的多智能体游戏生产平台。**
 
-It transforms gameplay ideas into playable Unreal Engine prototype plans through agent orchestration, structured design output, procedural workflows, and MCP-integrated tooling.
+Fantasy Agent turns gameplay ideas into playable Unreal Engine prototype workflows through agent orchestration, structured design output, procedural asset generation, MCP-integrated tooling, and human review gates.
 
-它通过智能体编排、结构化设计输出、程序化工作流和 MCP 工具集成，把玩法想法转化为可运行的 Unreal Engine 原型计划。
+Fantasy Agent 通过智能体编排、结构化设计输出、程序化资产生成、MCP 工具集成和人工审阅关卡，把玩法想法推进到可运行的 Unreal Engine 原型工作流。
 
-Fantasy Agent is built for game-jam scale vertical slices: small playable loops, fast iteration, explicit handoffs, and automation that serves design. The platform starts with a gameplay DSL, then coordinates specialist agents for GDD writing, Unreal project setup, Blender asset generation, QA, and packaging.
+This is not a one-click game generator, a no-code wrapper, or a vibe-coding demo. It is a gameplay-first production workbench for short, testable, game-jam-scale vertical slices.
 
-Fantasy Agent 面向 game jam 规模的垂直切片：短小可玩的循环、快速迭代、明确交接，以及服务设计目标的自动化。平台以 Gameplay DSL 为源头，随后协调 GDD 写作、Unreal 项目搭建、Blender 资产生成、QA 和打包等专职智能体。
+这不是一键游戏生成器、无代码包装器，也不是 vibe coding 项目。它的目标是成为一个玩法优先的生产工作台，用于快速制作短小、可测试、game jam 规模的垂直切片。
 
-## Core Direction
+## Core Idea / 核心定位
 
-## 核心方向
+- Gameplay before graphics.
+- Prototype speed before production perfection.
+- Structured handoffs before tool execution.
+- Human review before asset ingestion.
+- QA before packaging and visual expansion.
 
-Fantasy Agent focuses on:
+- 玩法优先于画面。
+- 原型速度优先于生产级完美度。
+- 先生成结构化交接，再执行工具。
+- 资产进入 Unreal 前必须经过人工审阅。
+- QA 先于打包和视觉扩展。
 
-- Gameplay orchestration before visual polish
-- Prompt-to-playable prototype pipelines
-- Structured GDD and gameplay DSL output
-- UE5 project architecture and Unreal Python automation
-- Blender `bpy` procedural asset workflows
-- ComfyUI visual reference workflows
-- Creative review gates for generated images and meshes
-- ChatGPT Apps workbench for interactive MCP tool calls
-- MCP contracts for Unreal, Blender, ComfyUI, and GitHub tooling
-- Multi-agent workflows that can evolve into LangGraph execution
+Long-term vision:
 
-The system is not meant to replace design judgment. It creates scoped, inspectable production steps so a small team can move from idea to a playable prototype quickly.
+长期愿景：
 
-Fantasy Agent 关注：
+> From imagination to playable worlds.
 
-- 视觉打磨之前的玩法编排
-- Prompt 到可玩原型的生产管线
-- 结构化 GDD 和 Gameplay DSL 输出
-- UE5 项目架构与 Unreal Python 自动化
-- Blender `bpy` 程序化资产工作流
-- Unreal、Blender 和 GitHub 的 MCP 工具契约
-- 可演进到 LangGraph 的多智能体工作流
+> 从想象到可玩的世界。
 
-系统不是为了替代设计判断，而是把生产步骤缩小、结构化、可检查，让小团队更快从想法走到可玩原型。
+## What Fantasy Agent Does / 当前能力
 
-## i18n / 国际化
+Fantasy Agent currently provides:
 
-Fantasy Agent supports English and Simplified Chinese together.
+Fantasy Agent 当前提供：
 
-Fantasy Agent 支持英文与简体中文并行输出。
+- A local Studio interface for prompt-to-playable planning.
+- 一个本地 Studio 界面，用于从玩法想法生成生产计划。
+- A gameplay DSL and deterministic Director workflow.
+- Gameplay DSL 与确定性的 Director 工作流。
+- Structured GDD generation in English and Simplified Chinese.
+- 中英双语结构化 GDD 生成。
+- Blender procedural asset planning and Blender Python script generation.
+- Blender 程序化资产规划与 Blender Python 脚本生成。
+- ComfyUI visual reference planning and MCP workflow preparation.
+- ComfyUI 视觉参考规划与 MCP 工作流准备。
+- Creative Review gates for approving, revising, or rejecting generated images and meshes.
+- Creative Review 审阅关卡，用于批准、修改或拒绝生成图片与模型。
+- Unreal project, asset ingest, level assembly, validation, and playtest planning.
+- Unreal 项目、资产导入、关卡组装、验证和测试计划。
+- ChatGPT Apps-compatible read-only workbench tools.
+- ChatGPT Apps 兼容的只读工作台工具。
+- QA plans for smoke testing, playability, failure feedback, packaging, and performance checks.
+- 面向冒烟测试、可玩性、失败反馈、打包和性能检查的 QA 计划。
 
-- `PromptRequest.source_locale` records the input language.
-- `PromptRequest.output_locales` defaults to `["en", "zh-CN"]`.
-- `GameplaySpec.i18n` stores field-path translations without breaking the core DSL.
-- `GDDDocument.markdown_by_locale` stores per-language documents.
-- `GDDDocument.markdown` returns a combined bilingual document when both locales are requested.
+## Production Flow / 生产流程
 
-- `PromptRequest.source_locale` 记录输入语言。
-- `PromptRequest.output_locales` 默认输出 `["en", "zh-CN"]`。
-- `GameplaySpec.i18n` 使用字段路径保存翻译，不破坏核心 DSL。
-- `GDDDocument.markdown_by_locale` 保存各语言版本文档。
-- 同时请求中英双语时，`GDDDocument.markdown` 会返回合并后的双语文档。
+```mermaid
+flowchart LR
+  A["Gameplay Orchestration"] --> B["ComfyUI Visual References"]
+  A --> C["Blender Procedural Assets"]
+  B --> D["Creative Review"]
+  C --> D
+  D --> E["Asset Integration"]
+  E --> F["Unreal Production"]
+  F --> G["Optimization and QA"]
+```
 
-## ChatGPT Workbench / ChatGPT 工作台
+1. **Gameplay orchestration / 玩法编排**
+   Convert a prompt into a coherent loop, verbs, systems, pacing, win state, failure states, and level beats.
 
-Fantasy Agent now includes a ChatGPT Apps-compatible workbench under `apps/chatgpt-workbench`. It exposes read-only MCP tools for generating and inspecting gameplay-first production plans inside ChatGPT.
+2. **ComfyUI visual references / ComfyUI 视觉参考**
+   Generate readable references for character direction, logo, UI, material palette, and feedback language.
 
-Fantasy Agent 现在包含 `apps/chatgpt-workbench`，可作为 ChatGPT Apps 兼容的工作台运行。它通过只读 MCP 工具在 ChatGPT 内生成并检查玩法优先的生产计划。
+3. **Blender procedural assets / Blender 程序化资产**
+   Generate modular greybox meshes such as walls, doors, ramps, hazards, objectives, exit gates, and UI proxy meshes.
 
-The first version does not execute Unreal, Blender, ComfyUI, packaging, or GitHub side effects. It prepares structured handoffs first, then future MCP tools can execute allowlisted production steps with explicit approval.
+4. **Creative Review / 创意审阅**
+   Review generated images and meshes with the user before Unreal ingest. Assets can be approved, revised, or rejected.
 
-第一版不会执行 Unreal、Blender、ComfyUI、打包或 GitHub 副作用。它先准备结构化交接结果，后续 MCP 工具再在明确确认后执行 allowlist 内的生产步骤。
+5. **Asset integration / 资产整合**
+   Move approved Blender and ComfyUI outputs into Unreal through explicit manifests.
 
-## Repository Layout
+6. **Unreal production / UE 制作**
+   Create project structure, assemble maps, place assets, wire objective flow, and prepare PIE or packaged playtests.
 
-## 仓库结构
+7. **Optimization and QA / 优化与测试**
+   Validate playability, failure feedback, restart flow, session length, packaging readiness, and performance risk.
+
+## Studio Interface / Studio 界面
+
+The local Studio is the main operator surface.
+
+本地 Studio 是主要操作界面。
+
+It includes:
+
+它包含：
+
+- Production Console: gameplay input, pipeline dashboard, tasks, review panel, build plans, visuals, QA, GDD, and DSL.
+- 生产控制台：玩法输入、流水线驾驶舱、任务、审阅面板、构建计划、视觉、QA、GDD 和 DSL。
+- ChatGPT Workbench preview: ChatGPT Apps-compatible planning tools.
+- ChatGPT Workbench 预览：兼容 ChatGPT Apps 的规划工具。
+- MCP endpoint panel: local endpoint information for future ChatGPT and tool integrations.
+- MCP 端点面板：用于后续 ChatGPT 与工具集成的本地端点信息。
+
+Start it on Windows:
+
+Windows 启动方式：
+
+```bat
+Start-Fantasy-Agent.bat
+```
+
+Then open:
+
+然后打开：
+
+```text
+http://127.0.0.1:7860
+```
+
+Manual start:
+
+手动启动：
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir apps/studio --host 127.0.0.1 --port 7860
+```
+
+If port `7860` is already in use, choose another port:
+
+如果 `7860` 已被占用，可以换端口：
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir apps/studio --host 127.0.0.1 --port 7861
+```
+
+## Safety Boundary / 安全边界
+
+Fantasy Agent separates planning from execution.
+
+Fantasy Agent 会区分“规划”和“实际执行”。
+
+Planning is safe and read-only:
+
+规划阶段是安全且只读的：
+
+- Generate gameplay specs.
+- 生成玩法规格。
+- Render GDD documents.
+- 生成 GDD 文档。
+- Prepare Blender, ComfyUI, Unreal, and QA handoffs.
+- 准备 Blender、ComfyUI、Unreal 和 QA 交接。
+- Show tasks, risks, side effects, and review gates.
+- 显示任务、风险、副作用和审阅关卡。
+
+Execution creates side effects and must be explicitly confirmed:
+
+执行阶段会产生副作用，必须明确确认：
+
+- Launching Blender and exporting FBX or GLB assets.
+- 启动 Blender 并导出 FBX 或 GLB 资产。
+- Submitting ComfyUI prompts and using GPU resources.
+- 提交 ComfyUI prompt 并使用 GPU 资源。
+- Writing generated images, meshes, manifests, and logs.
+- 写入生成图片、模型、manifest 和日志。
+- Launching Unreal Editor, importing assets, assembling maps, running PIE, or packaging builds.
+- 启动 Unreal Editor、导入资产、组装地图、运行 PIE 或打包构建。
+
+ChatGPT Apps tools are read-only by default. They do not launch Unreal, Blender, ComfyUI, packaging, or Git actions unless explicit side-effect gates are implemented and confirmed.
+
+ChatGPT Apps 工具默认只读。除非后续实现并确认副作用关卡，否则不会启动 Unreal、Blender、ComfyUI、打包或 Git 操作。
+
+## Architecture / 架构
 
 ```text
 Fantasy-Agent/
 |-- apps/
-|   |-- studio/             # One-click local Studio shell for desktop-style use
-|   |-- web-console/        # Local browser UI for prompt-to-playable planning
-|   |-- chatgpt-workbench/  # ChatGPT Apps MCP endpoint and interactive widget
-|   |-- director-agent/     # Orchestrates prompt-to-playable planning
-|   |-- gameplay-agent/     # Converts prompts into gameplay DSL specs
-|   |-- unreal-builder/     # Prepares UE5 project architecture
-|   |-- blender-worker/     # Prepares Blender procedural asset jobs
-|   |-- comfyui-worker/     # Prepares ComfyUI visual reference jobs
-|   |-- creative-review-agent/ # Prepares user approval gates for generated outputs
-|   `-- qa-agent/           # Creates smoke, playability, and packaging checks
-|-- fantasy_agent/          # Shared Pydantic contracts and workflow primitives
-|-- skills/
-|   |-- gameplay-designer/
-|   |-- gdd-writer/
-|   |-- level-director/
-|   |-- ue-architect/
-|   |-- blender-generator/
-|   |-- comfyui-generator/
-|   `-- creative-reviewer/
-|-- mcp/
-|   |-- chatgpt-apps-mcp/
-|   |-- blender-mcp/
-|   |-- unreal-mcp/
-|   |-- comfyui-mcp/
-|   `-- github-mcp/
-|-- templates/
-|-- generated/
-|-- examples/
-|-- docs/
-|   |-- architecture/
-|   |-- workflow/
-|   |-- gameplay-dsl/
-|   `-- research/
-|-- legacy/                 # Previous Spring/Flutter traffic app preserved here
-`-- gameplay-schema.yaml
+|   |-- studio/                 # Local desktop-style shell
+|   |-- web-console/            # Production cockpit UI
+|   |-- chatgpt-workbench/      # ChatGPT Apps MCP endpoint and widget
+|   |-- director-agent/         # Prompt-to-playable orchestration
+|   |-- gameplay-agent/         # Gameplay DSL generation
+|   |-- blender-worker/         # Blender asset plans and MCP execution bridge
+|   |-- comfyui-worker/         # ComfyUI visual plans and MCP execution bridge
+|   |-- creative-review-agent/  # User review gates for generated outputs
+|   |-- unreal-builder/         # UE project, ingest, assembly, validation plans
+|   `-- qa-agent/               # Playability, packaging, and performance checks
+|-- fantasy_agent/              # Shared contracts, workflows, MCP bridges
+|-- skills/                     # Agent behavior and workflow guidance
+|-- mcp/                        # MCP tool contracts
+|-- templates/                  # ComfyUI and generation templates
+|-- generated/                  # Generated plans, assets, manifests, and logs
+|-- examples/                   # Example prompts and artifacts
+|-- docs/                       # Architecture, workflow, DSL, and research notes
+|-- legacy/                     # Preserved legacy code
+`-- gameplay-schema.yaml        # Gameplay DSL schema
 ```
 
-## Initial Architecture
+## Agent Roles / 智能体角色
 
-## 初始架构
+| Agent | Responsibility | 职责 |
+| --- | --- | --- |
+| Director Agent | Owns the full prompt-to-playable workflow. | 负责完整的 prompt-to-playable 编排。 |
+| Gameplay Agent | Creates coherent gameplay loops, systems, pacing, and failure states. | 生成内聚的玩法循环、系统、节奏和失败状态。 |
+| GDD Writer | Renders implementation-facing design documents. | 生成面向实现的设计文档。 |
+| Level Director | Converts loops into level beats and greybox needs. | 将玩法循环转换为关卡节奏和灰盒需求。 |
+| Blender Worker | Prepares modular procedural asset jobs and Blender Python scripts. | 准备模块化程序资产任务和 Blender Python 脚本。 |
+| ComfyUI Worker | Prepares gameplay-readable visual reference workflows. | 准备服务玩法可读性的视觉参考流程。 |
+| Creative Review Agent | Blocks Unreal ingest until generated outputs are reviewed. | 在生成结果通过审阅前阻止 Unreal 导入。 |
+| Unreal Builder | Prepares UE project setup, ingest, level assembly, validation, and playtest plans. | 准备 UE 项目搭建、导入、关卡组装、验证和测试计划。 |
+| QA Agent | Defines smoke, playability, failure feedback, packaging, and performance checks. | 定义冒烟、可玩性、失败反馈、打包和性能检查。 |
 
-The first implementation pass defines stable contracts before deep automation:
+## Core Contracts / 核心合约
 
-- `PromptRequest`: raw gameplay idea plus prototype constraints.
-- `GameplaySpec`: YAML-ready design DSL with core loop, systems, pacing, progression, win/failure states, asset needs, UE notes, Blender notes, and QA focus.
-- `GDDDocument`: markdown design document generated from the gameplay spec.
-- `UnrealProjectPlan`: project folders, plugins, maps, Blueprint classes, and automation steps.
+The platform uses Pydantic contracts in `fantasy_agent/contracts.py`.
+
+平台使用 `fantasy_agent/contracts.py` 中的 Pydantic 合约。
+
+Important models:
+
+关键模型：
+
+- `PromptRequest`: source prompt, session length, engine, platforms, constraints, and locales.
+- `PromptRequest`：原始玩法想法、时长、引擎、平台、约束和语言。
+- `GameplaySpec`: gameplay DSL with loop, systems, progression, beats, asset needs, and tool notes.
+- `GameplaySpec`：包含循环、系统、进程、关卡节奏、资产需求和工具说明的玩法 DSL。
+- `GDDDocument`: markdown design document with bilingual output.
+- `GDDDocument`：中英双语 Markdown 设计文档。
 - `BlenderAssetPlan`: procedural asset jobs and export handoff paths.
-- `BlenderScriptArtifact`: generated Blender Python script plus Unreal import manifest.
-- `ComfyUIVisualPlan`: visual reference jobs for readability, material language, UI references, and reviewed texture seeds.
-- `CreativeReviewReport`: approval, revision, and rejection gate for ComfyUI and Blender outputs before Unreal ingest.
-- `ComfyUIRunManifest`: prepared workflow files, prompt IDs, expected outputs, and execution logs for reviewed visual references.
-- `QAPlan`: smoke tests, playability checks, packaging checks, and metrics.
-- `DirectorBuildPlan`: combined orchestration output for the full first-pass pipeline.
-
-第一阶段先定义稳定契约，再接入深度自动化：
-
-- `PromptRequest`：原始玩法想法和原型约束。
-- `GameplaySpec`：可写入 YAML 的设计 DSL，包含核心循环、系统、节奏、进程、胜负状态、资产需求、UE 说明、Blender 说明和 QA 重点。
-- `GDDDocument`：由 GameplaySpec 生成的中英双语 markdown 设计文档。
-- `UnrealProjectPlan`：项目目录、插件、地图、蓝图类和自动化步骤。
 - `BlenderAssetPlan`：程序化资产任务和导出交接路径。
+- `ComfyUIVisualPlan`: visual reference jobs with gameplay constraints.
+- `ComfyUIVisualPlan`：带玩法约束的视觉参考任务。
+- `CreativeReviewReport`: approval, revision, and rejection gate for generated outputs.
+- `CreativeReviewReport`：生成结果的批准、修改和拒绝关卡。
+- `UnrealProjectPlan`: UE folders, plugins, maps, Blueprint classes, and automation steps.
+- `UnrealProjectPlan`：UE 目录、插件、地图、蓝图类和自动化步骤。
+- `QAPlan`: smoke tests, playability checks, packaging checks, and metrics.
 - `QAPlan`：冒烟测试、可玩性检查、打包检查和指标。
-- `DirectorBuildPlan`：第一版完整管线的编排输出。
+- `DirectorBuildPlan`: combined orchestration output.
+- `DirectorBuildPlan`：完整编排输出。
 
-## Local Development
+## ChatGPT Workbench / ChatGPT 工作台
 
-## 本地开发
+Fantasy Agent includes a ChatGPT Apps-compatible workbench under `apps/chatgpt-workbench`.
 
-One-click local launch on Windows:
+Fantasy Agent 在 `apps/chatgpt-workbench` 下提供兼容 ChatGPT Apps 的工作台。
+
+Available read-only tools include:
+
+当前只读工具包括：
+
+- `generate_game_production_plan`
+- `decompose_production_tasks`
+- `prepare_production_pipeline`
+- `render_gdd`
+- `prepare_unreal_plan`
+- `prepare_blender_plan`
+- `prepare_comfyui_plan`
+- `prepare_creative_review_plan`
+- `prepare_qa_plan`
+
+For local ChatGPT Developer Mode testing, expose the Studio through an HTTPS tunnel and connect to:
+
+如果要在本地 ChatGPT Developer Mode 中测试，可以通过 HTTPS 隧道暴露 Studio，并连接：
 
 ```text
-Start-Fantasy-Agent.bat
+https://your-tunnel.example/mcp
 ```
 
-This opens the local Studio panel at:
+## Development / 开发
 
-```text
-http://127.0.0.1:7860
-```
+Install:
 
-The Studio combines the production console, ChatGPT Workbench preview, and local MCP endpoint in one desktop-style panel. The shell supports English and Simplified Chinese, and passes the selected locale into embedded panels.
+安装：
 
-Manual setup:
-
-Install the Python package in editable mode:
-
-```bash
+```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -e .
+pip install -e .[dev]
 ```
 
-Run the Director Agent:
+Run tests:
 
-```bash
-uvicorn app.main:app --reload --app-dir apps/director-agent
+运行测试：
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe -m ruff check fantasy_agent tests apps
 ```
 
-Run the unified Studio:
+Run the Director Agent only:
 
-```bash
-uvicorn app.main:app --reload --app-dir apps/studio --host 127.0.0.1 --port 7860
+只运行 Director Agent：
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir apps/director-agent --host 127.0.0.1 --port 8000
 ```
 
-Open:
+Example API request:
 
-```text
-http://127.0.0.1:7860
+API 示例：
+
+```powershell
+curl -X POST http://127.0.0.1:8000/plan `
+  -H "Content-Type: application/json" `
+  -d "{\"prompt\":\"a rooftop parkour demo with wall-runs and checkpoints\",\"target_minutes\":10}"
 ```
 
-ChatGPT Developer Mode should connect to an HTTPS-tunneled URL ending in:
+## Current Status / 当前状态
 
-```text
-/mcp
-```
+Fantasy Agent is in an early production-platform phase:
 
-Example request:
+Fantasy Agent 目前处于早期生产平台阶段：
 
-```bash
-curl -X POST http://127.0.0.1:8000/plan ^
-  -H "Content-Type: application/json" ^
-  -d "{\"prompt\":\"a stealth game where a courier escapes a haunted train station\",\"target_minutes\":10}"
-```
+- Planning contracts and deterministic workflows are implemented.
+- 规划合约与确定性工作流已经实现。
+- Studio, Web Console, and ChatGPT Workbench are available.
+- Studio、Web Console 和 ChatGPT Workbench 已可使用。
+- Blender, ComfyUI, Unreal, and QA handoffs are structured.
+- Blender、ComfyUI、Unreal 和 QA 交接已经结构化。
+- Creative Review gates are integrated into the Director pipeline.
+- Creative Review 审阅关卡已经接入 Director 流水线。
+- Real tool execution remains gated by explicit side-effect confirmation.
+- 真实工具执行仍然受显式副作用确认控制。
 
-The deterministic workflow is intentionally simple in Phase 1. LLM calls, LangGraph routing, MCP tool execution, and Unreal/Blender automation should attach behind the same contracts.
+Next implementation priorities:
 
-Phase 1 的确定性工作流故意保持简单。后续 LLM 调用、LangGraph 路由、MCP 工具执行以及 Unreal/Blender 自动化，都应该接在同一套契约之后。
+下一步优先级：
 
-## Legacy Code
+- Persist review decisions into an approval manifest.
+- 将审阅决定持久化为 approval manifest。
+- Connect confirmed ComfyUI and Blender executions into the Studio.
+- 将已确认的 ComfyUI 和 Blender 执行接入 Studio。
+- Move approved assets into Unreal ingest automatically.
+- 将已批准资产自动进入 Unreal 导入。
+- Run real PIE and packaged playtests from controlled MCP gates.
+- 通过受控 MCP 关卡运行真实 PIE 和 packaged playtest。
+- Add richer preview support for generated images and mesh manifests.
+- 为生成图片和模型 manifest 增加更丰富的预览能力。
 
-## 旧代码
+## Legacy / 旧代码
 
-The previous Spring Boot and Flutter traffic-management project has been moved to:
+The previous Spring Boot and Flutter traffic-management project is preserved under:
+
+之前的 Spring Boot 与 Flutter 交通管理项目保存在：
 
 ```text
 legacy/traffic-management-platform/
 ```
 
-Useful ideas to preserve from that codebase include skill interfaces, streaming agent events, workflow/state-machine rigor, guardrail flags, and operational runbooks. Domain-specific traffic logic should not be carried into the game-production platform.
+Useful ideas from that project can inform workflow/state-machine rigor, agent events, skill interfaces, and operational runbooks. Domain-specific traffic logic should not be carried into Fantasy Agent.
 
-之前的 Spring Boot 和 Flutter 交通管理项目已移动到：
-
-```text
-legacy/traffic-management-platform/
-```
-
-值得保留的思路包括 skill 接口、流式 agent 事件、工作流/状态机约束、AI guardrail 配置和运维 runbook。交通业务逻辑不应进入新的游戏生产平台。
-
-## Guiding Principle
-
-## 指导原则
-
-Every system should support the long-term vision:
-
-> From imagination to playable worlds.
-
-每个系统都应该服务长期愿景：
-
-> 从想象到可玩的世界。
+该项目中可复用的是工作流/状态机严谨性、agent 事件、skill 接口和运维 runbook 等思路。交通业务逻辑不应进入 Fantasy Agent。
