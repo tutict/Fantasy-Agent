@@ -8,6 +8,8 @@ param(
 
     [switch]$SkipInstall,
 
+    [switch]$VerboseAccessLog,
+
     [switch]$SmokeTest
 )
 
@@ -211,7 +213,11 @@ function Start-UvicornProcess {
 
     $info = [System.Diagnostics.ProcessStartInfo]::new()
     $info.FileName = $PythonExe
-    $info.Arguments = "-m uvicorn app.main:app --app-dir $AppDir --host 127.0.0.1 --port $PortNumber"
+    $quietArgs = "--no-access-log --log-level warning"
+    if ($VerboseAccessLog) {
+        $quietArgs = ""
+    }
+    $info.Arguments = "-m uvicorn app.main:app --app-dir $AppDir --host 127.0.0.1 --port $PortNumber $quietArgs".Trim()
     $info.WorkingDirectory = $RepoRoot
     $info.UseShellExecute = $false
     $info.CreateNoWindow = $true
@@ -273,7 +279,11 @@ if ($SmokeTest) {
 $browserJob = Start-OpenBrowserJob -HealthUrl $healthUrl -OpenUrl $openUrl
 try {
     Write-Step "Starting $($config.Title). Press Ctrl+C to stop."
-    & $pythonExe -m uvicorn app.main:app --app-dir $config.AppDir --host 127.0.0.1 --port $selectedPort
+    if ($VerboseAccessLog) {
+        & $pythonExe -m uvicorn app.main:app --app-dir $config.AppDir --host 127.0.0.1 --port $selectedPort
+    } else {
+        & $pythonExe -m uvicorn app.main:app --app-dir $config.AppDir --host 127.0.0.1 --port $selectedPort --no-access-log --log-level warning
+    }
 } finally {
     if ($browserJob) {
         Remove-Job $browserJob -Force -ErrorAction SilentlyContinue

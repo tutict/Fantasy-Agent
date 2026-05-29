@@ -134,6 +134,22 @@ Manual start:
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir apps/studio --host 127.0.0.1 --port 7860
 ```
 
+Quiet launch without per-request access logs:
+
+安静启动，不显示每次浏览器资源请求日志：
+
+```powershell
+.\scripts\start-fantasy-agent.ps1 -App studio
+```
+
+Verbose HTTP access logs for debugging:
+
+调试 HTTP 请求时打开详细访问日志：
+
+```powershell
+.\scripts\start-fantasy-agent.ps1 -App studio -VerboseAccessLog
+```
+
 If port `7860` is already in use, choose another port:
 
 如果 `7860` 已被占用，可以换端口：
