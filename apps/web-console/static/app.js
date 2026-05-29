@@ -113,9 +113,16 @@
   }
 };
 
-let uiLocale = "en";
+function initialLocale() {
+  const params = new URLSearchParams(window.location.search);
+  const requested = params.get("locale") || localStorage.getItem("fantasy-agent-web-console-locale");
+  if (requested === "zh-CN" || requested === "en") return requested;
+  return navigator.language?.startsWith("zh") ? "zh-CN" : "en";
+}
+
+let uiLocale = initialLocale();
 let currentPlan = null;
-let currentGddLocale = "en";
+let currentGddLocale = uiLocale;
 
 const form = document.querySelector("#plan-form");
 const minuteInput = document.querySelector("#target_minutes");
@@ -138,6 +145,8 @@ function t(key) {
 
 function applyLocale(locale) {
   uiLocale = locale;
+  currentGddLocale = locale;
+  localStorage.setItem("fantasy-agent-web-console-locale", locale);
   document.documentElement.lang = locale;
   document.querySelectorAll("[data-i18n]").forEach((node) => {
     node.textContent = t(node.dataset.i18n);
@@ -147,6 +156,9 @@ function applyLocale(locale) {
   });
   document.querySelectorAll(".locale-option").forEach((button) => {
     button.classList.toggle("active", button.dataset.locale === locale);
+  });
+  document.querySelectorAll("[data-gdd-locale]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.gddLocale === currentGddLocale);
   });
   if (!currentPlan) {
     statusChip.textContent = t(statusChip.dataset.state === "idle" ? "idle" : statusChip.dataset.state);
@@ -385,4 +397,4 @@ document.querySelectorAll("[data-gdd-locale]").forEach((button) => {
   });
 });
 
-applyLocale("en");
+applyLocale(uiLocale);

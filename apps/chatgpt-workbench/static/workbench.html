@@ -669,8 +669,19 @@
       };
 
       const bridge = window.openai;
+      function initialLocale() {
+        const params = new URLSearchParams(window.location.search);
+        const requested =
+          params.get("locale") ||
+          localStorage.getItem("fantasy-agent-chatgpt-workbench-locale") ||
+          bridge?.locale;
+        if (requested?.startsWith("zh")) return "zh-CN";
+        if (requested === "en") return "en";
+        return navigator.language?.startsWith("zh") ? "zh-CN" : "en";
+      }
+
       const state = {
-        locale: bridge?.locale?.startsWith("zh") ? "zh-CN" : "en",
+        locale: initialLocale(),
         status: "idle",
         lastInput: null,
         plan: null,
@@ -734,6 +745,7 @@
 
       function applyLocale(locale) {
         state.locale = locale;
+        localStorage.setItem("fantasy-agent-chatgpt-workbench-locale", locale);
         document.documentElement.lang = locale;
         document.querySelectorAll("[data-i18n]").forEach((node) => {
           node.textContent = t(node.dataset.i18n);

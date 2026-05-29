@@ -77,6 +77,7 @@ The first version does not execute Unreal, Blender, ComfyUI, packaging, or GitHu
 ```text
 Fantasy-Agent/
 |-- apps/
+|   |-- studio/             # One-click local Studio shell for desktop-style use
 |   |-- web-console/        # Local browser UI for prompt-to-playable planning
 |   |-- chatgpt-workbench/  # ChatGPT Apps MCP endpoint and interactive widget
 |   |-- director-agent/     # Orchestrates prompt-to-playable planning
@@ -142,6 +143,22 @@ The first implementation pass defines stable contracts before deep automation:
 
 ## 本地开发
 
+One-click local launch on Windows:
+
+```text
+Start-Fantasy-Agent.bat
+```
+
+This opens the local Studio panel at:
+
+```text
+http://127.0.0.1:7860
+```
+
+The Studio combines the production console, ChatGPT Workbench preview, and local MCP endpoint in one desktop-style panel. The shell supports English and Simplified Chinese, and passes the selected locale into embedded panels.
+
+Manual setup:
+
 Install the Python package in editable mode:
 
 ```bash
@@ -156,28 +173,16 @@ Run the Director Agent:
 uvicorn app.main:app --reload --app-dir apps/director-agent
 ```
 
-Run the Web Console:
+Run the unified Studio:
 
 ```bash
-uvicorn app.main:app --reload --app-dir apps/web-console --host 127.0.0.1 --port 7860
+uvicorn app.main:app --reload --app-dir apps/studio --host 127.0.0.1 --port 7860
 ```
 
 Open:
 
 ```text
 http://127.0.0.1:7860
-```
-
-Run the ChatGPT Workbench MCP server:
-
-```bash
-uvicorn app.main:app --reload --app-dir apps/chatgpt-workbench --host 127.0.0.1 --port 8787
-```
-
-Local preview:
-
-```text
-http://127.0.0.1:8787
 ```
 
 ChatGPT Developer Mode should connect to an HTTPS-tunneled URL ending in:
