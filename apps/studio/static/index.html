@@ -411,13 +411,13 @@
         </div>
 
         <nav class="nav" aria-label="Studio panels">
-          <button class="active" type="button" data-target="console">
-            <span class="nav-icon" aria-hidden="true">PC</span>
-            <span class="nav-label" data-i18n="consoleTitle">Production Console</span>
-          </button>
-          <button type="button" data-target="workbench">
+          <button class="active" type="button" data-target="workbench">
             <span class="nav-icon" aria-hidden="true">GPT</span>
-            <span class="nav-label" data-i18n="workbenchTitle">ChatGPT Workbench</span>
+            <span class="nav-label" data-i18n="workbenchTitle">Planning Workbench</span>
+          </button>
+          <button type="button" data-target="console">
+            <span class="nav-icon" aria-hidden="true">PC</span>
+            <span class="nav-label" data-i18n="consoleTitle">Flow Console</span>
           </button>
           <button type="button" data-target="mcp">
             <span class="nav-icon" aria-hidden="true">MCP</span>
@@ -435,15 +435,15 @@
 
       <section class="workspace">
         <header class="topbar">
-          <h2 id="panel-title">Production Console</h2>
+          <h2 id="panel-title">Planning Workbench</h2>
         </header>
 
-        <section class="panel active" data-panel="console">
-          <iframe data-frame="console" title="Fantasy Agent Production Console" src="/web-console"></iframe>
+        <section class="panel active" data-panel="workbench">
+          <iframe data-frame="workbench" title="Fantasy Agent Planning Workbench" src="/workbench"></iframe>
         </section>
 
-        <section class="panel" data-panel="workbench">
-          <iframe data-frame="workbench" title="Fantasy Agent ChatGPT Workbench" src="/workbench"></iframe>
+        <section class="panel" data-panel="console">
+          <iframe data-frame="console" title="Fantasy Agent Flow Console" src="/web-console"></iframe>
         </section>
 
         <section class="panel" data-panel="mcp">
@@ -456,11 +456,11 @@
               </article>
               <article class="card">
                 <h3 data-i18n="previewTitle">Local preview</h3>
-                <p data-i18n="previewBody">The Studio combines the local production console and ChatGPT workbench in one desktop launcher.</p>
+                <p data-i18n="previewBody">The Studio combines the local flow console and planning workbench in one desktop launcher.</p>
               </article>
               <article class="card">
                 <h3 data-i18n="safetyTitle">Safety boundary</h3>
-                <p data-i18n="safetyBody">Workbench tools are read-only planning tools by default. Unreal, Blender, ComfyUI, packaging, and Git side effects still require explicit confirmation.</p>
+                <p data-i18n="safetyBody">Planning tools are read-only by default. Unreal, Blender, ComfyUI, packaging, and Git side effects still require explicit confirmation.</p>
               </article>
               <article class="card wide">
                 <h3 data-i18n="flowTitle">Typical flow</h3>
@@ -481,50 +481,50 @@
         en: {
           documentTitle: "Fantasy Agent Studio",
           productLabel: "Desktop Studio",
-          consoleTitle: "Production Console",
-          workbenchTitle: "ChatGPT Workbench",
+          consoleTitle: "Flow Console",
+          workbenchTitle: "Planning Workbench",
           mcpTitle: "MCP Endpoint",
           openConsole: "Open console tab",
-          openWorkbench: "Open workbench tab",
+          openWorkbench: "Open planning tab",
           localServer: "Local server",
           openSeparately: "Open separately",
           mcpUrlTitle: "ChatGPT Apps MCP URL",
           mcpUrlBody: "Use this endpoint when connecting Fantasy Agent through an HTTPS tunnel.",
           previewTitle: "Local preview",
-          previewBody: "The Studio combines the local production console and ChatGPT workbench in one desktop launcher.",
+          previewBody: "The Studio combines the local flow console and planning workbench in one desktop launcher.",
           safetyTitle: "Safety boundary",
-          safetyBody: "Workbench tools are read-only planning tools by default. Unreal, Blender, ComfyUI, packaging, and Git side effects still require explicit confirmation.",
+          safetyBody: "Planning tools are read-only by default. Unreal, Blender, ComfyUI, packaging, and Git side effects still require explicit confirmation.",
           flowTitle: "Typical flow",
           flowGenerate: "Generate a gameplay-first production plan.",
           flowReview: "Review ComfyUI, Blender, Unreal, and QA handoffs.",
           flowExecute: "Execute MCP production steps only after confirming side effects.",
-          consoleFrameTitle: "Fantasy Agent Production Console",
-          workbenchFrameTitle: "Fantasy Agent ChatGPT Workbench",
+          consoleFrameTitle: "Fantasy Agent Flow Console",
+          workbenchFrameTitle: "Fantasy Agent Planning Workbench",
           collapseSidebar: "Collapse sidebar",
           expandSidebar: "Expand sidebar"
         },
         "zh-CN": {
           documentTitle: "Fantasy Agent 工作室",
           productLabel: "桌面工作室",
-          consoleTitle: "生产控制台",
-          workbenchTitle: "ChatGPT 工作台",
+          consoleTitle: "流程控制台",
+          workbenchTitle: "策划工作台",
           mcpTitle: "MCP 端点",
-          openConsole: "单独打开控制台",
-          openWorkbench: "单独打开工作台",
+          openConsole: "单独打开流程控制台",
+          openWorkbench: "单独打开策划工作台",
           localServer: "本地服务",
           openSeparately: "单独打开",
           mcpUrlTitle: "ChatGPT Apps MCP 地址",
           mcpUrlBody: "通过 HTTPS 隧道连接 Fantasy Agent 时使用这个端点。",
           previewTitle: "本地预览",
-          previewBody: "Studio 把本地生产控制台和 ChatGPT 工作台合并到一个桌面启动器里。",
+          previewBody: "Studio 把本地流程控制台和策划工作台合并到一个桌面启动器里。",
           safetyTitle: "安全边界",
-          safetyBody: "Workbench 工具默认只读，只做计划生成。Unreal、Blender、ComfyUI、打包和 Git 副作用仍然需要明确确认。",
+          safetyBody: "策划工具默认只读，只做计划生成。Unreal、Blender、ComfyUI、打包和 Git 副作用仍然需要明确确认。",
           flowTitle: "典型流程",
           flowGenerate: "生成玩法优先的生产计划。",
           flowReview: "审阅 ComfyUI、Blender、Unreal 和 QA 交接结果。",
           flowExecute: "确认副作用后再执行 MCP 生产步骤。",
-          consoleFrameTitle: "Fantasy Agent 生产控制台",
-          workbenchFrameTitle: "Fantasy Agent ChatGPT 工作台"
+          consoleFrameTitle: "Fantasy Agent 流程控制台",
+          workbenchFrameTitle: "Fantasy Agent 策划工作台"
         }
       };
 
@@ -534,7 +534,7 @@
         mcp: { titleKey: "mcpTitle", href: "/mcp" }
       };
 
-      let activePanel = "console";
+      let activePanel = "workbench";
       let uiLocale = initialLocale();
       const origin = window.location.origin;
       const shell = document.querySelector(".shell");

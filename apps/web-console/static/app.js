@@ -1,21 +1,44 @@
+const HANDOFF_KEY = "fantasy-agent-planning-handoff";
+
+const correctionModeKeys = {
+  gameplay: "modeGameplay",
+  visuals: "modeVisuals",
+  scope: "modeScope",
+  import: "modeImport"
+};
+
 const i18n = {
   en: {
-    productLabel: "Production cockpit",
-    promptLabel: "Gameplay idea",
-    promptPlaceholder: "A rooftop parkour demo with wall-runs, vaults, slides, boost pads, and checkpoints",
-    sessionLabel: "Session",
-    engineLabel: "Engine",
-    sourceLocale: "Source language",
-    outputLocales: "Output languages",
-    constraintsLabel: "Constraints",
-    constraintsPlaceholder: "One map, no online multiplayer, game jam scope",
-    generate: "Generate production plan",
-    statusLabel: "Plan status",
-    emptyTitle: "No plan generated",
-    idle: "Idle",
-    running: "Generating",
-    ready: "Ready",
-    error: "Error",
+    productLabel: "Flow console",
+    handoffTitle: "Planning handoff",
+    handoffEmpty: "No planning handoff found.",
+    handoffHint:
+      "Planning Workbench owns idea capture. This console reviews the plan and records correction decisions before side effects.",
+    handoffLoaded: "Latest handoff loaded",
+    handoffReceived: "Planning handoff received",
+    handoffLoadedShort: "Loaded",
+    loadHandoff: "Load latest handoff",
+    handoffSource: "Source",
+    handoffTime: "Saved",
+    handoffPlan: "Plan",
+    openPlanningHint: "Generate or update the plan in Planning Workbench, then return here.",
+    correctionTitle: "Correction queue",
+    modeGameplay: "Gameplay loop",
+    modeVisuals: "Visual direction",
+    modeScope: "Scope control",
+    modeImport: "Technical import",
+    correctionNotes: "Correction notes",
+    correctionPlaceholder:
+      "Example: hazard color is unclear; keep wall-run routes readable before ComfyUI polish.",
+    recordCorrection: "Record correction",
+    correctionRecorded: "Correction recorded",
+    correctionRequiresPlan: "Load a planning handoff before recording correction.",
+    correctionPending: "Pending correction",
+    statusLabel: "Execution readiness",
+    emptyTitle: "No handoff loaded",
+    idle: "Waiting",
+    ready: "Reviewing",
+    error: "Needs attention",
     toggleLog: "Activity",
     currentStage: "Current stage",
     nextStage: "Next stage",
@@ -30,13 +53,13 @@ const i18n = {
     tabQa: "QA",
     tabGdd: "GDD",
     tabDsl: "DSL",
-    emptyHeading: "Generate a vertical slice plan",
-    emptyBody: "Enter a gameplay idea to produce design, asset, review, Unreal, and QA handoffs.",
-    gatesTitle: "Side-effect gates",
-    defaultGateVisuals: "ComfyUI generation",
-    defaultGateMeshes: "Blender generation",
+    emptyHeading: "Load a plan from Planning Workbench",
+    emptyBody: "Use this console to review handoffs, capture corrections, and confirm side-effect gates.",
+    gatesTitle: "Execution gates",
+    defaultGateVisuals: "ComfyUI execution",
+    defaultGateMeshes: "Blender execution",
     defaultGateUnreal: "Unreal execution",
-    waitingForPlan: "Waiting for a plan",
+    waitingForPlan: "Waiting for handoff",
     pillars: "Design pillars",
     loop: "Core loop",
     systems: "Systems",
@@ -81,29 +104,40 @@ const i18n = {
     playability: "Playability checks",
     packaging: "Packaging checks",
     activityTitle: "Activity",
-    generatedPlan: "Generated plan",
     switchedLocale: "Switched locale",
     reviewDecision: "Review decision",
     noItems: "No items",
-    errorPrefix: "Could not generate plan"
+    invalidHandoff: "Invalid planning handoff"
   },
   "zh-CN": {
-    productLabel: "生产驾驶舱",
-    promptLabel: "玩法想法",
-    promptPlaceholder: "一个包含蹬墙跑、翻越、滑铲、加速板和检查点的屋顶跑酷 demo",
-    sessionLabel: "时长",
-    engineLabel: "引擎",
-    sourceLocale: "输入语言",
-    outputLocales: "输出语言",
-    constraintsLabel: "约束",
-    constraintsPlaceholder: "一张地图，不做联网多人，game jam 规模",
-    generate: "生成生产计划",
-    statusLabel: "计划状态",
-    emptyTitle: "尚未生成计划",
-    idle: "空闲",
-    running: "生成中",
-    ready: "就绪",
-    error: "错误",
+    productLabel: "流程控制台",
+    handoffTitle: "策划交接",
+    handoffEmpty: "未找到策划交接。",
+    handoffHint: "策划工作台负责玩法输入和方案生成；这里负责检查交接、记录纠偏，并在副作用执行前确认。",
+    handoffLoaded: "已载入最新交接",
+    handoffReceived: "已收到策划交接",
+    handoffLoadedShort: "已载入",
+    loadHandoff: "载入最新交接",
+    handoffSource: "来源",
+    handoffTime: "保存时间",
+    handoffPlan: "方案",
+    openPlanningHint: "请先在策划工作台生成或更新方案，然后回到这里。",
+    correctionTitle: "纠偏队列",
+    modeGameplay: "玩法循环",
+    modeVisuals: "视觉方向",
+    modeScope: "范围控制",
+    modeImport: "技术导入",
+    correctionNotes: "纠偏记录",
+    correctionPlaceholder: "例：危险色块不够清楚；ComfyUI 润色前先保证蹬墙路线可读。",
+    recordCorrection: "记录纠偏",
+    correctionRecorded: "已记录纠偏",
+    correctionRequiresPlan: "请先载入策划交接，再记录纠偏。",
+    correctionPending: "待处理纠偏",
+    statusLabel: "执行准备度",
+    emptyTitle: "尚未载入交接",
+    idle: "等待中",
+    ready: "审阅中",
+    error: "需要处理",
     toggleLog: "活动",
     currentStage: "当前阶段",
     nextStage: "下一阶段",
@@ -118,13 +152,13 @@ const i18n = {
     tabQa: "QA",
     tabGdd: "GDD",
     tabDsl: "DSL",
-    emptyHeading: "生成垂直切片计划",
-    emptyBody: "输入玩法想法，生成设计、资产、审阅、Unreal 和 QA 交接。",
-    gatesTitle: "副作用确认",
-    defaultGateVisuals: "ComfyUI 生成",
-    defaultGateMeshes: "Blender 生成",
+    emptyHeading: "从策划工作台载入方案",
+    emptyBody: "流程控制台用于检查交接、记录纠偏，并确认 ComfyUI、Blender、Unreal 等执行门禁。",
+    gatesTitle: "执行门禁",
+    defaultGateVisuals: "ComfyUI 执行",
+    defaultGateMeshes: "Blender 执行",
     defaultGateUnreal: "Unreal 执行",
-    waitingForPlan: "等待计划",
+    waitingForPlan: "等待交接",
     pillars: "设计支柱",
     loop: "核心循环",
     systems: "系统",
@@ -169,11 +203,10 @@ const i18n = {
     playability: "可玩性检查",
     packaging: "打包检查",
     activityTitle: "活动",
-    generatedPlan: "已生成计划",
     switchedLocale: "已切换语言",
     reviewDecision: "审阅决定",
     noItems: "无项目",
-    errorPrefix: "无法生成计划"
+    invalidHandoff: "策划交接无效"
   }
 };
 
@@ -186,16 +219,15 @@ function initialLocale() {
 
 let uiLocale = initialLocale();
 let currentPlan = null;
+let currentHandoff = null;
 let currentGddLocale = uiLocale;
+let selectedCorrectionMode = "gameplay";
 let reviewDecisions = {};
+let correctionEntries = [];
 let activityEntries = [];
 
-const form = document.querySelector("#plan-form");
-const minuteInput = document.querySelector("#target_minutes");
-const minuteOutput = document.querySelector("#minute-output");
 const statusChip = document.querySelector("#status-chip");
 const planTitle = document.querySelector("#plan-title");
-const generateButton = document.querySelector("#generate-button");
 const emptyState = document.querySelector(".empty-state");
 const overviewContent = document.querySelector("#overview-content");
 const pipelineOutput = document.querySelector("#pipeline-output");
@@ -212,6 +244,11 @@ const stageStrip = document.querySelector("#stage-strip");
 const activityDrawer = document.querySelector("#activity-drawer");
 const activityLog = document.querySelector("#activity-log");
 const activityCount = document.querySelector("#activity-count");
+const handoffSummary = document.querySelector("#handoff-summary");
+const handoffState = document.querySelector("#handoff-state");
+const loadHandoffButton = document.querySelector("#load-handoff-button");
+const correctionNotes = document.querySelector("#correction-notes");
+const recordCorrectionButton = document.querySelector("#record-correction-button");
 
 function t(key) {
   return i18n[uiLocale]?.[key] || i18n.en[key] || key;
@@ -248,6 +285,10 @@ function statusLabel(status) {
   return status;
 }
 
+function modeLabel(mode) {
+  return t(correctionModeKeys[mode] || "modeGameplay");
+}
+
 function addActivity(label, message) {
   const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   activityEntries = [{ time, label, message }, ...activityEntries].slice(0, 12);
@@ -264,7 +305,7 @@ function renderActivity() {
     .join("");
 }
 
-function applyLocale(locale) {
+function applyLocale(locale, options = {}) {
   uiLocale = locale === "zh-CN" ? "zh-CN" : "en";
   currentGddLocale = uiLocale;
   localStorage.setItem("fantasy-agent-web-console-locale", uiLocale);
@@ -281,14 +322,16 @@ function applyLocale(locale) {
   document.querySelectorAll("[data-gdd-locale]").forEach((button) => {
     button.classList.toggle("active", button.dataset.gddLocale === currentGddLocale);
   });
-  if (!currentPlan) {
-    setStatus(statusChip.dataset.state || "idle");
-    planTitle.textContent = t("emptyTitle");
-    renderDefaultGates();
-  } else {
+  document.querySelectorAll("[data-correction-mode]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.correctionMode === selectedCorrectionMode);
+  });
+  renderHandoffSummary(currentHandoff || readPlanningHandoff());
+  if (currentPlan) {
     renderPlan(currentPlan, { keepDecisions: true });
+  } else {
+    clearPlanView();
   }
-  addActivity(t("switchedLocale"), uiLocale);
+  if (!options.silent) addActivity(t("switchedLocale"), uiLocale);
 }
 
 function setStatus(state) {
@@ -297,6 +340,7 @@ function setStatus(state) {
 }
 
 function preferredTitle(spec) {
+  if (!spec) return t("emptyTitle");
   return uiLocale === "zh-CN" && spec.i18n?.field_translations?.title?.["zh-CN"]
     ? spec.i18n.field_translations.title["zh-CN"]
     : spec.title;
@@ -314,6 +358,115 @@ function localizedTaskTitle(task) {
     : task.title_i18n?.en || task.title;
 }
 
+function handoffTitle(handoff) {
+  return handoff?.title || preferredTitle(handoff?.plan?.gameplay_spec) || t("emptyTitle");
+}
+
+function formatSavedAt(savedAt) {
+  if (!savedAt) return "-";
+  const parsed = new Date(savedAt);
+  if (Number.isNaN(parsed.getTime())) return savedAt;
+  return parsed.toLocaleString(uiLocale, {
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function readPlanningHandoff() {
+  try {
+    const raw = localStorage.getItem(HANDOFF_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.plan?.gameplay_spec) return parsed;
+    if (parsed?.gameplay_spec) {
+      return {
+        schemaVersion: "0.1",
+        source: "legacy",
+        savedAt: null,
+        title: preferredTitle(parsed.gameplay_spec),
+        plan: parsed
+      };
+    }
+  } catch {
+    return { invalid: true };
+  }
+  return { invalid: true };
+}
+
+function savePlanningHandoff(plan, source = "planning-workbench") {
+  const handoff = {
+    schemaVersion: "0.1",
+    source,
+    savedAt: new Date().toISOString(),
+    title: preferredTitle(plan.gameplay_spec),
+    plan
+  };
+  localStorage.setItem(HANDOFF_KEY, JSON.stringify(handoff));
+  return handoff;
+}
+
+function renderHandoffSummary(handoff) {
+  if (handoff?.invalid) {
+    handoffState.textContent = t("error");
+    handoffSummary.innerHTML = `<p>${escapeHtml(t("invalidHandoff"))}</p>`;
+    return;
+  }
+  if (!handoff?.plan) {
+    handoffState.textContent = t("waitingForPlan");
+    handoffSummary.innerHTML = `<p>${escapeHtml(t("handoffEmpty"))}</p><p>${escapeHtml(t("openPlanningHint"))}</p>`;
+    return;
+  }
+  const spec = handoff.plan.gameplay_spec;
+  handoffState.textContent = t("handoffLoadedShort");
+  handoffSummary.innerHTML = [
+    `<strong>${escapeHtml(handoffTitle(handoff))}</strong>`,
+    `<div class="handoff-meta"><span>${escapeHtml(t("handoffSource"))}: ${escapeHtml(handoff.source || "-")}</span><span>${escapeHtml(t("handoffTime"))}: ${escapeHtml(formatSavedAt(handoff.savedAt))}</span><span>${escapeHtml(t("session"))}: ${escapeHtml(spec?.target_session_minutes || "-")} ${escapeHtml(t("minutes"))}</span></div>`
+  ].join("");
+}
+
+function loadPlanningHandoff(options = {}) {
+  const handoff = readPlanningHandoff();
+  renderHandoffSummary(handoff);
+  if (!handoff?.plan) {
+    if (!options.silent) {
+      setStatus("error");
+      addActivity(t("handoffEmpty"), t("openPlanningHint"));
+    }
+    return false;
+  }
+  currentHandoff = handoff;
+  renderPlan(handoff.plan, { keepDecisions: true });
+  if (!options.silent) {
+    addActivity(options.activityLabel || t("handoffLoaded"), handoffTitle(handoff));
+  }
+  return true;
+}
+
+function clearPlanView() {
+  currentPlan = null;
+  planTitle.textContent = t("emptyTitle");
+  setStatus("idle");
+  emptyState.classList.remove("hidden");
+  overviewContent.classList.add("hidden");
+  overviewContent.innerHTML = "";
+  pipelineOutput.innerHTML = "";
+  tasksOutput.innerHTML = "";
+  reviewOutput.innerHTML = "";
+  reviewInspector.innerHTML = "";
+  buildOutput.innerHTML = "";
+  visualsOutput.innerHTML = "";
+  qaOutput.innerHTML = "";
+  gddOutput.textContent = "";
+  dslOutput.textContent = "";
+  document.querySelector("#metric-current-stage").textContent = "-";
+  document.querySelector("#metric-next-stage").textContent = "-";
+  document.querySelector("#metric-review-items").textContent = "0";
+  document.querySelector("#metric-blocked-tasks").textContent = "0";
+  renderDefaultGates();
+}
+
 function renderDefaultGates() {
   gateSummary.innerHTML = [
     gateItem(t("defaultGateVisuals"), t("waitingForPlan")),
@@ -329,9 +482,13 @@ function gateItem(title, detail) {
 function renderGates(plan) {
   const tasks = plan.task_breakdown?.tasks || [];
   const gated = tasks.filter((task) => task.requires_confirmation).slice(0, 6);
-  gateSummary.innerHTML = gated.length
-    ? gated.map((task) => gateItem(localizedTaskTitle(task), task.side_effects?.join(", ") || task.status)).join("")
-    : gateItem(t("confirmation"), t("noItems"));
+  const corrections = correctionEntries
+    .slice(0, 3)
+    .map((entry) => gateItem(`${t("correctionPending")} · ${modeLabel(entry.mode)}`, entry.notes));
+  const gates = gated.length
+    ? gated.map((task) => gateItem(localizedTaskTitle(task), task.side_effects?.join(", ") || task.status))
+    : [gateItem(t("confirmation"), t("noItems"))];
+  gateSummary.innerHTML = [...corrections, ...gates].join("");
 }
 
 function initializeReviewDecisions(plan, keepDecisions) {
@@ -376,6 +533,7 @@ function renderMetrics(plan) {
 
 function renderStageStrip(plan) {
   const stages = plan.production_pipeline?.stages || [];
+  if (!stages.length) return;
   stageStrip.innerHTML = stages
     .map(
       (stage) =>
@@ -395,8 +553,7 @@ function renderOverview(plan) {
       t("loop"),
       numbered(
         spec.core_loop,
-        (step) =>
-          `<strong>${escapeHtml(step.action)}</strong><br><span>${escapeHtml(step.player_decision)}</span>`
+        (step) => `<strong>${escapeHtml(step.action)}</strong><br><span>${escapeHtml(step.player_decision)}</span>`
       ),
       true
     ),
@@ -420,7 +577,7 @@ function renderPipeline(plan) {
   }
   pipelineOutput.innerHTML = [
     `<section class="stage-row wide"><h3>${escapeHtml(pipeline.project_name)}</h3><p>${escapeHtml(pipeline.goal)}</p><div class="stage-meta"><span class="stage-pill">${escapeHtml(t("currentStage"))}: ${escapeHtml(pipeline.current_stage)}</span><span class="stage-pill">${escapeHtml(t("nextStage"))}: ${escapeHtml(pipeline.next_stage)}</span></div></section>`,
-    ...pipeline.stages.map((stage) => {
+    ...(pipeline.stages || []).map((stage) => {
       const meta = [
         `<span class="stage-pill ${escapeHtml(stage.status)}">${escapeHtml(stage.status)}</span>`,
         `<span class="stage-pill">${escapeHtml(t("owner"))}: ${escapeHtml(stage.owner_agent)}</span>`,
@@ -446,7 +603,7 @@ function renderTasks(plan) {
       : breakdown.goal_i18n?.en || breakdown.goal;
   tasksOutput.innerHTML = [
     `<section class="task-row"><div><h3>${escapeHtml(goal)}</h3><p>${escapeHtml(t("recommended"))}: ${escapeHtml(breakdown.recommended_next_task)}</p></div><span class="task-pill">${breakdown.tasks.length}</span></section>`,
-    ...breakdown.tasks.map((task) => {
+    ...(breakdown.tasks || []).map((task) => {
       const detail = [
         `<span class="task-pill ${escapeHtml(task.status)}">${escapeHtml(task.status)}</span>`,
         `<span class="task-pill">${escapeHtml(task.id)}</span>`,
@@ -517,35 +674,41 @@ function renderBuild(plan) {
   const unreal = plan.unreal_plan;
   const blender = plan.blender_plan;
   buildOutput.innerHTML = [
-    block(t("maps"), list(unreal.maps)),
-    block(t("classes"), list(unreal.gameplay_classes)),
-    block(t("folders"), list(unreal.folders)),
-    block(t("automation"), list(unreal.automation_steps)),
-    block(
-      t("blender"),
-      numbered(
-        blender.jobs,
-        (job) => `<strong>${escapeHtml(job.asset_name)}</strong><br><span>${escapeHtml(job.purpose)}</span><br><code>${escapeHtml(job.export_path)}</code>`
-      ),
-      true
-    )
-  ].join("");
+    unreal ? block(t("maps"), list(unreal.maps)) : "",
+    unreal ? block(t("classes"), list(unreal.gameplay_classes)) : "",
+    unreal ? block(t("folders"), list(unreal.folders)) : "",
+    unreal ? block(t("automation"), list(unreal.automation_steps)) : "",
+    blender
+      ? block(
+          t("blender"),
+          numbered(
+            blender.jobs,
+            (job) => `<strong>${escapeHtml(job.asset_name)}</strong><br><span>${escapeHtml(job.purpose)}</span><br><code>${escapeHtml(job.export_path)}</code>`
+          ),
+          true
+        )
+      : ""
+  ]
+    .filter(Boolean)
+    .join("");
 }
 
 function renderVisuals(plan) {
   const comfy = plan.comfyui_plan;
   const review = plan.creative_review;
   visualsOutput.innerHTML = [
-    block(
-      t("jobs"),
-      numbered(
-        comfy.jobs,
-        (job) =>
-          `<strong>${escapeHtml(job.job_id)}</strong><br><span>${escapeHtml(job.gameplay_constraint)}</span><br><code>${escapeHtml(job.workflow_template)}</code>`
-      ),
-      true
-    ),
-    block(t("rules"), list(comfy.usage_rules), true),
+    comfy
+      ? block(
+          t("jobs"),
+          numbered(
+            comfy.jobs,
+            (job) =>
+              `<strong>${escapeHtml(job.job_id)}</strong><br><span>${escapeHtml(job.gameplay_constraint)}</span><br><code>${escapeHtml(job.workflow_template)}</code>`
+          ),
+          true
+        )
+      : "",
+    comfy ? block(t("rules"), list(comfy.usage_rules), true) : "",
     review ? block(t("creativeReview"), list(review.required_user_decisions), true) : ""
   ]
     .filter(Boolean)
@@ -554,66 +717,46 @@ function renderVisuals(plan) {
 
 function renderQa(plan) {
   const qa = plan.qa_plan;
-  qaOutput.innerHTML = [
-    block(t("smoke"), list(qa.smoke_tests)),
-    block(t("playability"), list(qa.playability_checks)),
-    block(t("failure"), list(qa.failure_checks)),
-    block(t("packaging"), list(qa.packaging_checks))
-  ].join("");
+  qaOutput.innerHTML = qa
+    ? [
+        block(t("smoke"), list(qa.smoke_tests)),
+        block(t("playability"), list(qa.playability_checks)),
+        block(t("failure"), list(qa.failure_checks)),
+        block(t("packaging"), list(qa.packaging_checks))
+      ].join("")
+    : "";
 }
 
 function renderGdd(plan) {
-  const docs = plan.gdd.markdown_by_locale || {};
-  const selected = docs[currentGddLocale] || docs.en || plan.gdd.markdown || "";
+  const docs = plan.gdd?.markdown_by_locale || {};
+  const selected = docs[currentGddLocale] || docs.en || plan.gdd?.markdown || "";
   gddOutput.textContent = selected;
 }
 
-function readPayload() {
-  const formData = new FormData(form);
-  const outputLocales = formData.getAll("output_locales");
-  const constraints = String(formData.get("constraints") || "")
-    .split(/\r?\n|,/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return {
-    prompt: String(formData.get("prompt") || "").trim(),
-    target_minutes: Number(formData.get("target_minutes") || 10),
-    engine_version: String(formData.get("engine_version") || "UE5").trim() || "UE5",
-    source_locale: String(formData.get("source_locale") || "en"),
-    output_locales: outputLocales.length ? outputLocales : ["en", "zh-CN"],
-    platforms: ["Windows"],
-    jam_scope: true,
-    constraints
-  };
-}
-
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  setStatus("running");
-  generateButton.disabled = true;
-  try {
-    const response = await fetch("/api/plan", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(readPayload())
-    });
-    if (!response.ok) {
-      throw new Error(await response.text());
-    }
-    const plan = await response.json();
-    renderPlan(plan);
-    addActivity(t("generatedPlan"), preferredTitle(plan.gameplay_spec));
-  } catch (error) {
+function recordCorrection() {
+  const notes = correctionNotes.value.trim();
+  if (!currentPlan) {
     setStatus("error");
-    planTitle.textContent = `${t("errorPrefix")}: ${error.message}`;
-  } finally {
-    generateButton.disabled = false;
+    addActivity(t("correctionRequiresPlan"), t("openPlanningHint"));
+    return;
   }
-});
-
-minuteInput.addEventListener("input", () => {
-  minuteOutput.textContent = minuteInput.value;
-});
+  if (!notes) {
+    correctionNotes.focus();
+    return;
+  }
+  correctionEntries = [
+    {
+      mode: selectedCorrectionMode,
+      notes,
+      createdAt: new Date().toISOString()
+    },
+    ...correctionEntries
+  ].slice(0, 12);
+  correctionNotes.value = "";
+  setStatus("ready");
+  renderGates(currentPlan);
+  addActivity(t("correctionRecorded"), `${modeLabel(selectedCorrectionMode)}: ${notes}`);
+}
 
 document.querySelectorAll(".locale-option").forEach((button) => {
   button.addEventListener("click", () => applyLocale(button.dataset.locale));
@@ -637,10 +780,38 @@ document.querySelectorAll("[data-gdd-locale]").forEach((button) => {
   });
 });
 
+document.querySelectorAll("[data-correction-mode]").forEach((button) => {
+  button.addEventListener("click", () => {
+    selectedCorrectionMode = button.dataset.correctionMode || "gameplay";
+    document.querySelectorAll("[data-correction-mode]").forEach((item) => item.classList.remove("active"));
+    button.classList.add("active");
+  });
+});
+
+loadHandoffButton.addEventListener("click", () => loadPlanningHandoff());
+recordCorrectionButton.addEventListener("click", recordCorrection);
+
 document.querySelector("#log-toggle").addEventListener("click", () => {
   activityDrawer.classList.toggle("is-open");
 });
 
-renderDefaultGates();
+window.addEventListener("storage", (event) => {
+  if (event.key === HANDOFF_KEY) {
+    loadPlanningHandoff({ activityLabel: t("handoffReceived") });
+  }
+});
+
+window.addEventListener("message", (event) => {
+  if (event.origin !== window.location.origin) return;
+  const data = event.data;
+  if (data?.method === "fantasy-agent/planning-handoff" && data.plan?.gameplay_spec) {
+    currentHandoff = savePlanningHandoff(data.plan, data.source || "planning-workbench");
+    renderHandoffSummary(currentHandoff);
+    renderPlan(data.plan, { keepDecisions: true });
+    addActivity(t("handoffReceived"), handoffTitle(currentHandoff));
+  }
+});
+
 renderActivity();
-applyLocale(uiLocale);
+applyLocale(uiLocale, { silent: true });
+loadPlanningHandoff({ silent: true });

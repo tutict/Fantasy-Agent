@@ -16,7 +16,7 @@ def _load_web_console_app():
     return module
 
 
-def test_web_console_static_ui_exposes_production_cockpit_sections():
+def test_web_console_static_ui_exposes_flow_console_sections():
     module = _load_web_console_app()
     html = module.STATIC_DIR.joinpath("index.html").read_text(encoding="utf-8")
     js = module.STATIC_DIR.joinpath("app.js").read_text(encoding="utf-8")
@@ -26,9 +26,16 @@ def test_web_console_static_ui_exposes_production_cockpit_sections():
     assert 'id="gate-summary"' in html
     assert 'id="review-panel"' in html
     assert 'id="activity-log"' in html
-    assert "Production cockpit" in html
+    assert 'id="load-handoff-button"' in html
+    assert 'id="correction-notes"' in html
+    assert 'id="plan-form"' not in html
+    assert "Flow console" in html
+    assert "流程控制台" in js
+    assert "策划交接" in js
+    assert "纠偏队列" in js
+    assert "fantasy-agent-planning-handoff" in js
     assert "创意审阅" in js
-    assert "副作用确认" in js
+    assert "执行门禁" in js
 
 
 def test_web_console_plan_payload_feeds_review_and_pipeline_ui():

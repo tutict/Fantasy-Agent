@@ -13,7 +13,7 @@ APP_DIR = Path(__file__).resolve().parents[1]
 STATIC_DIR = APP_DIR / "static"
 
 app = FastAPI(
-    title="Fantasy Agent Web Console",
+    title="Fantasy Agent Flow Console",
     version="0.1.0",
     description="Local UI for prompt-to-playable multi-agent production planning.",
 )

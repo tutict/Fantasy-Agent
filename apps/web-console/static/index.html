@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fantasy Agent Console</title>
+    <title>Fantasy Agent Flow Console</title>
     <link rel="stylesheet" href="/assets/styles.css" />
   </head>
   <body>
@@ -12,7 +12,7 @@
         <aside class="input-pane">
           <header class="brand-block">
             <div>
-              <p class="eyebrow" data-i18n="productLabel">Production cockpit</p>
+              <p class="eyebrow" data-i18n="productLabel">Flow console</p>
               <h1>Fantasy Agent</h1>
             </div>
             <div class="locale-switch" aria-label="Interface language">
@@ -21,57 +21,51 @@
             </div>
           </header>
 
-          <form id="plan-form" class="prompt-form">
-            <label class="field-label" for="prompt" data-i18n="promptLabel">Gameplay idea</label>
-            <textarea
-              id="prompt"
-              name="prompt"
-              rows="7"
-              data-i18n-placeholder="promptPlaceholder"
-              placeholder="A rooftop parkour demo with wall-runs, vaults, slides, boost pads, and checkpoints"
-              required
-            >A rooftop parkour demo with wall-runs, vaults, slides, boost pads, and checkpoints</textarea>
-
-            <div class="form-grid">
-              <label class="field-label compact" for="target_minutes">
-                <span data-i18n="sessionLabel">Session</span>
-                <output id="minute-output">10</output>
-              </label>
-              <input id="target_minutes" name="target_minutes" type="range" min="5" max="15" value="10" />
-
-              <label class="field-label compact" for="engine_version" data-i18n="engineLabel">Engine</label>
-              <input id="engine_version" name="engine_version" type="text" value="UE5" />
+          <section class="handoff-panel" aria-label="Planning handoff">
+            <div class="pane-section-header">
+              <h2 data-i18n="handoffTitle">Planning handoff</h2>
+              <span class="handoff-chip" id="handoff-state" data-i18n="waitingForPlan">Waiting for handoff</span>
             </div>
+            <div id="handoff-summary" class="handoff-summary"></div>
+            <div class="handoff-actions">
+              <button class="primary-action" type="button" id="load-handoff-button" data-i18n="loadHandoff">
+                Load latest handoff
+              </button>
+            </div>
+            <p class="handoff-note" data-i18n="handoffHint">
+              Planning Workbench owns idea capture. This console reviews the plan and records correction decisions before side effects.
+            </p>
+          </section>
 
-            <fieldset class="fieldset">
-              <legend data-i18n="sourceLocale">Source language</legend>
-              <div class="segmented">
-                <label><input type="radio" name="source_locale" value="en" checked /> EN</label>
-                <label><input type="radio" name="source_locale" value="zh-CN" /> 中文</label>
-              </div>
-            </fieldset>
-
-            <fieldset class="fieldset">
-              <legend data-i18n="outputLocales">Output languages</legend>
-              <div class="checks">
-                <label><input type="checkbox" name="output_locales" value="en" checked /> English</label>
-                <label><input type="checkbox" name="output_locales" value="zh-CN" checked /> 简体中文</label>
-              </div>
-            </fieldset>
-
-            <label class="field-label" for="constraints" data-i18n="constraintsLabel">Constraints</label>
+          <section class="correction-panel" aria-label="Correction queue">
+            <div class="pane-section-header">
+              <h2 data-i18n="correctionTitle">Correction queue</h2>
+            </div>
+            <div class="mode-grid" role="group" aria-label="Correction mode">
+              <button class="mode-option active" type="button" data-correction-mode="gameplay" data-i18n="modeGameplay">
+                Gameplay loop
+              </button>
+              <button class="mode-option" type="button" data-correction-mode="visuals" data-i18n="modeVisuals">
+                Visual direction
+              </button>
+              <button class="mode-option" type="button" data-correction-mode="scope" data-i18n="modeScope">
+                Scope control
+              </button>
+              <button class="mode-option" type="button" data-correction-mode="import" data-i18n="modeImport">
+                Technical import
+              </button>
+            </div>
+            <label class="field-label" for="correction-notes" data-i18n="correctionNotes">Correction notes</label>
             <textarea
-              id="constraints"
-              name="constraints"
-              rows="4"
-              data-i18n-placeholder="constraintsPlaceholder"
-              placeholder="One map, no online multiplayer, game jam scope"
+              id="correction-notes"
+              rows="5"
+              data-i18n-placeholder="correctionPlaceholder"
+              placeholder="Example: hazard color is unclear; keep wall-run routes readable before ComfyUI polish."
             ></textarea>
-
-            <button class="primary-action" type="submit" id="generate-button" data-i18n="generate">
-              Generate production plan
+            <button class="secondary-action" type="button" id="record-correction-button" data-i18n="recordCorrection">
+              Record correction
             </button>
-          </form>
+          </section>
 
           <section class="operator-strip" aria-label="Side-effect gates">
             <h2 data-i18n="gatesTitle">Side-effect gates</h2>
@@ -83,7 +77,7 @@
           <header class="status-bar">
             <div>
               <p class="eyebrow" data-i18n="statusLabel">Plan status</p>
-              <h2 id="plan-title" data-i18n="emptyTitle">No plan generated</h2>
+              <h2 id="plan-title" data-i18n="emptyTitle">No handoff loaded</h2>
             </div>
             <div class="status-actions">
               <div class="status-chip" id="status-chip" data-state="idle" data-i18n="idle">Idle</div>
@@ -158,9 +152,9 @@
                   <div class="signal-dot dot-b"></div>
                   <div class="signal-dot dot-c"></div>
                 </div>
-                <h3 data-i18n="emptyHeading">Generate a vertical slice plan</h3>
+                <h3 data-i18n="emptyHeading">Load a plan from Planning Workbench</h3>
                 <p data-i18n="emptyBody">
-                  Enter a gameplay idea to produce design, asset, review, Unreal, and QA handoffs.
+                  Use this console to review handoffs, capture corrections, and confirm side-effect gates.
                 </p>
               </div>
               <div class="overview-grid hidden" id="overview-content"></div>

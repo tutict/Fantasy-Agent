@@ -1,8 +1,8 @@
-# Fantasy Agent ChatGPT Workbench
+# Fantasy Agent Planning Workbench
 
-Fantasy Agent ChatGPT Workbench exposes the production pipeline as a ChatGPT Apps-compatible MCP server and widget.
+Fantasy Agent Planning Workbench exposes the production pipeline as a ChatGPT Apps-compatible MCP server and widget.
 
-Fantasy Agent ChatGPT 工作台把游戏生产管线暴露为 ChatGPT Apps 可连接的 MCP 服务和交互式 widget。
+Fantasy Agent 策划工作台把游戏生产管线暴露为 ChatGPT Apps 可连接的 MCP 服务和交互式 widget。
 
 ## App Shape
 
@@ -58,7 +58,7 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8787/health
 
 This app is a production workbench, not a one-click game generator. The first version generates structured plans and handoffs only. Any future tool that writes files, launches Blender, starts Unreal, calls ComfyUI, packages builds, or pushes GitHub changes must declare side effects and require explicit user approval.
 
-这个入口是生产工作台，不是一键生成游戏工具。第一版只生成结构化计划和交接物；未来任何写文件、启动 Blender、启动 Unreal、调用 ComfyUI、打包或推送 GitHub 的工具，都必须声明副作用并取得明确确认。
+这个入口是策划工作台，不是一键生成游戏工具。第一版只生成结构化计划和交接物；未来任何写文件、启动 Blender、启动 Unreal、调用 ComfyUI、打包或推送 GitHub 的工具，都必须声明副作用并取得明确确认。
 
 ## Docs Basis
 

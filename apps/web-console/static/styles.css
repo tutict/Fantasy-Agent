@@ -123,11 +123,11 @@ h3 {
 }
 
 .locale-switch,
-.segmented,
-.checks,
 .tabs,
 .gdd-toolbar,
-.review-actions {
+.review-actions,
+.handoff-actions,
+.mode-grid {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -137,7 +137,8 @@ h3 {
 .tab,
 .mini-action,
 .ghost-action,
-.review-action {
+.review-action,
+.mode-option {
   min-height: 32px;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -150,7 +151,8 @@ h3 {
 
 .locale-option.active,
 .tab.active,
-.mini-action.active {
+.mini-action.active,
+.mode-option.active {
   border-color: rgba(30, 111, 99, 0.38);
   background: rgba(30, 111, 99, 0.12);
   color: var(--accent);
@@ -160,28 +162,86 @@ h3 {
 .review-action:hover,
 .locale-option:hover,
 .tab:hover,
-.mini-action:hover {
+.mini-action:hover,
+.mode-option:hover {
   border-color: rgba(30, 111, 99, 0.45);
 }
 
-.prompt-form {
+.handoff-panel,
+.correction-panel {
   display: flex;
   flex-direction: column;
   gap: 11px;
   padding-top: 14px;
 }
 
+.pane-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.pane-section-header h2 {
+  font-size: 15px;
+}
+
+.handoff-chip {
+  flex: 0 0 auto;
+  border: 1px solid rgba(30, 111, 99, 0.28);
+  border-radius: 999px;
+  background: rgba(30, 111, 99, 0.08);
+  color: var(--accent);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.handoff-summary {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 11px;
+}
+
+.handoff-summary p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.handoff-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.handoff-meta span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--muted);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.handoff-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .field-label {
   color: var(--ink);
   font-size: 13px;
   font-weight: 850;
-}
-
-.field-label.compact {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
 }
 
 textarea,
@@ -211,51 +271,19 @@ input[type="text"]:focus {
   box-shadow: 0 0 0 3px rgba(30, 111, 99, 0.14);
 }
 
-input[type="range"] {
+.primary-action,
+.secondary-action {
   width: 100%;
-  accent-color: var(--accent);
-}
-
-.form-grid {
-  display: grid;
-  gap: 8px;
-}
-
-.fieldset {
-  margin: 0;
-  padding: 11px;
-  border: 1px solid var(--line);
+  min-height: 44px;
   border-radius: 8px;
-}
-
-.fieldset legend {
-  padding: 0 6px;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 850;
-  text-transform: uppercase;
-}
-
-.segmented label,
-.checks label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 30px;
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 700;
+  font-weight: 900;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
 }
 
 .primary-action {
-  width: 100%;
-  min-height: 44px;
   border: 0;
-  border-radius: 8px;
   background: var(--ink);
   color: #fff;
-  font-weight: 900;
-  transition: transform 160ms ease, background 160ms ease;
 }
 
 .primary-action:hover {
@@ -267,6 +295,18 @@ input[type="range"] {
   cursor: wait;
   background: var(--muted);
   transform: none;
+}
+
+.secondary-action {
+  border: 1px solid rgba(30, 111, 99, 0.36);
+  background: rgba(30, 111, 99, 0.09);
+  color: var(--accent);
+}
+
+.secondary-action:hover {
+  border-color: rgba(30, 111, 99, 0.52);
+  background: rgba(30, 111, 99, 0.14);
+  transform: translateY(-1px);
 }
 
 .operator-strip {
@@ -340,7 +380,7 @@ input[type="range"] {
 
 .stage-strip {
   display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
   gap: 1px;
   border-bottom: 1px solid var(--line);
   background: var(--line);
@@ -463,6 +503,12 @@ input[type="range"] {
   max-width: 560px;
   margin: 0;
   color: var(--muted);
+}
+
+.empty-state h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 18px;
 }
 
 .signal-map {

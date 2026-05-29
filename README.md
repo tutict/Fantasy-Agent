@@ -103,10 +103,10 @@ It includes:
 
 它包含：
 
-- Production Console: gameplay input, pipeline dashboard, tasks, review panel, build plans, visuals, QA, GDD, and DSL.
-- 生产控制台：玩法输入、流水线驾驶舱、任务、审阅面板、构建计划、视觉、QA、GDD 和 DSL。
-- ChatGPT Workbench preview: ChatGPT Apps-compatible planning tools.
-- ChatGPT Workbench 预览：兼容 ChatGPT Apps 的规划工具。
+- Planning Workbench: ChatGPT Apps-compatible planning tools for gameplay intake, plan generation, and structured handoff.
+- 策划工作台：兼容 ChatGPT Apps 的规划工具，负责玩法输入、方案生成和结构化交接。
+- Flow Console: execution-readiness dashboard for planning handoff review, correction notes, side-effect gates, tasks, build plans, visuals, QA, GDD, and DSL.
+- 流程控制台：面向执行准备度的控制台，负责策划交接审阅、纠偏记录、副作用门禁、任务、构建计划、视觉、QA、GDD 和 DSL。
 - MCP endpoint panel: local endpoint information for future ChatGPT and tool integrations.
 - MCP 端点面板：用于后续 ChatGPT 与工具集成的本地端点信息。
 
@@ -200,7 +200,7 @@ ChatGPT Apps 工具默认只读。除非后续实现并确认副作用关卡，�
 Fantasy-Agent/
 |-- apps/
 |   |-- studio/                 # Local desktop-style shell
-|   |-- web-console/            # Production cockpit UI
+|   |-- web-console/            # Flow Console UI
 |   |-- chatgpt-workbench/      # ChatGPT Apps MCP endpoint and widget
 |   |-- director-agent/         # Prompt-to-playable orchestration
 |   |-- gameplay-agent/         # Gameplay DSL generation
@@ -263,11 +263,15 @@ Important models:
 - `DirectorBuildPlan`: combined orchestration output.
 - `DirectorBuildPlan`：完整编排输出。
 
-## ChatGPT Workbench / ChatGPT 工作台
+## Planning Workbench / 策划工作台
 
-Fantasy Agent includes a ChatGPT Apps-compatible workbench under `apps/chatgpt-workbench`.
+Fantasy Agent includes a ChatGPT Apps-compatible planning workbench under `apps/chatgpt-workbench`.
 
-Fantasy Agent 在 `apps/chatgpt-workbench` 下提供兼容 ChatGPT Apps 的工作台。
+Fantasy Agent 在 `apps/chatgpt-workbench` 下提供兼容 ChatGPT Apps 的策划工作台。
+
+When a full plan is generated, the Planning Workbench writes a local planning handoff that the Flow Console can load for review and correction before any ComfyUI, Blender, or Unreal side effects are run.
+
+生成完整方案后，策划工作台会写入本地策划交接，流程控制台可以载入它，在执行 ComfyUI、Blender 或 Unreal 副作用前进行审阅和纠偏。
 
 Available read-only tools include:
 
@@ -338,8 +342,8 @@ Fantasy Agent 目前处于早期生产平台阶段：
 
 - Planning contracts and deterministic workflows are implemented.
 - 规划合约与确定性工作流已经实现。
-- Studio, Web Console, and ChatGPT Workbench are available.
-- Studio、Web Console 和 ChatGPT Workbench 已可使用。
+- Studio, Flow Console, and Planning Workbench are available.
+- Studio、流程控制台和策划工作台已可使用。
 - Blender, ComfyUI, Unreal, and QA handoffs are structured.
 - Blender、ComfyUI、Unreal 和 QA 交接已经结构化。
 - Creative Review gates are integrated into the Director pipeline.

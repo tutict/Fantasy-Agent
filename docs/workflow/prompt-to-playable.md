@@ -17,9 +17,10 @@ Output:
 
 Entry points:
 
-- Local Web Console
-- ChatGPT Workbench MCP tool call
+- Planning Workbench MCP tool call
 - Director Agent API
+
+The local Flow Console is downstream of this stage. It loads the Planning Workbench handoff, records correction notes, and checks execution gates instead of duplicating gameplay intake.
 
 ## Stage 2: Gameplay DSL
 

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Fantasy Agent Workbench</title>
+    <title>Fantasy Agent Planning Workbench</title>
     <link rel="icon" href="data:," />
     <style>
       :root {
@@ -506,7 +506,7 @@
       <section class="output-pane">
         <header class="status-row">
           <div>
-            <p class="eyebrow" data-i18n="statusLabel">Workbench status</p>
+            <p class="eyebrow" data-i18n="statusLabel">Planning status</p>
             <h2 id="title" data-i18n="emptyTitle">No production plan loaded</h2>
           </div>
           <span id="status" class="chip" data-i18n="idle">Idle</span>
@@ -522,7 +522,7 @@
           <div class="node"><span>07</span><strong>QA</strong></div>
         </div>
 
-        <nav class="tabs" aria-label="Workbench panels">
+        <nav class="tabs" aria-label="Planning panels">
           <button type="button" class="active" data-panel-button="overview" data-i18n="tabOverview">
             Overview
           </button>
@@ -568,7 +568,7 @@
           pipelineTool: "Pipeline",
           tasksTool: "Tasks",
           reviewTool: "Review",
-          statusLabel: "Workbench status",
+          statusLabel: "Planning status",
           emptyTitle: "No production plan loaded",
           focusedTitle: "Focused handoff loaded",
           emptyState: "Generate or call a Fantasy Agent tool to inspect a playable slice plan.",
@@ -616,7 +616,7 @@
           minutes: "minutes"
         },
         "zh-CN": {
-          eyebrow: "ChatGPT 生产工作台",
+          eyebrow: "策划工作台",
           promptLabel: "玩法想法",
           promptPlaceholder: "一名潜行信使逃离闹鬼火车站",
           minutesLabel: "分钟",
@@ -629,7 +629,7 @@
           pipelineTool: "流水线",
           tasksTool: "任务",
           reviewTool: "审阅",
-          statusLabel: "工作台状态",
+          statusLabel: "策划状态",
           emptyTitle: "尚未载入生产计划",
           focusedTitle: "已载入单项交接",
           emptyState: "生成或调用 Fantasy Agent 工具来检查可玩切片计划。",
@@ -679,6 +679,7 @@
       };
 
       const bridge = window.openai;
+      const PLANNING_HANDOFF_KEY = "fantasy-agent-planning-handoff";
       function initialLocale() {
         const params = new URLSearchParams(window.location.search);
         const requested =
@@ -776,6 +777,33 @@
         nodes.status.textContent = t(status);
       }
 
+      function planDisplayTitle(plan) {
+        const spec = plan?.gameplay_spec;
+        if (!spec) return "";
+        const zhTitle = spec.i18n?.field_translations?.title?.["zh-CN"];
+        return state.locale === "zh-CN" && zhTitle ? zhTitle : spec.title;
+      }
+
+      function savePlanningHandoff(plan) {
+        if (!plan?.gameplay_spec) return;
+        const handoff = {
+          schemaVersion: "0.1",
+          savedAt: new Date().toISOString(),
+          source: "planning-workbench",
+          title: planDisplayTitle(plan),
+          plan
+        };
+        try {
+          localStorage.setItem(PLANNING_HANDOFF_KEY, JSON.stringify(handoff));
+          window.parent?.postMessage(
+            { method: "fantasy-agent/planning-handoff", source: "planning-workbench", plan },
+            window.location.origin
+          );
+        } catch {
+          // ChatGPT embeds can restrict storage; the local workbench still renders the plan.
+        }
+      }
+
       function requestPayload() {
         const constraints = nodes.constraints.value
           .split(/\r?\n|,/)
@@ -829,8 +857,9 @@
         const structured = result.structuredContent || result.toolOutput || result;
         const meta = result._meta || result.toolResponseMetadata || bridge?.toolResponseMetadata || {};
 
-        if (structured.plan || meta.plan) {
-          state.plan = structured.plan || meta.plan;
+        const fullPlan = structured.plan || meta.plan;
+        if (fullPlan) {
+          state.plan = fullPlan;
           state.taskBreakdown = state.plan.task_breakdown || structured.task_breakdown || meta.taskBreakdown || state.taskBreakdown;
           state.productionPipeline = state.plan.production_pipeline || structured.production_pipeline || meta.productionPipeline || state.productionPipeline;
           state.gdd = state.plan.gdd;
@@ -839,6 +868,7 @@
           state.comfyuiPlan = state.plan.comfyui_plan;
           state.creativeReview = state.plan.creative_review;
           state.qaPlan = state.plan.qa_plan;
+          savePlanningHandoff(state.plan);
         }
         if (structured.production_pipeline || meta.productionPipeline) {
           state.productionPipeline = structured.production_pipeline || meta.productionPipeline;

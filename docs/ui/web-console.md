@@ -1,8 +1,8 @@
-# Web Console
+# Flow Console
 
-The Fantasy Agent Web Console is a local browser interface for the Director workflow.
+The Fantasy Agent Flow Console is a local execution-readiness interface for the Director workflow.
 
-It is an operator surface, not a landing page. The first screen lets the user enter a gameplay idea, set the target session length, choose source/output languages, add constraints, and generate a structured production plan.
+It is an operator surface, not a landing page. Gameplay intake belongs in the Planning Workbench. The Flow Console loads that planning handoff, then helps the user review execution readiness, capture correction notes, and inspect side-effect gates before ComfyUI, Blender, or Unreal work runs.
 
 ## Run
 
@@ -20,11 +20,13 @@ http://127.0.0.1:7860
 
 ## Capabilities
 
-- Calls `/api/plan`, which reuses `fantasy_agent.workflows.run_director_workflow`.
+- Loads the latest Planning Workbench handoff from local browser storage.
+- Keeps `/api/plan` available for API clients that need the Director workflow directly.
 - Displays Overview, Gameplay DSL, GDD, Build, Visuals, and QA tabs.
 - Supports English and Simplified Chinese UI labels.
 - Displays bilingual GDD output from `GDDDocument.markdown_by_locale`.
 - Shows Unreal, Blender, ComfyUI, and QA handoff plans.
+- Records correction notes for gameplay, visual direction, scope, and technical import review.
 
 ## Boundaries
 
@@ -34,12 +36,14 @@ http://127.0.0.1:7860
 
 ## 中文说明
 
-Fantasy Agent Web Console 是 Director workflow 的本地浏览器界面。
+Fantasy Agent 流程控制台是 Director workflow 的本地浏览器界面。
 
-它不是营销首页，而是操作台。第一屏可以输入玩法想法、设置目标时长、选择输入/输出语言、添加约束，并生成结构化生产计划。
+它不是营销首页，而是操作台。玩法输入属于策划工作台；流程控制台负责载入策划交接，检查执行准备度，记录纠偏，并在 ComfyUI、Blender 或 Unreal 执行前确认副作用门禁。
 
 界面展示：
 
+- 策划交接
+- 纠偏队列
 - 概览
 - Gameplay DSL
 - GDD

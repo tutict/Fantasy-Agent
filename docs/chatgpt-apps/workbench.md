@@ -1,15 +1,15 @@
-# ChatGPT Apps Workbench
+# Planning Workbench
 
 Fantasy Agent can run inside ChatGPT as an interactive game production workbench. The ChatGPT surface is intentionally a planning and orchestration layer: it turns a prompt into inspectable gameplay, GDD, Unreal, Blender, ComfyUI, and QA handoffs without executing external production tools.
 
-Fantasy Agent 可以作为 ChatGPT 内的交互式游戏生产工作台运行。ChatGPT 入口只承担计划与编排：把 prompt 转成可检查的玩法、GDD、Unreal、Blender、ComfyUI 与 QA 交接结果，不直接执行外部生产工具。
+Fantasy Agent 可以作为 ChatGPT 内的交互式策划工作台运行。ChatGPT 入口只承担计划与编排：把 prompt 转成可检查的玩法、GDD、Unreal、Blender、ComfyUI 与 QA 交接结果，不直接执行外部生产工具。
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     ChatGPT["ChatGPT conversation"]
-    Widget["Workbench widget"]
+    Widget["Planning widget"]
     MCP["/mcp FastAPI JSON-RPC endpoint"]
     Tools["Fantasy Agent tool handlers"]
     Contracts["Pydantic contracts"]
@@ -73,4 +73,3 @@ http://127.0.0.1:8787
 ```
 
 For ChatGPT Developer Mode, expose the same server through HTTPS and connect the public URL ending in `/mcp`.
-

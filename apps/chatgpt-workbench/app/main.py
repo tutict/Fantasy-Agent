@@ -23,7 +23,7 @@ STATIC_DIR = APP_DIR / "static"
 WIDGET_PATH = STATIC_DIR / "workbench.html"
 
 app = FastAPI(
-    title="Fantasy Agent ChatGPT Workbench",
+    title="Fantasy Agent Planning Workbench",
     version=SERVER_VERSION,
     description="MCP endpoint and widget resource for ChatGPT Apps.",
 )
@@ -142,4 +142,3 @@ async def mcp(request: Request) -> Response:
 async def debug_tool(tool_name: str, request: Request) -> dict[str, Any]:
     arguments = await request.json()
     return call_workbench_tool(tool_name, arguments)
-

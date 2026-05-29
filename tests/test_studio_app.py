@@ -31,6 +31,7 @@ def test_studio_serves_combined_desktop_panel():
 def test_studio_shell_includes_bilingual_ui_controls():
     module = _load_studio_app()
     html = module.STATIC_DIR.joinpath("index.html").read_text(encoding="utf-8")
+    workbench_html = module.WORKBENCH_PATH.read_text(encoding="utf-8")
 
     assert 'data-locale="en"' in html
     assert 'data-locale="zh-CN"' in html
@@ -38,9 +39,14 @@ def test_studio_shell_includes_bilingual_ui_controls():
     assert 'id="sidebar-toggle"' in html
     assert 'data-target="console"' in html
     assert 'data-target="workbench"' in html
-    assert "Production Console" in html
-    assert "生产控制台" in html
+    assert html.index('data-target="workbench"') < html.index('data-target="console"')
+    assert 'let activePanel = "workbench"' in html
+    assert "Flow Console" in html
+    assert "流程控制台" in html
+    assert "Planning Workbench" in html
+    assert "策划工作台" in html
     assert "fantasy-agent-studio-locale" in html
+    assert "fantasy-agent-planning-handoff" in workbench_html
 
 
 def test_studio_routes_plan_and_workbench_tools_through_one_server():

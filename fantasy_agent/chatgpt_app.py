@@ -171,8 +171,8 @@ def widget_resource() -> dict[str, Any]:
     return {
         "uri": WIDGET_URI,
         "name": "fantasy_agent_workbench",
-        "title": "Fantasy Agent Workbench",
-        "description": "Interactive ChatGPT workbench for gameplay-first game production plans.",
+        "title": "Fantasy Agent Planning Workbench",
+        "description": "Interactive planning workbench for gameplay-first game production plans.",
         "mimeType": WIDGET_MIME_TYPE,
         "_meta": widget_resource_meta(),
     }
@@ -182,7 +182,7 @@ def widget_resource_meta() -> dict[str, Any]:
     csp = {"connectDomains": [], "resourceDomains": []}
     return {
         "openai/widgetDescription": (
-            "Fantasy Agent workbench for generating and inspecting gameplay-first production plans."
+            "Fantasy Agent planning workbench for generating and inspecting gameplay-first production plans."
         ),
         "openai/widgetPrefersBorder": True,
         "openai/widgetCSP": {
