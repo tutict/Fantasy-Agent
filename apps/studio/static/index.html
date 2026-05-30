@@ -27,6 +27,9 @@
         --accent: #00ffcc;
         --accent-soft: rgba(0, 255, 204, 0.12);
         --danger: #ff6b6b;
+        --danger-soft: rgba(255, 107, 107, 0.12);
+        --warning: #e8a356;
+        --warning-soft: rgba(232, 163, 86, 0.12);
         --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
         --sidebar-width: 282px;
       }
@@ -52,6 +55,9 @@
         --accent: #007966;
         --accent-soft: rgba(0, 121, 102, 0.12);
         --danger: #b4232c;
+        --danger-soft: rgba(180, 35, 44, 0.11);
+        --warning: #8a520f;
+        --warning-soft: rgba(138, 82, 15, 0.12);
         --shadow: 0 18px 44px rgba(19, 35, 29, 0.12);
       }
 
@@ -457,6 +463,156 @@
         font: 12px/1.5 "Cascadia Code", Consolas, monospace;
       }
 
+      .mcp-status-shell {
+        display: grid;
+        gap: 14px;
+      }
+
+      .mcp-status-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .mcp-status-header h3 {
+        margin: 0 0 6px;
+      }
+
+      .mcp-status-header p,
+      .mcp-status-summary {
+        margin: 0;
+        color: var(--muted-strong);
+      }
+
+      .mcp-refresh {
+        min-width: 132px;
+        min-height: 44px;
+        border: 1px solid var(--line-strong);
+        border-radius: 12px;
+        background: var(--accent-soft);
+        color: var(--text);
+        font-weight: 850;
+        transition:
+          border-color 160ms ease,
+          background 160ms ease,
+          transform 160ms ease;
+      }
+
+      .mcp-refresh:hover {
+        border-color: var(--accent);
+        background: rgba(0, 255, 204, 0.18);
+        transform: translateY(-1px);
+      }
+
+      :root[data-theme="light"] .mcp-refresh:hover {
+        background: rgba(0, 121, 102, 0.16);
+      }
+
+      .mcp-refresh:disabled {
+        cursor: progress;
+        opacity: 0.62;
+        transform: none;
+      }
+
+      .mcp-status-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .mcp-status-card {
+        display: grid;
+        gap: 11px;
+        min-height: 178px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface-muted);
+        padding: 15px;
+      }
+
+      .mcp-status-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .mcp-status-top h4 {
+        margin: 0 0 3px;
+        color: var(--text);
+        font-size: 15px;
+      }
+
+      .mcp-status-top p,
+      .mcp-status-card p,
+      .mcp-target span {
+        margin: 0;
+        color: var(--muted-strong);
+      }
+
+      .mcp-state {
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px 9px;
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .mcp-status-card[data-state="ready"] {
+        border-color: var(--line-strong);
+        background: var(--accent-soft);
+      }
+
+      .mcp-status-card[data-state="ready"] .mcp-state {
+        border-color: var(--line-strong);
+        color: var(--accent);
+      }
+
+      .mcp-status-card[data-state="degraded"] {
+        border-color: rgba(232, 163, 86, 0.34);
+        background: var(--warning-soft);
+      }
+
+      .mcp-status-card[data-state="degraded"] .mcp-state {
+        border-color: rgba(232, 163, 86, 0.42);
+        color: var(--warning);
+      }
+
+      .mcp-status-card[data-state="unavailable"] {
+        border-color: rgba(255, 107, 107, 0.34);
+        background: var(--danger-soft);
+      }
+
+      .mcp-status-card[data-state="unavailable"] .mcp-state {
+        border-color: rgba(255, 107, 107, 0.44);
+        color: var(--danger);
+      }
+
+      .mcp-target {
+        display: grid;
+        gap: 5px;
+      }
+
+      .mcp-target code {
+        display: block;
+        overflow-wrap: anywhere;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--code-bg);
+        color: var(--accent);
+        padding: 9px 10px;
+        font: 12px/1.45 "Cascadia Code", Consolas, monospace;
+      }
+
+      .mcp-status-error {
+        border-color: rgba(255, 107, 107, 0.34);
+        background: var(--danger-soft);
+      }
+
       @media (prefers-reduced-motion: reduce) {
         *,
         *::before,
@@ -525,6 +681,14 @@
         }
 
         .mcp-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .mcp-status-header {
+          display: grid;
+        }
+
+        .mcp-status-grid {
           grid-template-columns: 1fr;
         }
       }
@@ -598,11 +762,20 @@
                 <p data-i18n="mcpUrlBody">Use this endpoint when connecting Fantasy Agent through an HTTPS tunnel.</p>
                 <code id="mcp-url">http://127.0.0.1/mcp</code>
               </article>
-              <article class="card">
-                <h3 data-i18n="previewTitle">Local preview</h3>
-                <p data-i18n="previewBody">The Studio combines the local flow console and planning workbench in one desktop launcher.</p>
+              <article class="card wide">
+                <div class="mcp-status-shell">
+                  <div class="mcp-status-header">
+                    <div>
+                      <h3 data-i18n="mcpStatusTitle">Required app connectivity</h3>
+                      <p data-i18n="mcpStatusBody">Check whether local MCP services and required production apps are reachable before running the pipeline.</p>
+                    </div>
+                    <button class="mcp-refresh" id="mcp-refresh" type="button" data-i18n="mcpRefresh">Run check</button>
+                  </div>
+                  <p class="mcp-status-summary" id="mcp-status-summary" data-i18n="mcpStatusIdle">Not checked yet.</p>
+                  <div class="mcp-status-grid" id="mcp-status-grid" aria-live="polite"></div>
+                </div>
               </article>
-              <article class="card">
+              <article class="card wide">
                 <h3 data-i18n="safetyTitle">Safety boundary</h3>
                 <p data-i18n="safetyBody">Planning tools are read-only by default. Unreal, Godot, Blender, ComfyUI, packaging, and Git side effects still require explicit confirmation.</p>
               </article>
@@ -640,6 +813,41 @@
           flowGenerate: "Generate a gameplay-first production plan.",
           flowReview: "Review ComfyUI, Blender, Godot, Unreal, and QA handoffs.",
           flowExecute: "Execute MCP production steps only after confirming side effects.",
+          mcpStatusTitle: "Required app connectivity",
+          mcpStatusBody:
+            "Check whether local MCP services and required production apps are reachable before running the pipeline.",
+          mcpRefresh: "Run check",
+          mcpChecking: "Checking local services...",
+          mcpStatusIdle: "Not checked yet.",
+          mcpStatusSummary: "Required apps ready",
+          mcpSelectedEngine: "Selected engine",
+          mcpLastChecked: "Last checked",
+          mcpReady: "Ready",
+          mcpDegraded: "Needs attention",
+          mcpUnavailable: "Unavailable",
+          mcpRequired: "Required",
+          mcpOptional: "Optional",
+          mcpTarget: "Target",
+          mcpNextAction: "Next action",
+          mcpCheckFailed: "Status check failed. Confirm the Studio backend is running.",
+          mcpDetailStudioReady: "JSON-RPC endpoint is mounted with {tool_count} planning tools.",
+          mcpNextStudioReady: "Use an HTTPS tunnel when connecting this endpoint to ChatGPT Apps.",
+          mcpDetailComfyReady: "Connected to ComfyUI ({version}).",
+          mcpNextComfyReady: "Run capability probe before submitting visual reference jobs.",
+          mcpDetailComfyMissing: "No local ComfyUI endpoint responded.",
+          mcpNextComfyMissing: "Start ComfyUI and confirm it is listening on 127.0.0.1:8188.",
+          mcpDetailExecutableReady: "Executable found. MCP execution still requires explicit side-effect confirmation.",
+          mcpDetailExecutableMissing: "No executable was found on PATH, in configured environment variables, or common install folders.",
+          mcpNextBlenderReady: "Generate Blender Python first, then execute only after confirming side effects.",
+          mcpNextBlenderMissing: "Install Blender or set BLENDER_EXECUTABLE to blender.exe.",
+          mcpNextUnrealReady: "Use Unreal MCP validation before editor commandlets or PIE/package tests.",
+          mcpNextUnrealMissing: "Install UE5 or set UNREAL_EDITOR to UnrealEditor-Cmd.exe.",
+          mcpNextGodotReady: "Use Godot MCP validation for Godot-selected quick-play projects.",
+          mcpNextGodotMissing: "Install Godot 4 or set GODOT_EXECUTABLE to the Godot executable.",
+          mcpDetailGithubReady: "git and gh are available for future GitHub MCP handoffs.",
+          mcpNextGithubReady: "Run gh auth status before creating PRs or issue automation.",
+          mcpDetailGithubOptional: "GitHub MCP is optional; gh is not required for local prototype generation.",
+          mcpNextGithubOptional: "Install GitHub CLI only if you want PR, issue, or repository automation.",
           consoleFrameTitle: "Fantasy Agent Flow Console",
           workbenchFrameTitle: "Fantasy Agent Planning Workbench",
           collapseSidebar: "Collapse sidebar",
@@ -664,6 +872,40 @@
           flowGenerate: "生成玩法优先的生产计划。",
           flowReview: "审阅 ComfyUI、Blender、Godot、Unreal 和 QA 交接结果。",
           flowExecute: "确认副作用后再执行 MCP 生产步骤。",
+          mcpStatusTitle: "所需应用连接检测",
+          mcpStatusBody: "在运行流水线前，检查本地 MCP 服务和所需生产应用是否可连接。",
+          mcpRefresh: "运行检测",
+          mcpChecking: "正在检测本地服务...",
+          mcpStatusIdle: "尚未检测。",
+          mcpStatusSummary: "必需应用已就绪",
+          mcpSelectedEngine: "当前引擎",
+          mcpLastChecked: "上次检测",
+          mcpReady: "可用",
+          mcpDegraded: "需处理",
+          mcpUnavailable: "不可用",
+          mcpRequired: "必需",
+          mcpOptional: "可选",
+          mcpTarget: "目标",
+          mcpNextAction: "下一步",
+          mcpCheckFailed: "状态检测失败，请确认 Studio 后端正在运行。",
+          mcpDetailStudioReady: "JSON-RPC 端点已挂载，包含 {tool_count} 个策划工具。",
+          mcpNextStudioReady: "连接到 ChatGPT Apps 时，请通过 HTTPS 隧道暴露此端点。",
+          mcpDetailComfyReady: "已连接 ComfyUI（{version}）。",
+          mcpNextComfyReady: "提交视觉参考任务前，先运行能力探测。",
+          mcpDetailComfyMissing: "没有本地 ComfyUI 端点响应。",
+          mcpNextComfyMissing: "启动 ComfyUI，并确认它监听在 127.0.0.1:8188。",
+          mcpDetailExecutableReady: "已找到可执行文件。MCP 执行仍需明确确认副作用。",
+          mcpDetailExecutableMissing: "未在 PATH、已配置环境变量或常见安装目录中找到可执行文件。",
+          mcpNextBlenderReady: "先生成 Blender Python，确认副作用后再执行。",
+          mcpNextBlenderMissing: "安装 Blender，或将 BLENDER_EXECUTABLE 指向 blender.exe。",
+          mcpNextUnrealReady: "执行编辑器命令或 PIE/打包测试前，先运行 Unreal MCP 校验。",
+          mcpNextUnrealMissing: "安装 UE5，或将 UNREAL_EDITOR 指向 UnrealEditor-Cmd.exe。",
+          mcpNextGodotReady: "针对已选择 Godot 的快速可玩项目，运行 Godot MCP 校验。",
+          mcpNextGodotMissing: "安装 Godot 4，或将 GODOT_EXECUTABLE 指向 Godot 可执行文件。",
+          mcpDetailGithubReady: "git 和 gh 可用于后续 GitHub MCP 交接。",
+          mcpNextGithubReady: "创建 PR 或 issue 自动化前，先运行 gh auth status。",
+          mcpDetailGithubOptional: "GitHub MCP 是可选项；本地原型生成不依赖 gh。",
+          mcpNextGithubOptional: "只有需要 PR、issue 或仓库自动化时才需要安装 GitHub CLI。",
           consoleFrameTitle: "Fantasy Agent 流程控制台",
           workbenchFrameTitle: "Fantasy Agent 策划工作台",
           collapseSidebar: "收起侧边栏",
@@ -688,8 +930,12 @@
       const sidebarToggle = document.querySelector("#sidebar-toggle");
       const sidebarToggleIcon = document.querySelector("#sidebar-toggle-icon");
       const sidebarResizer = document.querySelector("#sidebar-resizer");
+      const mcpRefresh = document.querySelector("#mcp-refresh");
+      const mcpStatusGrid = document.querySelector("#mcp-status-grid");
+      const mcpStatusSummary = document.querySelector("#mcp-status-summary");
       const sidebarMinWidth = 206;
       const sidebarMaxWidth = 390;
+      let mcpStatusPayload = null;
       document.querySelector("#server-url").textContent = origin;
       document.querySelector("#mcp-url").textContent = `${origin}/mcp`;
 
@@ -709,6 +955,118 @@
 
       function t(key) {
         return i18n[uiLocale]?.[key] || i18n.en[key] || key;
+      }
+
+      function interpolate(template, params = {}) {
+        return String(template ?? "").replace(/\{([a-zA-Z0-9_]+)\}/g, (match, key) => {
+          return params[key] ?? match;
+        });
+      }
+
+      function localizedServiceText(service, field) {
+        const key = service?.[`${field}_key`];
+        const args = service?.[`${field}_args`] || {};
+        if (key) {
+          return interpolate(t(key), args);
+        }
+        return service?.[field] || "";
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "").replace(/[&<>"']/g, (char) => {
+          return {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#039;"
+          }[char];
+        });
+      }
+
+      function mcpStateLabel(status) {
+        if (status === "ready") return t("mcpReady");
+        if (status === "degraded") return t("mcpDegraded");
+        return t("mcpUnavailable");
+      }
+
+      function selectedEngineVersion() {
+        try {
+          const frameValue = document
+            .querySelector('[data-frame="workbench"]')
+            ?.contentWindow?.document?.querySelector("#engine_version")
+            ?.value?.trim();
+          if (frameValue) return frameValue;
+        } catch {
+          // The workbench iframe may not be ready yet; fall back to the last saved handoff.
+        }
+        try {
+          const handoff = JSON.parse(localStorage.getItem("fantasy-agent-planning-handoff") || "{}");
+          const stages = handoff?.plan?.production_pipeline?.stages || [];
+          if (stages.some((stage) => String(stage.id || "").includes("godot"))) {
+            return handoff?.plan?.godot_plan?.engine_version || "Godot 4";
+          }
+          if (stages.some((stage) => String(stage.id || "").includes("unreal"))) {
+            return handoff?.plan?.unreal_plan?.engine_version || "UE5";
+          }
+        } catch {
+          // Storage can be unavailable in embedded runtimes.
+        }
+        return "UE5";
+      }
+
+      function renderMcpStatus(payload) {
+        mcpStatusPayload = payload;
+        const services = Array.isArray(payload?.services) ? payload.services : [];
+        const checkedAt = new Date().toLocaleTimeString(uiLocale);
+        const engine = payload?.engine || selectedEngineVersion();
+        mcpStatusSummary.textContent = `${t("mcpSelectedEngine")}: ${engine} · ${t("mcpStatusSummary")}: ${payload.required_ready ?? 0}/${payload.required_total ?? 0} · ${t("mcpLastChecked")}: ${checkedAt}`;
+        if (!services.length) {
+          mcpStatusGrid.innerHTML = `<article class="mcp-status-card mcp-status-error" data-state="unavailable"><p>${escapeHtml(t("mcpCheckFailed"))}</p></article>`;
+          return;
+        }
+        mcpStatusGrid.innerHTML = services
+          .map((service) => {
+            const state = service.status === "ready" || service.status === "degraded" ? service.status : "unavailable";
+            const requiredLabel = service.required ? t("mcpRequired") : t("mcpOptional");
+            const detail = localizedServiceText(service, "detail");
+            const nextAction = localizedServiceText(service, "next_action");
+            return `
+              <article class="mcp-status-card" data-state="${state}">
+                <div class="mcp-status-top">
+                  <div>
+                    <h4>${escapeHtml(service.label)}</h4>
+                    <p>${escapeHtml(requiredLabel)}</p>
+                  </div>
+                  <span class="mcp-state">${escapeHtml(mcpStateLabel(state))}</span>
+                </div>
+                <div class="mcp-target">
+                  <span>${escapeHtml(t("mcpTarget"))}</span>
+                  <code>${escapeHtml(service.target || "-")}</code>
+                </div>
+                <p>${escapeHtml(detail)}</p>
+                <p><strong>${escapeHtml(t("mcpNextAction"))}:</strong> ${escapeHtml(nextAction)}</p>
+              </article>
+            `;
+          })
+          .join("");
+      }
+
+      async function loadMcpStatus() {
+        mcpRefresh.disabled = true;
+        mcpStatusSummary.textContent = t("mcpChecking");
+        try {
+          const query = new URLSearchParams({ engine: selectedEngineVersion() });
+          const response = await fetch(`/api/mcp/status?${query.toString()}`, { headers: { Accept: "application/json" } });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          renderMcpStatus(await response.json());
+        } catch (error) {
+          mcpStatusPayload = null;
+          mcpStatusSummary.textContent = t("mcpCheckFailed");
+          mcpStatusGrid.innerHTML = `<article class="mcp-status-card mcp-status-error" data-state="unavailable"><p>${escapeHtml(String(error))}</p></article>`;
+        } finally {
+          mcpRefresh.disabled = false;
+        }
       }
 
       function localizedHref(href, params = {}) {
@@ -742,6 +1100,9 @@
           updateFrames();
         }
         activate(activePanel);
+        if (mcpStatusPayload) {
+          renderMcpStatus(mcpStatusPayload);
+        }
       }
 
       function applyTheme(theme, options = {}) {
@@ -766,6 +1127,9 @@
           node.classList.toggle("active", node.dataset.panel === target);
         });
         document.querySelector("#panel-title").textContent = t(panel.titleKey);
+        if (target === "mcp" && !mcpStatusPayload) {
+          loadMcpStatus();
+        }
       }
 
       function setSidebarWidth(width) {
@@ -799,6 +1163,8 @@
       document.querySelectorAll("[data-theme-choice]").forEach((button) => {
         button.addEventListener("click", () => applyTheme(button.dataset.themeChoice, { reloadFrames: true }));
       });
+
+      mcpRefresh.addEventListener("click", loadMcpStatus);
 
       sidebarToggle.addEventListener("click", () => {
         setSidebarCollapsed(!shell.classList.contains("sidebar-collapsed"));

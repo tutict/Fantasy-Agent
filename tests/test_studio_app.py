@@ -21,11 +21,30 @@ def test_studio_serves_combined_desktop_panel():
     paths = {route.path for route in module.app.routes}
 
     assert module.health()["agent"] == "fantasy-agent-studio"
-    assert {"/", "/web-console", "/workbench", "/health", "/api/plan", "/mcp"} <= paths
+    assert {"/", "/web-console", "/workbench", "/health", "/api/plan", "/api/mcp/status", "/mcp"} <= paths
     assert module.STATIC_DIR.joinpath("index.html").exists()
     assert module.WEB_CONSOLE_STATIC_DIR.joinpath("index.html").exists()
     assert module.WORKBENCH_PATH.exists()
     assert module.mcp_info()["endpoint"] == "/mcp"
+    status = module.mcp_status()
+    assert status["engine_kind"] == "unreal"
+    assert status["required_total"] >= 4
+    assert 0 <= status["required_ready"] <= status["required_total"]
+    services = {service["id"]: service for service in status["services"]}
+    service_ids = set(services)
+    assert {"studio-mcp", "comfyui", "blender", "unreal", "godot", "github"} <= service_ids
+    for service in services.values():
+        assert service["detail_key"].startswith("mcp")
+        assert service["next_action_key"].startswith("mcp")
+        assert isinstance(service["detail_args"], dict)
+        assert isinstance(service["next_action_args"], dict)
+    assert services["unreal"]["required"] is True
+    assert services["godot"]["required"] is False
+    godot_status = module.mcp_status(engine="Godot 4")
+    godot_services = {service["id"]: service for service in godot_status["services"]}
+    assert godot_status["engine_kind"] == "godot"
+    assert godot_services["unreal"]["required"] is False
+    assert godot_services["godot"]["required"] is True
 
 
 def test_studio_shell_includes_bilingual_ui_controls():
@@ -39,6 +58,12 @@ def test_studio_shell_includes_bilingual_ui_controls():
     assert 'id="sidebar-toggle"' in html
     assert 'data-target="console"' in html
     assert 'data-target="workbench"' in html
+    assert 'id="mcp-refresh"' in html
+    assert 'id="mcp-status-grid"' in html
+    assert "/api/mcp/status" in html
+    assert "mcpStatusTitle" in html
+    assert "mcpDetailExecutableMissing" in html
+    assert "未在 PATH、已配置环境变量或常见安装目录中找到可执行文件。" in html
     assert html.index('data-target="workbench"') < html.index('data-target="console"')
     assert 'let activePanel = "workbench"' in html
     assert "Flow Console" in html
