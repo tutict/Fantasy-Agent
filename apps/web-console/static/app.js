@@ -108,7 +108,9 @@ const i18n = {
     switchedLocale: "Switched locale",
     reviewDecision: "Review decision",
     noItems: "No items",
-    invalidHandoff: "Invalid planning handoff"
+    invalidHandoff: "Invalid planning handoff",
+    themeDark: "Dark",
+    themeLight: "Light"
   },
   "zh-CN": {
     productLabel: "流程控制台",
@@ -208,9 +210,13 @@ const i18n = {
     switchedLocale: "已切换语言",
     reviewDecision: "审阅决定",
     noItems: "无项目",
-    invalidHandoff: "策划交接无效"
+    invalidHandoff: "策划交接无效",
+    themeDark: "深色",
+    themeLight: "浅色"
   }
 };
+
+const THEME_KEY = "fantasy-agent-theme";
 
 function initialLocale() {
   const params = new URLSearchParams(window.location.search);
@@ -219,7 +225,15 @@ function initialLocale() {
   return navigator.language?.startsWith("zh") ? "zh-CN" : "en";
 }
 
+function initialTheme() {
+  const params = new URLSearchParams(window.location.search);
+  const requested = params.get("theme") || localStorage.getItem(THEME_KEY);
+  if (requested === "light" || requested === "dark") return requested;
+  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
 let uiLocale = initialLocale();
+let uiTheme = initialTheme();
 let currentPlan = null;
 let currentHandoff = null;
 let currentGddLocale = uiLocale;
@@ -334,6 +348,15 @@ function applyLocale(locale, options = {}) {
     clearPlanView();
   }
   if (!options.silent) addActivity(t("switchedLocale"), uiLocale);
+}
+
+function applyTheme(theme) {
+  uiTheme = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = uiTheme;
+  localStorage.setItem(THEME_KEY, uiTheme);
+  document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.themeChoice === uiTheme);
+  });
 }
 
 function setStatus(state) {
@@ -772,6 +795,10 @@ document.querySelectorAll(".locale-option").forEach((button) => {
   button.addEventListener("click", () => applyLocale(button.dataset.locale));
 });
 
+document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+  button.addEventListener("click", () => applyTheme(button.dataset.themeChoice));
+});
+
 document.querySelectorAll(".tab").forEach((button) => {
   button.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((tab) => tab.classList.remove("active"));
@@ -823,5 +850,6 @@ window.addEventListener("message", (event) => {
 });
 
 renderActivity();
+applyTheme(uiTheme);
 applyLocale(uiLocale, { silent: true });
 loadPlanningHandoff({ silent: true });

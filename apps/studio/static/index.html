@@ -9,8 +9,16 @@
       :root {
         color-scheme: dark;
         --bg: #070a08;
+        --grid-line-a: rgba(255, 255, 255, 0.018);
+        --grid-line-b: rgba(255, 255, 255, 0.014);
+        --chrome: rgba(6, 8, 7, 0.94);
+        --chrome-soft: rgba(8, 11, 9, 0.88);
         --surface: rgba(255, 255, 255, 0.04);
         --surface-strong: rgba(255, 255, 255, 0.07);
+        --surface-muted: rgba(255, 255, 255, 0.032);
+        --field: #0b0f0d;
+        --code-bg: rgba(0, 0, 0, 0.24);
+        --icon-bg: rgba(0, 0, 0, 0.18);
         --line: rgba(255, 255, 255, 0.08);
         --line-strong: rgba(0, 255, 204, 0.34);
         --text: #ffffff;
@@ -21,6 +29,30 @@
         --danger: #ff6b6b;
         --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
         --sidebar-width: 282px;
+      }
+
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --bg: #f4f7f3;
+        --grid-line-a: rgba(7, 10, 8, 0.045);
+        --grid-line-b: rgba(7, 10, 8, 0.035);
+        --chrome: rgba(247, 250, 246, 0.96);
+        --chrome-soft: rgba(249, 252, 248, 0.9);
+        --surface: rgba(255, 255, 255, 0.78);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --surface-muted: rgba(7, 10, 8, 0.035);
+        --field: #ffffff;
+        --code-bg: rgba(7, 10, 8, 0.045);
+        --icon-bg: rgba(3, 95, 82, 0.08);
+        --line: rgba(7, 10, 8, 0.12);
+        --line-strong: rgba(0, 118, 101, 0.36);
+        --text: #0b1713;
+        --muted: #5d695f;
+        --muted-strong: #26332e;
+        --accent: #007966;
+        --accent-soft: rgba(0, 121, 102, 0.12);
+        --danger: #b4232c;
+        --shadow: 0 18px 44px rgba(19, 35, 29, 0.12);
       }
 
       * {
@@ -38,8 +70,8 @@
         height: 100vh;
         overflow: hidden;
         background:
-          linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px),
+          linear-gradient(var(--grid-line-a) 1px, transparent 1px),
+          linear-gradient(90deg, var(--grid-line-b) 1px, transparent 1px),
           var(--bg);
         background-size: 28px 28px;
         color: var(--text);
@@ -97,7 +129,7 @@
         min-height: 0;
         overflow: hidden;
         border-right: 1px solid var(--line);
-        background: rgba(6, 8, 7, 0.94);
+        background: var(--chrome);
         padding: 18px 14px;
       }
 
@@ -176,7 +208,18 @@
         padding: 4px;
       }
 
-      .locale-option {
+      .theme-switch {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        padding: 4px;
+      }
+
+      .locale-option,
+      .theme-option {
         min-height: 36px;
         border: 0;
         border-radius: 8px;
@@ -188,7 +231,8 @@
           color 160ms ease;
       }
 
-      .locale-option.active {
+      .locale-option.active,
+      .theme-option.active {
         background: var(--accent-soft);
         color: var(--accent);
       }
@@ -206,7 +250,7 @@
         min-height: 46px;
         border: 1px solid var(--line);
         border-radius: 12px;
-        background: rgba(255, 255, 255, 0.032);
+        background: var(--surface-muted);
         color: var(--muted-strong);
         text-align: left;
         padding: 0 11px;
@@ -235,7 +279,7 @@
         height: 34px;
         border: 1px solid var(--line);
         border-radius: 10px;
-        background: rgba(0, 0, 0, 0.18);
+        background: var(--icon-bg);
         color: var(--accent);
         font-size: 10px;
         font-weight: 900;
@@ -268,7 +312,7 @@
         overflow: hidden;
         border: 1px solid var(--line);
         border-radius: 9px;
-        background: rgba(0, 0, 0, 0.24);
+        background: var(--code-bg);
         color: var(--accent);
         padding: 8px;
         font: 12px/1.45 "Cascadia Code", Consolas, monospace;
@@ -313,6 +357,7 @@
 
       .shell.sidebar-collapsed .brand,
       .shell.sidebar-collapsed .locale-switch,
+      .shell.sidebar-collapsed .theme-switch,
       .shell.sidebar-collapsed .status,
       .shell.sidebar-collapsed .nav-label {
         display: none;
@@ -338,7 +383,7 @@
         justify-content: space-between;
         gap: 12px;
         border-bottom: 1px solid var(--line);
-        background: rgba(8, 11, 9, 0.88);
+        background: var(--chrome-soft);
         padding: 0 18px 0 20px;
       }
 
@@ -406,7 +451,7 @@
         overflow-wrap: anywhere;
         border: 1px solid var(--line);
         border-radius: 10px;
-        background: rgba(0, 0, 0, 0.28);
+        background: var(--code-bg);
         color: var(--accent);
         padding: 12px;
         font: 12px/1.5 "Cascadia Code", Consolas, monospace;
@@ -456,6 +501,10 @@
           display: grid;
         }
 
+        .shell.sidebar-collapsed .theme-switch {
+          display: grid;
+        }
+
         .shell.sidebar-collapsed .status {
           display: none;
         }
@@ -498,6 +547,11 @@
         <div class="locale-switch" aria-label="Interface language">
           <button class="locale-option" type="button" data-locale="en">EN</button>
           <button class="locale-option" type="button" data-locale="zh-CN">中文</button>
+        </div>
+
+        <div class="theme-switch" aria-label="Theme">
+          <button class="theme-option" type="button" data-theme-choice="dark" data-i18n="themeDark">Dark</button>
+          <button class="theme-option" type="button" data-theme-choice="light" data-i18n="themeLight">Light</button>
         </div>
 
         <nav class="nav" aria-label="Studio panels">
@@ -589,7 +643,9 @@
           consoleFrameTitle: "Fantasy Agent Flow Console",
           workbenchFrameTitle: "Fantasy Agent Planning Workbench",
           collapseSidebar: "Collapse sidebar",
-          expandSidebar: "Expand sidebar"
+          expandSidebar: "Expand sidebar",
+          themeDark: "Dark",
+          themeLight: "Light"
         },
         "zh-CN": {
           documentTitle: "Fantasy Agent 工作室",
@@ -611,10 +667,13 @@
           consoleFrameTitle: "Fantasy Agent 流程控制台",
           workbenchFrameTitle: "Fantasy Agent 策划工作台",
           collapseSidebar: "收起侧边栏",
-          expandSidebar: "展开侧边栏"
+          expandSidebar: "展开侧边栏",
+          themeDark: "深色",
+          themeLight: "浅色"
         }
       };
 
+      const THEME_KEY = "fantasy-agent-theme";
       const panels = {
         workbench: { titleKey: "workbenchTitle", href: "/workbench" },
         console: { titleKey: "consoleTitle", href: "/web-console" },
@@ -623,6 +682,7 @@
 
       let activePanel = "workbench";
       let uiLocale = initialLocale();
+      let uiTheme = initialTheme();
       const origin = window.location.origin;
       const shell = document.querySelector(".shell");
       const sidebarToggle = document.querySelector("#sidebar-toggle");
@@ -640,13 +700,20 @@
         return navigator.language?.startsWith("zh") ? "zh-CN" : "en";
       }
 
+      function initialTheme() {
+        const params = new URLSearchParams(window.location.search);
+        const requested = params.get("theme") || localStorage.getItem(THEME_KEY);
+        if (requested === "light" || requested === "dark") return requested;
+        return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      }
+
       function t(key) {
         return i18n[uiLocale]?.[key] || i18n.en[key] || key;
       }
 
       function localizedHref(href, params = {}) {
         if (href === "/mcp") return href;
-        const search = new URLSearchParams({ locale: uiLocale, ...params });
+        const search = new URLSearchParams({ locale: uiLocale, theme: uiTheme, ...params });
         return `${href}?${search.toString()}`;
       }
 
@@ -675,6 +742,18 @@
           updateFrames();
         }
         activate(activePanel);
+      }
+
+      function applyTheme(theme, options = {}) {
+        uiTheme = theme === "light" ? "light" : "dark";
+        document.documentElement.dataset.theme = uiTheme;
+        localStorage.setItem(THEME_KEY, uiTheme);
+        document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.themeChoice === uiTheme);
+        });
+        if (options.reloadFrames) {
+          updateFrames();
+        }
       }
 
       function activate(target) {
@@ -717,6 +796,10 @@
         button.addEventListener("click", () => applyLocale(button.dataset.locale, { reloadFrames: true }));
       });
 
+      document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+        button.addEventListener("click", () => applyTheme(button.dataset.themeChoice, { reloadFrames: true }));
+      });
+
       sidebarToggle.addEventListener("click", () => {
         setSidebarCollapsed(!shell.classList.contains("sidebar-collapsed"));
       });
@@ -752,6 +835,7 @@
         setSidebarWidth(storedSidebarWidth);
       }
       setSidebarCollapsed(localStorage.getItem("fantasy-agent-studio-sidebar-collapsed") === "1");
+      applyTheme(uiTheme);
       updateFrames();
       applyLocale(uiLocale);
     </script>

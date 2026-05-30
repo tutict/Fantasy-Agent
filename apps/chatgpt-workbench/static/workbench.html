@@ -10,9 +10,20 @@
         color-scheme: dark;
         --bg: #070a08;
         --bg-elevated: #0c100d;
+        --grid-line-a: rgba(255, 255, 255, 0.018);
+        --grid-line-b: rgba(255, 255, 255, 0.014);
+        --chrome: rgba(6, 8, 7, 0.92);
+        --chrome-strong: rgba(6, 8, 7, 0.94);
+        --panel-bg: rgba(9, 12, 10, 0.84);
         --surface: rgba(255, 255, 255, 0.04);
         --surface-strong: rgba(255, 255, 255, 0.07);
+        --surface-muted: rgba(255, 255, 255, 0.032);
         --field: #0b0f0d;
+        --code-bg: rgba(0, 0, 0, 0.26);
+        --pill-bg: rgba(0, 0, 0, 0.2);
+        --chat-input-bg: rgba(255, 255, 255, 0.055);
+        --ai-bubble: rgba(255, 255, 255, 0.045);
+        --user-bubble: rgba(0, 255, 204, 0.1);
         --line: rgba(255, 255, 255, 0.08);
         --line-strong: rgba(0, 255, 204, 0.35);
         --text: #ffffff;
@@ -28,6 +39,37 @@
         font-family:
           Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
           sans-serif;
+      }
+
+      :root[data-theme="light"] {
+        color-scheme: light;
+        --bg: #f4f7f3;
+        --bg-elevated: #ffffff;
+        --grid-line-a: rgba(7, 10, 8, 0.045);
+        --grid-line-b: rgba(7, 10, 8, 0.035);
+        --chrome: rgba(247, 250, 246, 0.94);
+        --chrome-strong: rgba(255, 255, 255, 0.96);
+        --panel-bg: rgba(250, 253, 249, 0.86);
+        --surface: rgba(255, 255, 255, 0.78);
+        --surface-strong: rgba(255, 255, 255, 0.92);
+        --surface-muted: rgba(7, 10, 8, 0.035);
+        --field: #ffffff;
+        --code-bg: rgba(7, 10, 8, 0.045);
+        --pill-bg: rgba(3, 95, 82, 0.07);
+        --chat-input-bg: rgba(255, 255, 255, 0.9);
+        --ai-bubble: rgba(255, 255, 255, 0.86);
+        --user-bubble: rgba(0, 121, 102, 0.12);
+        --line: rgba(7, 10, 8, 0.12);
+        --line-strong: rgba(0, 118, 101, 0.36);
+        --text: #0b1713;
+        --muted: #5d695f;
+        --muted-strong: #26332e;
+        --accent: #007966;
+        --accent-deep: #005c4d;
+        --accent-soft: rgba(0, 121, 102, 0.12);
+        --blue: #126fb5;
+        --danger: #b4232c;
+        --shadow: 0 18px 44px rgba(19, 35, 29, 0.12);
       }
 
       * {
@@ -87,8 +129,8 @@
         min-height: 680px;
         overflow: hidden;
         background:
-          linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px),
+          linear-gradient(var(--grid-line-a) 1px, transparent 1px),
+          linear-gradient(90deg, var(--grid-line-b) 1px, transparent 1px),
           var(--bg);
         background-size: 28px 28px;
       }
@@ -118,7 +160,7 @@
         gap: 18px;
         overflow: hidden;
         border-right: 1px solid var(--line);
-        background: rgba(6, 8, 7, 0.92);
+        background: var(--chrome);
         padding: 18px 14px;
       }
 
@@ -196,7 +238,18 @@
         padding: 4px;
       }
 
-      .language-switch button {
+      .theme-switch {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        padding: 4px;
+      }
+
+      .language-switch button,
+      .theme-switch button {
         min-height: 44px;
         border: 0;
         border-radius: 8px;
@@ -208,7 +261,8 @@
           color 160ms ease;
       }
 
-      .language-switch button.active {
+      .language-switch button.active,
+      .theme-switch button.active {
         background: var(--accent-soft);
         color: var(--accent);
       }
@@ -226,7 +280,7 @@
         min-height: 46px;
         border: 1px solid var(--line);
         border-radius: 11px;
-        background: rgba(255, 255, 255, 0.032);
+        background: var(--surface-muted);
         color: var(--muted-strong);
         padding: 0 11px;
         transition:
@@ -292,7 +346,7 @@
         overflow: hidden;
         border: 1px solid var(--line);
         border-radius: 8px;
-        background: rgba(0, 0, 0, 0.22);
+        background: var(--code-bg);
         color: var(--accent);
         padding: 8px;
         font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -303,6 +357,7 @@
 
       .workbench-shell.sidebar-collapsed .brand-copy,
       .workbench-shell.sidebar-collapsed .language-switch,
+      .workbench-shell.sidebar-collapsed .theme-switch,
       .workbench-shell.sidebar-collapsed .nav-label,
       .workbench-shell.sidebar-collapsed .service-card {
         display: none;
@@ -330,7 +385,7 @@
         grid-template-rows: auto minmax(0, 1fr) auto auto;
         overflow: hidden;
         border-right: 1px solid var(--line);
-        background: rgba(9, 12, 10, 0.84);
+        background: var(--panel-bg);
       }
 
       .chat-header {
@@ -447,14 +502,14 @@
       }
 
       .ai .bubble {
-        background: rgba(255, 255, 255, 0.045);
+        background: var(--ai-bubble);
         color: var(--muted-strong);
       }
 
       .user .bubble {
         max-width: min(680px, 78vw);
         border-color: rgba(0, 255, 204, 0.22);
-        background: rgba(0, 255, 204, 0.1);
+        background: var(--user-bubble);
         color: var(--text);
       }
 
@@ -482,7 +537,7 @@
         align-items: end;
         border: 1px solid var(--line);
         border-radius: 14px;
-        background: rgba(255, 255, 255, 0.055);
+        background: var(--chat-input-bg);
         box-shadow: var(--shadow);
         padding: 10px;
       }
@@ -549,7 +604,7 @@
         max-height: 34vh;
         min-height: 178px;
         border-top: 1px solid var(--line);
-        background: rgba(0, 0, 0, 0.18);
+        background: var(--surface-muted);
       }
 
       .plan-header {
@@ -682,7 +737,7 @@
         margin: 0;
         border: 1px solid var(--line);
         border-radius: 11px;
-        background: rgba(0, 0, 0, 0.26);
+        background: var(--code-bg);
         color: var(--muted-strong);
         padding: 12px;
         white-space: pre-wrap;
@@ -707,7 +762,7 @@
         min-height: 24px;
         border: 1px solid var(--line);
         border-radius: 999px;
-        background: rgba(0, 0, 0, 0.2);
+        background: var(--pill-bg);
         color: var(--muted-strong);
         padding: 0 8px;
         font-size: 11px;
@@ -725,7 +780,7 @@
         display: grid;
         grid-template-rows: auto minmax(0, 1fr) auto;
         overflow: hidden;
-        background: rgba(6, 8, 7, 0.94);
+        background: var(--chrome-strong);
       }
 
       .inspector-header {
@@ -775,7 +830,7 @@
       .seed-status {
         border: 1px solid var(--line);
         border-radius: 10px;
-        background: rgba(255, 255, 255, 0.035);
+        background: var(--surface-muted);
         color: var(--muted);
         padding: 9px 10px;
         font-size: 12px;
@@ -847,7 +902,7 @@
       select:focus,
       textarea:focus {
         border-color: var(--line-strong);
-        background: rgba(0, 0, 0, 0.28);
+        background: var(--field);
         box-shadow: 0 0 0 3px rgba(0, 255, 204, 0.08);
       }
 
@@ -906,6 +961,7 @@
 
         .brand-copy,
         .language-switch,
+        .theme-switch,
         .nav-label,
         .service-card {
           display: none;
@@ -954,6 +1010,10 @@
           display: block;
         }
 
+        .theme-switch {
+          display: grid;
+        }
+
         .nav-list,
         .service-card {
           display: none;
@@ -996,6 +1056,11 @@
         <div class="language-switch" aria-label="Language">
           <button type="button" data-locale="en">EN</button>
           <button type="button" data-locale="zh-CN">中文</button>
+        </div>
+
+        <div class="theme-switch" aria-label="Theme">
+          <button type="button" data-theme-choice="dark" data-i18n="themeDark">Dark</button>
+          <button type="button" data-theme-choice="light" data-i18n="themeLight">Light</button>
         </div>
 
         <nav class="nav-list">
@@ -1180,6 +1245,7 @@
     <script>
       const bridge = window.openai;
       const PLANNING_HANDOFF_KEY = "fantasy-agent-planning-handoff";
+      const THEME_KEY = "fantasy-agent-theme";
       const urlParams = new URLSearchParams(window.location.search);
 
       const strings = {
@@ -1261,7 +1327,9 @@
           playability: "Playability",
           failure: "Failure",
           packaging: "Packaging",
-          noPlan: "Generated plans will appear here after confirmation."
+          noPlan: "Generated plans will appear here after confirmation.",
+          themeDark: "Dark",
+          themeLight: "Light"
         },
         "zh-CN": {
           appEyebrow: "游戏生产",
@@ -1339,7 +1407,9 @@
           playability: "可玩性",
           failure: "失败反馈",
           packaging: "打包",
-          noPlan: "确认创意并生成后，生产计划会显示在这里。"
+          noPlan: "确认创意并生成后，生产计划会显示在这里。",
+          themeDark: "深色",
+          themeLight: "浅色"
         }
       };
 
@@ -1353,8 +1423,15 @@
         return navigator.language?.startsWith("zh") ? "zh-CN" : "en";
       }
 
+      function initialTheme() {
+        const requested = urlParams.get("theme") || localStorage.getItem(THEME_KEY);
+        if (requested === "light" || requested === "dark") return requested;
+        return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+      }
+
       const state = {
         locale: initialLocale(),
+        theme: initialTheme(),
         status: "idle",
         lastInput: null,
         ideaSeed: null,
@@ -2140,13 +2217,28 @@
           button.classList.toggle("active", button.dataset.locale === locale);
         });
         document.querySelectorAll(".nav-item[href^='/workbench']").forEach((item) => {
-          item.href = `/workbench?locale=${encodeURIComponent(locale)}`;
+          item.href = `/workbench?locale=${encodeURIComponent(locale)}&theme=${encodeURIComponent(state.theme)}`;
         });
         document.querySelectorAll(".nav-item[href^='/web-console']").forEach((item) => {
-          item.href = `/web-console?locale=${encodeURIComponent(locale)}`;
+          item.href = `/web-console?locale=${encodeURIComponent(locale)}&theme=${encodeURIComponent(state.theme)}`;
         });
         nodes.sourceLocale.value = locale;
         render();
+      }
+
+      function applyTheme(theme) {
+        state.theme = theme === "light" ? "light" : "dark";
+        document.documentElement.dataset.theme = state.theme;
+        localStorage.setItem(THEME_KEY, state.theme);
+        document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.themeChoice === state.theme);
+        });
+        document.querySelectorAll(".nav-item[href^='/workbench']").forEach((item) => {
+          item.href = `/workbench?locale=${encodeURIComponent(state.locale)}&theme=${encodeURIComponent(state.theme)}`;
+        });
+        document.querySelectorAll(".nav-item[href^='/web-console']").forEach((item) => {
+          item.href = `/web-console?locale=${encodeURIComponent(state.locale)}&theme=${encodeURIComponent(state.theme)}`;
+        });
       }
 
       function persistWidgetState() {
@@ -2172,6 +2264,10 @@
 
       document.querySelectorAll("[data-locale]").forEach((button) => {
         button.addEventListener("click", () => applyLocale(button.dataset.locale));
+      });
+
+      document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+        button.addEventListener("click", () => applyTheme(button.dataset.themeChoice));
       });
 
       document.querySelectorAll("[data-panel-button]").forEach((button) => {
@@ -2250,6 +2346,7 @@
       nodes.shell.classList.toggle("embedded", urlParams.get("embed") === "1");
       updateCharCount();
       setStatus("idle");
+      applyTheme(state.theme);
       applyLocale(state.locale);
     </script>
   </body>
