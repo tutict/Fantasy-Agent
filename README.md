@@ -69,7 +69,9 @@ flowchart LR
   C --> D
   D --> E["Asset Integration"]
   E --> F["Unreal Production"]
+  A --> H["Godot Quick-Play Validation"]
   F --> G["Optimization and QA"]
+  H --> G
 ```
 
 1. **Gameplay orchestration / 玩法编排**
@@ -89,6 +91,9 @@ flowchart LR
 
 6. **Unreal production / UE 制作**
    Create project structure, assemble maps, place assets, wire objective flow, and prepare PIE or packaged playtests.
+
+7. **Godot quick-play validation / Godot 快速可玩验证**
+   Prepare a lightweight Godot project for fast loop timing, route readability, and interaction pacing checks.
 
 7. **Optimization and QA / 优化与测试**
    Validate playability, failure feedback, restart flow, session length, packaging readiness, and performance risk.
@@ -172,7 +177,7 @@ Planning is safe and read-only:
 - 生成玩法规格。
 - Render GDD documents.
 - 生成 GDD 文档。
-- Prepare Blender, ComfyUI, Unreal, and QA handoffs.
+- Prepare Blender, ComfyUI, Unreal, Godot, and QA handoffs.
 - 准备 Blender、ComfyUI、Unreal 和 QA 交接。
 - Show tasks, risks, side effects, and review gates.
 - 显示任务、风险、副作用和审阅关卡。
@@ -190,7 +195,7 @@ Execution creates side effects and must be explicitly confirmed:
 - Launching Unreal Editor, importing assets, assembling maps, running PIE, or packaging builds.
 - 启动 Unreal Editor、导入资产、组装地图、运行 PIE 或打包构建。
 
-ChatGPT Apps tools are read-only by default. They do not launch Unreal, Blender, ComfyUI, packaging, or Git actions unless explicit side-effect gates are implemented and confirmed.
+ChatGPT Apps tools are read-only by default. They do not launch Unreal, Godot, Blender, ComfyUI, packaging, or Git actions unless explicit side-effect gates are implemented and confirmed.
 
 ChatGPT Apps 工具默认只读。除非后续实现并确认副作用关卡，否则不会启动 Unreal、Blender、ComfyUI、打包或 Git 操作。
 
@@ -216,7 +221,6 @@ Fantasy-Agent/
 |-- generated/                  # Generated plans, assets, manifests, and logs
 |-- examples/                   # Example prompts and artifacts
 |-- docs/                       # Architecture, workflow, DSL, and research notes
-|-- legacy/                     # Preserved legacy code
 `-- gameplay-schema.yaml        # Gameplay DSL schema
 ```
 
@@ -232,6 +236,7 @@ Fantasy-Agent/
 | ComfyUI Worker | Prepares gameplay-readable visual reference workflows. | 准备服务玩法可读性的视觉参考流程。 |
 | Creative Review Agent | Blocks Unreal ingest until generated outputs are reviewed. | 在生成结果通过审阅前阻止 Unreal 导入。 |
 | Unreal Builder | Prepares UE project setup, ingest, level assembly, validation, and playtest plans. | 准备 UE 项目搭建、导入、关卡组装、验证和测试计划。 |
+| Godot Builder | Prepares Godot quick-play project handoffs for fast loop validation. | 准备 Godot 快速可玩工程交接，用于快速验证玩法循环。 |
 | QA Agent | Defines smoke, playability, failure feedback, packaging, and performance checks. | 定义冒烟、可玩性、失败反馈、打包和性能检查。 |
 
 ## Core Contracts / 核心合约
@@ -258,6 +263,8 @@ Important models:
 - `CreativeReviewReport`：生成结果的批准、修改和拒绝关卡。
 - `UnrealProjectPlan`: UE folders, plugins, maps, Blueprint classes, and automation steps.
 - `UnrealProjectPlan`：UE 目录、插件、地图、蓝图类和自动化步骤。
+- `GodotProjectPlan`: Godot scenes, scripts, input actions, and quick-play import steps.
+- `GodotProjectPlan`：Godot 场景、脚本、输入动作和快速可玩导入步骤。
 - `QAPlan`: smoke tests, playability checks, packaging checks, and metrics.
 - `QAPlan`：冒烟测试、可玩性检查、打包检查和指标。
 - `DirectorBuildPlan`: combined orchestration output.
@@ -283,6 +290,7 @@ Available read-only tools include:
 - `prepare_production_pipeline`
 - `render_gdd`
 - `prepare_unreal_plan`
+- `prepare_godot_plan`
 - `prepare_blender_plan`
 - `prepare_comfyui_plan`
 - `prepare_creative_review_plan`
@@ -345,7 +353,7 @@ Fantasy Agent 目前处于早期生产平台阶段：
 - 规划合约与确定性工作流已经实现。
 - Studio, Flow Console, and Planning Workbench are available.
 - Studio、流程控制台和策划工作台已可使用。
-- Blender, ComfyUI, Unreal, and QA handoffs are structured.
+- Blender, ComfyUI, Unreal, Godot, and QA handoffs are structured.
 - Blender、ComfyUI、Unreal 和 QA 交接已经结构化。
 - Creative Review gates are integrated into the Director pipeline.
 - Creative Review 审阅关卡已经接入 Director 流水线。
@@ -366,17 +374,3 @@ Next implementation priorities:
 - 通过受控 MCP 关卡运行真实 PIE 和 packaged playtest。
 - Add richer preview support for generated images and mesh manifests.
 - 为生成图片和模型 manifest 增加更丰富的预览能力。
-
-## Legacy / 旧代码
-
-The previous Spring Boot and Flutter traffic-management project is preserved under:
-
-之前的 Spring Boot 与 Flutter 交通管理项目保存在：
-
-```text
-legacy/traffic-management-platform/
-```
-
-Useful ideas from that project can inform workflow/state-machine rigor, agent events, skill interfaces, and operational runbooks. Domain-specific traffic logic should not be carried into Fantasy Agent.
-
-该项目中可复用的是工作流/状态机严谨性、agent 事件、skill 接口和运维 runbook 等思路。交通业务逻辑不应进入 Fantasy Agent。

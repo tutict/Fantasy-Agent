@@ -1251,6 +1251,7 @@
           dependencies: "Dependencies",
           tools: "Tools",
           unreal: "Unreal",
+          godot: "Godot",
           blender: "Blender",
           comfyui: "ComfyUI",
           creativeReview: "Creative Review",
@@ -1328,6 +1329,7 @@
           dependencies: "依赖",
           tools: "工具",
           unreal: "Unreal",
+          godot: "Godot",
           blender: "Blender",
           comfyui: "ComfyUI",
           creativeReview: "创意校对",
@@ -1363,6 +1365,7 @@
         taskBreakdown: null,
         gdd: null,
         unrealPlan: null,
+        godotPlan: null,
         blenderPlan: null,
         comfyuiPlan: null,
         creativeReview: null,
@@ -1831,6 +1834,7 @@
           state.taskBreakdown = plan.task_breakdown || state.taskBreakdown;
           state.gdd = plan.gdd || state.gdd;
           state.unrealPlan = plan.unreal_plan || state.unrealPlan;
+          state.godotPlan = plan.godot_plan || state.godotPlan;
           state.blenderPlan = plan.blender_plan || state.blenderPlan;
           state.comfyuiPlan = plan.comfyui_plan || state.comfyuiPlan;
           state.creativeReview = plan.creative_review || state.creativeReview;
@@ -1853,6 +1857,10 @@
         }
         if (structured.unreal_plan) {
           state.unrealPlan = structured.unreal_plan;
+          state.activePanel = meta.activePanel || "build";
+        }
+        if (structured.godot_plan) {
+          state.godotPlan = structured.godot_plan;
           state.activePanel = meta.activePanel || "build";
         }
         if (structured.blender_plan) {
@@ -2020,9 +2028,11 @@
 
       function renderBuild() {
         const unreal = state.unrealPlan;
+        const godot = state.godotPlan;
         const blender = state.blenderPlan;
         nodes.build.innerHTML = [
           unreal ? block(t("unreal"), [list(unreal.maps), list(unreal.gameplay_classes), list(unreal.automation_steps)].join(""), true) : "",
+          godot ? block(t("godot"), [list(godot.scenes), list(godot.scripts), list(godot.automation_steps)].join(""), true) : "",
           blender
             ? block(
                 t("blender"),

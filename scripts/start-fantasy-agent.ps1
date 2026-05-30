@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("studio", "web-console", "chatgpt-workbench")]
+    [ValidateSet("studio", "web-console", "chatgpt-workbench", "godot-builder")]
     [string]$App = "studio",
 
     [int]$Port = 0,
@@ -38,6 +38,15 @@ function Get-AppConfig {
             AppDir = "apps/chatgpt-workbench"
             DefaultPort = 8787
             UrlPath = "/"
+        }
+    }
+
+    if ($Name -eq "godot-builder") {
+        return @{
+            Title = "Fantasy Agent Godot Builder"
+            AppDir = "apps/godot-builder"
+            DefaultPort = 8790
+            UrlPath = "/mcp"
         }
     }
 

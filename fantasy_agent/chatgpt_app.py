@@ -12,6 +12,7 @@ from fantasy_agent.workflows import (
     prepare_blender_assets,
     prepare_comfyui_visuals,
     prepare_creative_review as prepare_creative_review_from_plans,
+    prepare_godot_project,
     prepare_qa_plan as prepare_qa_plan_from_spec,
     prepare_unreal_project,
     run_director_workflow,
@@ -136,6 +137,16 @@ def tool_descriptors() -> list[dict[str, Any]]:
             ),
             "Preparing Unreal handoff",
             "Unreal handoff ready",
+        ),
+        _tool(
+            "prepare_godot_plan",
+            "Prepare Godot project plan",
+            (
+                "Use this when the user wants a Godot 4 quick-play project handoff for "
+                "rapid playable-loop validation without executing Godot."
+            ),
+            "Preparing Godot handoff",
+            "Godot handoff ready",
         ),
         _tool(
             "prepare_blender_plan",
@@ -399,6 +410,23 @@ def prepare_unreal_plan(arguments: dict[str, Any] | None) -> dict[str, Any]:
     )
 
 
+def prepare_godot_plan(arguments: dict[str, Any] | None) -> dict[str, Any]:
+    request = _request(arguments)
+    spec = _plan(request).gameplay_spec
+    godot_plan = prepare_godot_project(spec)
+    return _tool_result(
+        "prepare_godot_plan",
+        request,
+        {
+            "kind": "godot_project_plan",
+            "gameplay_title": spec.title,
+            "godot_plan": godot_plan.model_dump(mode="json"),
+        },
+        f"Prepared Godot quick-play handoff for {spec.title}: {', '.join(godot_plan.scenes)}.",
+        {"godotPlan": godot_plan.model_dump(mode="json"), "activePanel": "build"},
+    )
+
+
 def prepare_blender_plan(arguments: dict[str, Any] | None) -> dict[str, Any]:
     request = _request(arguments)
     spec = _plan(request).gameplay_spec
@@ -479,6 +507,7 @@ TOOL_HANDLERS: dict[str, Callable[[dict[str, Any] | None], dict[str, Any]]] = {
     "generate_game_production_plan": generate_game_production_plan,
     "render_gdd": render_gdd,
     "prepare_unreal_plan": prepare_unreal_plan,
+    "prepare_godot_plan": prepare_godot_plan,
     "prepare_blender_plan": prepare_blender_plan,
     "prepare_comfyui_plan": prepare_comfyui_plan,
     "prepare_creative_review_plan": prepare_creative_review_plan,

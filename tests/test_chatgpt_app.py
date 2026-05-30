@@ -20,6 +20,7 @@ def test_chatgpt_tool_descriptors_are_read_only_and_widget_backed():
         "prepare_production_pipeline",
         "render_gdd",
         "prepare_unreal_plan",
+        "prepare_godot_plan",
         "prepare_blender_plan",
         "prepare_comfyui_plan",
         "prepare_creative_review_plan",
@@ -116,6 +117,7 @@ def test_prepare_production_pipeline_returns_pipeline_payload():
 
 def test_focused_chatgpt_tools_return_subplans_without_side_effects():
     unreal = call_workbench_tool("prepare_unreal_plan", _request())
+    godot = call_workbench_tool("prepare_godot_plan", _request())
     blender = call_workbench_tool("prepare_blender_plan", _request())
     comfyui = call_workbench_tool("prepare_comfyui_plan", _request())
     review = call_workbench_tool("prepare_creative_review_plan", _request())
@@ -125,6 +127,8 @@ def test_focused_chatgpt_tools_return_subplans_without_side_effects():
         "M_Prototype_Greybox",
         "M_Prototype_TestGym",
     ]
+    assert godot["structuredContent"]["godot_plan"]["scenes"] == ["scenes/main.tscn"]
+    assert godot["_meta"]["activePanel"] == "build"
     assert blender["structuredContent"]["blender_plan"]["jobs"]
     assert comfyui["structuredContent"]["comfyui_plan"]["jobs"][0]["gameplay_constraint"]
     assert review["structuredContent"]["creative_review"]["items"]

@@ -10,7 +10,7 @@ Fantasy Agent 策划工作台把游戏生产管线暴露为 ChatGPT Apps 可连�
 - Server: FastAPI JSON-RPC MCP endpoint at `/mcp`
 - Widget resource: `ui://fantasy-agent/workbench.html`
 - Tool policy: read-only, idempotent planning tools
-- Side effects: none; Unreal, Blender, ComfyUI, and GitHub execution remain future explicit MCP steps
+- Side effects: none; Unreal, Godot, Blender, ComfyUI, and GitHub execution remain future explicit MCP steps
 
 ## Tools
 
@@ -18,10 +18,11 @@ Fantasy Agent 策划工作台把游戏生产管线暴露为 ChatGPT Apps 可连�
 | --- | --- |
 | `extract_idea_seed` | Interview-style creative discovery that turns loose answers into an IdeaSeed and production prompt. |
 | `decompose_production_tasks` | Inspectable task board before execution. |
-| `generate_game_production_plan` | Full Director workflow with gameplay DSL, GDD, Unreal, Blender, ComfyUI, QA, and next actions. |
+| `generate_game_production_plan` | Full Director workflow with gameplay DSL, GDD, Unreal, Godot, Blender, ComfyUI, QA, and next actions. |
 | `prepare_production_pipeline` | Staged gameplay, ComfyUI, Blender, integration, Unreal, and QA pipeline. |
 | `render_gdd` | Structured bilingual markdown GDD. |
 | `prepare_unreal_plan` | UE5 project folders, plugins, maps, Blueprint classes, and automation steps. |
+| `prepare_godot_plan` | Godot quick-play scenes, scripts, input actions, and import handoff steps. |
 | `prepare_blender_plan` | Procedural greybox asset jobs and export paths. |
 | `prepare_comfyui_plan` | Gameplay-readable visual reference jobs. |
 | `prepare_qa_plan` | Smoke, playability, failure, packaging, and metrics checks. |
@@ -57,7 +58,7 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8787/health
 
 ## Safety Boundary
 
-This app is a production workbench, not a one-click game generator. The first version generates structured plans and handoffs only. Any future tool that writes files, launches Blender, starts Unreal, calls ComfyUI, packages builds, or pushes GitHub changes must declare side effects and require explicit user approval.
+This app is a production workbench, not a one-click game generator. The first version generates structured plans and handoffs only. Any future tool that writes files, launches Blender, starts Unreal or Godot, calls ComfyUI, packages builds, or pushes GitHub changes must declare side effects and require explicit user approval.
 
 这个入口是策划工作台，不是一键生成游戏工具。第一版只生成结构化计划和交接物；未来任何写文件、启动 Blender、启动 Unreal、调用 ComfyUI、打包或推送 GitHub 的工具，都必须声明副作用并取得明确确认。
 

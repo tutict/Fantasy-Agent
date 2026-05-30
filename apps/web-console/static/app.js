@@ -75,6 +75,7 @@ const i18n = {
     owner: "Owner",
     tools: "Tools",
     unreal: "Unreal plan",
+    godot: "Godot quick-play",
     blender: "Blender jobs",
     comfyui: "ComfyUI references",
     creativeReview: "Creative review",
@@ -174,6 +175,7 @@ const i18n = {
     owner: "负责人",
     tools: "工具",
     unreal: "Unreal 计划",
+    godot: "Godot 快速验证",
     blender: "Blender 任务",
     comfyui: "ComfyUI 参考",
     creativeReview: "创意审阅",
@@ -383,7 +385,7 @@ function readPlanningHandoff() {
     if (parsed?.gameplay_spec) {
       return {
         schemaVersion: "0.1",
-        source: "legacy",
+        source: "direct-plan",
         savedAt: null,
         title: preferredTitle(parsed.gameplay_spec),
         plan: parsed
@@ -672,12 +674,20 @@ function bindReviewActions() {
 
 function renderBuild(plan) {
   const unreal = plan.unreal_plan;
+  const godot = plan.godot_plan;
   const blender = plan.blender_plan;
   buildOutput.innerHTML = [
     unreal ? block(t("maps"), list(unreal.maps)) : "",
     unreal ? block(t("classes"), list(unreal.gameplay_classes)) : "",
     unreal ? block(t("folders"), list(unreal.folders)) : "",
     unreal ? block(t("automation"), list(unreal.automation_steps)) : "",
+    godot
+      ? block(
+          t("godot"),
+          [list(godot.scenes), list(godot.scripts), list(godot.automation_steps)].join(""),
+          true
+        )
+      : "",
     blender
       ? block(
           t("blender"),

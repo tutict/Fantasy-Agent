@@ -19,6 +19,8 @@ def test_director_workflow_creates_playable_slice_plan():
     assert "zh-CN" in plan.gdd.markdown_by_locale
     assert "核心循环" in plan.gdd.markdown_by_locale["zh-CN"]
     assert "M_Prototype_Greybox" in plan.unreal_plan.maps
+    assert plan.godot_plan.scenes == ["scenes/main.tscn"]
+    assert "assets/generated" in plan.godot_plan.folders
     assert plan.blender_plan.jobs
     assert plan.comfyui_plan.jobs
     assert plan.comfyui_plan.jobs[0].workflow_template.startswith("templates/comfyui/")

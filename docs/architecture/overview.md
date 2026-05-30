@@ -12,6 +12,7 @@ PromptRequest
   -> GameplaySpec
   -> GDD Writer
   -> Unreal Builder
+  -> Godot Builder
   -> Blender Worker
   -> ComfyUI Worker
   -> QA Agent
@@ -27,6 +28,7 @@ The `fantasy_agent/` package defines the first contract layer:
 - `GameplaySpec`
 - `GDDDocument`
 - `UnrealProjectPlan`
+- `GodotProjectPlan`
 - `BlenderAssetPlan`
 - `ComfyUIVisualPlan`
 - `QAPlan`
@@ -43,24 +45,13 @@ Each app is a small FastAPI service:
 - `chatgpt-workbench`: ChatGPT Apps MCP endpoint and interactive widget
 - `gameplay-agent`: prompt to gameplay DSL
 - `unreal-builder`: UE5 architecture plan
+- `godot-builder`: Godot quick-play project handoff for fast loop validation
 - `blender-worker`: procedural asset jobs, Blender Python scripts, and Unreal import manifests
 - `comfyui-worker`: gameplay-readable visual reference plans, prepared workflows, and controlled ComfyUI MCP execution
 - `qa-agent`: playability and packaging checks
 
 ## ChatGPT Apps Surface
 
-The Planning Workbench is an interactive MCP surface over the same contracts. It provides read-only tools for idea discovery, plan generation, GDD rendering, Unreal planning, Blender planning, ComfyUI planning, and QA planning. It does not execute production side effects in Phase 1.
+The Planning Workbench is an interactive MCP surface over the same contracts. It provides read-only tools for idea discovery, plan generation, GDD rendering, Unreal planning, Godot quick-play planning, Blender planning, ComfyUI planning, and QA planning. It does not execute production side effects in Phase 1.
 
 策划工作台复用同一套合约，提供创意提取、计划生成、GDD 渲染、Unreal 计划、Blender 计划、ComfyUI 计划和 QA 计划等只读工具。第一阶段不执行生产副作用。
-
-## Legacy Inputs
-
-The previous repository contained useful architectural ideas:
-
-- Skill interfaces
-- Streamed agent events
-- State-machine workflow discipline
-- Operational runbooks
-- Guardrail-oriented AI configuration
-
-Those ideas are preserved for reference under `legacy/traffic-management-platform/`.

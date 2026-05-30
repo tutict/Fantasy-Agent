@@ -12,6 +12,7 @@ from fantasy_agent.contracts import (
     DirectorBuildPlan,
     DirectorTaskBreakdown,
     GameplaySpec,
+    GodotProjectPlan,
     PromptRequest,
     ProductionPipeline,
     ProductionPipelineStage,
@@ -56,6 +57,7 @@ DIRECTOR_NEXT_ACTIONS = [
     "Run Blender greybox asset job",
     "Run ComfyUI reference jobs only after gameplay readability needs are approved",
     "Review ComfyUI and Blender outputs with the user before Unreal ingest",
+    "Prepare a Godot quick-play project handoff when fast loop validation is useful",
     "Create UE project structure and import generated assets",
     "Run QA smoke test before adding visual polish",
 ]
@@ -105,6 +107,47 @@ def prepare_unreal_project(spec: GameplaySpec, engine_version: str = "UE5") -> U
             "generated/gameplay-spec.yaml",
             "generated/gdd.md",
             "generated/unreal-project-plan.yaml",
+        ],
+    )
+
+
+def prepare_godot_project(spec: GameplaySpec, engine_version: str = "Godot 4") -> GodotProjectPlan:
+    project_slug = "".join(part for part in spec.title.title().split()) or "FantasyPrototype"
+    input_actions = [
+        "move_forward",
+        "move_back",
+        "move_left",
+        "move_right",
+        "jump",
+        "restart_run",
+        *[slugify(verb).replace("-", "_") for verb in spec.core_verbs[:4]],
+    ]
+    return GodotProjectPlan(
+        project_name=f"{project_slug}Godot",
+        engine_version=engine_version,
+        renderer="Compatibility",
+        folders=[
+            "scenes",
+            "scripts",
+            "assets/generated",
+            "references/comfyui",
+            "data",
+        ],
+        scenes=["scenes/main.tscn"],
+        scripts=["scripts/main.gd", "scripts/player_controller.gd"],
+        input_actions=list(dict.fromkeys(input_actions)),
+        automation_steps=[
+            "Create Godot 4 project.godot for quick playable-loop validation",
+            "Generate main scene with greybox route, hazards, objective, exit, and UI proxy",
+            "Generate prototype GDScript movement and scene assembly scripts",
+            "Copy reviewed Blender and ComfyUI outputs under res://assets/generated",
+            "Run Godot headless import only after explicit side-effect confirmation",
+            "Use Godot smoke playtests to validate loop timing before heavier UE work",
+        ],
+        handoff_artifacts=[
+            "generated/godot-project-plan.yaml",
+            "generated/godot/<project>/project.godot",
+            "generated/godot/<project>/fantasy-agent-godot-manifest.json",
         ],
     )
 
@@ -1058,6 +1101,7 @@ def _build_task_breakdown(
 def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
     gameplay_spec = design_from_prompt(request)
     unreal_plan = prepare_unreal_project(gameplay_spec, request.engine_version)
+    godot_plan = prepare_godot_project(gameplay_spec)
     blender_plan = prepare_blender_assets(gameplay_spec)
     comfyui_plan = prepare_comfyui_visuals(gameplay_spec)
     creative_review = prepare_creative_review(gameplay_spec, blender_plan, comfyui_plan)
@@ -1075,6 +1119,7 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
         gameplay_spec=gameplay_spec,
         gdd=render_gdd(gameplay_spec),
         unreal_plan=unreal_plan,
+        godot_plan=godot_plan,
         blender_plan=blender_plan,
         comfyui_plan=comfyui_plan,
         creative_review=creative_review,

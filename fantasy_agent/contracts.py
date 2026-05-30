@@ -28,6 +28,7 @@ BlenderMaterialKey = Literal[
 UnrealCommandletName = Literal["DataValidation"]
 UnrealAssetIngestSource = Literal["blender", "comfyui"]
 UnrealAssetIngestType = Literal["static_mesh", "texture_reference"]
+GodotRenderer = Literal["Forward+", "Mobile", "Compatibility"]
 UnrealLevelPlacementRole = Literal[
     "route_floor",
     "traversal",
@@ -65,6 +66,7 @@ ProductionTaskAgent = Literal[
     "comfyui-worker",
     "creative-review-agent",
     "unreal-builder",
+    "godot-builder",
     "qa-agent",
 ]
 ProductionPipelineStageId = Literal[
@@ -253,6 +255,71 @@ class UnrealProjectArtifact(StrictModel):
     config_files: list[str]
     content_folders: list[str]
     side_effects: list[str]
+
+
+class GodotProjectPlan(StrictModel):
+    project_name: str
+    engine_version: str = "Godot 4"
+    renderer: GodotRenderer = "Compatibility"
+    folders: list[str]
+    scenes: list[str]
+    scripts: list[str]
+    input_actions: list[str]
+    automation_steps: list[str]
+    handoff_artifacts: list[str]
+
+
+class GodotProjectArtifact(StrictModel):
+    project_name: str
+    project_dir: str
+    project_file: str
+    main_scene_path: str
+    manifest_path: str
+    scene_paths: list[str]
+    script_paths: list[str]
+    asset_dirs: list[str]
+    side_effects: list[str]
+
+
+class GodotProjectValidationReport(StrictModel):
+    project_file: str
+    main_scene_path: str
+    script_count: int
+    issues: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class GodotMCPCreateProjectRequest(StrictModel):
+    plan: GodotProjectPlan
+    project_dir: str | None = None
+    write_files: bool = False
+
+
+class GodotMCPValidateProjectRequest(StrictModel):
+    project_file: str
+    require_main_scene: bool = True
+    require_scripts: bool = True
+
+
+class GodotMCPRunImportRequest(StrictModel):
+    project_file: str
+    godot_executable: str = "godot"
+    timeout_seconds: int = Field(default=300, ge=10, le=1800)
+    confirmed_side_effects: bool = False
+
+
+class GodotMCPResult(StrictModel):
+    status: Literal["planned", "written", "executed", "failed", "blocked"]
+    artifact: GodotProjectArtifact | None = None
+    validation_report: GodotProjectValidationReport | None = None
+    command: list[str] = Field(default_factory=list)
+    created_paths: list[str] = Field(default_factory=list)
+    written_files: list[str] = Field(default_factory=list)
+    log_paths: list[str] = Field(default_factory=list)
+    return_code: int | None = None
+    stdout_tail: str = ""
+    stderr_tail: str = ""
+    risks: list[str] = Field(default_factory=list)
 
 
 class UnrealAssetIngestJob(StrictModel):
@@ -719,6 +786,7 @@ class DirectorBuildPlan(StrictModel):
     gameplay_spec: GameplaySpec
     gdd: GDDDocument
     unreal_plan: UnrealProjectPlan
+    godot_plan: GodotProjectPlan
     blender_plan: BlenderAssetPlan
     comfyui_plan: ComfyUIVisualPlan
     creative_review: CreativeReviewReport
@@ -730,7 +798,7 @@ class DirectorBuildPlan(StrictModel):
 
 class MCPToolContract(StrictModel):
     name: str
-    server: Literal["unreal-mcp", "blender-mcp", "comfyui-mcp", "github-mcp"]
+    server: Literal["unreal-mcp", "blender-mcp", "comfyui-mcp", "godot-mcp", "github-mcp"]
     input_schema_ref: str
     output_schema_ref: str
     side_effects: list[str]

@@ -1,0 +1,157 @@
+server: godot-mcp
+tools:
+  create_godot_project_structure:
+    description: "Prepare or write a Godot 4 project.godot, main scene, prototype scripts, asset folders, and handoff manifest from a GodotProjectPlan."
+    input:
+      type: object
+      required:
+        - plan
+      properties:
+        plan:
+          $ref: "../../gameplay-schema.yaml#/$defs/godot_project_plan"
+        project_dir:
+          type:
+            - string
+            - "null"
+          default: "generated/godot/<project-name>"
+        write_files:
+          type: boolean
+          default: false
+    output:
+      type: object
+      required:
+        - status
+        - artifact
+        - created_paths
+      properties:
+        status:
+          enum:
+            - planned
+            - written
+        artifact:
+          type: object
+        created_paths:
+          type: array
+          items:
+            type: string
+        written_files:
+          type: array
+          items:
+            type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "This tool is read-only unless write_files is true."
+      - "Project directory must stay under generated/godot."
+      - "Scenes must stay under generated/godot and end with .tscn."
+      - "Scripts must stay under generated/godot and end with .gd."
+  validate_godot_project:
+    description: "Read-only validation for a generated Godot project.godot, main scene, scripts, and renderer setup."
+    input:
+      type: object
+      required:
+        - project_file
+      properties:
+        project_file:
+          type: string
+          description: "Generated project.godot path under generated/godot."
+        require_main_scene:
+          type: boolean
+          default: true
+        require_scripts:
+          type: boolean
+          default: true
+    output:
+      type: object
+      required:
+        - status
+        - validation_report
+      properties:
+        status:
+          enum:
+            - executed
+            - failed
+        validation_report:
+          type: object
+          properties:
+            project_file:
+              type: string
+            main_scene_path:
+              type: string
+            script_count:
+              type: integer
+            issues:
+              type: array
+              items:
+                type: string
+            warnings:
+              type: array
+              items:
+                type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "This tool does not launch Godot."
+      - "Project file must stay under generated/godot and be named project.godot."
+  run_godot_import:
+    description: "Launch Godot headless import against a generated Fantasy Agent project and capture logs."
+    input:
+      type: object
+      required:
+        - project_file
+      properties:
+        project_file:
+          type: string
+          description: "Generated project.godot path under generated/godot."
+        godot_executable:
+          type: string
+          default: "godot"
+        timeout_seconds:
+          type: integer
+          minimum: 10
+          maximum: 1800
+          default: 300
+        confirmed_side_effects:
+          type: boolean
+          description: "Must be true after explicit user confirmation."
+    output:
+      type: object
+      required:
+        - status
+        - log_paths
+      properties:
+        status:
+          enum:
+            - executed
+            - failed
+            - blocked
+        command:
+          type: array
+          items:
+            type: string
+        log_paths:
+          type: array
+          items:
+            type: string
+        return_code:
+          type: integer
+        stdout_tail:
+          type: string
+        stderr_tail:
+          type: string
+        risks:
+          type: array
+          items:
+            type: string
+    safety:
+      - "Require confirmed_side_effects before launching Godot."
+      - "Project file must stay under generated/godot and be named project.godot."
+      - "Logs must be saved under generated/logs/godot."
+safety:
+  - "Generated Godot files must stay under generated/godot."
+  - "Godot CLI execution requires explicit confirmation."
+  - "Godot is for fast playable-loop validation, not a replacement for Unreal production ingest."

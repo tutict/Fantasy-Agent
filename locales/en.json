@@ -5,6 +5,7 @@
   "agent.gameplay": "Gameplay Agent",
   "agent.gdd": "GDD Writer",
   "agent.unreal": "Unreal Builder",
+  "agent.godot": "Godot Builder",
   "agent.blender": "Blender Worker",
   "agent.comfyui": "ComfyUI Worker",
   "agent.qa": "QA Agent",

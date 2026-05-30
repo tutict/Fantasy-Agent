@@ -44,7 +44,7 @@ The GDD Writer renders the gameplay spec into markdown. It does not add new scop
 
 ## Stage 4: Asset, Visual, And Engine Handoff
 
-The Blender Worker prepares procedural asset jobs, generates Blender Python scripts, and prepares Unreal import manifests. The ComfyUI Worker prepares visual reference jobs for readability, material language, UI references, and reviewed texture seeds. The Unreal Builder prepares project structure, maps, Blueprint classes, and automation steps.
+The Blender Worker prepares procedural asset jobs, generates Blender Python scripts, and prepares Unreal import manifests. The ComfyUI Worker prepares visual reference jobs for readability, material language, UI references, and reviewed texture seeds. The Unreal Builder prepares project structure, maps, Blueprint classes, and automation steps. The Godot Builder prepares a lightweight quick-play project for loop timing and route-readability checks.
 
 ## Stage 5: MCP Execution
 
@@ -54,6 +54,7 @@ Future MCP servers execute controlled operations:
 - Blender MCP generates allowlisted scripts, requires explicit side-effect confirmation, runs `bpy` jobs, captures logs, and exports assets.
 - ComfyUI MCP prepares allowlisted workflow JSON, requires explicit side-effect confirmation, submits prompt jobs, captures prompt IDs, and optionally downloads reviewed reference outputs.
 - Unreal MCP creates/imports/validates project content.
+- Godot MCP creates/validates generated Godot project files and runs headless import only after explicit confirmation.
 - GitHub MCP publishes review branches and pull requests.
 
 ## Stage 6: QA And Packaging

@@ -143,6 +143,45 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             ],
         ),
         MCPToolContract(
+            name="create_godot_project_structure",
+            server="godot-mcp",
+            input_schema_ref="mcp/godot-mcp/tools.yaml#create_godot_project_structure",
+            output_schema_ref="mcp/godot-mcp/tools.yaml#create_godot_project_structure.output",
+            side_effects=[
+                "optionally writes generated Godot project.godot, scenes, scripts, and manifest",
+                "optionally creates generated Godot asset and reference folders",
+            ],
+            safety_checks=[
+                "project path must be generated/godot",
+                "scene paths must stay under generated/godot and end with .tscn",
+                "script paths must stay under generated/godot and end with .gd",
+            ],
+        ),
+        MCPToolContract(
+            name="validate_godot_project",
+            server="godot-mcp",
+            input_schema_ref="mcp/godot-mcp/tools.yaml#validate_godot_project",
+            output_schema_ref="mcp/godot-mcp/tools.yaml#validate_godot_project.output",
+            side_effects=["reads generated Godot project files"],
+            safety_checks=[
+                "does not launch Godot",
+                "project file must be generated/godot/*/project.godot",
+                "main scene and scripts are checked before import",
+            ],
+        ),
+        MCPToolContract(
+            name="run_godot_import",
+            server="godot-mcp",
+            input_schema_ref="mcp/godot-mcp/tools.yaml#run_godot_import",
+            output_schema_ref="mcp/godot-mcp/tools.yaml#run_godot_import.output",
+            side_effects=["launches Godot headless import", "writes .godot import metadata"],
+            safety_checks=[
+                "requires confirmed side effects",
+                "project file must be generated/godot/*/project.godot",
+                "logs captured under generated/logs/godot",
+            ],
+        ),
+        MCPToolContract(
             name="probe_comfyui_capabilities",
             server="comfyui-mcp",
             input_schema_ref="mcp/comfyui-mcp/tools.yaml#probe_comfyui_capabilities",

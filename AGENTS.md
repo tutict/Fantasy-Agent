@@ -17,6 +17,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - English and Simplified Chinese outputs must stay synchronized through the `i18n` bundle.
 - ComfyUI is a visual reference worker, not a gameplay authority.
 - ComfyUI and Blender outputs must pass Creative Review before Unreal ingest.
+- Godot is a quick-play validation target, not a replacement for Unreal production ingest.
 - ChatGPT Apps tools are interactive planning surfaces; they must not execute production side effects without explicit confirmation.
 
 - 玩法优先于图形。
@@ -163,6 +164,27 @@ Future MCP compatibility:
 
 - Unreal MCP should execute only allowlisted project creation, asset import, map validation, and packaging commands.
 
+## Godot Builder
+
+Responsibility:
+
+- Prepare Godot 4 quick-play project handoffs for fast playable-loop validation.
+- Generate `project.godot`, main scene, GDScript prototype scripts, and import manifests under generated paths.
+
+Input:
+
+- `GameplaySpec`
+
+Output:
+
+- `GodotProjectPlan`
+
+Rules:
+
+- Godot validates loop timing, route readability, and interaction pacing before heavier Unreal work.
+- Godot MCP execution must keep projects under `generated/godot/` and logs under `generated/logs/godot/`.
+- Do not launch Godot or run headless import without explicit side-effect confirmation.
+
 ## Blender Worker
 
 Responsibility:
@@ -249,6 +271,7 @@ Output:
 
 - `DirectorBuildPlan`
 - Focused sub-plans such as `GDDDocument`, `UnrealProjectPlan`, `BlenderAssetPlan`, `ComfyUIVisualPlan`, or `QAPlan`
+- Focused Godot plans are for quick-play validation and remain read-only unless a separate MCP side-effect gate is confirmed.
 
 Rules:
 
