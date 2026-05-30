@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -7,20 +7,29 @@
     <link rel="icon" href="data:," />
     <style>
       :root {
-        color-scheme: light;
-        --ink: #20231f;
-        --muted: #626a62;
-        --line: #d9ddd3;
-        --surface: #f4f6f0;
-        --panel: #ffffff;
-        --accent: #1d6d61;
-        --blue: #315f8d;
-        --danger: #9b2e2e;
-        --sidebar-width: 248px;
+        color-scheme: dark;
+        --bg: #070a08;
+        --surface: rgba(255, 255, 255, 0.04);
+        --surface-strong: rgba(255, 255, 255, 0.07);
+        --line: rgba(255, 255, 255, 0.08);
+        --line-strong: rgba(0, 255, 204, 0.34);
+        --text: #ffffff;
+        --muted: #8b938b;
+        --muted-strong: #bac2b8;
+        --accent: #00ffcc;
+        --accent-soft: rgba(0, 255, 204, 0.12);
+        --danger: #ff6b6b;
+        --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
+        --sidebar-width: 282px;
       }
 
       * {
         box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
       }
 
       body {
@@ -28,9 +37,13 @@
         min-width: 320px;
         height: 100vh;
         overflow: hidden;
-        background: var(--surface);
-        color: var(--ink);
-        font: 14px/1.45 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+        background:
+          linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px),
+          var(--bg);
+        background-size: 28px 28px;
+        color: var(--text);
+        font: 14px/1.55 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
           "Segoe UI", sans-serif;
         letter-spacing: 0;
       }
@@ -40,15 +53,26 @@
         font: inherit;
       }
 
+      button {
+        cursor: pointer;
+      }
+
+      button:focus-visible,
+      a:focus-visible,
+      iframe:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 3px;
+      }
+
       .shell {
         display: grid;
         grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
         height: 100vh;
-        transition: grid-template-columns 160ms ease;
+        transition: grid-template-columns 180ms ease;
       }
 
       .shell.sidebar-collapsed {
-        --sidebar-width: 64px;
+        --sidebar-width: 82px;
       }
 
       .shell.resizing {
@@ -68,19 +92,34 @@
         position: relative;
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: 18px;
         min-width: 0;
+        min-height: 0;
+        overflow: hidden;
         border-right: 1px solid var(--line);
-        background: #fff;
-        padding: 14px;
+        background: rgba(6, 8, 7, 0.94);
+        padding: 18px 14px;
       }
 
       .sidebar-header {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 8px;
+        display: grid;
+        grid-template-columns: 44px minmax(0, 1fr) 40px;
+        align-items: center;
+        gap: 10px;
         min-width: 0;
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        border: 1px solid var(--line-strong);
+        border-radius: 12px;
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: 13px;
+        font-weight: 900;
       }
 
       .brand {
@@ -88,53 +127,69 @@
       }
 
       .brand p {
-        margin: 0 0 4px;
+        margin: 0 0 2px;
         color: var(--muted);
-        font-size: 12px;
-        font-weight: 800;
+        font-size: 11px;
+        font-weight: 850;
         text-transform: uppercase;
       }
 
       .brand h1 {
         margin: 0;
-        font-size: 24px;
-        line-height: 1.05;
         overflow: hidden;
+        color: var(--text);
+        font-size: 18px;
+        line-height: 1.05;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
 
       .collapse-button {
-        flex: 0 0 auto;
-        width: 32px;
-        min-height: 32px;
+        display: grid;
+        place-items: center;
+        width: 40px;
+        min-height: 40px;
         border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #fbfcf8;
-        color: var(--muted);
-        cursor: pointer;
+        border-radius: 12px;
+        background: var(--surface);
+        color: var(--muted-strong);
         font-weight: 850;
+        transition:
+          background 160ms ease,
+          border-color 160ms ease,
+          color 160ms ease;
+      }
+
+      .collapse-button:hover {
+        border-color: var(--line-strong);
+        background: var(--accent-soft);
+        color: var(--accent);
       }
 
       .locale-switch {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 8px;
+        gap: 6px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        padding: 4px;
       }
 
       .locale-option {
-        min-height: 34px;
-        border: 1px solid var(--line);
+        min-height: 36px;
+        border: 0;
         border-radius: 8px;
-        background: #fff;
+        background: transparent;
         color: var(--muted);
-        cursor: pointer;
-        font-weight: 800;
+        font-weight: 850;
+        transition:
+          background 160ms ease,
+          color 160ms ease;
       }
 
       .locale-option.active {
-        border-color: rgba(29, 109, 97, 0.35);
-        background: rgba(29, 109, 97, 0.1);
+        background: var(--accent-soft);
         color: var(--accent);
       }
 
@@ -143,67 +198,82 @@
         gap: 8px;
       }
 
-      .nav button,
-      .link-button {
-        display: flex;
+      .nav button {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
         align-items: center;
         gap: 10px;
-        min-height: 40px;
+        min-height: 46px;
         border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #fbfcf8;
-        color: var(--ink);
-        cursor: pointer;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.032);
+        color: var(--muted-strong);
         text-align: left;
-        padding: 9px 10px;
-        text-decoration: none;
+        padding: 0 11px;
+        transition:
+          background 160ms ease,
+          border-color 160ms ease,
+          color 160ms ease,
+          transform 160ms ease;
+      }
+
+      .nav button:hover,
+      .nav button.active {
+        border-color: var(--line-strong);
+        background: var(--accent-soft);
+        color: var(--text);
+      }
+
+      .nav button:active {
+        transform: scale(0.99);
       }
 
       .nav-icon {
         display: inline-grid;
-        flex: 0 0 28px;
-        width: 28px;
-        height: 28px;
         place-items: center;
-        border-radius: 7px;
-        background: #edf1e8;
-        color: var(--ink);
-        font-size: 11px;
+        width: 34px;
+        height: 34px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.18);
+        color: var(--accent);
+        font-size: 10px;
         font-weight: 900;
       }
 
       .nav-label {
         min-width: 0;
         overflow: hidden;
+        font-weight: 820;
         text-overflow: ellipsis;
         white-space: nowrap;
       }
 
-      .nav button.active {
-        border-color: rgba(29, 109, 97, 0.35);
-        background: rgba(29, 109, 97, 0.1);
-        color: var(--accent);
-        font-weight: 850;
-      }
-
       .status {
+        display: grid;
+        gap: 10px;
         margin-top: auto;
         border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 12px;
+        border-radius: 12px;
         background: var(--surface);
+        padding: 12px;
       }
 
       .status strong {
-        display: block;
-        margin-bottom: 4px;
+        color: var(--muted-strong);
       }
 
       .status code {
         display: block;
-        overflow-wrap: anywhere;
-        color: var(--muted);
-        font-size: 12px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: rgba(0, 0, 0, 0.24);
+        color: var(--accent);
+        padding: 8px;
+        font: 12px/1.45 "Cascadia Code", Consolas, monospace;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .sidebar-resizer {
@@ -228,15 +298,16 @@
 
       .sidebar-resizer:hover::after,
       .shell.resizing .sidebar-resizer::after {
-        background: rgba(29, 109, 97, 0.45);
+        background: var(--accent);
       }
 
       .shell.sidebar-collapsed .sidebar {
-        align-items: stretch;
-        padding: 12px 10px;
+        align-items: center;
+        padding-inline: 12px;
       }
 
       .shell.sidebar-collapsed .sidebar-header {
+        grid-template-columns: 44px;
         justify-content: center;
       }
 
@@ -248,20 +319,17 @@
       }
 
       .shell.sidebar-collapsed .nav button {
+        grid-template-columns: 34px;
         justify-content: center;
-        padding: 6px;
-      }
-
-      .shell.sidebar-collapsed .nav-icon {
-        flex-basis: 32px;
-        width: 32px;
-        height: 32px;
+        width: 48px;
+        padding: 0;
       }
 
       .workspace {
         display: grid;
-        grid-template-rows: 52px minmax(0, 1fr);
+        grid-template-rows: 58px minmax(0, 1fr);
         min-width: 0;
+        min-height: 0;
       }
 
       .topbar {
@@ -270,19 +338,14 @@
         justify-content: space-between;
         gap: 12px;
         border-bottom: 1px solid var(--line);
-        background: #fff;
-        padding: 0 16px;
+        background: rgba(8, 11, 9, 0.88);
+        padding: 0 18px 0 20px;
       }
 
       .topbar h2 {
         margin: 0;
+        color: var(--text);
         font-size: 16px;
-      }
-
-      .topbar a {
-        color: var(--accent);
-        font-weight: 800;
-        text-decoration: none;
       }
 
       .panel {
@@ -299,7 +362,7 @@
         width: 100%;
         height: 100%;
         border: 0;
-        background: #fff;
+        background: var(--bg);
       }
 
       .mcp-panel {
@@ -312,14 +375,15 @@
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
-        max-width: 1040px;
+        max-width: 1120px;
       }
 
       .card {
         border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #fff;
-        padding: 14px;
+        border-radius: 12px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        padding: 16px;
       }
 
       .card.wide {
@@ -328,22 +392,35 @@
 
       .card h3 {
         margin: 0 0 8px;
+        color: var(--text);
         font-size: 16px;
       }
 
       .card p,
       .card li {
-        color: var(--muted);
+        color: var(--muted-strong);
       }
 
       .card code {
         display: block;
         overflow-wrap: anywhere;
-        border-radius: 7px;
-        background: #171b18;
-        color: #edf3eb;
-        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.28);
+        color: var(--accent);
+        padding: 12px;
         font: 12px/1.5 "Cascadia Code", Consolas, monospace;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+        }
       }
 
       @media (max-width: 820px) {
@@ -351,17 +428,19 @@
           overflow: auto;
         }
 
-        .shell {
+        .shell,
+        .shell.sidebar-collapsed {
           grid-template-columns: 1fr;
           height: auto;
           min-height: 100vh;
         }
 
         .sidebar {
-          align-items: stretch;
+          position: sticky;
+          top: 0;
+          z-index: 10;
           border-right: 0;
           border-bottom: 1px solid var(--line);
-          padding: 14px;
         }
 
         .sidebar-resizer {
@@ -369,7 +448,6 @@
         }
 
         .shell.sidebar-collapsed .brand,
-        .shell.sidebar-collapsed .status,
         .shell.sidebar-collapsed .nav-label {
           display: block;
         }
@@ -378,8 +456,19 @@
           display: grid;
         }
 
-        .shell.sidebar-collapsed .sidebar-header {
-          justify-content: space-between;
+        .shell.sidebar-collapsed .status {
+          display: none;
+        }
+
+        .shell.sidebar-collapsed .sidebar-header,
+        .sidebar-header {
+          grid-template-columns: 44px minmax(0, 1fr) 40px;
+        }
+
+        .shell.sidebar-collapsed .nav button {
+          grid-template-columns: 34px minmax(0, 1fr);
+          width: auto;
+          padding: 0 11px;
         }
 
         .workspace {
@@ -396,6 +485,7 @@
     <main class="shell">
       <aside class="sidebar">
         <div class="sidebar-header">
+          <div class="brand-mark" aria-hidden="true">FA</div>
           <div class="brand">
             <p data-i18n="productLabel">Desktop Studio</p>
             <h1>Fantasy Agent</h1>
@@ -416,7 +506,7 @@
             <span class="nav-label" data-i18n="workbenchTitle">Planning Workbench</span>
           </button>
           <button type="button" data-target="console">
-            <span class="nav-icon" aria-hidden="true">PC</span>
+            <span class="nav-icon" aria-hidden="true">FLOW</span>
             <span class="nav-label" data-i18n="consoleTitle">Flow Console</span>
           </button>
           <button type="button" data-target="mcp">
@@ -484,16 +574,14 @@
           consoleTitle: "Flow Console",
           workbenchTitle: "Planning Workbench",
           mcpTitle: "MCP Endpoint",
-          openConsole: "Open console tab",
-          openWorkbench: "Open planning tab",
           localServer: "Local server",
-          openSeparately: "Open separately",
           mcpUrlTitle: "ChatGPT Apps MCP URL",
           mcpUrlBody: "Use this endpoint when connecting Fantasy Agent through an HTTPS tunnel.",
           previewTitle: "Local preview",
           previewBody: "The Studio combines the local flow console and planning workbench in one desktop launcher.",
           safetyTitle: "Safety boundary",
-          safetyBody: "Planning tools are read-only by default. Unreal, Blender, ComfyUI, packaging, and Git side effects still require explicit confirmation.",
+          safetyBody:
+            "Planning tools are read-only by default. Unreal, Blender, ComfyUI, packaging, and Git side effects still require explicit confirmation.",
           flowTitle: "Typical flow",
           flowGenerate: "Generate a gameplay-first production plan.",
           flowReview: "Review ComfyUI, Blender, Unreal, and QA handoffs.",
@@ -509,28 +597,27 @@
           consoleTitle: "流程控制台",
           workbenchTitle: "策划工作台",
           mcpTitle: "MCP 端点",
-          openConsole: "单独打开流程控制台",
-          openWorkbench: "单独打开策划工作台",
           localServer: "本地服务",
-          openSeparately: "单独打开",
           mcpUrlTitle: "ChatGPT Apps MCP 地址",
           mcpUrlBody: "通过 HTTPS 隧道连接 Fantasy Agent 时使用这个端点。",
           previewTitle: "本地预览",
-          previewBody: "Studio 把本地流程控制台和策划工作台合并到一个桌面启动器里。",
+          previewBody: "Studio 把流程控制台和策划工作台合并到一个桌面启动器里。",
           safetyTitle: "安全边界",
-          safetyBody: "策划工具默认只读，只做计划生成。Unreal、Blender、ComfyUI、打包和 Git 副作用仍然需要明确确认。",
+          safetyBody: "策划工具默认只读。Unreal、Blender、ComfyUI、打包和 Git 副作用仍然需要明确确认。",
           flowTitle: "典型流程",
           flowGenerate: "生成玩法优先的生产计划。",
           flowReview: "审阅 ComfyUI、Blender、Unreal 和 QA 交接结果。",
           flowExecute: "确认副作用后再执行 MCP 生产步骤。",
           consoleFrameTitle: "Fantasy Agent 流程控制台",
-          workbenchFrameTitle: "Fantasy Agent 策划工作台"
+          workbenchFrameTitle: "Fantasy Agent 策划工作台",
+          collapseSidebar: "收起侧边栏",
+          expandSidebar: "展开侧边栏"
         }
       };
 
       const panels = {
-        console: { titleKey: "consoleTitle", href: "/web-console" },
         workbench: { titleKey: "workbenchTitle", href: "/workbench" },
+        console: { titleKey: "consoleTitle", href: "/web-console" },
         mcp: { titleKey: "mcpTitle", href: "/mcp" }
       };
 
@@ -541,8 +628,8 @@
       const sidebarToggle = document.querySelector("#sidebar-toggle");
       const sidebarToggleIcon = document.querySelector("#sidebar-toggle-icon");
       const sidebarResizer = document.querySelector("#sidebar-resizer");
-      const sidebarMinWidth = 184;
-      const sidebarMaxWidth = 380;
+      const sidebarMinWidth = 206;
+      const sidebarMaxWidth = 390;
       document.querySelector("#server-url").textContent = origin;
       document.querySelector("#mcp-url").textContent = `${origin}/mcp`;
 
@@ -557,17 +644,18 @@
         return i18n[uiLocale]?.[key] || i18n.en[key] || key;
       }
 
-      function localizedHref(href) {
+      function localizedHref(href, params = {}) {
         if (href === "/mcp") return href;
-        return `${href}?locale=${encodeURIComponent(uiLocale)}`;
+        const search = new URLSearchParams({ locale: uiLocale, ...params });
+        return `${href}?${search.toString()}`;
       }
 
       function updateFrames() {
         const consoleFrame = document.querySelector('[data-frame="console"]');
         const workbenchFrame = document.querySelector('[data-frame="workbench"]');
-        consoleFrame.src = localizedHref("/web-console");
+        consoleFrame.src = localizedHref("/web-console", { embed: "1" });
         consoleFrame.title = t("consoleFrameTitle");
-        workbenchFrame.src = localizedHref("/workbench");
+        workbenchFrame.src = localizedHref("/workbench", { embed: "1" });
         workbenchFrame.title = t("workbenchFrameTitle");
       }
 
@@ -591,7 +679,7 @@
 
       function activate(target) {
         activePanel = target;
-        const panel = panels[target] || panels.console;
+        const panel = panels[target] || panels.workbench;
         document.querySelectorAll("[data-target]").forEach((button) => {
           button.classList.toggle("active", button.dataset.target === target);
         });
