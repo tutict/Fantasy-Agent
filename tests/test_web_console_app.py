@@ -34,6 +34,7 @@ def test_web_console_static_ui_exposes_flow_console_sections():
     assert "策划交接" in js
     assert "纠偏队列" in js
     assert "fantasy-agent-planning-handoff" in js
+    assert "usesGodotEngine" in js
     assert "创意审阅" in js
     assert "执行门禁" in js
 
@@ -48,6 +49,23 @@ def test_web_console_plan_payload_feeds_review_and_pipeline_ui():
     )
 
     assert plan.production_pipeline is not None
+    assert not any(stage.id == "godot_quick_play" for stage in plan.production_pipeline.stages)
     assert any(stage.id == "creative_review" for stage in plan.production_pipeline.stages)
     assert plan.creative_review.items
     assert any(task.id == "creative_asset_review" for task in plan.task_breakdown.tasks)
+
+
+def test_web_console_plan_payload_switches_to_godot_pipeline_when_selected():
+    module = _load_web_console_app()
+    plan = module.plan(
+        PromptRequest(
+            prompt="a rooftop parkour demo with wall-runs, vaults, slides, boost pads, and checkpoints",
+            target_minutes=10,
+            engine_version="Godot 4.3",
+        )
+    )
+
+    assert plan.production_pipeline is not None
+    assert any(stage.id == "godot_quick_play" for stage in plan.production_pipeline.stages)
+    assert not any(stage.id == "unreal_production" for stage in plan.production_pipeline.stages)
+    assert any(task.id == "godot_quick_play_project" for task in plan.task_breakdown.tasks)

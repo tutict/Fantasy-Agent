@@ -2103,9 +2103,14 @@
         ].join("");
       }
 
+      function usesGodotEngine() {
+        return Boolean(state.productionPipeline?.stages?.some((stage) => stage.id === "godot_quick_play"));
+      }
+
       function renderBuild() {
-        const unreal = state.unrealPlan;
-        const godot = state.godotPlan;
+        const godotIsPrimary = usesGodotEngine();
+        const unreal = godotIsPrimary ? null : state.unrealPlan;
+        const godot = godotIsPrimary ? state.godotPlan : null;
         const blender = state.blenderPlan;
         nodes.build.innerHTML = [
           unreal ? block(t("unreal"), [list(unreal.maps), list(unreal.gameplay_classes), list(unreal.automation_steps)].join(""), true) : "",

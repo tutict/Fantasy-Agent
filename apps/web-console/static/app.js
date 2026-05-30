@@ -695,9 +695,14 @@ function bindReviewActions() {
   });
 }
 
+function usesGodotEngine(plan) {
+  return Boolean(plan.production_pipeline?.stages?.some((stage) => stage.id === "godot_quick_play"));
+}
+
 function renderBuild(plan) {
-  const unreal = plan.unreal_plan;
-  const godot = plan.godot_plan;
+  const godotIsPrimary = usesGodotEngine(plan);
+  const unreal = godotIsPrimary ? null : plan.unreal_plan;
+  const godot = godotIsPrimary ? plan.godot_plan : null;
   const blender = plan.blender_plan;
   buildOutput.innerHTML = [
     unreal ? block(t("maps"), list(unreal.maps)) : "",

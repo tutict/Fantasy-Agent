@@ -63,6 +63,18 @@ DIRECTOR_NEXT_ACTIONS = [
 ]
 
 
+def _is_godot_engine(engine_version: str) -> bool:
+    return "godot" in engine_version.casefold()
+
+
+def _unreal_engine_version(requested_engine: str) -> str:
+    return "UE5" if _is_godot_engine(requested_engine) else requested_engine
+
+
+def _godot_engine_version(requested_engine: str) -> str:
+    return requested_engine if _is_godot_engine(requested_engine) else "Godot 4"
+
+
 def prepare_unreal_project(spec: GameplaySpec, engine_version: str = "UE5") -> UnrealProjectPlan:
     project_slug = "".join(part for part in spec.title.title().split()) or "FantasyPrototype"
     return UnrealProjectPlan(
@@ -497,13 +509,16 @@ def prepare_production_pipeline(
     request: PromptRequest,
     spec: GameplaySpec,
     unreal_plan: UnrealProjectPlan,
+    godot_plan: GodotProjectPlan,
     blender_plan: BlenderAssetPlan,
     comfyui_plan: ComfyUIVisualPlan,
     creative_review: CreativeReviewReport,
     qa_plan: QAPlan,
 ) -> ProductionPipeline:
+    primary_is_godot = _is_godot_engine(request.engine_version)
+    engine_label = "Godot" if primary_is_godot else "Unreal"
     goal = (
-        f"Orchestrate gameplay, visual references, modular assets, Unreal assembly, "
+        f"Orchestrate gameplay, visual references, modular assets, {engine_label} assembly, "
         f"and QA into a {spec.target_session_minutes}-minute playable slice for {spec.title}."
     )
     stages = [
@@ -614,8 +629,42 @@ def prepare_production_pipeline(
             risks=[f"{len(blender_plan.jobs)} planned mesh jobs must stay modular and reusable."],
         ),
         _pipeline_stage(
+            stage_id="godot_quick_play",
+            order=7,
+            title="Godot production",
+            title_zh="Godot 制作",
+            owner_agent="godot-builder",
+            participating_agents=["gameplay-agent", "qa-agent"],
+            purpose=(
+                "Create the Godot quick-play project, assemble the playable scene, and validate "
+                "the loop in a lightweight runtime."
+            ),
+            inputs=["GameplaySpec", "GodotProjectPlan", "AssetApprovalManifest", "level beat plan"],
+            outputs=["Godot project.godot", "main scene", "prototype scripts", "Godot handoff manifest"],
+            artifacts=[
+                "generated/godot-project-plan.yaml",
+                "generated/godot/<project>/project.godot",
+                "generated/godot/<project>/fantasy-agent-godot-manifest.json",
+            ],
+            mcp_tools=["create_godot_project_structure", "validate_godot_project", "run_godot_import"],
+            quality_gates=[
+                f"Main scene targets {godot_plan.scenes[0] if godot_plan.scenes else 'scenes/main.tscn'}.",
+                "Godot is the selected engine for this plan.",
+                "Headless import runs only after explicit side-effect confirmation.",
+            ],
+            side_effects=[
+                "writes generated Godot project files",
+                "launches Godot headless import when execution is confirmed",
+                "writes generated/logs/godot import logs",
+            ],
+            depends_on=["asset_integration"],
+            status="blocked",
+            requires_confirmation=True,
+            risks=["Keep the Godot project compact enough for quick playable-loop validation."],
+        ),
+        _pipeline_stage(
             stage_id="creative_review",
-            order=4,
+            order=5,
             title="Creative review",
             title_zh="创意审阅",
             owner_agent="creative-review-agent",
@@ -651,10 +700,10 @@ def prepare_production_pipeline(
         ),
         _pipeline_stage(
             stage_id="asset_integration",
-            order=5,
+            order=6,
             title="Asset integration",
             title_zh="资产整合",
-            owner_agent="unreal-builder",
+            owner_agent="godot-builder" if primary_is_godot else "unreal-builder",
             participating_agents=[
                 "creative-review-agent",
                 "blender-worker",
@@ -662,35 +711,53 @@ def prepare_production_pipeline(
                 "qa-agent",
             ],
             purpose=(
-                "Move reviewed Blender exports and approved ComfyUI references into the UE project "
+                f"Move reviewed Blender exports and approved ComfyUI references into the {engine_label} project "
                 "through explicit manifests."
             ),
-            inputs=[
-                "UnrealProjectPlan",
-                "UnrealImportManifest",
-                "ComfyUIRunManifest",
-                "review decisions",
+            inputs=(
+                ["GodotProjectPlan", "generated mesh exports", "ComfyUIRunManifest", "review decisions"]
+                if primary_is_godot
+                else ["UnrealProjectPlan", "UnrealImportManifest", "ComfyUIRunManifest", "review decisions"]
+            ),
+            outputs=[
+                "GodotAssetIngestManifest" if primary_is_godot else "UnrealAssetIngestManifest",
+                "imported static meshes",
+                "reviewed texture references",
             ],
-            outputs=["UnrealAssetIngestManifest", "imported static meshes", "reviewed texture references"],
-            artifacts=[
-                "generated/unreal/*/fantasy-agent-asset-ingest.json",
-                "generated/logs/unreal/*asset_ingest*.log",
-            ],
-            mcp_tools=["prepare_asset_ingest", "run_asset_ingest"],
+            artifacts=(
+                [
+                    "generated/godot/<project>/fantasy-agent-godot-manifest.json",
+                    "generated/logs/godot/*import*.log",
+                ]
+                if primary_is_godot
+                else [
+                    "generated/unreal/*/fantasy-agent-asset-ingest.json",
+                    "generated/logs/unreal/*asset_ingest*.log",
+                ]
+            ),
+            mcp_tools=(
+                ["create_godot_project_structure", "validate_godot_project"]
+                if primary_is_godot
+                else ["prepare_asset_ingest", "run_asset_ingest"]
+            ),
             quality_gates=[
                 "No ComfyUI image imports without review_required handling.",
                 "Source paths stay inside generated/assets or generated/comfyui.",
                 "Imported meshes retain valid collision and gameplay role metadata.",
             ],
-            side_effects=["launches Unreal Editor", "imports generated assets into Content"],
+            side_effects=(
+                ["writes generated Godot project files", "validates generated Godot project"]
+                if primary_is_godot
+                else ["launches Unreal Editor", "imports generated assets into Content"]
+            ),
             depends_on=["creative_review"],
             status="blocked",
             requires_confirmation=True,
-            risks=["Blocked until Blender exports and user-approved visual decisions exist."],
+            risks=[f"Blocked until Blender exports and user-approved visual decisions exist for {engine_label}."],
         ),
         _pipeline_stage(
             stage_id="unreal_production",
-            order=6,
+            order=7,
             title="Unreal production",
             title_zh="UE 制作",
             owner_agent="unreal-builder",
@@ -728,7 +795,7 @@ def prepare_production_pipeline(
         ),
         _pipeline_stage(
             stage_id="optimization_testing",
-            order=7,
+            order=8,
             title="Optimization and testing",
             title_zh="优化与测试",
             owner_agent="qa-agent",
@@ -757,6 +824,21 @@ def prepare_production_pipeline(
             risks=["Run this before broad visual expansion or packaging distribution."],
         ),
     ]
+    if primary_is_godot:
+        stages = [stage for stage in stages if stage.id != "unreal_production"]
+        for stage in stages:
+            if stage.id == "optimization_testing":
+                stage.participating_agents = ["godot-builder", "director-agent"]
+                stage.inputs = ["QAPlan", "assembled Godot scene", "Godot quick-play candidate"]
+                stage.artifacts = ["generated/qa-report.json", "generated/logs/qa/*.log", "generated/logs/godot/*.log"]
+                stage.mcp_tools = ["validate_godot_project"]
+                stage.side_effects = ["runs Godot validation or quick-play checks"]
+                stage.depends_on = ["godot_quick_play"]
+    else:
+        stages = [stage for stage in stages if stage.id != "godot_quick_play"]
+    stages = sorted(stages, key=lambda stage: stage.order)
+    for index, stage in enumerate(stages, start=1):
+        stage.order = index
     return ProductionPipeline(
         project_name=unreal_plan.project_name,
         goal=goal,
@@ -781,13 +863,15 @@ def prepare_production_pipeline(
 
 def decompose_production_tasks(request: PromptRequest) -> DirectorTaskBreakdown:
     gameplay_spec = design_from_prompt(request)
+    godot_plan = prepare_godot_project(gameplay_spec, _godot_engine_version(request.engine_version))
     blender_plan = prepare_blender_assets(gameplay_spec)
     comfyui_plan = prepare_comfyui_visuals(gameplay_spec)
     creative_review = prepare_creative_review(gameplay_spec, blender_plan, comfyui_plan)
     return _build_task_breakdown(
         request=request,
         spec=gameplay_spec,
-        unreal_plan=prepare_unreal_project(gameplay_spec, request.engine_version),
+        unreal_plan=prepare_unreal_project(gameplay_spec, _unreal_engine_version(request.engine_version)),
+        godot_plan=godot_plan,
         blender_plan=blender_plan,
         comfyui_plan=comfyui_plan,
         creative_review=creative_review,
@@ -833,11 +917,13 @@ def _build_task_breakdown(
     request: PromptRequest,
     spec: GameplaySpec,
     unreal_plan: UnrealProjectPlan,
+    godot_plan: GodotProjectPlan,
     blender_plan: BlenderAssetPlan,
     comfyui_plan: ComfyUIVisualPlan,
     creative_review: CreativeReviewReport,
     qa_plan: QAPlan,
 ) -> DirectorTaskBreakdown:
+    primary_is_godot = _is_godot_engine(request.engine_version)
     tasks = [
         _task(
             task_id="gameplay_spec_review",
@@ -874,6 +960,28 @@ def _build_task_breakdown(
             depends_on=["gameplay_spec_review"],
             artifacts=["generated/level-beats.yaml"],
             status="ready",
+        ),
+        _task(
+            task_id="godot_quick_play_project",
+            title="Godot quick-play project",
+            title_zh="Godot 快速玩法项目",
+            agent="godot-builder",
+            purpose="Prepare a lightweight Godot 4 project for fast playable-loop validation before heavier UE work.",
+            inputs=["GameplaySpec", "level beat plan"],
+            outputs=["project.godot", "main scene", "prototype scripts", "Godot handoff manifest"],
+            side_effects=[
+                "writes generated Godot project files",
+                "launches Godot headless import when confirmed",
+            ],
+            depends_on=["level_beat_plan"],
+            artifacts=[
+                "generated/godot-project-plan.yaml",
+                "generated/godot/<project>/project.godot",
+                *godot_plan.handoff_artifacts,
+            ],
+            status="pending",
+            requires_confirmation=True,
+            risks=["Use Godot to validate the loop quickly; keep Unreal as the production target."],
         ),
         _task(
             task_id="blender_asset_plan",
@@ -1077,6 +1185,15 @@ def _build_task_breakdown(
             risks=["Run this before visual polish or packaging expansion."],
         ),
     ]
+    if primary_is_godot:
+        tasks = [task for task in tasks if not task.id.startswith("unreal_")]
+        for task in tasks:
+            if task.id == "playability_smoke_test":
+                task.inputs = ["generated Godot project", "imported assets", "QAPlan"]
+                task.side_effects = ["runs Godot validation or quick-play checks"]
+                task.depends_on = ["godot_quick_play_project", "qa_plan"]
+    else:
+        tasks = [task for task in tasks if task.id != "godot_quick_play_project"]
     goal = f"Produce a {spec.target_session_minutes}-minute playable vertical slice for {spec.title}."
     return DirectorTaskBreakdown(
         source_prompt=request.prompt,
@@ -1100,8 +1217,8 @@ def _build_task_breakdown(
 
 def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
     gameplay_spec = design_from_prompt(request)
-    unreal_plan = prepare_unreal_project(gameplay_spec, request.engine_version)
-    godot_plan = prepare_godot_project(gameplay_spec)
+    unreal_plan = prepare_unreal_project(gameplay_spec, _unreal_engine_version(request.engine_version))
+    godot_plan = prepare_godot_project(gameplay_spec, _godot_engine_version(request.engine_version))
     blender_plan = prepare_blender_assets(gameplay_spec)
     comfyui_plan = prepare_comfyui_visuals(gameplay_spec)
     creative_review = prepare_creative_review(gameplay_spec, blender_plan, comfyui_plan)
@@ -1110,6 +1227,7 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
         request=request,
         spec=gameplay_spec,
         unreal_plan=unreal_plan,
+        godot_plan=godot_plan,
         blender_plan=blender_plan,
         comfyui_plan=comfyui_plan,
         creative_review=creative_review,
@@ -1128,6 +1246,7 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
             request=request,
             spec=gameplay_spec,
             unreal_plan=unreal_plan,
+            godot_plan=godot_plan,
             blender_plan=blender_plan,
             comfyui_plan=comfyui_plan,
             creative_review=creative_review,

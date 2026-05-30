@@ -73,6 +73,7 @@ ProductionPipelineStageId = Literal[
     "gameplay_orchestration",
     "comfyui_visual_production",
     "blender_modeling",
+    "godot_quick_play",
     "creative_review",
     "asset_integration",
     "unreal_production",

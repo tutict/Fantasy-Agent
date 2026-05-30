@@ -47,6 +47,7 @@ def test_director_workflow_creates_playable_slice_plan():
         "optimization_testing",
     ]
     assert plan.production_pipeline.next_stage == "comfyui_visual_production"
+    assert not any(stage.id == "godot_quick_play" for stage in plan.production_pipeline.stages)
     assert any(
         "character" in output.lower()
         for stage in plan.production_pipeline.stages
@@ -58,6 +59,31 @@ def test_director_workflow_creates_playable_slice_plan():
     )
     asset_stage = next(stage for stage in plan.production_pipeline.stages if stage.id == "asset_integration")
     assert asset_stage.depends_on == ["creative_review"]
+
+
+def test_director_workflow_switches_pipeline_for_godot_engine():
+    request = PromptRequest(
+        prompt="a stealth courier escapes a haunted train station",
+        target_minutes=10,
+        engine_version="Godot 4.3",
+    )
+
+    plan = run_director_workflow(request)
+
+    assert plan.godot_plan.engine_version == "Godot 4.3"
+    assert plan.unreal_plan.engine_version == "UE5"
+    assert [stage.id for stage in plan.production_pipeline.stages] == [
+        "gameplay_orchestration",
+        "comfyui_visual_production",
+        "blender_modeling",
+        "creative_review",
+        "asset_integration",
+        "godot_quick_play",
+        "optimization_testing",
+    ]
+    assert not any(stage.id == "unreal_production" for stage in plan.production_pipeline.stages)
+    assert any(task.id == "godot_quick_play_project" for task in plan.task_breakdown.tasks)
+    assert not any(task.id.startswith("unreal_") for task in plan.task_breakdown.tasks)
 
 
 def test_director_workflow_specializes_parkour_prompts():

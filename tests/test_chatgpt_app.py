@@ -115,6 +115,24 @@ def test_prepare_production_pipeline_returns_pipeline_payload():
     assert result["_meta"]["activePanel"] == "pipeline"
 
 
+def test_prepare_production_pipeline_uses_selected_godot_engine():
+    request = {**_request(), "engine_version": "Godot 4.3"}
+    result = call_workbench_tool("prepare_production_pipeline", request)
+
+    assert "isError" not in result
+    pipeline = result["structuredContent"]["production_pipeline"]
+    assert [stage["id"] for stage in pipeline["stages"]] == [
+        "gameplay_orchestration",
+        "comfyui_visual_production",
+        "blender_modeling",
+        "creative_review",
+        "asset_integration",
+        "godot_quick_play",
+        "optimization_testing",
+    ]
+    assert not any(stage["id"] == "unreal_production" for stage in pipeline["stages"])
+
+
 def test_focused_chatgpt_tools_return_subplans_without_side_effects():
     unreal = call_workbench_tool("prepare_unreal_plan", _request())
     godot = call_workbench_tool("prepare_godot_plan", _request())
