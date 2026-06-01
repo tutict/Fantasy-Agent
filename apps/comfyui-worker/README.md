@@ -1,40 +1,38 @@
 # ComfyUI Worker
 
-The ComfyUI Worker prepares and executes controlled visual reference jobs from a gameplay spec. It is not the gameplay source of truth. Its outputs support readability, material language, UI direction, and texture seeds after the playable loop is scoped.
+ComfyUI Worker 根据 gameplay spec 准备并执行受控视觉参考任务。它不是玩法事实来源；它的输出用于在可玩循环收敛后支持可读性、材质语言、UI 方向和 texture seed。
 
-ComfyUI Worker 只负责玩法可读性的视觉参考，不负责决定玩法。
-
-Run locally:
+本地运行：
 
 ```bash
 uvicorn app.main:app --reload --app-dir apps/comfyui-worker
 ```
 
-Primary endpoint:
+主要端点：
 
 - `POST /visuals`
-- Request body: `GameplaySpec`
-- Returns: `ComfyUIVisualPlan`
+- 请求体：`GameplaySpec`
+- 返回：`ComfyUIVisualPlan`
 
-MCP endpoint:
+MCP 端点：
 
 - `GET /mcp`
 - `POST /mcp`
-- Transport: JSON-RPC over HTTP
-- Tools:
+- 传输：JSON-RPC over HTTP
+- 工具：
   - `prepare_visual_reference_workflows`
   - `run_visual_reference_workflow`
 
-Execution behavior:
+执行行为：
 
-- Workflow templates must stay under `templates/comfyui/`.
-- Prepared workflow JSON and run manifests stay under `generated/comfyui/`.
-- Logs stay under `generated/logs/comfyui/`.
-- Default endpoint must be local: `http://127.0.0.1:8188`.
-- Prompt submission requires `confirmed_side_effects=true`.
-- Generated images require review before becoming Unreal textures or UI assets.
+- Workflow 模板必须保持在 `templates/comfyui/`。
+- 准备好的 workflow JSON 与 run manifest 保持在 `generated/comfyui/`。
+- 日志保持在 `generated/logs/comfyui/`。
+- 默认端点必须是本地：`http://127.0.0.1:8188`。
+- 提交 prompt 需要 `confirmed_side_effects=true`。
+- 生成图片成为 Unreal texture 或 UI asset 前必须经过审阅。
 
-Example MCP payload:
+MCP payload 示例：
 
 ```json
 {

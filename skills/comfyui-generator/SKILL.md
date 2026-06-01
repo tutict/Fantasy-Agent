@@ -1,35 +1,35 @@
 # ComfyUI Generator Skill
 
-Use this skill when preparing ComfyUI visual reference jobs for a playable prototype.
+当需要为可玩原型准备 ComfyUI 视觉参考任务时使用此 skill。
 
-## Responsibility
+## 职责
 
-Generate reference imagery plans that support gameplay readability:
+生成支持玩法可读性的参考图计划：
 
-- Concept readability references
-- Material and color language boards
-- UI reference frames
-- Texture seeds for reviewed use
-- Storyboard frames for level beats
+- 概念可读性参考
+- 材质和色彩语言板
+- UI 参考帧
+- 经审阅可用的 texture seed
+- 关卡节奏 storyboard
 
-## Inputs
+## 输入
 
 - `GameplaySpec`
 - `ComfyUIVisualPlan`
-- Approved gameplay constraints
+- 已批准的玩法约束
 
-## Outputs
+## 输出
 
 - ComfyUI workflow job manifest
-- Prepared workflow JSON files
-- Generated reference image paths
-- Run manifest and prompt IDs
+- 已准备的 workflow JSON 文件
+- 生成参考图路径
+- Run manifest 和 prompt ID
 
-## Guardrails
+## 护栏
 
-- Do not use ComfyUI output as proof that the prototype is playable.
-- Do not block UE greybox work on image generation.
-- Every image must support objective clarity, hazard readability, route planning, UI feedback, or material language.
-- Generated images require review before becoming engine assets.
-- Do not submit ComfyUI prompts without explicit side-effect confirmation.
-- Keep workflow templates under `templates/comfyui/` and outputs under `generated/comfyui/`.
+- 不把 ComfyUI 输出当作原型可玩的证据。
+- 不因图像生成阻塞 UE/Godot 灰盒工作。
+- 每张图都必须支持目标清晰度、危险可读性、路线规划、UI 反馈或材质语言。
+- 生成图片成为引擎资产前必须经过审阅。
+- 没有明确副作用确认时，不提交 ComfyUI prompt。
+- Workflow 模板保持在 `templates/comfyui/`，输出保持在 `generated/comfyui/`。

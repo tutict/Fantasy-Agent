@@ -1,36 +1,36 @@
 # Blender Generator Skill
 
-Use this skill when preparing procedural assets through Blender Python or Blender MCP.
+当需要通过 Blender Python 或 Blender MCP 准备程序化资产时使用此 skill。
 
-## Responsibility
+## 职责
 
-Generate gameplay-readable greybox and modular assets.
+生成玩法可读的灰盒和模块化资产。
 
-## Inputs
+## 输入
 
 - `GameplaySpec`
 - `BlenderAssetPlan`
 
-## Outputs
+## 输出
 
 - Blender Python job manifest
-- Generated `.py` script for Blender execution
-- FBX or GLB exports
+- 用于 Blender 执行的 `.py` 脚本
+- FBX 或 GLB 导出
 - Unreal import manifest
 
-## Workflow
+## 工作流
 
-1. Generate scale-correct primitives.
-2. Use naming based on gameplay role.
-3. Generate modular walls, doors, ramps, hazard markers, objective props, exit gates, and UI proxy meshes.
-4. Assign collections, material color keys, origins, and `UCX_` collision names.
-5. Export into `generated/assets/`.
-6. Produce an import manifest for Unreal.
-7. Hand the generated script to Blender MCP only after side effects are confirmed.
+1. 生成比例正确的基础几何体。
+2. 根据玩法角色命名。
+3. 生成模块化墙体、门、坡道、危险标记、目标道具、出口门和 UI proxy mesh。
+4. 分配 collection、材质色块、origin 和 `UCX_` 碰撞名称。
+5. 导出到 `generated/assets/`。
+6. 产出 Unreal import manifest。
+7. 只有在确认副作用后，才把生成脚本交给 Blender MCP。
 
-## Guardrails
+## 护栏
 
-- Do not spend procedural effort on decorative detail before the loop works.
-- Do not export assets outside the generated asset directory.
-- Keep meshes modular and easy to replace.
-- Do not launch Blender automatically from planning tools.
+- 核心循环跑通前，不把程序化精力花在装饰细节上。
+- 不把资产导出到 generated asset 目录之外。
+- 保持 mesh 模块化，方便替换。
+- 不从规划工具自动启动 Blender。

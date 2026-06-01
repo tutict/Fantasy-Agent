@@ -1,7 +1,7 @@
 server: github-mcp
 tools:
   publish_prototype_branch:
-    description: "Publish generated prototype artifacts to a review branch."
+    description: "将生成的原型产物发布到审阅分支。"
     input:
       type: object
       required:
@@ -32,6 +32,6 @@ tools:
           items:
             type: string
     safety:
-      - "Refuse .env files and secrets."
-      - "Refuse generated packaged binaries unless explicitly approved."
-      - "Require QA summary in the pull request body."
+      - "拒绝 .env 文件和 secret。"
+      - "除非明确批准，否则拒绝生成的打包二进制文件。"
+      - "Pull Request 正文必须包含 QA 摘要。"

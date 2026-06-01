@@ -1,35 +1,30 @@
 # Creative Reviewer
 
-Use this skill when ComfyUI images or Blender meshes need user review before Unreal ingest.
+当 ComfyUI 图片或 Blender mesh 需要在 Unreal/Godot 导入前由用户审阅时使用此 skill。
 
-## Responsibility
+## 职责
 
-- Compare generated outputs with gameplay readability, art direction, and technical import readiness.
-- Ask the user for approve, revise, or reject decisions.
-- Produce revision prompts that can return work to ComfyUI or Blender.
+- 将生成结果与玩法可读性、艺术方向和技术导入准备度进行对比。
+- 让用户作出批准、修改或拒绝决定。
+- 产出可返回 ComfyUI 或 Blender 的具体修改 prompt。
 
-## Inputs
+## 输入
 
 - `GameplaySpec`
 - `BlenderAssetPlan`
 - `ComfyUIVisualPlan`
-- Optional generated images, mesh previews, or manifests
+- 可选生成图片、mesh 预览或 manifest
 
-## Outputs
+## 输出
 
 - `CreativeReviewReport`
 - `AssetApprovalManifest`
-- Revision prompts and rejected asset list
+- 修改 prompt 和被拒绝资产列表
 
-## Rules
+## 规则
 
-- User taste and art direction override generated assets.
-- Do not approve assets that weaken route, hazard, objective, feedback, or verb readability.
-- Do not allow Unreal ingest without recorded approval decisions.
-- Keep feedback concrete: name the asset, the issue, and the requested revision.
-
-## 中文规则
-
-- 生成结果必须先经过用户审阅，再进入 Unreal 导入。
-- 审阅重点是玩法可读性、风格匹配、轮廓清晰度和技术可用性。
+- 用户审美和艺术方向优先于生成资产。
+- 不批准会削弱路线、危险、目标、反馈或动词可读性的资产。
+- 没有记录审批决定时，不允许 Unreal/Godot 导入。
+- 反馈必须具体：说明资产、问题和请求的修改。
 - 不符合用户艺术表达的结果应进入修改或拒绝列表。

@@ -1,39 +1,39 @@
 # GDD Writer Skill
 
-Use this skill when turning a validated gameplay spec into a structured markdown game design document.
+当需要把已验证的 gameplay spec 转换为结构化 Markdown 游戏设计文档时使用此 skill。
 
-## Responsibility
+## 职责
 
-Write a build-facing GDD that preserves the gameplay contract.
+编写面向构建的 GDD，并保持玩法合约不变。
 
-## Inputs
+## 输入
 
 - `GameplaySpec`
-- Known assumptions or constraints
+- 已知假设或约束
 
-## Outputs
+## 输出
 
 - `GDDDocument`
 - `generated/gdd.md`
 
-## Sections
+## 章节
 
-- Summary
-- Player fantasy
-- Design pillars
-- Core verbs
-- Core loop
-- Systems
-- Progression
-- Win and failure states
-- Level beats
-- Asset needs
-- Unreal notes
-- Blender notes
-- QA focus
+- 摘要
+- 玩家幻想
+- 设计支柱
+- 核心动词
+- 核心循环
+- 系统
+- 进程
+- 胜利和失败状态
+- 关卡节奏
+- 资产需求
+- Unreal 说明
+- Blender 说明
+- QA 重点
 
-## Guardrails
+## 护栏
 
-- Do not add unsupported mechanics.
-- Do not treat art direction as proof of gameplay.
-- Keep requirements implementable by a small prototype team.
+- 不添加 spec 不支持的机制。
+- 不把美术方向当作玩法已经成立的证据。
+- 保持需求可由小型原型团队实现。

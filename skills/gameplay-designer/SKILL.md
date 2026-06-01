@@ -1,42 +1,42 @@
 # Gameplay Designer Skill
 
-Use this skill when converting a raw game idea into a scoped gameplay spec.
+当需要把原始游戏想法转换为收敛的 gameplay spec 时使用此 skill。
 
-## Responsibility
+## 职责
 
-Generate the playable loop:
+生成可玩循环：
 
-- Player fantasy
-- Core verbs
-- Player decisions
-- Systems and feedback
-- Pacing and progression
-- Win and failure states
+- 玩家幻想
+- 核心动词
+- 玩家决策
+- 系统与反馈
+- 节奏与进程
+- 胜利和失败状态
 
-## Inputs
+## 输入
 
-- Prompt text
-- Target session length
-- Engine/platform constraints
-- Jam-scope constraints
+- Prompt 文本
+- 目标会话时长
+- 引擎/平台约束
+- Game jam 范围约束
 
-## Outputs
+## 输出
 
 - `GameplaySpec`
-- YAML matching `gameplay-schema.yaml`
-- Risks and assumptions
+- 匹配 `gameplay-schema.yaml` 的 YAML
+- 风险与假设
 
-## Workflow
+## 工作流
 
-1. Identify the smallest playable fantasy.
-2. Select three to five core verbs.
-3. Build a loop where each verb changes a decision.
-4. Add pressure that creates meaningful failure.
-5. Define three level beats.
-6. List only assets required to test the loop.
+1. 识别最小可玩幻想。
+2. 选择三到五个核心动词。
+3. 构建每个动词都会改变决策的循环。
+4. 增加能产生有效失败的压力。
+5. 定义三个关卡节奏段。
+6. 只列出测试循环所需的资产。
 
-## Guardrails
+## 护栏
 
-- Cut mechanics that do not interact.
-- Cut content that cannot be tested in a greybox.
-- Keep the first prototype finishable in 5 to 15 minutes.
+- 删掉不能互动的机制。
+- 删掉不能在灰盒中测试的内容。
+- 保持第一版原型能在 5 到 15 分钟内完成。

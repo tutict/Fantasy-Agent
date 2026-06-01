@@ -1,14 +1,14 @@
 # Unreal MCP
 
-Unreal MCP will execute controlled Unreal Engine automation for project setup, validation, and packaging.
+Unreal MCP 用于执行受控 Unreal Engine 自动化，包括工程搭建、验证和打包。
 
-Initial scope:
+初始范围：
 
-- Create generated `.uproject`, `Config`, content folders, setup script, and content manifest.
-- Reference Blender import manifests for later Unreal Python import.
-- Prepare and run asset ingest scripts for Blender meshes and reviewed ComfyUI references.
-- Prepare and run greybox level assembly scripts for generated prototype maps.
-- Run allowlisted Unreal Editor data validation after explicit confirmation.
-- Package development builds after QA gates pass.
+- 创建生成的 `.uproject`、`Config`、内容目录、setup script 和 content manifest。
+- 引用 Blender import manifest，供后续 Unreal Python 导入使用。
+- 为 Blender mesh 和已审阅 ComfyUI 参考准备并运行资产导入脚本。
+- 为生成原型地图准备并运行灰盒关卡组装脚本。
+- 在明确确认后运行 allowlist 内的 Unreal Editor data validation。
+- 在 QA 门禁通过后打包 development build。
 
-Side effects must be explicit and logged.
+副作用必须明确声明并记录日志。

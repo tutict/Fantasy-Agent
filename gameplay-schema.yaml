@@ -455,7 +455,7 @@ $defs:
         type:
           - string
           - "null"
-        description: "Optional ComfyUI checkpoint model name. If unset, MCP execution probes local checkpoints and blocks when none are available."
+        description: "可选 ComfyUI checkpoint 模型名。未设置时，MCP 执行会探测本地 checkpoint；如果没有可用模型则阻塞。"
       jobs:
         type: array
         minItems: 1
@@ -641,12 +641,12 @@ $defs:
           $ref: "#/$defs/locale_code"
       field_translations:
         type: object
-        description: "Field-path keyed translations, for example core_loop.0.action."
+        description: "按字段路径保存的翻译，例如 core_loop.0.action。"
         additionalProperties:
           $ref: "#/$defs/localized_string"
       term_translations:
         type: object
-        description: "Reusable glossary terms for UI, docs, and generated assets."
+        description: "用于 UI、文档和生成资产的可复用术语表。"
         additionalProperties:
           $ref: "#/$defs/localized_string"
   localized_string:

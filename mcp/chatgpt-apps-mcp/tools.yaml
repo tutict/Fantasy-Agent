@@ -8,44 +8,44 @@ tools:
   - name: decompose_production_tasks
     read_only: true
     idempotent: true
-    purpose: Break a gameplay idea into inspectable production tasks before execution.
+    purpose: 将玩法想法拆成执行前可检查的生产任务。
     side_effects: []
   - name: generate_game_production_plan
     read_only: true
     idempotent: true
-    purpose: Generate a full prompt-to-playable DirectorBuildPlan.
+    purpose: 生成完整 prompt-to-playable DirectorBuildPlan。
     side_effects: []
   - name: prepare_production_pipeline
     read_only: true
     idempotent: true
-    purpose: Prepare the staged gameplay, ComfyUI, Blender, integration, Unreal, and QA pipeline.
+    purpose: 准备分阶段玩法、ComfyUI、Blender、整合、Unreal 和 QA 管线。
     side_effects: []
   - name: render_gdd
     read_only: true
     idempotent: true
-    purpose: Generate a structured bilingual markdown GDD.
+    purpose: 生成结构化 Markdown GDD。
     side_effects: []
   - name: prepare_unreal_plan
     read_only: true
     idempotent: true
-    purpose: Prepare a UE5 project architecture handoff without launching Unreal.
+    purpose: 准备 UE5 工程架构交接，不启动 Unreal。
     side_effects: []
   - name: prepare_blender_plan
     read_only: true
     idempotent: true
-    purpose: Prepare procedural greybox asset jobs without launching Blender.
+    purpose: 准备程序化灰盒资产任务，不启动 Blender。
     side_effects: []
   - name: prepare_comfyui_plan
     read_only: true
     idempotent: true
-    purpose: Prepare gameplay-readable visual reference jobs without calling ComfyUI.
+    purpose: 准备服务玩法可读性的视觉参考任务，不调用 ComfyUI。
     side_effects: []
   - name: prepare_qa_plan
     read_only: true
     idempotent: true
-    purpose: Prepare playable-loop smoke, failure, packaging, and metrics checks.
+    purpose: 准备可玩循环的冒烟、失败、打包和指标检查。
     side_effects: []
 safety:
-  - ChatGPT tools must not execute Unreal, Blender, ComfyUI, packaging, or GitHub side effects by default.
-  - Future mutating MCP tools require explicit side-effect disclosure and user confirmation.
-  - Gameplay decisions remain upstream of visual reference generation.
+  - ChatGPT 工具默认不得执行 Unreal、Blender、ComfyUI、打包或 GitHub 副作用。
+  - 未来会修改状态的 MCP 工具必须显式披露副作用并获得用户确认。
+  - 玩法决策必须位于视觉参考生成之前。

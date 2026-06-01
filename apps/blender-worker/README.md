@@ -1,55 +1,53 @@
 # Blender Worker
 
-The Blender Worker prepares procedural asset jobs and generates Blender Python scripts for greybox and readability-first asset passes. It targets Blender Python and future Blender MCP execution.
+Blender Worker 准备程序化资产任务，并为灰盒和可读性优先的资产阶段生成 Blender Python 脚本。目标是支持 Blender Python 与后续 Blender MCP 执行。
 
-Blender Worker 会生成面向玩法可读性的程序化资产计划和 Blender Python 脚本，后续可交给 Blender MCP 执行。
-
-Run locally:
+本地运行：
 
 ```bash
 uvicorn app.main:app --reload --app-dir apps/blender-worker
 ```
 
-Primary endpoint:
+主要端点：
 
 - `POST /assets`
-- Request body: `GameplaySpec`
-- Returns: `BlenderAssetPlan`
+- 请求体：`GameplaySpec`
+- 返回：`BlenderAssetPlan`
 
-Script endpoints:
+脚本端点：
 
 - `POST /script`
-- Request body: `BlenderAssetPlan`
-- Returns: `BlenderScriptArtifact` with generated `.py` script text and Unreal import manifest.
+- 请求体：`BlenderAssetPlan`
+- 返回：`BlenderScriptArtifact`，包含生成的 `.py` 脚本文本和 Unreal import manifest。
 
 - `POST /assets/script`
-- Request body: `GameplaySpec`
-- Returns: `BlenderScriptArtifact` after first preparing the asset plan.
+- 请求体：`GameplaySpec`
+- 先准备资产计划，再返回 `BlenderScriptArtifact`。
 
-MCP endpoint:
+MCP 端点：
 
 - `GET /mcp`
 - `POST /mcp`
-- Transport: JSON-RPC over HTTP
-- Tools:
+- 传输：JSON-RPC over HTTP
+- 工具：
   - `generate_blender_script`
   - `generate_asset_batch`
 
-Generated asset roles:
+生成资产角色：
 
-- Modular walls
-- Doors
-- Ramps
-- Hazard markers
-- Objective props
-- Exit gates
-- UI proxy meshes
+- 模块化墙体
+- 门
+- 坡道
+- 危险标记
+- 目标道具
+- 出口门
+- UI proxy mesh
 
-The generated script sets scene units, collections, material color keys, object origins, `UCX_` collision meshes, FBX/GLB exports, and a JSON-compatible Unreal import manifest at `generated/import-manifest.yaml`.
+生成脚本会设置场景单位、collection、材质色块、object origin、`UCX_` 碰撞 mesh、FBX/GLB 导出，以及位于 `generated/import-manifest.yaml` 的 JSON 兼容 Unreal import manifest。
 
-The worker does not launch Blender from planning endpoints. Blender MCP execution requires `confirmed_side_effects=true`, writes generated scripts under `generated/blender/`, exports assets under `generated/assets/`, and captures logs under `generated/logs/blender/`.
+Worker 不会从规划端点启动 Blender。Blender MCP 执行要求 `confirmed_side_effects=true`，脚本写入 `generated/blender/`，资产导出到 `generated/assets/`，日志捕获到 `generated/logs/blender/`。
 
-Example MCP execution payload:
+MCP 执行示例：
 
 ```json
 {

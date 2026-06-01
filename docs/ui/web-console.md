@@ -1,52 +1,41 @@
-# Flow Console
+# 流程控制台
 
-The Fantasy Agent Flow Console is a local execution-readiness interface for the Director workflow.
+Fantasy Agent 流程控制台是 Director workflow 的本地执行准备度界面。
 
-It is an operator surface, not a landing page. Gameplay intake belongs in the Planning Workbench. The Flow Console loads that planning handoff, then helps the user review execution readiness, capture correction notes, and inspect side-effect gates before ComfyUI, Blender, or Unreal work runs.
+它不是营销首页，而是操作台。玩法输入属于策划工作台；流程控制台负责载入策划交接，检查执行准备度，记录纠偏，并在 ComfyUI、Blender、Unreal 或 Godot 执行前确认副作用门禁。
 
-## Run
+## 运行
 
-From the repository root:
+从仓库根目录启动：
 
 ```bash
 uvicorn app.main:app --reload --app-dir apps/web-console --host 127.0.0.1 --port 7860
 ```
 
-Open:
+打开：
 
 ```text
 http://127.0.0.1:7860
 ```
 
-## Capabilities
+通常更推荐通过 Studio 统一入口访问：
 
-- Loads the latest Planning Workbench handoff from local browser storage.
-- Keeps `/api/plan` available for API clients that need the Director workflow directly.
-- Displays Overview, Gameplay DSL, GDD, Build, Visuals, and QA tabs.
-- Supports English and Simplified Chinese UI labels.
-- Displays bilingual GDD output from `GDDDocument.markdown_by_locale`.
-- Shows Unreal, Blender, ComfyUI, and QA handoff plans.
-- Records correction notes for gameplay, visual direction, scope, and technical import review.
+```text
+http://127.0.0.1:7860
+```
 
-## Boundaries
+## 能力
 
-- The UI does not call external model services.
-- It does not execute Unreal, Blender, or ComfyUI side effects.
-- MCP execution should remain explicit and logged through the MCP layer.
+- 从本地浏览器存储载入最新策划工作台交接。
+- 为需要直接访问 Director workflow 的 API 客户端保留 `/api/plan`。
+- 展示 Overview、Gameplay DSL、GDD、Build、Visuals 和 QA tabs。
+- 支持简体中文界面文案。
+- 展示 `GDDDocument.markdown_by_locale` 中的 GDD 输出。
+- 展示 Unreal、Godot、Blender、ComfyUI 和 QA 交接计划。
+- 记录玩法、视觉方向、范围和技术导入审阅的纠偏说明。
 
-## 中文说明
+## 边界
 
-Fantasy Agent 流程控制台是 Director workflow 的本地浏览器界面。
-
-它不是营销首页，而是操作台。玩法输入属于策划工作台；流程控制台负责载入策划交接，检查执行准备度，记录纠偏，并在 ComfyUI、Blender 或 Unreal 执行前确认副作用门禁。
-
-界面展示：
-
-- 策划交接
-- 纠偏队列
-- 概览
-- Gameplay DSL
-- GDD
-- Unreal/Blender 构建计划
-- ComfyUI 视觉参考计划
-- QA 检查计划
+- UI 不调用外部模型服务。
+- UI 不执行 Unreal、Godot、Blender 或 ComfyUI 副作用。
+- MCP 执行必须保持显式确认，并通过 MCP 层记录日志。

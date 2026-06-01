@@ -1,7 +1,7 @@
 server: blender-mcp
 tools:
   generate_blender_script:
-    description: "Generate a Blender Python script and Unreal import manifest from a BlenderAssetPlan."
+    description: "从 BlenderAssetPlan 生成 Blender Python 脚本和 Unreal import manifest。"
     input:
       type: object
       required:
@@ -34,11 +34,11 @@ tools:
           items:
             type: string
     safety:
-      - "This tool is read-only unless explicitly asked to write generated files."
-      - "Generated scripts must write only under generated/."
-      - "Generated scripts must keep Blender execution side effects explicit."
+      - "除非明确要求写入生成文件，否则此工具只读。"
+      - "生成脚本只能写入 generated/。"
+      - "生成脚本必须保持 Blender 执行副作用显式可见。"
   generate_asset_batch:
-    description: "Run an allowlisted Blender Python asset batch from a BlenderAssetPlan."
+    description: "从 BlenderAssetPlan 运行 allowlist 内的 Blender Python 资产批处理。"
     input:
       type: object
       required:
@@ -63,7 +63,7 @@ tools:
           default: 300
         confirmed_side_effects:
           type: boolean
-          description: "Must be true after explicit user confirmation."
+          description: "用户明确确认后必须为 true。"
     output:
       type: object
       required:
@@ -94,7 +94,7 @@ tools:
         stderr_tail:
           type: string
     safety:
-      - "Refuse output paths outside generated/assets."
-      - "Refuse scripts outside apps/blender-worker or generated/blender unless explicitly approved."
-      - "Capture Blender logs for QA handoff."
-      - "Require user confirmation before launching Blender or writing exports."
+      - "拒绝 generated/assets 之外的输出路径。"
+      - "除非明确批准，否则拒绝 apps/blender-worker 或 generated/blender 之外的脚本。"
+      - "捕获 Blender 日志用于 QA 交接。"
+      - "启动 Blender 或写入导出前必须获得用户确认。"

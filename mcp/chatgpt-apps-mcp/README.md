@@ -1,16 +1,14 @@
 # Fantasy Agent ChatGPT Apps MCP
 
-This MCP entrypoint exposes Fantasy Agent as a ChatGPT Apps workbench.
-
 这个 MCP 入口把 Fantasy Agent 暴露为 ChatGPT Apps 工作台。
 
-## Endpoint
+## 端点
 
 ```text
 apps/chatgpt-workbench -> /mcp
 ```
 
-Local default:
+本地默认地址：
 
 ```text
 http://127.0.0.1:8787/mcp
@@ -22,11 +20,8 @@ http://127.0.0.1:8787/mcp
 ui://fantasy-agent/workbench.html
 ```
 
-The resource returns a self-contained HTML widget using the ChatGPT Apps bridge when available and a local debug route when previewed in a browser.
+该 resource 返回一个自包含 HTML widget。在 ChatGPT 环境中使用 ChatGPT Apps bridge，在本地浏览器预览时使用 debug route。
 
-## Tool Boundary
+## 工具边界
 
-The first version is read-only. It may generate production plans, GDD markdown, Unreal plans, Blender plans, ComfyUI plans, and QA plans. It must not launch tools, create engine projects, generate images, package builds, or push repository changes.
-
-第一版只读。它可以生成生产计划、GDD、Unreal 计划、Blender 计划、ComfyUI 计划和 QA 计划，但不能启动工具、创建引擎项目、生成图像、打包构建或推送仓库变更。
-
+第一版只读。它可以生成生产计划、GDD Markdown、Unreal 计划、Godot 计划、Blender 计划、ComfyUI 计划和 QA 计划。它不得启动工具、创建引擎工程、生成图片、打包构建或推送仓库变更。

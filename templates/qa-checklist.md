@@ -1,22 +1,22 @@
-# Prototype QA Checklist
+# 原型 QA 检查表
 
-## Smoke
+## 冒烟测试
 
-- Project opens without missing assets.
-- Prototype map loads from editor.
-- Prototype map loads from packaged build.
-- Restart flow works without editor intervention.
+- 工程打开时没有缺失资产。
+- 原型地图能从 editor 加载。
+- 原型地图能从打包构建加载。
+- 重开流程不需要 editor 介入。
 
-## Playability
+## 可玩性
 
-- Objective is visible within 10 seconds.
-- Each core verb is required.
-- Failure explains itself.
-- Session completes inside target duration.
+- 目标能在 10 秒内被看见或理解。
+- 每个核心动词都必须被用到。
+- 失败原因能自解释。
+- 会话能在目标时长内完成。
 
-## Packaging
+## 打包
 
-- Default map is correct.
-- Input mappings are included.
-- Generated assets have collision.
-- Build logs are saved under `generated/logs/`.
+- 默认地图正确。
+- 输入映射已包含。
+- 生成资产有碰撞。
+- 构建日志保存在 `generated/logs/`。

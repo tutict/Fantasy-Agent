@@ -1,77 +1,78 @@
-# Game Design Philosophy
+# 游戏设计哲学
 
-Fantasy Agent is built around one production belief: a prototype is valuable only when it can be played.
+Fantasy Agent 的生产信念很直接：原型只有能被玩起来才有价值。
 
-The platform should not produce broad promises, empty worlds, or decorative assets detached from interaction. It should generate small designs where mechanics, level layout, feedback, and failure states reinforce each other.
+平台不应该生成空泛承诺、空洞世界，或与互动无关的装饰资产。它应该生成小而清晰的设计，让机制、关卡布局、反馈和失败状态互相支撑。
 
-## Gameplay First
+## 玩法优先
 
-A gameplay idea becomes useful when it defines player decisions:
+一个玩法想法只有回答了玩家决策，才真正有用：
 
-- What can the player do?
-- What pressure changes the decision?
-- What feedback confirms the outcome?
-- What does mastery look like?
+- 玩家能做什么？
+- 什么压力会改变玩家决策？
+- 什么反馈会确认结果？
+- 熟练掌握后是什么样子？
 
-Visual style matters after the loop is legible. Early procedural assets should clarify scale, pathing, danger, objective state, and affordances.
+视觉风格必须在玩法循环可读之后再扩展。早期程序化资产应优先说明比例、路径、危险、目标状态和可交互性。
 
-## Prototype Over Perfection
+## 原型优先于完美
 
-Fantasy Agent targets game-jam scale production. The right first result is a playable greybox with a clear loop, not a polished but untested scene.
+Fantasy Agent 面向 game jam 规模生产。正确的第一版结果应该是一个可玩的灰盒，而不是一个精致但未经测试的场景。
 
-Default scope:
+默认范围：
 
-- One map
-- One main objective
-- Three to five core verbs
-- Three level beats
-- One win state
-- Two to four failure states
-- A restart path
-- A short end-state summary
+- 一张地图
+- 一个主要目标
+- 三到五个核心动词
+- 三个关卡节奏段
+- 一个胜利状态
+- 两到四个失败状态
+- 一个重开路径
+- 一个简短结算状态
 
-## Systemic Design
+## 系统性设计
 
-Systems should interact. A pressure clock should affect route choice. A resource should influence risk. A hazard should change movement or timing. A puzzle should alter the level state.
+系统必须互动。时间压力应影响路线选择，资源应影响风险，危险应改变移动或时机，谜题应改变关卡状态。
 
-Disconnected mechanics are cut until the core loop works.
+不能互相影响的机制应先被删掉，直到核心循环可玩。
 
-## Short Playable Loops
+## 短可玩循环
 
-Fantasy Agent designs for 5 to 15 minute sessions. Short loops make playtesting possible, reveal broken assumptions quickly, and keep automation grounded.
+Fantasy Agent 设计 5 到 15 分钟的会话。短循环让 playtest 更容易，能快速暴露错误假设，也能让自动化保持脚踏实地。
 
-Each vertical slice should support:
+每个垂直切片都应支持：
 
-- First-time completion in one to three attempts
-- Fast restart
-- Clear failure explanation
-- Obvious objective state
-- Tunable pressure and pacing
+- 新玩家在一到三次尝试内完成
+- 快速重开
+- 清晰失败解释
+- 明确目标状态
+- 可调节的压力与节奏
 
-## Procedural Content With Purpose
+## 有目的的程序化内容
 
-Procedural generation is useful when it accelerates iteration:
+程序化生成只有在加快迭代时才有价值：
 
-- Greybox arena kits
-- Objective props
-- Hazard markers
-- Modular traversal pieces
-- Export manifests
-- ComfyUI reference boards for reviewed visual direction
+- 灰盒场地套件
+- 目标道具
+- 危险标记
+- 模块化移动组件
+- 导出 manifest
+- 经审阅的 ComfyUI 视觉参考板
 
-It is not useful when it creates volume without play value.
+如果程序化内容只是增加体量，而没有增加玩法价值，就不应该生成。
 
-ComfyUI is useful for visual references only after the loop has clear readability needs. It should clarify objectives, hazards, routes, materials, UI feedback, or storyboards; it should not replace greybox playtesting.
+ComfyUI 只应在玩法可读性需求明确后生成视觉参考。它应该帮助说明目标、危险、路线、材质、UI 反馈或 storyboard；它不能替代灰盒 playtest。
 
-## MCP As Production Infrastructure
+## MCP 是生产基础设施
 
-MCP integrations should expose real tools:
+MCP 集成必须暴露真实工具能力：
 
-- Unreal project creation
-- Editor commandlets
-- Asset import
-- Blender Python execution
-- ComfyUI local workflow execution
-- GitHub branch and PR workflows
+- Unreal 工程创建
+- Editor commandlet
+- 资产导入
+- Blender Python 执行
+- ComfyUI 本地 workflow 执行
+- Godot 工程生成与 headless import
+- GitHub 分支与 PR 工作流
 
-MCP tools must declare inputs, outputs, side effects, and safety checks before they run.
+MCP 工具运行前必须声明输入、输出、副作用和安全检查。

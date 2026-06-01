@@ -1,7 +1,7 @@
 server: godot-mcp
 tools:
   create_godot_project_structure:
-    description: "Prepare or write a Godot 4 project.godot, main scene, prototype scripts, asset folders, and handoff manifest from a GodotProjectPlan."
+    description: "从 GodotProjectPlan 准备或写入 Godot 4 project.godot、主场景、原型脚本、资产目录和交接 manifest。"
     input:
       type: object
       required:
@@ -43,12 +43,12 @@ tools:
           items:
             type: string
     safety:
-      - "This tool is read-only unless write_files is true."
-      - "Project directory must stay under generated/godot."
-      - "Scenes must stay under generated/godot and end with .tscn."
-      - "Scripts must stay under generated/godot and end with .gd."
+      - "除非 write_files 为 true，否则此工具只读。"
+      - "工程目录必须保持在 generated/godot。"
+      - "场景必须保持在 generated/godot，并以 .tscn 结尾。"
+      - "脚本必须保持在 generated/godot，并以 .gd 结尾。"
   validate_godot_project:
-    description: "Read-only validation for a generated Godot project.godot, main scene, scripts, and renderer setup."
+    description: "只读校验生成的 Godot project.godot、主场景、脚本和 renderer 设置。"
     input:
       type: object
       required:
@@ -56,7 +56,7 @@ tools:
       properties:
         project_file:
           type: string
-          description: "Generated project.godot path under generated/godot."
+          description: "位于 generated/godot 下的生成 project.godot 路径。"
         require_main_scene:
           type: boolean
           default: true
@@ -95,10 +95,10 @@ tools:
           items:
             type: string
     safety:
-      - "This tool does not launch Godot."
-      - "Project file must stay under generated/godot and be named project.godot."
+      - "此工具不会启动 Godot。"
+      - "工程文件必须保持在 generated/godot，并命名为 project.godot。"
   run_godot_import:
-    description: "Launch Godot headless import against a generated Fantasy Agent project and capture logs."
+    description: "对生成的 Fantasy Agent 工程启动 Godot headless import 并捕获日志。"
     input:
       type: object
       required:
@@ -106,7 +106,7 @@ tools:
       properties:
         project_file:
           type: string
-          description: "Generated project.godot path under generated/godot."
+          description: "位于 generated/godot 下的生成 project.godot 路径。"
         godot_executable:
           type: string
           default: "godot"
@@ -117,7 +117,7 @@ tools:
           default: 300
         confirmed_side_effects:
           type: boolean
-          description: "Must be true after explicit user confirmation."
+          description: "用户明确确认后必须为 true。"
     output:
       type: object
       required:
@@ -148,10 +148,10 @@ tools:
           items:
             type: string
     safety:
-      - "Require confirmed_side_effects before launching Godot."
-      - "Project file must stay under generated/godot and be named project.godot."
-      - "Logs must be saved under generated/logs/godot."
+      - "启动 Godot 前必须设置 confirmed_side_effects。"
+      - "工程文件必须保持在 generated/godot，并命名为 project.godot。"
+      - "日志必须保存到 generated/logs/godot。"
 safety:
-  - "Generated Godot files must stay under generated/godot."
-  - "Godot CLI execution requires explicit confirmation."
-  - "Godot is for fast playable-loop validation, not a replacement for Unreal production ingest."
+      - "生成的 Godot 文件必须保持在 generated/godot。"
+      - "Godot CLI 执行需要明确确认。"
+      - "Godot 用于快速 playable-loop 验证，不替代 Unreal 生产导入。"

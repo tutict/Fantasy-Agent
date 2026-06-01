@@ -1,70 +1,73 @@
-# Prompt To Playable Workflow
+# 从 Prompt 到可玩原型的流程
 
-Fantasy Agent uses a staged workflow so every output can be inspected before side-effecting tools run.
+Fantasy Agent 使用分阶段 workflow，保证每个产物在触发外部工具副作用前都可以被检查、纠偏和确认。
 
-## Stage 1: Prompt Intake
+## 阶段 1：想法输入
 
-Input:
+输入：
 
-- Raw gameplay idea
-- Session target
-- Platform and engine constraints
-- Production constraints
+- 原始玩法想法。
+- 目标游玩时长。
+- 平台与引擎约束。
+- 生产约束。
 
-Output:
+输出：
 
 - `PromptRequest`
 
-Entry points:
+入口：
 
-- Planning Workbench MCP tool call
-- Director Agent API
+- 策划工作台 MCP tool call。
+- Director Agent API。
 
-The local Flow Console is downstream of this stage. It loads the Planning Workbench handoff, records correction notes, and checks execution gates instead of duplicating gameplay intake.
+本地流程控制台位于该阶段下游。它载入策划工作台的交接结果，记录纠偏说明，并检查执行门禁，而不是重复收集玩法想法。
 
-## Stage 2: Gameplay DSL
+## 阶段 2：Gameplay DSL
 
-The Gameplay Agent generates a `GameplaySpec` with:
+Gameplay Agent 生成 `GameplaySpec`，包含：
 
-- Player fantasy
-- Design pillars
-- Core verbs
-- Core loop
-- Systems
-- Progression
-- Win state
-- Failure states
-- Level beats
-- Asset needs
-- QA focus
+- 玩家幻想。
+- 设计支柱。
+- 核心动词。
+- 核心循环。
+- 系统。
+- 进程。
+- 胜利状态。
+- 失败状态。
+- 关卡节奏。
+- 资产需求。
+- QA 重点。
 
-## Stage 3: GDD
+## 阶段 3：GDD
 
-The GDD Writer renders the gameplay spec into markdown. It does not add new scope. It clarifies implementation intent.
+GDD Writer 将 gameplay spec 渲染为 Markdown。它不添加新范围，只澄清实现意图。
 
-## Stage 4: Asset, Visual, And Engine Handoff
+## 阶段 4：资产、视觉和引擎交接
 
-The Blender Worker prepares procedural asset jobs, generates Blender Python scripts, and prepares Unreal import manifests. The ComfyUI Worker prepares visual reference jobs for readability, material language, UI references, and reviewed texture seeds. The Unreal Builder prepares project structure, maps, Blueprint classes, and automation steps. The Godot Builder prepares a lightweight quick-play project for loop timing and route-readability checks.
+- Blender Worker 准备程序化资产任务，生成 Blender Python 脚本，并准备 Unreal import manifest。
+- ComfyUI Worker 准备服务可读性、材质语言、UI 参考和经审阅 texture seed 的视觉参考任务。
+- Unreal Builder 准备工程结构、地图、Blueprint 类和自动化步骤。
+- Godot Builder 准备轻量 quick-play 工程，用于检查循环时长和路线可读性。
 
-## Stage 5: MCP Execution
+## 阶段 5：MCP 执行
 
-Future MCP servers execute controlled operations:
+未来 MCP 服务执行受控操作：
 
-- ChatGPT Apps MCP exposes read-only planning tools and widget state.
-- Blender MCP generates allowlisted scripts, requires explicit side-effect confirmation, runs `bpy` jobs, captures logs, and exports assets.
-- ComfyUI MCP prepares allowlisted workflow JSON, requires explicit side-effect confirmation, submits prompt jobs, captures prompt IDs, and optionally downloads reviewed reference outputs.
-- Unreal MCP creates/imports/validates project content.
-- Godot MCP creates/validates generated Godot project files and runs headless import only after explicit confirmation.
-- GitHub MCP publishes review branches and pull requests.
+- ChatGPT Apps MCP 暴露只读规划工具和 widget 状态。
+- Blender MCP 生成 allowlist 脚本，要求明确副作用确认，运行 `bpy` 任务，捕获日志并导出资产。
+- ComfyUI MCP 准备 allowlist workflow JSON，要求明确副作用确认，提交 prompt job，捕获 prompt ID，并可下载已审阅的参考输出。
+- Unreal MCP 创建、导入和验证工程内容。
+- Godot MCP 创建和验证生成的 Godot 工程文件，并只在明确确认后运行 headless import。
+- GitHub MCP 发布审阅分支和 PR。
 
-## Stage 6: QA And Packaging
+## 阶段 6：QA 与打包
 
-The QA Agent checks:
+QA Agent 检查：
 
-- Objective readability
-- Loop completion
-- Failure feedback
-- Restart flow
-- Packaged build behavior
+- 目标可读性。
+- 循环完成情况。
+- 失败反馈。
+- 重开流程。
+- 打包构建行为。
 
-Packaging happens after the loop is playable.
+只有循环已经可玩后，才进入打包。

@@ -1,7 +1,7 @@
 server: comfyui-mcp
 tools:
   probe_comfyui_capabilities:
-    description: "Discover the active local ComfyUI endpoint, required txt2img nodes, available checkpoints, and blocking setup issues."
+    description: "发现可用的本地 ComfyUI 端点、必需 txt2img 节点、可用 checkpoint 和阻塞性配置问题。"
     input:
       type: object
       properties:
@@ -65,11 +65,11 @@ tools:
           items:
             type: string
     safety:
-      - "Read-only capability check."
-      - "Remote ComfyUI endpoints require allow_remote_endpoint=true."
-      - "Do not submit prompts during probing."
+      - "只读能力检查。"
+      - "远程 ComfyUI 端点需要 allow_remote_endpoint=true。"
+      - "探测期间不得提交 prompt。"
   prepare_visual_reference_workflows:
-    description: "Prepare allowlisted ComfyUI workflow JSON files and a run manifest from a ComfyUIVisualPlan."
+    description: "从 ComfyUIVisualPlan 准备 allowlist ComfyUI workflow JSON 文件和 run manifest。"
     input:
       type: object
       required:
@@ -84,7 +84,7 @@ tools:
           type:
             - string
             - "null"
-          description: "Optional checkpoint override injected into API workflow templates."
+          description: "可选 checkpoint 覆盖值，会注入 API workflow 模板。"
         write_files:
           type: boolean
           default: false
@@ -113,12 +113,12 @@ tools:
         manifest_path:
           type: string
     safety:
-      - "This tool is read-only unless write_files is true."
-      - "Workflow templates must stay under templates/comfyui."
-      - "Workflow JSON and manifests must stay under generated/comfyui."
-      - "Every job must include a gameplay_constraint."
+      - "除非 write_files 为 true，否则此工具只读。"
+      - "Workflow 模板必须保持在 templates/comfyui。"
+      - "Workflow JSON 和 manifest 必须保持在 generated/comfyui。"
+      - "每个任务都必须包含 gameplay_constraint。"
   run_visual_reference_workflow:
-    description: "Run allowlisted ComfyUI visual reference jobs from a ComfyUIVisualPlan."
+    description: "从 ComfyUIVisualPlan 运行 allowlist 内的 ComfyUI 视觉参考任务。"
     input:
       type: object
       required:
@@ -134,7 +134,7 @@ tools:
           type:
             - string
             - "null"
-          description: "Optional checkpoint override. If omitted, execution probes local checkpoints and auto-selects the first available model."
+          description: "可选 checkpoint 覆盖值。未提供时，执行会探测本地 checkpoint，并自动选择第一个可用模型。"
         auto_discover_endpoint:
           type: boolean
           default: true
@@ -147,7 +147,7 @@ tools:
           default: true
         confirmed_side_effects:
           type: boolean
-          description: "Must be true after explicit user confirmation."
+          description: "用户明确确认后必须为 true。"
         wait_for_completion:
           type: boolean
           default: false
@@ -201,10 +201,10 @@ tools:
         stderr_tail:
           type: string
     safety:
-      - "Default endpoint must be localhost."
-      - "Refuse output paths outside generated/comfyui."
-      - "Require each job to include a gameplay_constraint."
-      - "Run only templates from templates/comfyui."
-      - "Block before queueing when required nodes or checkpoint models are unavailable."
-      - "Require confirmed_side_effects before submitting prompts."
-      - "Generated images require review before becoming Unreal textures or UI assets."
+      - "默认端点必须是 localhost。"
+      - "拒绝 generated/comfyui 之外的输出路径。"
+      - "要求每个任务包含 gameplay_constraint。"
+      - "只运行 templates/comfyui 中的模板。"
+      - "必需节点或 checkpoint 模型不可用时，排队前阻塞。"
+      - "提交 prompt 前必须设置 confirmed_side_effects。"
+      - "生成图片成为 Unreal texture 或 UI asset 前必须经过审阅。"

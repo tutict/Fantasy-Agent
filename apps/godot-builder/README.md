@@ -1,12 +1,12 @@
 # Godot Builder
 
-Godot Builder prepares a Godot 4 quick-play handoff for Fantasy Agent.
+Godot Builder 为 Fantasy Agent 准备 Godot 4 快速可玩工程交接。
 
-It is intended for fast playable-loop validation before heavier Unreal work. It can prepare a `GodotProjectPlan`, expose a JSON-RPC MCP endpoint, write generated Godot project files under `generated/godot/`, validate the generated project, and run Godot headless import only after explicit side-effect confirmation.
+它用于在较重 Unreal 工作前快速验证玩法循环、空间节奏和交互可读性。它可以准备 `GodotProjectPlan`，暴露 JSON-RPC MCP 端点，在 `generated/godot/` 下写入生成的 Godot 工程文件，验证工程结构，并只在明确副作用确认后运行 Godot headless import。
 
-Godot Builder 不取代 Unreal 主线。它用于更快验证玩法循环、空间节奏和交互可读性。
+Godot Builder 不取代 Unreal 主线生产导入。
 
-## Local Endpoints
+## 本地端点
 
 - `GET /health`
 - `POST /prepare`

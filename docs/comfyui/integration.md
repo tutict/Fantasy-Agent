@@ -1,20 +1,20 @@
-# ComfyUI Integration
+# ComfyUI 集成
 
-ComfyUI is integrated as a visual reference worker, not as the source of gameplay truth.
+ComfyUI 在 Fantasy Agent 中是视觉参考工人，不是玩法事实来源。
 
-## Role
+## 角色
 
-ComfyUI can help with:
+ComfyUI 适合生成：
 
-- Concept readability references
-- Material and palette boards
-- UI reference frames
-- Reviewed texture seeds
-- Storyboard frames for level beats
+- 玩法可读性概念参考。
+- 材质和色彩板。
+- UI 参考帧。
+- 经审阅后可用的 texture seed。
+- 关卡节奏 storyboard。
 
-ComfyUI should not decide mechanics, pacing, win states, failure states, or level layout. Those come from the Gameplay DSL.
+ComfyUI 不决定机制、节奏、胜利状态、失败状态或关卡布局。这些来自 Gameplay DSL。
 
-## Flow
+## 流程
 
 ```text
 GameplaySpec
@@ -22,37 +22,25 @@ GameplaySpec
   -> ComfyUIVisualPlan
   -> comfyui-mcp
   -> generated/comfyui/*
-  -> reviewed visual references
+  -> 经审阅的视觉参考
 ```
 
-## MCP Tools
+## MCP 工具
 
-- `prepare_visual_reference_workflows`: prepares allowlisted workflow JSON and run manifests. It is planning-safe unless `write_files=true`.
-- `run_visual_reference_workflow`: submits prepared jobs to ComfyUI after `confirmed_side_effects=true`.
+- `prepare_visual_reference_workflows`：准备 allowlist workflow JSON 和 run manifest。除非 `write_files=true`，否则属于规划安全操作。
+- `run_visual_reference_workflow`：在 `confirmed_side_effects=true` 后向 ComfyUI 提交已准备的任务。
 
-The MCP bridge uses the local ComfyUI HTTP routes `/prompt`, `/history/{prompt_id}`, and `/view` for queueing, polling, and optional image download.
+MCP 桥接使用本地 ComfyUI HTTP 路由 `/prompt`、`/history/{prompt_id}` 和 `/view` 完成排队、轮询和可选图片下载。
 
-## Safety
+## 安全边界
 
-- Default endpoint is `http://127.0.0.1:8188`.
-- Output stays under `generated/comfyui/`.
-- Workflow templates come from `templates/comfyui/`.
-- Each job must include a gameplay constraint.
-- Generated images are reviewed before they become engine assets.
-- Remote ComfyUI endpoints require explicit `allow_remote_endpoint=true`.
-- Prompt submission requires `confirmed_side_effects=true`.
-- Logs stay under `generated/logs/comfyui/`.
+- 默认端点是 `http://127.0.0.1:8188`。
+- 输出保持在 `generated/comfyui/`。
+- Workflow 模板来自 `templates/comfyui/`。
+- 每个任务都必须包含玩法约束。
+- 生成图片成为引擎资产前必须经过审阅。
+- 远程 ComfyUI 端点需要显式 `allow_remote_endpoint=true`。
+- 提交 prompt 需要 `confirmed_side_effects=true`。
+- 日志保持在 `generated/logs/comfyui/`。
 
-## 中文说明
-
-ComfyUI 在 Fantasy Agent 中负责视觉参考，不负责玩法决策。
-
-它适合生成：
-
-- 玩法可读性概念参考
-- 材质和色彩板
-- UI 参考图
-- 经评审后可用的贴图种子
-- 关卡节奏 storyboard
-
-机制、节奏、胜负状态和关卡布局仍然由 Gameplay DSL 决定。
+ComfyUI 输出不应阻塞灰盒原型；只有当它能说明目标、危险、路线、材质、UI 反馈或 storyboard 时才值得生成。

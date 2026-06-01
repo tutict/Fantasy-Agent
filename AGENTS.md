@@ -1,24 +1,8 @@
-# Fantasy Agent Orchestration Rules
-
-Fantasy Agent agents are modular production workers. Each agent owns a narrow responsibility, receives structured input, returns structured output, and can later be backed by an LLM, LangGraph node, local script, or MCP tool.
+# Fantasy Agent 编排规则
 
 Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清晰边界内的任务，接收结构化输入，返回结构化输出，未来可以由 LLM、LangGraph 节点、本地脚本或 MCP 工具驱动。
 
-## Global Rules
-
-- Gameplay comes before graphics.
-- Every generated asset, mechanic, and automation step must support a playable loop.
-- Target 5 to 15 minute vertical slices.
-- Prefer one cohesive loop over many disconnected features.
-- Do not create empty procedural spaces.
-- Do not hide uncertainty. Mark assumptions and unresolved production risks.
-- Tool side effects must be explicit before MCP execution.
-- QA checks must run before packaging or visual expansion.
-- English and Simplified Chinese outputs must stay synchronized through the `i18n` bundle.
-- ComfyUI is a visual reference worker, not a gameplay authority.
-- ComfyUI and Blender outputs must pass Creative Review before Unreal ingest.
-- Godot is a quick-play validation target, not a replacement for Unreal production ingest.
-- ChatGPT Apps tools are interactive planning surfaces; they must not execute production side effects without explicit confirmation.
+## 全局规则
 
 - 玩法优先于图形。
 - 每个生成资产、机制和自动化步骤都必须服务可玩循环。
@@ -28,273 +12,271 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - 不隐藏不确定性。必须标出假设和未解决的生产风险。
 - MCP 工具副作用必须在执行前声明清楚。
 - QA 检查必须先于打包和视觉扩展。
-- 中英文输出必须通过 `i18n` 翻译包保持同步。
+- 面向人的文档、界面和设计说明优先使用简体中文。
+- 实现标识保持英文：类名、Blueprint 名、目录路径、MCP tool 名和 metric key 不翻译。
+- ComfyUI 是视觉参考工人，不是玩法权威。
+- ComfyUI 与 Blender 输出必须先通过 Creative Review，再进入 Unreal 或 Godot 导入。
+- Godot 是快速可玩验证目标，不替代 Unreal 主线生产导入。
 - ChatGPT Apps 工具是交互式计划入口；没有明确确认时不得执行生产副作用。
-
-## Locale Rules
 
 ## 语言规则
 
-- Canonical implementation identifiers stay in English: class names, Blueprint names, folder paths, MCP tool names, and metric keys.
-- Human-facing design text supports `en` and `zh-CN`.
-- The core DSL stores stable English fields and optional field-path translations under `i18n`.
-- GDD output should include both languages when both locales are requested.
+- Canonical implementation identifiers 保持英文：class name、Blueprint name、folder path、MCP tool name 和 metric key。
+- 面向人的设计文本当前以 `zh-CN` 为主。
+- 核心 DSL 仍保存稳定英文主字段；需要多语言时，字段路径翻译放在可选 `i18n` 下。
+- GDD 与审阅文本可以按 `PromptRequest.output_locales` 输出多语言版本。
 
-- 实现标识保持英文：类名、蓝图名、文件夹路径、MCP 工具名和指标名。
-- 面向人的设计文本支持 `en` 与 `zh-CN`。
-- 核心 DSL 保存稳定英文主字段，字段路径翻译放在可选的 `i18n` 下。
-- 同时请求两种语言时，GDD 应输出中英双语版本。
+## 智能体交接合约
 
-## Agent Handoff Contract
+智能体通过 `fantasy_agent/contracts.py` 中的 Pydantic 模型，以及 `generated/` 下的 YAML 或 Markdown 产物交换信息。
 
-Agents exchange Pydantic models from `fantasy_agent/contracts.py` and YAML or markdown artifacts in `generated/`.
+必要交接属性：
 
-Required handoff properties:
-
-- `source`: producing agent or tool
-- `schema_version`: version of the gameplay DSL or tool contract
-- `inputs`: source prompt, spec, or manifest
-- `outputs`: generated artifacts
-- `risks`: blocking issues or assumptions
-- `next_actions`: concrete next steps
+- `source`：产出智能体或工具。
+- `schema_version`：gameplay DSL 或 tool contract 版本。
+- `inputs`：来源 prompt、spec 或 manifest。
+- `outputs`：生成产物。
+- `risks`：阻塞问题或假设。
+- `next_actions`：具体下一步。
 
 ## Director Agent
 
-Responsibility:
+职责：
 
-- Own the full prompt-to-playable workflow.
-- Route work to Gameplay Agent, GDD Writer, Unreal Builder, Blender Worker, QA Agent, and future MCP tools.
-- Reject scope that cannot plausibly produce a playable vertical slice.
+- 负责完整 prompt-to-playable workflow。
+- 将工作路由到 Gameplay Agent、GDD Writer、Unreal Builder、Godot Builder、Blender Worker、ComfyUI Worker、QA Agent 和未来 MCP 工具。
+- 拒绝无法合理产出可玩垂直切片的范围。
 
-Input:
+输入：
 
 - `PromptRequest`
 
-Output:
+输出：
 
 - `DirectorBuildPlan`
 
-Workflow:
+流程：
 
-1. Normalize prompt and constraints.
-2. Generate a gameplay-first spec.
-3. Render GDD.
-4. Prepare Unreal and Blender handoffs.
-5. Prepare QA plan.
-6. Return next actions and risks.
+1. 归一化 prompt 和约束。
+2. 生成玩法优先的 spec。
+3. 渲染 GDD。
+4. 准备 Unreal、Godot、Blender 和 ComfyUI 交接。
+5. 准备 QA 计划。
+6. 返回下一步和风险。
 
 ## Gameplay Agent
 
-Responsibility:
+职责：
 
-- Transform raw prompts into coherent gameplay systems.
-- Define core loop, verbs, pacing, progression, win state, and failure states.
+- 将原始 prompt 转换为连贯的玩法系统。
+- 定义核心循环、动词、节奏、进程、胜利状态和失败状态。
 
-Input:
+输入：
 
 - `PromptRequest`
 
-Output:
+输出：
 
 - `GameplaySpec`
 
-Rules:
+规则：
 
-- A mechanic is valid only if it changes a player decision.
-- A loop is valid only if it can be tested in a greybox map.
-- A failure state must teach the next attempt.
+- 只有能改变玩家决策的机制才有效。
+- 只有能在灰盒地图中测试的循环才有效。
+- 失败状态必须帮助玩家理解下一次尝试。
 
 ## GDD Writer
 
-Responsibility:
+职责：
 
-- Convert the gameplay spec into a structured markdown design document.
-- Preserve gameplay intent without adding unapproved features.
+- 将 gameplay spec 转换成结构化 Markdown 设计文档。
+- 保留玩法意图，不添加未经批准的功能。
 
-Input:
+输入：
 
 - `GameplaySpec`
 
-Output:
+输出：
 
 - `GDDDocument`
 
-Rules:
+规则：
 
-- Write for implementation.
-- Separate confirmed design from assumptions.
-- Keep art direction secondary to interaction readability.
+- 面向实现编写。
+- 区分已确认设计和假设。
+- 美术方向必须服从互动可读性。
 
 ## Level Director
 
-Responsibility:
+职责：
 
-- Convert gameplay loops into level beats and greybox requirements.
-- Keep spatial plans compact enough for rapid iteration.
+- 将玩法循环转换为关卡节奏和灰盒需求。
+- 保持空间计划足够紧凑，方便快速迭代。
 
-Input:
+输入：
 
 - `GameplaySpec`
 
-Output:
+输出：
 
-- Level beat plan, encounter plan, greybox asset needs.
+- 关卡节奏计划。
+- encounter 或目标计划。
+- 灰盒资产需求。
 
-Rules:
+规则：
 
-- The first minute must teach the loop.
-- The midpoint must combine systems.
-- The final beat must force the complete loop.
+- 第一分钟必须教会循环。
+- 中段必须组合系统。
+- 最后一段必须强制玩家使用完整循环。
 
 ## Unreal Builder
 
-Responsibility:
+职责：
 
-- Prepare UE5 project structure, plugins, maps, Blueprint classes, data assets, and automation steps.
+- 准备 UE5 工程结构、插件、地图、Blueprint 类、Data Asset 和自动化步骤。
 
-Input:
+输入：
 
 - `GameplaySpec`
 
-Output:
+输出：
 
 - `UnrealProjectPlan`
 
-Future MCP compatibility:
+未来 MCP 兼容性：
 
-- Unreal MCP should execute only allowlisted project creation, asset import, map validation, and packaging commands.
+- Unreal MCP 只应执行 allowlist 内的工程创建、资产导入、地图验证和打包命令。
 
 ## Godot Builder
 
-Responsibility:
+职责：
 
-- Prepare Godot 4 quick-play project handoffs for fast playable-loop validation.
-- Generate `project.godot`, main scene, GDScript prototype scripts, and import manifests under generated paths.
+- 为快速可玩循环验证准备 Godot 4 工程交接。
+- 在 generated 路径下生成 `project.godot`、主场景、GDScript prototype 脚本和 import manifest。
 
-Input:
+输入：
 
 - `GameplaySpec`
 
-Output:
+输出：
 
 - `GodotProjectPlan`
 
-Rules:
+规则：
 
-- Godot validates loop timing, route readability, and interaction pacing before heavier Unreal work.
-- Godot MCP execution must keep projects under `generated/godot/` and logs under `generated/logs/godot/`.
-- Do not launch Godot or run headless import without explicit side-effect confirmation.
+- Godot 用于在较重 Unreal 工作前验证循环时长、路线可读性和交互节奏。
+- Godot MCP 执行必须将工程保持在 `generated/godot/`，日志保持在 `generated/logs/godot/`。
+- 没有明确副作用确认时，不得启动 Godot 或运行 headless import。
 
 ## Blender Worker
 
-Responsibility:
+职责：
 
-- Prepare procedural asset jobs that support greybox playability and readable interactions.
-- Generate Blender Python scripts from approved `BlenderAssetPlan` handoffs.
+- 准备支持灰盒可玩性和互动可读性的程序化资产任务。
+- 从已批准的 `BlenderAssetPlan` 交接生成 Blender Python 脚本。
 
-Input:
+输入：
 
 - `GameplaySpec`
 
-Output:
+输出：
 
 - `BlenderAssetPlan`
 
-Rules:
+规则：
 
-- Generate modular assets first.
-- Use scale-correct exports.
-- Name assets by gameplay role.
-- Generate `UCX_` collision objects and Unreal import manifests with every export.
-- Do not run Blender from planning surfaces without explicit side-effect confirmation.
-- Blender MCP execution must keep scripts under `generated/blender/`, exports under `generated/assets/`, and logs under `generated/logs/blender/`.
+- 先生成模块化资产。
+- 使用比例正确的导出。
+- 按玩法角色命名资产。
+- 每次导出都生成 `UCX_` 碰撞对象和 Unreal import manifest。
+- 没有明确副作用确认时，不得从规划界面运行 Blender。
+- Blender MCP 执行必须将脚本放在 `generated/blender/`，导出放在 `generated/assets/`，日志放在 `generated/logs/blender/`。
 
 ## ComfyUI Worker
 
-Responsibility:
+职责：
 
-- Prepare gameplay-readable visual reference jobs for ComfyUI.
-- Generate concept, material, UI, texture-seed, or storyboard references after gameplay needs are known.
+- 为 ComfyUI 准备服务玩法可读性的视觉参考任务。
+- 在玩法需求明确后生成 concept、material、UI、texture seed 或 storyboard 参考。
 
-Input:
+输入：
 
 - `GameplaySpec`
 
-Output:
+输出：
 
 - `ComfyUIVisualPlan`
 
-Rules:
+规则：
 
-- Do not block greybox work on image generation.
-- Every prompt must include a gameplay constraint.
-- Generated images require review before becoming Unreal textures or UI assets.
-- Avoid decorative images that do not clarify objectives, hazards, routes, materials, or feedback.
-- ComfyUI MCP execution must keep templates under `templates/comfyui/`, outputs under `generated/comfyui/`, and logs under `generated/logs/comfyui/`.
-- Do not submit prompts to ComfyUI without explicit side-effect confirmation.
+- 不因图像生成阻塞灰盒工作。
+- 每个 prompt 都必须包含玩法约束。
+- 生成图片成为 Unreal texture 或 UI asset 前必须经过审阅。
+- 避免不说明目标、危险、路线、材质或反馈的装饰图片。
+- ComfyUI MCP 执行必须将模板放在 `templates/comfyui/`，输出放在 `generated/comfyui/`，日志放在 `generated/logs/comfyui/`。
+- 没有明确副作用确认时，不得向 ComfyUI 提交 prompt。
 
 ## Creative Review Agent
 
-Responsibility:
+职责：
 
-- Review ComfyUI references and Blender meshes with the user before Unreal ingest.
-- Convert user taste, art direction, gameplay readability, and technical import checks into structured approval decisions.
-- Send rejected or unclear assets back as concrete ComfyUI or Blender revision prompts.
+- 在 Unreal 或 Godot 导入前，与用户一起审阅 ComfyUI 参考图和 Blender mesh。
+- 将用户审美、艺术方向、玩法可读性和技术导入检查转换为结构化审批决策。
+- 将被拒绝或不明确的资产转回具体 ComfyUI 或 Blender 修改请求。
 
-Input:
+输入：
 
 - `CreativeReviewRequest`
 
-Output:
+输出：
 
 - `CreativeReviewReport`
 
-Rules:
+规则：
 
-- User approval is required before generated references or meshes become Unreal import candidates.
-- The review gate blocks Unreal ingest until assets are approved, revised, or rejected.
-- Feedback must name the asset, the gameplay role, and the concrete revision request.
+- 生成参考或 mesh 成为引擎导入候选前必须获得用户批准。
+- 审阅关卡会阻塞引擎导入，直到资产被批准、修改或拒绝。
+- 反馈必须说明资产名称、玩法角色和具体修改请求。
 
 ## ChatGPT Workbench
 
-Responsibility:
+职责：
 
-- Expose Fantasy Agent as a ChatGPT Apps-compatible interactive workbench.
-- Route ChatGPT tool calls into the same structured planning contracts used by local agents.
-- Render gameplay, GDD, Unreal, Blender, ComfyUI, and QA handoffs in a widget.
+- 将 Fantasy Agent 暴露为兼容 ChatGPT Apps 的交互式工作台。
+- 将 ChatGPT tool call 路由到本地智能体使用的同一套结构化规划合约。
+- 在 widget 中渲染玩法、GDD、Unreal、Godot、Blender、ComfyUI 和 QA 交接。
 
-Input:
+输入：
 
 - `PromptRequest`
 
-Output:
+输出：
 
 - `DirectorBuildPlan`
-- Focused sub-plans such as `GDDDocument`, `UnrealProjectPlan`, `BlenderAssetPlan`, `ComfyUIVisualPlan`, or `QAPlan`
-- Focused Godot plans are for quick-play validation and remain read-only unless a separate MCP side-effect gate is confirmed.
+- 聚焦子计划，例如 `GDDDocument`、`UnrealProjectPlan`、`GodotProjectPlan`、`BlenderAssetPlan`、`ComfyUIVisualPlan` 或 `QAPlan`
 
-Rules:
+规则：
 
-- Tools must be read-only and idempotent until explicit side-effect gates are implemented.
-- Widget state may summarize plans, but implementation identifiers remain English.
-- ChatGPT interaction must preserve the gameplay-first hierarchy and i18n outputs.
-- Do not launch Unreal, Blender, ComfyUI, package builds, write files, or push GitHub changes from this surface by default.
+- 在明确副作用门禁实现前，工具必须保持只读且幂等。
+- Widget 状态可以总结计划，但实现标识保持英文。
+- ChatGPT 交互必须保持玩法优先层级和 i18n 输出。
+- 默认不得从该界面启动 Unreal、Godot、Blender、ComfyUI、打包、写文件或推送 GitHub。
 
 ## QA Agent
 
-Responsibility:
+职责：
 
-- Convert the gameplay spec into tests that validate playability, failure feedback, and package readiness.
+- 将 gameplay spec 转换为测试，验证可玩性、失败反馈和打包准备度。
 
-Input:
+输入：
 
 - `GameplaySpec`
 
-Output:
+输出：
 
 - `QAPlan`
 
-Rules:
+规则：
 
-- Test the loop before polishing.
-- Check completion time, restart flow, objective readability, and packaged build behavior.
+- 先测试循环，再做打磨。
+- 检查完成时间、重开流程、目标可读性和打包构建行为。

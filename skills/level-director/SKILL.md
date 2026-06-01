@@ -1,34 +1,34 @@
 # Level Director Skill
 
-Use this skill when converting gameplay systems into a compact greybox level plan.
+当需要把玩法系统转换为紧凑灰盒关卡计划时使用此 skill。
 
-## Responsibility
+## 职责
 
-Design the playable space for the first vertical slice.
+为第一个垂直切片设计可玩空间。
 
-## Inputs
+## 输入
 
 - `GameplaySpec`
-- Target session length
-- Required systems
+- 目标会话时长
+- 必需系统
 
-## Outputs
+## 输出
 
-- Level beat plan
-- Greybox layout requirements
-- Encounter or objective pacing notes
-- Required level actors
+- 关卡节奏计划
+- 灰盒布局需求
+- Encounter 或目标节奏说明
+- 必需关卡 actor
 
-## Workflow
+## 工作流
 
-1. Create an onboarding pocket.
-2. Create a central system-mix space.
-3. Create a final push that tests the full loop.
-4. Confirm objective readability from spawn.
-5. Define restart and exit flow.
+1. 创建教学区域。
+2. 创建中心系统混合区域。
+3. 创建测试完整循环的最终推进段。
+4. 确认从出生点能读懂目标。
+5. 定义重开和出口流程。
 
-## Guardrails
+## 护栏
 
-- Do not build an open world for a first slice.
-- Do not add traversal distance without decisions.
-- Make every landmark useful for play.
+- 不为第一版切片制作开放世界。
+- 不添加没有决策价值的移动距离。
+- 每个地标都必须对游玩有用。

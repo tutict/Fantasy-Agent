@@ -1,40 +1,40 @@
 # {{ title }}
 
-## Summary
+## 摘要
 {{ logline }}
 
-## Player Fantasy
+## 玩家幻想
 {{ player_fantasy }}
 
-## Target Session
-{{ target_session_minutes }} minutes
+## 目标会话
+{{ target_session_minutes }} 分钟
 
-## Design Pillars
+## 设计支柱
 {{ design_pillars }}
 
-## Core Loop
+## 核心循环
 {{ core_loop }}
 
-## Systems
+## 系统
 {{ systems }}
 
-## Progression
+## 进程
 {{ progression }}
 
-## Win And Failure
+## 胜利与失败
 {{ win_failure }}
 
-## Level Beats
+## 关卡节奏
 {{ level_beats }}
 
-## Asset Needs
+## 资产需求
 {{ asset_needs }}
 
-## Unreal Handoff
+## Unreal 交接
 {{ unreal_notes }}
 
-## Blender Handoff
+## Blender 交接
 {{ blender_notes }}
 
-## QA Focus
+## QA 重点
 {{ qa_focus }}

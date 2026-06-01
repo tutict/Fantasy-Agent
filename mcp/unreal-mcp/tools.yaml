@@ -1,7 +1,7 @@
 server: unreal-mcp
 tools:
   create_project_structure:
-    description: "Prepare or write a UE project descriptor, content folders, setup script, and content manifest from an UnrealProjectPlan."
+    description: "从 UnrealProjectPlan 准备或写入 UE project descriptor、内容目录、setup script 和 content manifest。"
     input:
       type: object
       properties:
@@ -9,7 +9,7 @@ tools:
           $ref: "../../gameplay-schema.yaml#/$defs/unreal_project_plan"
         plan_path:
           type: string
-          description: "Optional generated YAML/JSON UnrealProjectPlan path when plan is not provided."
+          description: "未提供 plan 时可选的生成 YAML/JSON UnrealProjectPlan 路径。"
         project_dir:
           type: string
           default: "generated/unreal/<project-name>"
@@ -52,12 +52,12 @@ tools:
           items:
             type: string
     safety:
-      - "This tool is read-only unless write_files is true."
-      - "Project directory must stay under generated/unreal."
-      - "Content folders must start with Content/."
-      - "Import manifests must stay under generated/."
+      - "除非 write_files 为 true，否则此工具只读。"
+      - "工程目录必须保持在 generated/unreal。"
+      - "内容目录必须以 Content/ 开头。"
+      - "Import manifest 必须保持在 generated/。"
   prepare_asset_ingest:
-    description: "Prepare Unreal Python import automation for Blender mesh exports and reviewed ComfyUI reference images."
+    description: "为 Blender mesh 导出和已审阅的 ComfyUI 参考图准备 Unreal Python 导入自动化。"
     input:
       type: object
       required:
@@ -65,13 +65,13 @@ tools:
       properties:
         project_file:
           type: string
-          description: "Generated .uproject path under generated/unreal."
+          description: "位于 generated/unreal 下的生成 .uproject 路径。"
         blender_import_manifest_path:
           type: string
-          description: "Optional Blender Unreal import manifest under generated/."
+          description: "位于 generated/ 下的可选 Blender Unreal import manifest。"
         comfyui_run_manifest_path:
           type: string
-          description: "Optional ComfyUI run manifest under generated/comfyui."
+          description: "位于 generated/comfyui 下的可选 ComfyUI run manifest。"
         import_script_path:
           type: string
           default: "generated/unreal/<project>/Scripts/fantasy_agent_asset_ingest.py"
@@ -105,13 +105,13 @@ tools:
           items:
             type: string
     safety:
-      - "This tool is read-only unless write_files is true."
-      - "Project file must stay under generated/unreal and end with .uproject."
-      - "Blender source assets must stay under generated/assets."
-      - "ComfyUI source images must stay under generated/comfyui."
-      - "ComfyUI images are imported as review references by default."
+      - "除非 write_files 为 true，否则此工具只读。"
+      - "工程文件必须保持在 generated/unreal，并以 .uproject 结尾。"
+      - "Blender 源资产必须保持在 generated/assets。"
+      - "ComfyUI 源图片必须保持在 generated/comfyui。"
+      - "ComfyUI 图片默认作为审阅参考导入。"
   run_asset_ingest:
-    description: "Launch Unreal Editor to execute a generated Fantasy Agent asset ingest script."
+    description: "启动 Unreal Editor 执行生成的 Fantasy Agent asset ingest 脚本。"
     input:
       type: object
       required:
@@ -120,10 +120,10 @@ tools:
       properties:
         project_file:
           type: string
-          description: "Generated .uproject path under generated/unreal."
+          description: "位于 generated/unreal 下的生成 .uproject 路径。"
         import_script_path:
           type: string
-          description: "Generated Python script under generated/unreal."
+          description: "位于 generated/unreal 下的生成 Python 脚本。"
         unreal_editor_cmd:
           type: string
           default: "UnrealEditor-Cmd"
@@ -134,7 +134,7 @@ tools:
           default: 600
         confirmed_side_effects:
           type: boolean
-          description: "Must be true after explicit user confirmation."
+          description: "用户明确确认后必须为 true。"
     output:
       type: object
       required:
@@ -165,12 +165,12 @@ tools:
           items:
             type: string
     safety:
-      - "Require confirmed_side_effects before launching Unreal."
-      - "Project file must stay under generated/unreal and end with .uproject."
-      - "Import script must stay under generated/unreal."
-      - "Logs must be saved under generated/logs/unreal."
+      - "启动 Unreal 前必须设置 confirmed_side_effects。"
+      - "工程文件必须保持在 generated/unreal，并以 .uproject 结尾。"
+      - "导入脚本必须保持在 generated/unreal。"
+      - "日志必须保存到 generated/logs/unreal。"
   validate_asset_ingest:
-    description: "Read-only validation for a generated Unreal asset ingest manifest, source paths, Unreal asset names, and UCX collision naming."
+    description: "只读校验生成的 Unreal asset ingest manifest、源路径、Unreal 资产名和 UCX 碰撞命名。"
     input:
       type: object
       required:
@@ -178,7 +178,7 @@ tools:
       properties:
         ingest_manifest_path:
           type: string
-          description: "Generated asset ingest manifest under generated/unreal."
+          description: "位于 generated/unreal 下的生成 asset ingest manifest。"
         require_existing_sources:
           type: boolean
           default: true
@@ -216,13 +216,13 @@ tools:
           items:
             type: string
     safety:
-      - "This tool does not launch Unreal."
-      - "Ingest manifest must stay under generated/unreal."
-      - "Blender sources must stay under generated/assets."
-      - "ComfyUI sources must stay under generated/comfyui."
-      - "Static mesh UCX collision names must match the Unreal asset name."
+      - "此工具不会启动 Unreal。"
+      - "Ingest manifest 必须保持在 generated/unreal。"
+      - "Blender 源文件必须保持在 generated/assets。"
+      - "ComfyUI 源文件必须保持在 generated/comfyui。"
+      - "Static mesh 的 UCX 碰撞名称必须匹配 Unreal 资产名。"
   prepare_level_assembly:
-    description: "Prepare a gameplay-first greybox map assembly manifest and Unreal Python script from a generated asset ingest manifest."
+    description: "从生成的 asset ingest manifest 准备玩法优先的灰盒地图组装 manifest 和 Unreal Python 脚本。"
     input:
       type: object
       required:
@@ -231,10 +231,10 @@ tools:
       properties:
         project_file:
           type: string
-          description: "Generated .uproject path under generated/unreal."
+          description: "位于 generated/unreal 下的生成 .uproject 路径。"
         ingest_manifest_path:
           type: string
-          description: "Generated asset ingest manifest under generated/unreal."
+          description: "位于 generated/unreal 下的生成 asset ingest manifest。"
         map_name:
           type: string
           default: "M_Prototype_Greybox"
@@ -268,12 +268,12 @@ tools:
           items:
             type: string
     safety:
-      - "This tool is read-only unless write_files is true."
-      - "Project file must stay under generated/unreal and end with .uproject."
-      - "Level manifest and script must stay under generated/unreal."
-      - "Map path must stay under /Game/Maps."
+      - "除非 write_files 为 true，否则此工具只读。"
+      - "工程文件必须保持在 generated/unreal，并以 .uproject 结尾。"
+      - "Level manifest 和脚本必须保持在 generated/unreal。"
+      - "地图路径必须保持在 /Game/Maps。"
   validate_level_assembly:
-    description: "Read-only validation for a generated Unreal level assembly manifest, route roles, map path, and imported asset references."
+    description: "只读校验生成的 Unreal level assembly manifest、路线角色、地图路径和已导入资产引用。"
     input:
       type: object
       required:
@@ -281,7 +281,7 @@ tools:
       properties:
         level_manifest_path:
           type: string
-          description: "Generated level assembly manifest under generated/unreal."
+          description: "位于 generated/unreal 下的生成 level assembly manifest。"
         require_imported_assets:
           type: boolean
           default: true
@@ -324,12 +324,12 @@ tools:
           items:
             type: string
     safety:
-      - "This tool does not launch Unreal."
-      - "Level manifest must stay under generated/unreal."
-      - "Route must include floor, objective, and exit roles."
-      - "Imported asset references must resolve to generated project Content files when required."
+      - "此工具不会启动 Unreal。"
+      - "Level manifest 必须保持在 generated/unreal。"
+      - "路线必须包含 floor、objective 和 exit 角色。"
+      - "需要时，已导入资产引用必须能解析到生成工程的 Content 文件。"
   run_level_assembly:
-    description: "Launch Unreal Editor to execute a generated Fantasy Agent level assembly script and write or update the generated prototype map."
+    description: "启动 Unreal Editor 执行生成的 Fantasy Agent level assembly 脚本，并写入或更新生成的原型地图。"
     input:
       type: object
       required:
@@ -338,10 +338,10 @@ tools:
       properties:
         project_file:
           type: string
-          description: "Generated .uproject path under generated/unreal."
+          description: "位于 generated/unreal 下的生成 .uproject 路径。"
         assembly_script_path:
           type: string
-          description: "Generated Python script under generated/unreal."
+          description: "位于 generated/unreal 下的生成 Python 脚本。"
         unreal_editor_cmd:
           type: string
           default: "UnrealEditor-Cmd"
@@ -352,7 +352,7 @@ tools:
           default: 600
         confirmed_side_effects:
           type: boolean
-          description: "Must be true after explicit user confirmation."
+          description: "用户明确确认后必须为 true。"
     output:
       type: object
       required:
@@ -383,12 +383,12 @@ tools:
           items:
             type: string
     safety:
-      - "Require confirmed_side_effects before launching Unreal."
-      - "Project file must stay under generated/unreal and end with .uproject."
-      - "Assembly script must stay under generated/unreal."
-      - "Logs must be saved under generated/logs/unreal."
+      - "启动 Unreal 前必须设置 confirmed_side_effects。"
+      - "工程文件必须保持在 generated/unreal，并以 .uproject 结尾。"
+      - "组装脚本必须保持在 generated/unreal。"
+      - "日志必须保存到 generated/logs/unreal。"
   run_editor_commandlet:
-    description: "Run allowlisted Unreal Editor data validation and capture logs. Use manifest validation before editor execution."
+    description: "运行 allowlist 内的 Unreal Editor data validation 并捕获日志。执行 editor 前先使用 manifest validation。"
     input:
       type: object
       required:
@@ -398,7 +398,7 @@ tools:
       properties:
         project_file:
           type: string
-          description: "Generated .uproject path under generated/unreal."
+          description: "位于 generated/unreal 下的生成 .uproject 路径。"
         commandlet:
           enum:
             - DataValidation
@@ -412,7 +412,7 @@ tools:
           default: 300
         confirmed_side_effects:
           type: boolean
-          description: "Must be true after explicit user confirmation."
+          description: "用户明确确认后必须为 true。"
     output:
       type: object
       required:
@@ -443,11 +443,11 @@ tools:
           items:
             type: string
     safety:
-      - "Require confirmed_side_effects before launching Unreal."
-      - "Project file must stay under generated/unreal and end with .uproject."
-      - "Commandlet allowlist is limited to UE DataValidation."
-      - "Validation logs must be saved under generated/logs/unreal."
+      - "启动 Unreal 前必须设置 confirmed_side_effects。"
+      - "工程文件必须保持在 generated/unreal，并以 .uproject 结尾。"
+      - "Commandlet allowlist 仅限 UE DataValidation。"
+      - "Validation 日志必须保存到 generated/logs/unreal。"
 safety:
-  - "Project path must be inside the workspace."
-  - "Commandlet must be allowlisted."
-  - "Validation logs must be saved under generated/logs/unreal."
+      - "工程路径必须位于 workspace 内。"
+      - "Commandlet 必须在 allowlist 内。"
+      - "Validation 日志必须保存到 generated/logs/unreal。"

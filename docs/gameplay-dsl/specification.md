@@ -1,10 +1,6 @@
-# Gameplay DSL Specification
-
-The gameplay DSL is a YAML document validated by `gameplay-schema.yaml`.
+# Gameplay DSL 规格
 
 Gameplay DSL 是一个 YAML 文档，由 `gameplay-schema.yaml` 校验。
-
-## Required Sections
 
 ## 必填字段
 
@@ -27,13 +23,6 @@ Gameplay DSL 是一个 YAML 文档，由 `gameplay-schema.yaml` 校验。
 - `notes_for_blender`
 - `notes_for_comfyui`
 
-Optional i18n section:
-
-- `i18n.source_locale`
-- `i18n.output_locales`
-- `i18n.field_translations`
-- `i18n.term_translations`
-
 可选国际化字段：
 
 - `i18n.source_locale`
@@ -41,38 +30,21 @@ Optional i18n section:
 - `i18n.field_translations`
 - `i18n.term_translations`
 
-## Design Rules
-
 ## 设计规则
-
-- `target_session_minutes` must be between 5 and 15.
-- `core_loop` must include at least three steps.
-- `systems` must include at least three interacting systems.
-- `level_beats` must include onboarding and resolution.
-- `asset_needs` must map to playable interactions or readability.
-- `notes_for_comfyui` must explain how visual generation serves gameplay readability.
 
 - `target_session_minutes` 必须在 5 到 15 之间。
 - `core_loop` 至少包含三个步骤。
 - `systems` 至少包含三个互相作用的系统。
 - `level_beats` 必须包含教学和结算。
 - `asset_needs` 必须映射到可玩互动或可读性。
+- `notes_for_comfyui` 必须说明视觉生成如何服务玩法可读性。
 
-## i18n Rules
+## i18n 规则
 
-## 国际化规则
-
-- The English fields are the canonical automation source.
-- Simplified Chinese is stored in `i18n.field_translations` using field paths such as `core_loop.0.action`.
-- Reusable vocabulary belongs in `i18n.term_translations`.
-- Engine-facing identifiers should not be localized unless they are displayed to players.
-
-- 英文字段是自动化的主来源。
+- 英文字段仍是自动化主来源。
 - 简体中文翻译使用字段路径保存在 `i18n.field_translations` 中，例如 `core_loop.0.action`。
 - 可复用术语放在 `i18n.term_translations` 中。
 - 面向引擎的标识不应本地化，除非它会展示给玩家。
-
-## Artifact Flow
 
 ## 产物流
 
@@ -82,7 +54,8 @@ gameplay-spec.yaml
   -> blender-asset-plan.yaml
   -> comfyui-visual-plan.yaml
   -> unreal-project-plan.yaml
+  -> godot-project-plan.yaml
   -> qa-plan.yaml
 ```
 
-The DSL is the source of truth. Downstream agents should not silently add mechanics that are not represented in the spec.
+DSL 是事实来源。下游智能体不能静默添加 spec 中不存在的机制。

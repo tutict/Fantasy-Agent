@@ -1,21 +1,21 @@
 # Unreal Builder
 
-The Unreal Builder prepares UE5 project architecture from the gameplay spec. It does not invent content; it creates a concrete project, folder, Blueprint, map, and automation plan that can be executed by Unreal Python or Unreal MCP.
+Unreal Builder 根据 gameplay spec 准备 UE5 工程架构。它不编造内容，而是生成可以由 Unreal Python 或 Unreal MCP 执行的工程、目录、Blueprint、地图和自动化计划。
 
-Run locally:
+本地运行：
 
 ```bash
 uvicorn app.main:app --reload --app-dir apps/unreal-builder
 ```
 
-Primary endpoint:
+主要端点：
 
 - `POST /prepare`
-- Request body: `GameplaySpec`
-- Returns: `UnrealProjectPlan`
+- 请求体：`GameplaySpec`
+- 返回：`UnrealProjectPlan`
 
-MCP endpoint:
+MCP 端点：
 
 - `POST /mcp`
-- Tools: `create_project_structure`, `prepare_asset_ingest`, `validate_asset_ingest`, `run_asset_ingest`, `prepare_level_assembly`, `validate_level_assembly`, `run_level_assembly`, `run_editor_commandlet`
-- Unreal execution is blocked unless `confirmed_side_effects=true`.
+- 工具：`create_project_structure`、`prepare_asset_ingest`、`validate_asset_ingest`、`run_asset_ingest`、`prepare_level_assembly`、`validate_level_assembly`、`run_level_assembly`、`run_editor_commandlet`
+- Unreal 执行必须在 `confirmed_side_effects=true` 后才允许。
