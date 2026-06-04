@@ -84,6 +84,35 @@ def test_extract_idea_seed_returns_prompt_request_for_chatgpt_refinement():
     assert result["_meta"]["activePanel"] == "discovery"
 
 
+def test_extract_idea_seed_handles_chinese_portfolio_story():
+    result = call_workbench_tool(
+        "extract_idea_seed",
+        {
+            "raw_idea": (
+                "我想利用 Godot 做一个用来应聘的小游戏，结合休学、他人评价、"
+                "走出自己的道路、害怕自废武功、从代码转职游戏策划、"
+                "以及希望像团队里的战地庸医一样关键时刻发挥价值的经历。"
+            ),
+            "target_minutes": 10,
+            "engine_version": "Godot 4.3",
+            "source_locale": "zh-CN",
+            "output_locales": ["zh-CN", "en"],
+            "constraints": ["应聘作品", "个人经历改编", "game jam 规模"],
+        },
+    )
+
+    assert "isError" not in result
+    seed = result["structuredContent"]["idea_seed"]
+    assert "应聘游戏策划" in seed["player_fantasy"]
+    assert "记忆房间" in seed["core_action"]
+    assert "团队危机" in seed["playable_loop_candidate"]
+    assert any("不复刻" in item or "大型 RPG" in item for item in seed["can_cut"])
+    assert "portfolio-friendly personal story" in seed["constraints"]
+    prompt_request = result["structuredContent"]["prompt_request"]
+    assert prompt_request["engine_version"] == "Godot 4.3"
+    assert prompt_request["source_locale"] == "zh-CN"
+
+
 def test_decompose_production_tasks_returns_task_board_payload():
     result = call_workbench_tool("decompose_production_tasks", _request())
 

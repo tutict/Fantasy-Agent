@@ -1,4 +1,6 @@
 from fantasy_agent.contracts import PromptRequest
+from fantasy_agent.idea_discovery import extract_idea_seed, prompt_request_from_seed
+from fantasy_agent.contracts import IdeaDiscoveryRequest
 from fantasy_agent.workflows import run_director_workflow
 
 
@@ -98,3 +100,34 @@ def test_director_workflow_specializes_parkour_prompts():
     assert "Momentum Chain" in {system.name for system in plan.gameplay_spec.systems}
     assert "Wall-run panel set" in plan.gameplay_spec.asset_needs
     assert any("checkpoint" in beat.gameplay_focus.lower() for beat in plan.gameplay_spec.level_beats)
+
+
+def test_director_workflow_specializes_chinese_portfolio_godot_story():
+    seed_request = IdeaDiscoveryRequest(
+        raw_idea=(
+            "我想利用 Godot 做一个用来应聘的小游戏，结合休学、他人评价、"
+            "走出自己的道路、害怕自废武功、从代码转职游戏策划、"
+            "以及希望像团队里的战地庸医一样关键时刻发挥价值的经历。"
+        ),
+        target_minutes=10,
+        engine_version="Godot 4.3",
+        source_locale="zh-CN",
+        output_locales=["zh-CN", "en"],
+        constraints=["应聘作品", "个人经历改编", "game jam 规模"],
+    )
+    prompt_request = prompt_request_from_seed(extract_idea_seed(seed_request), seed_request)
+
+    plan = run_director_workflow(prompt_request)
+    spec = plan.gameplay_spec
+
+    assert spec.title == "Road Beyond The Fog"
+    assert spec.core_verbs == ["discern", "choose", "compose", "support"]
+    assert "Evaluation Fog" in {system.name for system in spec.systems}
+    assert "Design Board Translation" in {system.name for system in spec.systems}
+    assert "Interview Gate Triage" in {beat.name for beat in spec.level_beats}
+    assert "Design board UI proxy" in spec.asset_needs
+    assert plan.godot_plan.engine_version == "Godot 4.3"
+    assert any(stage.id == "godot_quick_play" for stage in plan.production_pipeline.stages)
+    assert not any(stage.id == "unreal_production" for stage in plan.production_pipeline.stages)
+    assert "雾外之路" in plan.gdd.markdown_by_locale["zh-CN"]
+    assert "应聘门" in plan.gdd.markdown_by_locale["zh-CN"]

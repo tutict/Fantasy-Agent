@@ -14,6 +14,8 @@ from fantasy_agent.i18n import build_i18n_bundle, contains_cjk
 
 
 def _clean_title(prompt: str) -> str:
+    if _looks_like_career_portfolio(prompt):
+        return "Road Beyond The Fog"
     if contains_cjk(prompt):
         compact = re.sub(r"\s+", "", prompt.strip())
         return compact[:18] or "Untitled Prototype"
@@ -24,8 +26,35 @@ def _clean_title(prompt: str) -> str:
     return " ".join(meaningful).title() or "Untitled Prototype"
 
 
+def _looks_like_career_portfolio(prompt: str) -> bool:
+    text = prompt.lower()
+    return any(
+        term in text or term in prompt
+        for term in [
+            "应聘",
+            "求职",
+            "作品集",
+            "游戏策划",
+            "转职",
+            "他人评价",
+            "自己的道路",
+            "自废武功",
+            "外部 plan",
+            "external plan",
+            "borrowed plan",
+            "game design applicant",
+            "portfolio",
+            "career pivot",
+            "interview gate",
+            "memory room",
+        ]
+    )
+
+
 def _detect_axis(prompt: str) -> str:
     text = prompt.lower()
+    if _looks_like_career_portfolio(prompt):
+        return "career"
     if any(
         term in text
         for term in [
@@ -61,6 +90,7 @@ def _verbs_for_axis(axis: str) -> list[str]:
         "puzzle": ["observe", "combine", "trigger", "solve"],
         "combat": ["position", "attack", "evade", "recover"],
         "mobility": ["dash", "steer", "boost", "risk"],
+        "career": ["discern", "choose", "compose", "support"],
         "systems": ["explore", "interact", "adapt", "complete"],
     }
     return table[axis]
@@ -92,6 +122,33 @@ def _loop_for_axis(axis: str, verbs: list[str]) -> list[LoopStep]:
                 action="Slide under hazards and exit through the final gate",
                 player_decision="Preserve enough momentum for the final slide or take a checkpoint reset.",
                 feedback="The finish gate reports time, broken chain count, best route, and restart affordance.",
+            ),
+        ]
+    if axis == "career":
+        return [
+            LoopStep(
+                order=1,
+                action="Discern evaluation noise inside a memory room",
+                player_decision="Keep moving toward a clear self-owned goal or follow a loud external judgment marker.",
+                feedback="Fog thins around self-owned choices and thickens around borrowed evaluation routes.",
+            ),
+            LoopStep(
+                order=2,
+                action="Choose between borrowed plans and a personal route",
+                player_decision="Take a safe-looking plan card for short-term time relief or reject it to preserve agency.",
+                feedback="Plan cards show immediate comfort but reduce the self-route meter when overused.",
+            ),
+            LoopStep(
+                order=3,
+                action="Compose experience fragments into a design board",
+                player_decision="Place fragments as mechanics, constraints, or emotional beats before the interview timer ends.",
+                feedback="The board converts lived moments into playable objectives, hazards, and support actions.",
+            ),
+            LoopStep(
+                order=4,
+                action="Support the team crisis and open the interview gate",
+                player_decision="Spend limited focus to patch the weakest team need instead of chasing the flashiest role.",
+                feedback="A final score reports clarity, fit, support timing, and which borrowed plans were rejected.",
             ),
         ]
     return [
@@ -147,6 +204,30 @@ def _systems_for_axis(axis: str) -> list[SystemSpec]:
                 failure_pressure="Unreadable surfaces slow the player and break the score chain.",
             ),
         ]
+    if axis == "career":
+        return [
+            SystemSpec(
+                name="Evaluation Fog",
+                purpose="Turns other people's judgments into readable pressure without making the space aimless.",
+                inputs=["player proximity", "borrowed plan count", "self-route meter"],
+                outputs=["fog density", "objective clarity", "confidence feedback"],
+                failure_pressure="Following too much evaluation noise hides the personal route and forces a restart.",
+            ),
+            SystemSpec(
+                name="Plan Card Tradeoff",
+                purpose="Makes external advice useful but risky, so choosing a path is an actual gameplay decision.",
+                inputs=["plan card type", "interview timer", "player choice history"],
+                outputs=["time relief", "agency cost", "route branch"],
+                failure_pressure="Stacking mismatched plans drains agency and locks the applicant out of the final board.",
+            ),
+            SystemSpec(
+                name="Design Board Translation",
+                purpose="Converts personal experience fragments into mechanics, constraints, and team support actions.",
+                inputs=["memory fragments", "board slots", "team crisis needs"],
+                outputs=["prototype pitch score", "support action", "interview gate state"],
+                failure_pressure="Fragments placed as decoration do not open the gate; they must change a playable decision.",
+            ),
+        ]
     return [
         SystemSpec(
             name="Objective State",
@@ -184,6 +265,17 @@ def _progression_for_axis(axis: str) -> ProgressionSpec:
                 "End-state route grade after reaching the extraction gate",
             ],
         )
+    if axis == "career":
+        return ProgressionSpec(
+            first_minute="Teach movement, fog readability, and the first choice between a judgment marker and a self-route marker.",
+            midpoint_shift="Introduce plan cards that reduce the timer but weaken agency if they do not fit the player's route.",
+            final_minutes="Ask the player to assemble a design board from memory fragments and support a team crisis before the interview gate closes.",
+            unlocks=[
+                "Self-route meter after rejecting the first mismatched plan",
+                "Design board after collecting three experience fragments",
+                "Team support action after the board forms a coherent prototype pitch",
+            ],
+        )
     return ProgressionSpec(
         first_minute="Teach movement, camera, and the first objective without punishment.",
         midpoint_shift="Combine the main verb with pressure so the player must plan ahead.",
@@ -219,6 +311,30 @@ def _level_beats_for_axis(axis: str, target_minutes: int) -> list[LevelBeat]:
                 gameplay_focus="Run the full chain under pressure and choose speed versus recovery.",
                 required_assets=["final gap ramp", "pressure timer UI", "extraction gate"],
                 success_condition="Player exits before the timer expires and receives a route grade.",
+            ),
+        ]
+    if axis == "career":
+        return [
+            LevelBeat(
+                name="Fog of Evaluation",
+                duration_minutes=2,
+                gameplay_focus="Teach the player to read judgment noise, self-route markers, and recoverable wrong turns.",
+                required_assets=["fog corridor", "judgment marker", "self-route marker", "confidence UI"],
+                success_condition="Player reaches the first clear route marker without losing all confidence.",
+            ),
+            LevelBeat(
+                name="Borrowed Plan Crossroads",
+                duration_minutes=max(2, target_minutes - 5),
+                gameplay_focus="Choose, reject, or revise plan cards while collecting experience fragments for the design board.",
+                required_assets=["plan card kiosks", "memory fragment props", "design board", "timer UI"],
+                success_condition="Player fills the board with fragments that change mechanics instead of decoration.",
+            ),
+            LevelBeat(
+                name="Interview Gate Triage",
+                duration_minutes=3,
+                gameplay_focus="Use the completed design board to support the team need that matters most under time pressure.",
+                required_assets=["team crisis stations", "support action prompt", "interview gate", "fit score UI"],
+                success_condition="Player resolves one critical team need and opens the interview gate with a readable score.",
             ),
         ]
     return [
@@ -259,6 +375,18 @@ def _asset_needs_for_axis(axis: str) -> list[str]:
             "Extraction gate",
             "Route timer UI proxy",
         ]
+    if axis == "career":
+        return [
+            "Fog corridor greybox kit",
+            "Judgment marker set",
+            "Self-route marker set",
+            "Borrowed plan card kiosk",
+            "Memory fragment pickup set",
+            "Design board UI proxy",
+            "Team crisis station set",
+            "Interview gate",
+            "Fit score UI proxy",
+        ]
     return [
         "Greybox arena kit",
         "Objective prop set",
@@ -275,31 +403,68 @@ def design_from_prompt(request: PromptRequest) -> GameplaySpec:
     title = _clean_title(request.prompt)
     verbs = _verbs_for_axis(axis)
     target_minutes = request.target_minutes
-
-    spec = GameplaySpec(
-        title=title,
-        logline=(
+    if axis == "career":
+        logline = (
+            f"A {target_minutes}-minute Godot-friendly portfolio prototype about turning personal "
+            "fog, borrowed plans, and a game-design career pivot into a playable proof of fit."
+        )
+        player_fantasy = (
+            "Prove value as a game design applicant by transforming personal experience into "
+            "clear mechanics and supporting a team at the right moment."
+        )
+        design_pillars = [
+            "Personal history becomes playable decisions",
+            "Borrowed plans help only when they fit the player's route",
+            "Failure clarifies the next self-owned choice",
+            "Support actions matter more than flashy power",
+        ]
+        win_state = "Open the interview gate by building a coherent design board and resolving one critical team need."
+        failure_states = [
+            "Evaluation fog hides the self-route after too many mismatched plans",
+            "Interview timer expires before the design board becomes actionable",
+            "Team crisis is ignored in favor of decorative or unfocused choices",
+        ]
+        notes_for_comfyui = [
+            "Generate original visual metaphors for fog, plan cards, design boards, and interview gates; do not copy named game IP.",
+            "Prioritize icon-like readability for judgment noise, self-route markers, and support prompts.",
+            "Use references as portfolio mood boards only after the greybox loop proves readable.",
+        ]
+    else:
+        logline = (
             f"A {target_minutes}-minute playable prototype about {request.prompt.strip()} "
             "built around readable decisions, fast feedback, and a finishable objective."
-        ),
-        target_session_minutes=target_minutes,
-        player_fantasy=f"Master a compact {axis}-driven challenge through repeatable skill.",
-        design_pillars=[
+        )
+        player_fantasy = f"Master a compact {axis}-driven challenge through repeatable skill."
+        design_pillars = [
             "One readable objective at all times",
             "Every mechanic changes a player decision",
             "Failure teaches the next attempt",
             "Assets exist to clarify play space",
-        ],
+        ]
+        win_state = "Complete the primary objective and reach the exit before pressure caps out."
+        failure_states = [
+            "Pressure clock reaches maximum",
+            "Player health or critical resource reaches zero",
+            "Required objective actor is destroyed or abandoned",
+        ]
+        notes_for_comfyui = [
+            "Generate visual references only after gameplay readability needs are known.",
+            "Prioritize objective, hazard, route, material, and UI clarity over style exploration.",
+            "Treat generated images as reviewed references, not direct proof of playable progress.",
+        ]
+
+    spec = GameplaySpec(
+        title=title,
+        logline=logline,
+        target_session_minutes=target_minutes,
+        player_fantasy=player_fantasy,
+        design_pillars=design_pillars,
         core_verbs=verbs,
         core_loop=_loop_for_axis(axis, verbs),
         systems=_systems_for_axis(axis),
         progression=_progression_for_axis(axis),
-        win_state="Complete the primary objective and reach the exit before pressure caps out.",
-        failure_states=[
-            "Pressure clock reaches maximum",
-            "Player health or critical resource reaches zero",
-            "Required objective actor is destroyed or abandoned",
-        ],
+        win_state=win_state,
+        failure_states=failure_states,
         level_beats=_level_beats_for_axis(axis, target_minutes),
         asset_needs=_asset_needs_for_axis(axis),
         qa_focus=[
@@ -317,11 +482,7 @@ def design_from_prompt(request: PromptRequest) -> GameplaySpec:
             "Prefer modular props with collision-friendly silhouettes.",
             "Name exports by gameplay role, not visual theme.",
         ],
-        notes_for_comfyui=[
-            "Generate visual references only after gameplay readability needs are known.",
-            "Prioritize objective, hazard, route, material, and UI clarity over style exploration.",
-            "Treat generated images as reviewed references, not direct proof of playable progress.",
-        ],
+        notes_for_comfyui=notes_for_comfyui,
     )
     spec.i18n = build_i18n_bundle(request, spec, axis, verbs)
     return spec
