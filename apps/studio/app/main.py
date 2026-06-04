@@ -5,6 +5,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 from glob import glob
 from pathlib import Path
+import re
 import shutil
 from typing import Any
 from urllib import error, request
@@ -221,6 +222,32 @@ def _find_executable(
     return None
 
 
+def _godot_candidate_key(path: str) -> tuple[tuple[int, ...], int, str]:
+    version = tuple(int(part) for part in re.findall(r"\d+", path))
+    console_score = 1 if "console" in Path(path).name.casefold() else 0
+    return version, console_score, path.casefold()
+
+
+def _find_godot_executable() -> str | None:
+    env_path = _existing_env_path(["GODOT_EXECUTABLE"])
+    if env_path:
+        return env_path
+    for command in ["godot-console", "godot4", "godot"]:
+        resolved = shutil.which(command)
+        if resolved:
+            return resolved
+    candidates = _candidate_paths(
+        [
+            "C:/Program Files/Godot/Godot*.exe",
+            "C:/Users/*/AppData/Local/Programs/Godot/Godot*.exe",
+            "C:/Users/*/Downloads/Godot*/Godot*.exe",
+        ]
+    )
+    if candidates:
+        return max(candidates, key=_godot_candidate_key)
+    return None
+
+
 def _probe_executable(
     *,
     service_id: str,
@@ -310,6 +337,33 @@ def _probe_github_cli() -> dict[str, Any]:
     )
 
 
+def _probe_godot(required: bool) -> dict[str, Any]:
+    executable = _find_godot_executable()
+    if executable:
+        return _mcp_status_item(
+            service_id="godot",
+            label="Godot",
+            status="ready",
+            target=executable,
+            detail="Executable found. MCP execution still requires explicit confirmation.",
+            next_action="Use Godot MCP validation for Godot-selected quick-play projects.",
+            detail_key="mcpDetailExecutableReady",
+            next_action_key="mcpNextGodotReady",
+            required=required,
+        )
+    return _mcp_status_item(
+        service_id="godot",
+        label="Godot",
+        status="unavailable",
+        target="godot-console, godot4, godot, GODOT_EXECUTABLE",
+        detail="No executable was found on PATH, in configured environment variables, or common install folders.",
+        next_action="Install Godot 4 or set GODOT_EXECUTABLE to the Godot executable.",
+        detail_key="mcpDetailExecutableMissing",
+        next_action_key="mcpNextGodotMissing",
+        required=required,
+    )
+
+
 def _is_godot_engine(engine: str) -> bool:
     return "godot" in engine.casefold()
 
@@ -348,21 +402,7 @@ def _mcp_connectivity_status(engine: str = "UE5") -> dict[str, Any]:
             next_action_missing_key="mcpNextUnrealMissing",
             required=not godot_selected,
         ),
-        _probe_executable(
-            service_id="godot",
-            label="Godot",
-            env_names=["GODOT_EXECUTABLE"],
-            commands=["godot", "godot4", "godot-console"],
-            path_patterns=[
-                "C:/Program Files/Godot/Godot*.exe",
-                "C:/Users/*/AppData/Local/Programs/Godot/Godot*.exe",
-            ],
-            next_action_ready="Use Godot MCP validation for Godot-selected quick-play projects.",
-            next_action_missing="Install Godot 4 or set GODOT_EXECUTABLE to the Godot executable.",
-            next_action_ready_key="mcpNextGodotReady",
-            next_action_missing_key="mcpNextGodotMissing",
-            required=godot_selected,
-        ),
+        _probe_godot(required=godot_selected),
         _probe_github_cli(),
     ]
     required = [service for service in services if service["required"]]

@@ -4,6 +4,7 @@ import json
 import os
 from glob import glob
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -70,6 +71,12 @@ def _find_executable(
     return None
 
 
+def _godot_candidate_key(path: str) -> tuple[tuple[int, ...], int, str]:
+    version = tuple(int(part) for part in re.findall(r"\d+", path))
+    console_score = 1 if "console" in Path(path).name.casefold() else 0
+    return version, console_score, path.casefold()
+
+
 def _find_blender() -> str | None:
     return _find_executable(
         env_names=["BLENDER_EXECUTABLE"],
@@ -93,14 +100,23 @@ def _find_unreal() -> str | None:
 
 
 def _find_godot() -> str | None:
-    return _find_executable(
-        env_names=["GODOT_EXECUTABLE"],
-        commands=["godot", "godot4", "godot-console"],
-        path_patterns=[
+    env_path = _existing_env_path(["GODOT_EXECUTABLE"])
+    if env_path:
+        return env_path
+    for command in ["godot-console", "godot4", "godot"]:
+        resolved = shutil.which(command)
+        if resolved:
+            return resolved
+    candidates = _candidate_paths(
+        [
             "C:/Program Files/Godot/Godot*.exe",
             "C:/Users/*/AppData/Local/Programs/Godot/Godot*.exe",
-        ],
+            "C:/Users/*/Downloads/Godot*/Godot*.exe",
+        ]
     )
+    if candidates:
+        return max(candidates, key=_godot_candidate_key)
+    return None
 
 
 def _target(

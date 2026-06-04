@@ -64,6 +64,32 @@ def test_studio_serves_combined_desktop_panel():
     assert blocked["status"] == "blocked"
 
 
+def test_studio_detects_downloaded_godot_install(monkeypatch, tmp_path):
+    module = _load_studio_app()
+    older_godot = tmp_path / "Godot_v4.6.1-stable_win64" / "Godot_v4.6.1-stable_win64.exe"
+    godot = tmp_path / "Godot_v4.6.3-stable_win64" / "Godot_v4.6.3-stable_win64_console.exe"
+    older_godot.parent.mkdir(parents=True)
+    godot.parent.mkdir(parents=True)
+    older_godot.write_text("", encoding="utf-8")
+    godot.write_text("", encoding="utf-8")
+
+    monkeypatch.delenv("GODOT_EXECUTABLE", raising=False)
+    monkeypatch.setattr(module.shutil, "which", lambda _command: None)
+    monkeypatch.setattr(
+        module,
+        "_candidate_paths",
+        lambda patterns: [str(older_godot), str(godot)]
+        if "C:/Users/*/Downloads/Godot*/Godot*.exe" in patterns
+        else [],
+    )
+
+    status = module.mcp_status(engine="Godot 4.6")
+    services = {service["id"]: service for service in status["services"]}
+
+    assert services["godot"]["status"] == "ready"
+    assert services["godot"]["target"] == str(godot)
+
+
 def test_studio_shell_includes_bilingual_ui_controls():
     module = _load_studio_app()
     html = module.STATIC_DIR.joinpath("index.html").read_text(encoding="utf-8")
