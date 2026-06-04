@@ -7,13 +7,47 @@ const correctionModeKeys = {
   import: "modeImport"
 };
 
+const correctionModeManualTargets = {
+  gameplay: "planning",
+  visuals: "comfyui",
+  scope: "planning",
+  import: "engine"
+};
+
+const manualTargetKeys = {
+  planning: {
+    label: "manualTargetPlanning",
+    detail: "manualPlanningDetail"
+  },
+  comfyui: {
+    label: "manualTargetComfyui",
+    detail: "manualComfyMissing"
+  },
+  blender: {
+    label: "manualTargetBlender",
+    detail: "manualBlenderMissing"
+  },
+  unreal: {
+    label: "manualTargetUnreal",
+    detail: "manualUnrealMissing"
+  },
+  godot: {
+    label: "manualTargetGodot",
+    detail: "manualGodotMissing"
+  },
+  generated: {
+    label: "manualTargetGenerated",
+    detail: "manualGeneratedDetail"
+  }
+};
+
 const i18n = {
   en: {
     productLabel: "Flow console",
     handoffTitle: "Planning handoff",
     handoffEmpty: "No planning handoff found.",
     handoffHint:
-      "Planning Workbench owns idea capture. This console reviews the plan and records correction decisions before side effects.",
+      "Planning Workbench owns idea capture. This console reviews the plan and records correction decisions before real tool operations.",
     handoffLoaded: "Latest handoff loaded",
     handoffReceived: "Planning handoff received",
     handoffLoadedShort: "Loaded",
@@ -54,8 +88,8 @@ const i18n = {
     tabGdd: "GDD",
     tabDsl: "DSL",
     emptyHeading: "Load a plan from Planning Workbench",
-    emptyBody: "Use this console to review handoffs, capture corrections, and confirm side-effect gates.",
-    gatesTitle: "Execution gates",
+    emptyBody: "Use this console to review handoffs, capture corrections, and confirm execution steps.",
+    gatesTitle: "Execution confirmations",
     defaultGateVisuals: "ComfyUI execution",
     defaultGateMeshes: "Blender execution",
     defaultGateUnreal: "Unreal execution",
@@ -66,7 +100,7 @@ const i18n = {
     next: "Next actions",
     recommended: "Recommended",
     confirmation: "Confirmation required",
-    sideEffects: "Side effects",
+    sideEffects: "Tool operations",
     dependencies: "Dependencies",
     artifacts: "Artifacts",
     quality: "Quality gates",
@@ -110,13 +144,44 @@ const i18n = {
     noItems: "No items",
     invalidHandoff: "Invalid planning handoff",
     themeDark: "Dark",
-    themeLight: "Light"
+    themeLight: "Light",
+    manualCorrectionTitle: "Manual correction",
+    manualCorrectionHint:
+      "Open the tool that owns this correction. Clicking an open action confirms one local tool operation.",
+    manualRecommended: "Recommended",
+    manualOpenRecommended: "Open recommended tool",
+    manualOpen: "Open",
+    manualChecking: "Checking local tools...",
+    manualTargetPlanning: "Planning Workbench",
+    manualTargetComfyui: "ComfyUI",
+    manualTargetBlender: "Blender",
+    manualTargetUnreal: "Unreal Editor",
+    manualTargetGodot: "Godot",
+    manualTargetGenerated: "Generated folder",
+    manualPlanningDetail: "Return to the idea interview and planning preview when the correction changes the concept, loop, or scope.",
+    manualComfyReady: "ComfyUI is reachable. Use it to revise visual references, logo direction, UI references, or material cues.",
+    manualComfyMissing: "ComfyUI is not responding yet. Open the default local address after starting ComfyUI.",
+    manualBlenderReady: "Blender is available. Use it to adjust modular meshes, scale, origins, collision naming, or greybox readability.",
+    manualBlenderMissing: "Blender was not found. Install Blender or set BLENDER_EXECUTABLE before mesh correction.",
+    manualUnrealReady: "Unreal Editor is available. Use it for asset ingest, level assembly, PIE validation, and gameplay tuning.",
+    manualUnrealMissing: "Unreal Editor was not found. Install UE5 or set UNREAL_EDITOR before engine correction.",
+    manualGodotReady: "Godot is available. Use it for quick playable-loop validation and route readability correction.",
+    manualGodotMissing: "Godot was not found. Install Godot 4 or set GODOT_EXECUTABLE before quick-play correction.",
+    manualGeneratedDetail: "Open generated handoff files, scripts, manifests, and exported assets for inspection.",
+    manualStatusReady: "Ready",
+    manualStatusDegraded: "Needs setup",
+    manualStatusUnavailable: "Unavailable",
+    manualOpenNeedsConfirmation: "Opening local tools requires an explicit click confirmation.",
+    manualOpenUnknownTarget: "Unknown correction target.",
+    manualOpenUnavailable: "Correction target is unavailable.",
+    manualOpenStarted: "Correction target opened",
+    manualOpenBlocked: "Correction target blocked"
   },
   "zh-CN": {
     productLabel: "流程控制台",
     handoffTitle: "策划交接",
     handoffEmpty: "未找到策划交接。",
-    handoffHint: "策划工作台负责玩法输入和方案生成；这里负责检查交接、记录纠偏，并在副作用执行前确认。",
+    handoffHint: "策划工作台负责玩法输入和方案生成；这里负责检查交接、记录纠偏，并在实际执行前确认。",
     handoffLoaded: "已载入最新交接",
     handoffReceived: "已收到策划交接",
     handoffLoadedShort: "已载入",
@@ -156,8 +221,8 @@ const i18n = {
     tabGdd: "GDD",
     tabDsl: "DSL",
     emptyHeading: "从策划工作台载入方案",
-    emptyBody: "流程控制台用于检查交接、记录纠偏，并确认 ComfyUI、Blender、Unreal 等执行门禁。",
-    gatesTitle: "执行门禁",
+    emptyBody: "流程控制台用于检查交接、记录纠偏，并确认 ComfyUI、Blender、Unreal 等执行前事项。",
+    gatesTitle: "执行前确认",
     defaultGateVisuals: "ComfyUI 执行",
     defaultGateMeshes: "Blender 执行",
     defaultGateUnreal: "Unreal 执行",
@@ -168,7 +233,7 @@ const i18n = {
     next: "下一步",
     recommended: "推荐",
     confirmation: "需要确认",
-    sideEffects: "副作用",
+    sideEffects: "实际操作",
     dependencies: "依赖",
     artifacts: "产物",
     quality: "质量门",
@@ -212,7 +277,37 @@ const i18n = {
     noItems: "无项目",
     invalidHandoff: "策划交接无效",
     themeDark: "深色",
-    themeLight: "浅色"
+    themeLight: "浅色",
+    manualCorrectionTitle: "手动纠偏入口",
+    manualCorrectionHint: "进入负责该纠偏的软件。点击打开按钮即表示确认执行一次本地实际操作。",
+    manualRecommended: "推荐",
+    manualOpenRecommended: "打开推荐工具",
+    manualOpen: "打开",
+    manualChecking: "正在检测本地工具...",
+    manualTargetPlanning: "策划工作台",
+    manualTargetComfyui: "ComfyUI",
+    manualTargetBlender: "Blender",
+    manualTargetUnreal: "Unreal Editor",
+    manualTargetGodot: "Godot",
+    manualTargetGenerated: "生成目录",
+    manualPlanningDetail: "当纠偏会改变创意、核心循环或范围时，回到访谈和策划预览继续调整。",
+    manualComfyReady: "ComfyUI 可连接。用于修正人物立绘、Logo、UI 参考、材质提示和视觉方向。",
+    manualComfyMissing: "ComfyUI 尚未响应。启动 ComfyUI 后可打开默认本地地址检查。",
+    manualBlenderReady: "Blender 可用。用于修正模块化模型、尺寸、origin、碰撞命名和灰盒可读性。",
+    manualBlenderMissing: "未找到 Blender。请安装 Blender，或设置 BLENDER_EXECUTABLE 后再进行模型纠偏。",
+    manualUnrealReady: "Unreal Editor 可用。用于资产导入、关卡组装、PIE 验证和玩法调参。",
+    manualUnrealMissing: "未找到 Unreal Editor。请安装 UE5，或设置 UNREAL_EDITOR 后再进行引擎纠偏。",
+    manualGodotReady: "Godot 可用。用于快速验证可玩循环、路线可读性和交互节奏。",
+    manualGodotMissing: "未找到 Godot。请安装 Godot 4，或设置 GODOT_EXECUTABLE 后再进行快速可玩纠偏。",
+    manualGeneratedDetail: "打开生成的交接文件、脚本、manifest 和导出资产进行检查。",
+    manualStatusReady: "可用",
+    manualStatusDegraded: "需配置",
+    manualStatusUnavailable: "不可用",
+    manualOpenNeedsConfirmation: "打开本地工具需要明确点击确认。",
+    manualOpenUnknownTarget: "未知纠偏目标。",
+    manualOpenUnavailable: "纠偏目标不可用。",
+    manualOpenStarted: "已打开纠偏目标",
+    manualOpenBlocked: "纠偏目标已阻止"
   }
 };
 
@@ -241,6 +336,7 @@ let selectedCorrectionMode = "gameplay";
 let reviewDecisions = {};
 let correctionEntries = [];
 let activityEntries = [];
+let manualTargetsPayload = null;
 
 const statusChip = document.querySelector("#status-chip");
 const planTitle = document.querySelector("#plan-title");
@@ -265,6 +361,9 @@ const handoffState = document.querySelector("#handoff-state");
 const loadHandoffButton = document.querySelector("#load-handoff-button");
 const correctionNotes = document.querySelector("#correction-notes");
 const recordCorrectionButton = document.querySelector("#record-correction-button");
+const manualToolSummary = document.querySelector("#manual-tool-summary");
+const manualToolGrid = document.querySelector("#manual-tool-grid");
+const openRecommendedToolButton = document.querySelector("#open-recommended-tool-button");
 
 function t(key) {
   return i18n[uiLocale]?.[key] || i18n.en[key] || key;
@@ -305,6 +404,42 @@ function modeLabel(mode) {
   return t(correctionModeKeys[mode] || "modeGameplay");
 }
 
+function selectedEngineVersion() {
+  if (!currentPlan) return "UE5";
+  return usesGodotEngine(currentPlan)
+    ? currentPlan.godot_plan?.engine_version || "Godot 4"
+    : currentPlan.unreal_plan?.engine_version || "UE5";
+}
+
+function recommendedManualTargetId() {
+  const mapped = correctionModeManualTargets[selectedCorrectionMode] || "planning";
+  if (mapped === "engine") {
+    return usesGodotEngine(currentPlan) ? "godot" : "unreal";
+  }
+  return mapped;
+}
+
+function manualStatusLabel(status) {
+  if (status === "ready") return t("manualStatusReady");
+  if (status === "degraded") return t("manualStatusDegraded");
+  return t("manualStatusUnavailable");
+}
+
+function manualTargetLabel(target) {
+  const keys = manualTargetKeys[target.id] || manualTargetKeys.planning;
+  return t(keys.label);
+}
+
+function manualTargetDetail(target) {
+  const keys = manualTargetKeys[target.id] || manualTargetKeys.planning;
+  return t(target.detail_key || keys.detail);
+}
+
+function localizedRoute(path) {
+  const search = new URLSearchParams({ locale: uiLocale, theme: uiTheme });
+  return `${path}?${search.toString()}`;
+}
+
 function addActivity(label, message) {
   const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   activityEntries = [{ time, label, message }, ...activityEntries].slice(0, 12);
@@ -342,6 +477,7 @@ function applyLocale(locale, options = {}) {
     button.classList.toggle("active", button.dataset.correctionMode === selectedCorrectionMode);
   });
   renderHandoffSummary(currentHandoff || readPlanningHandoff());
+  renderManualCorrectionTools();
   if (currentPlan) {
     renderPlan(currentPlan, { keepDecisions: true });
   } else {
@@ -451,6 +587,101 @@ function renderHandoffSummary(handoff) {
   ].join("");
 }
 
+function fallbackManualTargets() {
+  const engineTarget = usesGodotEngine(currentPlan) ? "godot" : "unreal";
+  return ["planning", "comfyui", "blender", engineTarget, "generated"].map((id) => ({
+    id,
+    status: id === "planning" || id === "generated" ? "ready" : "degraded",
+    target: id === "planning" ? "/workbench" : "-",
+    openable: id === "planning" || id === "generated",
+    detail_key: manualTargetKeys[id]?.detail
+  }));
+}
+
+function renderManualCorrectionTools() {
+  const targets = manualTargetsPayload?.targets?.length
+    ? manualTargetsPayload.targets
+    : fallbackManualTargets();
+  const recommended = recommendedManualTargetId();
+  const recommendedTarget = targets.find((target) => target.id === recommended) || targets[0];
+  manualToolSummary.textContent = `${t("manualRecommended")}: ${manualTargetLabel(recommendedTarget)} / ${modeLabel(selectedCorrectionMode)}`;
+  openRecommendedToolButton.disabled = !recommendedTarget?.openable;
+  openRecommendedToolButton.dataset.manualTarget = recommendedTarget?.id || recommended;
+  manualToolGrid.innerHTML = targets
+    .map((target) => {
+      const isRecommended = target.id === recommended;
+      const state = target.status === "ready" || target.status === "degraded" ? target.status : "unavailable";
+      return `
+        <article class="manual-tool-card" data-state="${escapeHtml(state)}" data-recommended="${isRecommended ? "true" : "false"}">
+          <div class="manual-tool-top">
+            <div>
+              <h3>${escapeHtml(manualTargetLabel(target))}</h3>
+              <span>${escapeHtml(manualStatusLabel(state))}</span>
+            </div>
+            ${isRecommended ? `<strong>${escapeHtml(t("manualRecommended"))}</strong>` : ""}
+          </div>
+          <p>${escapeHtml(manualTargetDetail(target))}</p>
+          <code>${escapeHtml(target.target || "-")}</code>
+          <button class="manual-card-action" type="button" data-manual-target="${escapeHtml(target.id)}" ${target.openable ? "" : "disabled"}>
+            ${escapeHtml(t("manualOpen"))}
+          </button>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+async function loadManualCorrectionTargets() {
+  manualToolSummary.textContent = t("manualChecking");
+  renderManualCorrectionTools();
+  try {
+    const query = new URLSearchParams({ engine: selectedEngineVersion() });
+    const response = await fetch(`/api/manual-correction/targets?${query.toString()}`, {
+      headers: { Accept: "application/json" }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    manualTargetsPayload = await response.json();
+  } catch {
+    manualTargetsPayload = null;
+  }
+  renderManualCorrectionTools();
+}
+
+async function openManualCorrectionTarget(targetId) {
+  if (targetId === "planning") {
+    window.open(localizedRoute("/workbench"), "_blank", "noopener");
+    addActivity(t("manualOpenStarted"), t("manualTargetPlanning"));
+    return;
+  }
+  const target = targetId === "engine" ? recommendedManualTargetId() : targetId;
+  try {
+    const response = await fetch("/api/manual-correction/open", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        target_id: target,
+        engine: selectedEngineVersion(),
+        confirmed_side_effects: true
+      })
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const result = await response.json();
+    const label = t(result.detail_key) || result.detail || result.status;
+    if (result.status === "started" || result.status === "client_route") {
+      addActivity(t("manualOpenStarted"), `${target}: ${result.target || label}`);
+    } else {
+      addActivity(t("manualOpenBlocked"), `${target}: ${label}`);
+    }
+  } catch (error) {
+    addActivity(t("manualOpenBlocked"), String(error));
+  } finally {
+    loadManualCorrectionTargets();
+  }
+}
+
 function loadPlanningHandoff(options = {}) {
   const handoff = readPlanningHandoff();
   renderHandoffSummary(handoff);
@@ -490,6 +721,7 @@ function clearPlanView() {
   document.querySelector("#metric-review-items").textContent = "0";
   document.querySelector("#metric-blocked-tasks").textContent = "0";
   renderDefaultGates();
+  renderManualCorrectionTools();
 }
 
 function renderDefaultGates() {
@@ -545,6 +777,7 @@ function renderPlan(plan, options = {}) {
   renderQa(plan);
   renderGdd(plan);
   dslOutput.textContent = JSON.stringify(spec, null, 2);
+  loadManualCorrectionTargets();
 }
 
 function renderMetrics(plan) {
@@ -696,7 +929,7 @@ function bindReviewActions() {
 }
 
 function usesGodotEngine(plan) {
-  return Boolean(plan.production_pipeline?.stages?.some((stage) => stage.id === "godot_quick_play"));
+  return Boolean(plan?.production_pipeline?.stages?.some((stage) => stage.id === "godot_quick_play"));
 }
 
 function renderBuild(plan) {
@@ -827,11 +1060,21 @@ document.querySelectorAll("[data-correction-mode]").forEach((button) => {
     selectedCorrectionMode = button.dataset.correctionMode || "gameplay";
     document.querySelectorAll("[data-correction-mode]").forEach((item) => item.classList.remove("active"));
     button.classList.add("active");
+    renderManualCorrectionTools();
   });
 });
 
 loadHandoffButton.addEventListener("click", () => loadPlanningHandoff());
 recordCorrectionButton.addEventListener("click", recordCorrection);
+openRecommendedToolButton.addEventListener("click", () => {
+  openManualCorrectionTarget(openRecommendedToolButton.dataset.manualTarget || recommendedManualTargetId());
+});
+
+manualToolGrid.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-manual-target]");
+  if (!button || button.disabled) return;
+  openManualCorrectionTarget(button.dataset.manualTarget);
+});
 
 document.querySelector("#log-toggle").addEventListener("click", () => {
   activityDrawer.classList.toggle("is-open");
@@ -857,4 +1100,5 @@ window.addEventListener("message", (event) => {
 renderActivity();
 applyTheme(uiTheme);
 applyLocale(uiLocale, { silent: true });
+loadManualCorrectionTargets();
 loadPlanningHandoff({ silent: true });

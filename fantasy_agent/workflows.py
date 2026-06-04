@@ -153,7 +153,7 @@ def prepare_godot_project(spec: GameplaySpec, engine_version: str = "Godot 4") -
             "Generate main scene with greybox route, hazards, objective, exit, and UI proxy",
             "Generate prototype GDScript movement and scene assembly scripts",
             "Copy reviewed Blender and ComfyUI outputs under res://assets/generated",
-            "Run Godot headless import only after explicit side-effect confirmation",
+            "Run Godot headless import only after explicit execution confirmation",
             "Use Godot smoke playtests to validate loop timing before heavier UE work",
         ],
         handoff_artifacts=[
@@ -650,7 +650,7 @@ def prepare_production_pipeline(
             quality_gates=[
                 f"Main scene targets {godot_plan.scenes[0] if godot_plan.scenes else 'scenes/main.tscn'}.",
                 "Godot is the selected engine for this plan.",
-                "Headless import runs only after explicit side-effect confirmation.",
+                "Headless import runs only after explicit execution confirmation.",
             ],
             side_effects=[
                 "writes generated Godot project files",
@@ -853,7 +853,7 @@ def prepare_production_pipeline(
         current_stage="gameplay_orchestration",
         next_stage="comfyui_visual_production",
         risks=[
-            "Execution stages require explicit confirmation before MCP side effects.",
+            "Execution stages require explicit confirmation before MCP tool operations.",
             "Greybox playability remains the production priority over visual polish.",
             f"Requested locales: {', '.join(request.output_locales)}.",
         ],
@@ -1205,7 +1205,7 @@ def _build_task_breakdown(
         tasks=tasks,
         recommended_next_task="gameplay_spec_review",
         risks=[
-            "Execution tasks require explicit confirmation before local tool side effects.",
+            "Execution tasks require explicit confirmation before local tool operations.",
             "Prefer greybox playability before visual expansion.",
             "Unreal, Blender, and ComfyUI availability should be probed before execution.",
         ],

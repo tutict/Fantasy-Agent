@@ -46,6 +46,6 @@ tools:
     purpose: 准备可玩循环的冒烟、失败、打包和指标检查。
     side_effects: []
 safety:
-  - ChatGPT 工具默认不得执行 Unreal、Blender、ComfyUI、打包或 GitHub 副作用。
-  - 未来会修改状态的 MCP 工具必须显式披露副作用并获得用户确认。
+  - ChatGPT 工具默认不得执行 Unreal、Blender、ComfyUI、打包或 GitHub 实际操作。
+  - 未来会修改状态的 MCP 工具必须显式披露实际操作并获得用户确认。
   - 玩法决策必须位于视觉参考生成之前。

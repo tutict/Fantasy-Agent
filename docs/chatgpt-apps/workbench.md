@@ -51,7 +51,7 @@ ChatGPT widget 保持实现标识为英文，面向用户的标签支持简体�
 
 ## 安全规则
 
-- 没有明确确认时，不得从 ChatGPT 执行 Unreal、Godot、Blender、ComfyUI 或 GitHub 副作用。
+- 没有明确确认时，不得从 ChatGPT 执行 Unreal、Godot、Blender、ComfyUI 或 GitHub 实际操作。
 - ComfyUI 是视觉参考工人，不是玩法权威。
 - 生成计划只是可检查交接，不等同于原型已经可玩。
 - QA 必须先于视觉扩展或打包验证循环。

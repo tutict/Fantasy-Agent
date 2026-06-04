@@ -28,15 +28,28 @@ def test_web_console_static_ui_exposes_flow_console_sections():
     assert 'id="activity-log"' in html
     assert 'id="load-handoff-button"' in html
     assert 'id="correction-notes"' in html
+    assert 'id="manual-tool-grid"' in html
+    assert 'id="open-recommended-tool-button"' in html
     assert 'id="plan-form"' not in html
     assert "Flow console" in html
     assert "流程控制台" in js
     assert "策划交接" in js
     assert "纠偏队列" in js
+    assert "手动纠偏入口" in js
+    assert "/api/manual-correction/open" in js
     assert "fantasy-agent-planning-handoff" in js
     assert "usesGodotEngine" in js
     assert "创意审阅" in js
-    assert "执行门禁" in js
+    assert "执行前确认" in js
+    targets = module.correction_targets()
+    assert targets["engine_kind"] == "unreal"
+    assert {"planning", "comfyui", "blender", "unreal", "generated"} <= {
+        target["id"] for target in targets["targets"]
+    }
+    blocked = module.correction_open(
+        module.ManualCorrectionOpenRequest(target_id="blender", confirmed_side_effects=False)
+    )
+    assert blocked["status"] == "blocked"
 
 
 def test_web_console_plan_payload_feeds_review_and_pipeline_ui():

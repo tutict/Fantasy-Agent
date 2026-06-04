@@ -15,7 +15,7 @@
 - 先生成结构化交接，再执行外部工具。
 - ComfyUI 与 Blender 输出必须先经过创意审阅，再进入引擎。
 - QA 必须先于打包和视觉扩展。
-- 所有真实副作用都必须明确声明并由用户确认。
+- 所有真实工具操作都必须明确声明并由用户确认。
 
 ## 当前能力
 
@@ -23,7 +23,7 @@ Fantasy Agent 当前提供：
 
 - 本地 Studio 桌面式入口，用于从玩法想法生成生产计划。
 - 策划工作台，用对话方式挖掘创意，并把点子整理成可执行方案。
-- 流程控制台，用于审阅策划交接、记录纠偏、检查 MCP/工具准备度和副作用门禁。
+- 流程控制台，用于审阅策划交接、记录纠偏、检查 MCP/工具准备度和执行前确认项。
 - MCP 连接检测页，用于检查 Fantasy Agent MCP、ComfyUI、Blender、Unreal、Godot 和 GitHub CLI 是否可用。
 - Gameplay DSL 与确定性的 Director 工作流。
 - 结构化 GDD 生成。
@@ -129,10 +129,10 @@ Fantasy Agent 会区分“规划”和“实际执行”。
 - 生成玩法规格。
 - 生成 GDD 文档。
 - 准备 Blender、ComfyUI、Unreal、Godot 和 QA 交接。
-- 显示任务、风险、副作用和审阅关卡。
+- 显示任务、风险、实际操作和审阅环节。
 - 检查 MCP 端点和本地应用是否可用。
 
-执行阶段会产生副作用，必须明确确认：
+执行阶段会产生实际操作，必须明确确认：
 
 - 启动 Blender 并导出 FBX 或 GLB 资产。
 - 提交 ComfyUI prompt 并使用 GPU 资源。
@@ -141,7 +141,7 @@ Fantasy Agent 会区分“规划”和“实际执行”。
 - 启动 Godot headless import 或写入 Godot 工程文件。
 - 创建 Git 分支、提交或推送远端仓库。
 
-ChatGPT Apps 工具默认只读。除非后续实现并确认副作用门禁，否则不会启动 Unreal、Godot、Blender、ComfyUI、打包或 Git 操作。
+ChatGPT Apps 工具默认只读。除非后续实现并确认执行前确认机制，否则不会启动 Unreal、Godot、Blender、ComfyUI、打包或 Git 操作。
 
 ## 架构目录
 
@@ -205,7 +205,7 @@ Fantasy-Agent/
 
 Fantasy Agent 在 `apps/chatgpt-workbench` 下提供兼容 ChatGPT Apps 的策划工作台。
 
-生成完整方案后，策划工作台会写入本地策划交接，流程控制台可以载入它，在执行 ComfyUI、Blender、Unreal 或 Godot 副作用前进行审阅和纠偏。
+生成完整方案后，策划工作台会写入本地策划交接，流程控制台可以载入它，在执行 ComfyUI、Blender、Unreal 或 Godot 实际操作前进行审阅和纠偏。
 
 当前只读工具包括：
 
@@ -267,12 +267,12 @@ Fantasy Agent 目前处于早期生产平台阶段：
 - Blender、ComfyUI、Unreal、Godot 和 QA 交接已经结构化。
 - MCP 连接检测页已经能检测所需本地应用。
 - Creative Review 审阅关卡已经接入 Director 流水线。
-- 真实工具执行仍然受显式副作用确认控制。
+- 真实工具执行仍然受显式执行确认控制。
 
 下一步优先级：
 
 - 将审阅决定持久化为 approval manifest。
 - 将已确认的 ComfyUI 和 Blender 执行接入 Studio。
 - 将已批准资产自动进入 Unreal 或 Godot 导入。
-- 通过受控 MCP 门禁运行真实 PIE、Godot headless import 和 packaged playtest。
+- 通过受控 MCP 执行确认运行真实 PIE、Godot headless import 和 packaged playtest。
 - 为生成图片和模型 manifest 增加更丰富的预览能力。

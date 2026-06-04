@@ -14,4 +14,4 @@ uvicorn app.main:app --reload --app-dir apps/web-console --host 127.0.0.1 --port
 http://127.0.0.1:7860
 ```
 
-界面支持简体中文输出、策划交接审阅、纠偏记录、副作用门禁，以及 Gameplay DSL、GDD、Unreal、Godot、Blender、ComfyUI 和 QA 计划的结构化视图。
+界面支持简体中文输出、策划交接审阅、纠偏记录、执行前确认，以及 Gameplay DSL、GDD、Unreal、Godot、Blender、ComfyUI 和 QA 计划的结构化视图。

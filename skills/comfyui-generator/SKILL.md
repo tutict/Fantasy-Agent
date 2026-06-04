@@ -31,5 +31,5 @@
 - 不因图像生成阻塞 UE/Godot 灰盒工作。
 - 每张图都必须支持目标清晰度、危险可读性、路线规划、UI 反馈或材质语言。
 - 生成图片成为引擎资产前必须经过审阅。
-- 没有明确副作用确认时，不提交 ComfyUI prompt。
+- 没有明确执行确认时，不提交 ComfyUI prompt。
 - Workflow 模板保持在 `templates/comfyui/`，输出保持在 `generated/comfyui/`。

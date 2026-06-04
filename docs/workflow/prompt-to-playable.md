@@ -1,6 +1,6 @@
 # 从 Prompt 到可玩原型的流程
 
-Fantasy Agent 使用分阶段 workflow，保证每个产物在触发外部工具副作用前都可以被检查、纠偏和确认。
+Fantasy Agent 使用分阶段 workflow，保证每个产物在触发外部工具实际操作前都可以被检查、纠偏和确认。
 
 ## 阶段 1：想法输入
 
@@ -20,7 +20,7 @@ Fantasy Agent 使用分阶段 workflow，保证每个产物在触发外部工具
 - 策划工作台 MCP tool call。
 - Director Agent API。
 
-本地流程控制台位于该阶段下游。它载入策划工作台的交接结果，记录纠偏说明，并检查执行门禁，而不是重复收集玩法想法。
+本地流程控制台位于该阶段下游。它载入策划工作台的交接结果，记录纠偏说明，并检查执行前确认项，而不是重复收集玩法想法。
 
 ## 阶段 2：Gameplay DSL
 
@@ -54,8 +54,8 @@ GDD Writer 将 gameplay spec 渲染为 Markdown。它不添加新范围，只澄
 未来 MCP 服务执行受控操作：
 
 - ChatGPT Apps MCP 暴露只读规划工具和 widget 状态。
-- Blender MCP 生成 allowlist 脚本，要求明确副作用确认，运行 `bpy` 任务，捕获日志并导出资产。
-- ComfyUI MCP 准备 allowlist workflow JSON，要求明确副作用确认，提交 prompt job，捕获 prompt ID，并可下载已审阅的参考输出。
+- Blender MCP 生成 allowlist 脚本，要求明确执行确认，运行 `bpy` 任务，捕获日志并导出资产。
+- ComfyUI MCP 准备 allowlist workflow JSON，要求明确执行确认，提交 prompt job，捕获 prompt ID，并可下载已审阅的参考输出。
 - Unreal MCP 创建、导入和验证工程内容。
 - Godot MCP 创建和验证生成的 Godot 工程文件，并只在明确确认后运行 headless import。
 - GitHub MCP 发布审阅分支和 PR。

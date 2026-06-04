@@ -187,7 +187,7 @@ def build_blender_script_artifact(
             "Generated script requires Blender with the repository package on PYTHONPATH.",
             "Run from the repository root so generated/ paths resolve inside the workspace.",
             f"Script directory target: {output_dir}",
-            "Blender MCP should execute this script only after side effects are confirmed.",
+            "Blender MCP should execute this script only after the operation is confirmed.",
         ],
         side_effects=[
             "Deletes the active Blender scene before generation.",

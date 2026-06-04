@@ -9,6 +9,6 @@ Unreal MCP 用于执行受控 Unreal Engine 自动化，包括工程搭建、验
 - 为 Blender mesh 和已审阅 ComfyUI 参考准备并运行资产导入脚本。
 - 为生成原型地图准备并运行灰盒关卡组装脚本。
 - 在明确确认后运行 allowlist 内的 Unreal Editor data validation。
-- 在 QA 门禁通过后打包 development build。
+- 在 QA 验收通过后打包 development build。
 
-副作用必须明确声明并记录日志。
+实际操作必须明确声明并记录日志。

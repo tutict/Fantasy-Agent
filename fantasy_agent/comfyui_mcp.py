@@ -50,7 +50,7 @@ def tool_descriptors() -> list[dict[str, Any]]:
             "description": (
                 "Use this when Fantasy Agent needs allowlisted ComfyUI workflow JSON and a "
                 "run manifest from a ComfyUIVisualPlan. Defaults to in-memory output; set "
-                "write_files only after generated file side effects are approved."
+                "write_files only after generated file operations are approved."
             ),
             "inputSchema": ComfyUIMCPGenerateRequest.model_json_schema(),
             "annotations": {

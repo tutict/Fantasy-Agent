@@ -37,7 +37,7 @@
               </button>
             </div>
             <p class="handoff-note" data-i18n="handoffHint">
-              Planning Workbench owns idea capture. This console reviews the plan and records correction decisions before side effects.
+              Planning Workbench owns idea capture. This console reviews the plan and records correction decisions before real tool operations.
             </p>
           </section>
 
@@ -71,8 +71,29 @@
             </button>
           </section>
 
-          <section class="operator-strip" aria-label="Side-effect gates">
-            <h2 data-i18n="gatesTitle">Side-effect gates</h2>
+          <section class="manual-correction-panel" aria-label="Manual correction tools">
+            <div class="pane-section-header">
+              <h2 data-i18n="manualCorrectionTitle">Manual correction</h2>
+            </div>
+            <p class="handoff-note" data-i18n="manualCorrectionHint">
+              Open the tool that owns this correction. Clicking an open action confirms one local tool operation.
+            </p>
+            <div class="manual-summary-row">
+              <span id="manual-tool-summary" data-i18n="manualChecking">Checking local tools...</span>
+              <button
+                class="secondary-action compact-action"
+                type="button"
+                id="open-recommended-tool-button"
+                data-i18n="manualOpenRecommended"
+              >
+                Open recommended tool
+              </button>
+            </div>
+            <div id="manual-tool-grid" class="manual-tool-grid"></div>
+          </section>
+
+          <section class="operator-strip" aria-label="Execution confirmations">
+            <h2 data-i18n="gatesTitle">Execution confirmations</h2>
             <div id="gate-summary" class="gate-stack"></div>
           </section>
         </aside>
@@ -158,7 +179,7 @@
                 </div>
                 <h3 data-i18n="emptyHeading">Load a plan from Planning Workbench</h3>
                 <p data-i18n="emptyBody">
-                  Use this console to review handoffs, capture corrections, and confirm side-effect gates.
+                  Use this console to review handoffs, capture corrections, and confirm execution steps.
                 </p>
               </div>
               <div class="overview-grid hidden" id="overview-content"></div>

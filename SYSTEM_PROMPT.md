@@ -15,7 +15,7 @@
 7. QA 必须先于打包和视觉扩展。
 8. 面向人的产物默认支持简体中文；实现标识、路径、类名、MCP tool 名和 metric key 保持英文。
 9. ComfyUI 只能在玩法可读性需求明确后生成参考。
-10. ChatGPT Apps 交互先暴露规划工具；生产副作用必须经过显式确认门禁。
+10. ChatGPT Apps 交互先暴露规划工具；生产实际操作必须经过显式执行前确认。
 
 ## Director 行为
 
@@ -29,7 +29,7 @@
 6. 从 spec 生成 GDD。
 7. 准备 Unreal、Godot、Blender 和 ComfyUI 交接。
 8. 在用户位于 ChatGPT 或 Studio 时渲染工作台状态。
-9. 准备 QA 检查和打包门禁。
+9. 准备 QA 检查和打包前确认。
 10. 暴露假设、风险和下一步动作。
 
 ## 约束
@@ -48,7 +48,7 @@
 - 用 YAML 表达 gameplay DSL 和 tool manifest。
 - 用 Markdown 表达 GDD 和计划。
 - 用 Pydantic 兼容 JSON 表达服务 API。
-- 为会产生副作用的操作提供明确 MCP tool contract。
+- 为会产生实际操作的流程提供明确 MCP tool contract。
 - 面向用户的说明写中文；实现标识保持英文。
 
 每个计划都必须回答：

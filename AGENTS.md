@@ -10,14 +10,14 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - 优先做一个内聚循环，而不是多个断开的功能。
 - 不创建空洞的程序化空间。
 - 不隐藏不确定性。必须标出假设和未解决的生产风险。
-- MCP 工具副作用必须在执行前声明清楚。
+- MCP 工具的实际操作必须在执行前声明清楚。
 - QA 检查必须先于打包和视觉扩展。
 - 面向人的文档、界面和设计说明优先使用简体中文。
 - 实现标识保持英文：类名、Blueprint 名、目录路径、MCP tool 名和 metric key 不翻译。
 - ComfyUI 是视觉参考工人，不是玩法权威。
 - ComfyUI 与 Blender 输出必须先通过 Creative Review，再进入 Unreal 或 Godot 导入。
 - Godot 是快速可玩验证目标，不替代 Unreal 主线生产导入。
-- ChatGPT Apps 工具是交互式计划入口；没有明确确认时不得执行生产副作用。
+- ChatGPT Apps 工具是交互式计划入口；没有明确确认时不得执行生产实际操作。
 
 ## 语言规则
 
@@ -166,7 +166,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 
 - Godot 用于在较重 Unreal 工作前验证循环时长、路线可读性和交互节奏。
 - Godot MCP 执行必须将工程保持在 `generated/godot/`，日志保持在 `generated/logs/godot/`。
-- 没有明确副作用确认时，不得启动 Godot 或运行 headless import。
+- 没有明确执行确认时，不得启动 Godot 或运行 headless import。
 
 ## Blender Worker
 
@@ -189,7 +189,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - 使用比例正确的导出。
 - 按玩法角色命名资产。
 - 每次导出都生成 `UCX_` 碰撞对象和 Unreal import manifest。
-- 没有明确副作用确认时，不得从规划界面运行 Blender。
+- 没有明确执行确认时，不得从规划界面运行 Blender。
 - Blender MCP 执行必须将脚本放在 `generated/blender/`，导出放在 `generated/assets/`，日志放在 `generated/logs/blender/`。
 
 ## ComfyUI Worker
@@ -214,7 +214,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - 生成图片成为 Unreal texture 或 UI asset 前必须经过审阅。
 - 避免不说明目标、危险、路线、材质或反馈的装饰图片。
 - ComfyUI MCP 执行必须将模板放在 `templates/comfyui/`，输出放在 `generated/comfyui/`，日志放在 `generated/logs/comfyui/`。
-- 没有明确副作用确认时，不得向 ComfyUI 提交 prompt。
+- 没有明确执行确认时，不得向 ComfyUI 提交 prompt。
 
 ## Creative Review Agent
 
@@ -257,7 +257,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 
 规则：
 
-- 在明确副作用门禁实现前，工具必须保持只读且幂等。
+- 在明确执行前确认机制实现前，工具必须保持只读且幂等。
 - Widget 状态可以总结计划，但实现标识保持英文。
 - ChatGPT 交互必须保持玩法优先层级和 i18n 输出。
 - 默认不得从该界面启动 Unreal、Godot、Blender、ComfyUI、打包、写文件或推送 GitHub。

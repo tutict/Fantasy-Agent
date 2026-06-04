@@ -30,7 +30,7 @@ def tool_descriptors() -> list[dict[str, Any]]:
             "description": (
                 "Use this when Fantasy Agent needs a Blender Python script and Unreal import "
                 "manifest from a BlenderAssetPlan. Defaults to in-memory output; set write_files "
-                "only when generated file side effects are approved."
+                "only when generated file operations are approved."
             ),
             "inputSchema": BlenderMCPGenerateScriptRequest.model_json_schema(),
             "annotations": {
@@ -270,7 +270,7 @@ def call_blender_mcp_tool(
 
 def _content_summary(result: BlenderMCPResult) -> str:
     if result.status == "blocked":
-        return "Blender MCP blocked execution because side effects were not confirmed."
+        return "Blender MCP blocked execution because the operation was not confirmed."
     if result.status == "failed":
         return "Blender MCP failed. Check returned logs and stderr_tail."
     if result.status == "executed":
@@ -290,4 +290,3 @@ def _tail(value: str | bytes | None, limit: int = 4000) -> str:
     if isinstance(value, bytes):
         value = value.decode("utf-8", errors="replace")
     return value[-limit:]
-

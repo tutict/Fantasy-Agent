@@ -8,7 +8,7 @@ Fantasy Agent 策划工作台把游戏生产管线暴露为兼容 ChatGPT Apps �
 - 服务：FastAPI JSON-RPC MCP 端点 `/mcp`
 - Widget resource：`ui://fantasy-agent/workbench.html`
 - 工具策略：只读、幂等的规划工具
-- 副作用：无；Unreal、Godot、Blender、ComfyUI 和 GitHub 执行仍是未来显式 MCP 步骤
+- 实际操作：无；Unreal、Godot、Blender、ComfyUI 和 GitHub 执行仍是未来显式 MCP 步骤
 
 ## 工具
 
@@ -56,7 +56,7 @@ Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8787/health
 
 ## 安全边界
 
-这个入口是策划工作台，不是一键生成游戏工具。第一版只生成结构化计划和交接物；未来任何写文件、启动 Blender、启动 Unreal/Godot、调用 ComfyUI、打包或推送 GitHub 的工具，都必须声明副作用并取得明确确认。
+这个入口是策划工作台，不是一键生成游戏工具。第一版只生成结构化计划和交接物；未来任何写文件、启动 Blender、启动 Unreal/Godot、调用 ComfyUI、打包或推送 GitHub 的工具，都必须声明实际操作并取得明确确认。
 
 ## 参考文档
 

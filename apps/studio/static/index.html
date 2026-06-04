@@ -777,14 +777,14 @@
               </article>
               <article class="card wide">
                 <h3 data-i18n="safetyTitle">Safety boundary</h3>
-                <p data-i18n="safetyBody">Planning tools are read-only by default. Unreal, Godot, Blender, ComfyUI, packaging, and Git side effects still require explicit confirmation.</p>
+                <p data-i18n="safetyBody">Planning tools are read-only by default. Unreal, Godot, Blender, ComfyUI, packaging, and Git operations still require explicit confirmation.</p>
               </article>
               <article class="card wide">
                 <h3 data-i18n="flowTitle">Typical flow</h3>
                 <ul>
                   <li data-i18n="flowGenerate">Generate a gameplay-first production plan.</li>
                   <li data-i18n="flowReview">Review ComfyUI, Blender, Godot, Unreal, and QA handoffs.</li>
-                  <li data-i18n="flowExecute">Execute MCP production steps only after confirming side effects.</li>
+                  <li data-i18n="flowExecute">Execute MCP production steps only after confirming the actual operation.</li>
                 </ul>
               </article>
             </div>
@@ -808,11 +808,11 @@
           previewBody: "The Studio combines the local flow console and planning workbench in one desktop launcher.",
           safetyTitle: "Safety boundary",
           safetyBody:
-            "Planning tools are read-only by default. Unreal, Godot, Blender, ComfyUI, packaging, and Git side effects still require explicit confirmation.",
+            "Planning tools are read-only by default. Unreal, Godot, Blender, ComfyUI, packaging, and Git operations still require explicit confirmation.",
           flowTitle: "Typical flow",
           flowGenerate: "Generate a gameplay-first production plan.",
           flowReview: "Review ComfyUI, Blender, Godot, Unreal, and QA handoffs.",
-          flowExecute: "Execute MCP production steps only after confirming side effects.",
+          flowExecute: "Execute MCP production steps only after confirming the actual operation.",
           mcpStatusTitle: "Required app connectivity",
           mcpStatusBody:
             "Check whether local MCP services and required production apps are reachable before running the pipeline.",
@@ -836,9 +836,9 @@
           mcpNextComfyReady: "Run capability probe before submitting visual reference jobs.",
           mcpDetailComfyMissing: "No local ComfyUI endpoint responded.",
           mcpNextComfyMissing: "Start ComfyUI and confirm it is listening on 127.0.0.1:8188.",
-          mcpDetailExecutableReady: "Executable found. MCP execution still requires explicit side-effect confirmation.",
+          mcpDetailExecutableReady: "Executable found. MCP execution still requires explicit confirmation.",
           mcpDetailExecutableMissing: "No executable was found on PATH, in configured environment variables, or common install folders.",
-          mcpNextBlenderReady: "Generate Blender Python first, then execute only after confirming side effects.",
+          mcpNextBlenderReady: "Generate Blender Python first, then execute only after confirmation.",
           mcpNextBlenderMissing: "Install Blender or set BLENDER_EXECUTABLE to blender.exe.",
           mcpNextUnrealReady: "Use Unreal MCP validation before editor commandlets or PIE/package tests.",
           mcpNextUnrealMissing: "Install UE5 or set UNREAL_EDITOR to UnrealEditor-Cmd.exe.",
@@ -867,11 +867,11 @@
           previewTitle: "本地预览",
           previewBody: "Studio 把流程控制台和策划工作台合并到一个桌面启动器里。",
           safetyTitle: "安全边界",
-          safetyBody: "策划工具默认只读。Unreal、Godot、Blender、ComfyUI、打包和 Git 副作用仍然需要明确确认。",
+          safetyBody: "策划工具默认只读。Unreal、Godot、Blender、ComfyUI、打包和 Git 的实际操作仍需明确确认。",
           flowTitle: "典型流程",
           flowGenerate: "生成玩法优先的生产计划。",
           flowReview: "审阅 ComfyUI、Blender、Godot、Unreal 和 QA 交接结果。",
-          flowExecute: "确认副作用后再执行 MCP 生产步骤。",
+          flowExecute: "确认实际操作后再执行 MCP 生产步骤。",
           mcpStatusTitle: "所需应用连接检测",
           mcpStatusBody: "在运行流水线前，检查本地 MCP 服务和所需生产应用是否可连接。",
           mcpRefresh: "运行检测",
@@ -894,9 +894,9 @@
           mcpNextComfyReady: "提交视觉参考任务前，先运行能力探测。",
           mcpDetailComfyMissing: "没有本地 ComfyUI 端点响应。",
           mcpNextComfyMissing: "启动 ComfyUI，并确认它监听在 127.0.0.1:8188。",
-          mcpDetailExecutableReady: "已找到可执行文件。MCP 执行仍需明确确认副作用。",
+          mcpDetailExecutableReady: "已找到可执行文件。MCP 执行仍需明确确认。",
           mcpDetailExecutableMissing: "未在 PATH、已配置环境变量或常见安装目录中找到可执行文件。",
-          mcpNextBlenderReady: "先生成 Blender Python，确认副作用后再执行。",
+          mcpNextBlenderReady: "先生成 Blender Python，确认后再执行。",
           mcpNextBlenderMissing: "安装 Blender，或将 BLENDER_EXECUTABLE 指向 blender.exe。",
           mcpNextUnrealReady: "执行编辑器命令或 PIE/打包测试前，先运行 Unreal MCP 校验。",
           mcpNextUnrealMissing: "安装 UE5，或将 UNREAL_EDITOR 指向 UnrealEditor-Cmd.exe。",

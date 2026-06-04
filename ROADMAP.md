@@ -21,7 +21,7 @@
 - 将 GDD 渲染到 `generated/gdd.md`。
 - 增加潜入、生存、谜题、战斗和移动原型示例。
 - 增加循环连贯性、必填字段和目标会话时长测试。
-- 在保持只读副作用边界的前提下，将 ChatGPT Workbench 工具从确定性规划扩展到 LLM 支持的玩法与 GDD 生成。
+- 在保持只读安全边界的前提下，将 ChatGPT Workbench 工具从确定性规划扩展到 LLM 支持的玩法与 GDD 生成。
 
 ## 第三阶段：Blender MCP 集成
 
@@ -73,7 +73,7 @@
 
 - 增加 ChatGPT 托管生产计划的认证项目会话。
 - 持久化已批准的 spec、GDD 和交接 manifest。
-- 为会修改 Unreal、Godot、Blender、ComfyUI、GitHub 和打包工具的操作增加显式确认门禁。
+- 为会修改 Unreal、Godot、Blender、ComfyUI、GitHub 和打包工具的操作增加执行前确认。
 - 将生产事件流回 ChatGPT widget。
 - 等私有 Developer Mode 工作流稳定后，再准备提交就绪审阅。
 
@@ -81,5 +81,5 @@
 
 - 不做虚假的 AAA 生产范围。
 - 不生成没有机制支撑的装饰性程序化世界。
-- 不隐藏工具副作用。
+- 不隐藏工具实际操作。
 - 不生成无法在可玩循环中测试的内容。

@@ -2,7 +2,7 @@
 
 Fantasy Agent 流程控制台是 Director workflow 的本地执行准备度界面。
 
-它不是营销首页，而是操作台。玩法输入属于策划工作台；流程控制台负责载入策划交接，检查执行准备度，记录纠偏，并在 ComfyUI、Blender、Unreal 或 Godot 执行前确认副作用门禁。
+它不是营销首页，而是操作台。玩法输入属于策划工作台；流程控制台负责载入策划交接，检查执行准备度，记录纠偏，并在 ComfyUI、Blender、Unreal 或 Godot 执行前完成确认。
 
 ## 运行
 
@@ -33,9 +33,11 @@ http://127.0.0.1:7860
 - 展示 `GDDDocument.markdown_by_locale` 中的 GDD 输出。
 - 展示 Unreal、Godot、Blender、ComfyUI 和 QA 交接计划。
 - 记录玩法、视觉方向、范围和技术导入审阅的纠偏说明。
+- 提供手动纠偏入口：根据纠偏模式和当前引擎，打开策划工作台、ComfyUI、Blender、Unreal/Godot 或生成目录。
 
 ## 边界
 
 - UI 不调用外部模型服务。
-- UI 不执行 Unreal、Godot、Blender 或 ComfyUI 副作用。
+- UI 不自动执行 Unreal、Godot、Blender 或 ComfyUI 生产任务。
+- 打开本地软件或生成目录属于显式点击触发的手动纠偏实际操作，只允许固定 allowlist 目标。
 - MCP 执行必须保持显式确认，并通过 MCP 层记录日志。

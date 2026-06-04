@@ -55,7 +55,7 @@ PromptRequest
 
 ## ChatGPT Apps 入口
 
-策划工作台复用同一套合约，提供创意提取、计划生成、GDD 渲染、Unreal 计划、Godot 快速可玩计划、Blender 计划、ComfyUI 计划和 QA 计划等只读工具。第一阶段不执行生产副作用。
+策划工作台复用同一套合约，提供创意提取、计划生成、GDD 渲染、Unreal 计划、Godot 快速可玩计划、Blender 计划、ComfyUI 计划和 QA 计划等只读工具。第一阶段不执行生产实际操作。
 
 ## 本地 Studio
 

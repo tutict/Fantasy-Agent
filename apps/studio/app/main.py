@@ -12,6 +12,7 @@ from urllib import error, request
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from fantasy_agent.chatgpt_app import (
     SERVER_NAME,
@@ -29,6 +30,7 @@ from fantasy_agent.contracts import (
     PromptRequest,
     default_comfyui_endpoint_candidates,
 )
+from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
 from fantasy_agent.workflows import decompose_production_tasks, run_director_workflow
 
 APP_DIR = Path(__file__).resolve().parents[1]
@@ -51,6 +53,12 @@ app.mount(
     StaticFiles(directory=str(CHATGPT_WORKBENCH_STATIC_DIR)),
     name="chatgpt_workbench_static",
 )
+
+
+class ManualCorrectionOpenRequest(BaseModel):
+    target_id: str
+    engine: str = "UE5"
+    confirmed_side_effects: bool = False
 
 
 def _jsonrpc_result(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
@@ -237,7 +245,7 @@ def _probe_executable(
             label=label,
             status="ready",
             target=executable,
-            detail="Executable found. MCP execution still requires explicit side-effect confirmation.",
+            detail="Executable found. MCP execution still requires explicit confirmation.",
             next_action=next_action_ready,
             detail_key="mcpDetailExecutableReady",
             next_action_key=next_action_ready_key,
@@ -320,7 +328,7 @@ def _mcp_connectivity_status(engine: str = "UE5") -> dict[str, Any]:
                 "C:/Program Files/Blender Foundation/Blender */blender.exe",
                 "C:/Program Files/Blender Foundation/Blender/blender.exe",
             ],
-            next_action_ready="Generate Blender Python first, then execute only after confirming side effects.",
+            next_action_ready="Generate Blender Python first, then execute only after confirmation.",
             next_action_missing="Install Blender or set BLENDER_EXECUTABLE to blender.exe.",
             next_action_ready_key="mcpNextBlenderReady",
             next_action_missing_key="mcpNextBlenderMissing",
@@ -434,6 +442,20 @@ def health() -> dict[str, str]:
 @app.get("/api/mcp/status")
 def mcp_status(engine: str = "UE5") -> dict[str, Any]:
     return _mcp_connectivity_status(engine)
+
+
+@app.get("/api/manual-correction/targets")
+def correction_targets(engine: str = "UE5") -> dict[str, Any]:
+    return manual_correction_targets(engine)
+
+
+@app.post("/api/manual-correction/open")
+def correction_open(request: ManualCorrectionOpenRequest) -> dict[str, Any]:
+    return open_manual_correction_target(
+        target_id=request.target_id,
+        engine=request.engine,
+        confirmed_side_effects=request.confirmed_side_effects,
+    )
 
 
 @app.post("/api/plan", response_model=DirectorBuildPlan)

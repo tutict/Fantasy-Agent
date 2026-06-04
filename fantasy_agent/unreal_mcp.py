@@ -53,7 +53,7 @@ def tool_descriptors() -> list[dict[str, Any]]:
             "description": (
                 "Use this when Fantasy Agent needs a UE5 project descriptor, content folders, "
                 "setup script, and content manifest from an UnrealProjectPlan. Defaults to "
-                "in-memory output; set write_files only after file side effects are approved."
+                "in-memory output; set write_files only after file operations are approved."
             ),
             "inputSchema": UnrealMCPCreateProjectRequest.model_json_schema(),
             "annotations": {
@@ -69,7 +69,7 @@ def tool_descriptors() -> list[dict[str, Any]]:
             "description": (
                 "Use this when Fantasy Agent needs Unreal Python import automation for Blender "
                 "mesh exports and reviewed ComfyUI reference images. Defaults to in-memory output; "
-                "set write_files only after generated file side effects are approved."
+                "set write_files only after generated file operations are approved."
             ),
             "inputSchema": UnrealMCPPrepareAssetIngestRequest.model_json_schema(),
             "annotations": {
@@ -116,7 +116,7 @@ def tool_descriptors() -> list[dict[str, Any]]:
             "description": (
                 "Use this after asset ingest planning to generate a playable greybox map "
                 "assembly manifest and Unreal Python script. Defaults to in-memory output; "
-                "set write_files only after generated file side effects are approved."
+                "set write_files only after generated file operations are approved."
             ),
             "inputSchema": UnrealMCPPrepareLevelAssemblyRequest.model_json_schema(),
             "annotations": {
@@ -1315,7 +1315,7 @@ def call_unreal_mcp_tool(
 
 def _content_summary(result: UnrealMCPResult) -> str:
     if result.status == "blocked":
-        return "Unreal MCP blocked execution because side effects were not confirmed."
+        return "Unreal MCP blocked execution because the operation was not confirmed."
     if result.status == "failed":
         if result.validation_report is not None:
             if isinstance(result.validation_report, UnrealLevelAssemblyValidationReport):
@@ -1430,7 +1430,7 @@ def _asset_ingest_script(manifest: UnrealAssetIngestManifest) -> str:
     payload = json.dumps(manifest.model_dump(mode="json"), indent=2)
     return f'''"""Fantasy Agent Unreal asset ingest script.
 
-Run inside Unreal Editor Python through Unreal MCP after side effects are confirmed.
+Run inside Unreal Editor Python through Unreal MCP after the operation is confirmed.
 """
 
 from __future__ import annotations
@@ -1531,7 +1531,7 @@ def _level_assembly_script(manifest: UnrealLevelAssemblyManifest) -> str:
     payload = json.dumps(manifest.model_dump(mode="json"), indent=2)
     script = '''"""Fantasy Agent Unreal level assembly script.
 
-Run inside Unreal Editor Python through Unreal MCP after side effects are confirmed.
+Run inside Unreal Editor Python through Unreal MCP after the operation is confirmed.
 """
 
 from __future__ import annotations

@@ -36,7 +36,7 @@ tools:
     safety:
       - "除非明确要求写入生成文件，否则此工具只读。"
       - "生成脚本只能写入 generated/。"
-      - "生成脚本必须保持 Blender 执行副作用显式可见。"
+      - "生成脚本必须保持 Blender 实际执行内容显式可见。"
   generate_asset_batch:
     description: "从 BlenderAssetPlan 运行 allowlist 内的 Blender Python 资产批处理。"
     input:

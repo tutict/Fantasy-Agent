@@ -32,7 +32,7 @@ def tool_descriptors() -> list[dict[str, Any]]:
             "description": (
                 "Use this when Fantasy Agent needs a Godot 4 project.godot, main scene, "
                 "prototype scripts, asset folders, and a handoff manifest from a GodotProjectPlan. "
-                "Defaults to in-memory output; set write_files only after file side effects are approved."
+                "Defaults to in-memory output; set write_files only after file operations are approved."
             ),
             "inputSchema": GodotMCPCreateProjectRequest.model_json_schema(),
             "annotations": {
@@ -393,7 +393,7 @@ def call_godot_mcp_tool(
 
 def _content_summary(result: GodotMCPResult) -> str:
     if result.status == "blocked":
-        return "Godot MCP blocked execution because side effects were not confirmed."
+        return "Godot MCP blocked execution because the operation was not confirmed."
     if result.status == "failed":
         if result.validation_report is not None:
             return "Godot MCP found project validation issues."

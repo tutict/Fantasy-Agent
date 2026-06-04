@@ -26,7 +26,7 @@
 4. 分配 collection、材质色块、origin 和 `UCX_` 碰撞名称。
 5. 导出到 `generated/assets/`。
 6. 产出 Unreal import manifest。
-7. 只有在确认副作用后，才把生成脚本交给 Blender MCP。
+7. 只有在确认执行后，才把生成脚本交给 Blender MCP。
 
 ## 护栏
 

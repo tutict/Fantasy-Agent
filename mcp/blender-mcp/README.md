@@ -16,11 +16,11 @@ apps/blender-worker -> /mcp
 - 返回导出 manifest 和错误。
 - 校验比例、命名和碰撞提示。
 
-所有副作用必须保持在 workspace 内。
+所有实际操作必须保持在 workspace 内。
 
 生成脚本支持模块化墙体、门、坡道、危险标记、目标道具、出口门和 UI proxy mesh。脚本还会设置材质色块、collection、适合落地的 origin、`UCX_` 碰撞 mesh 和 Unreal import manifest。
 
-当 `write_files=false` 时，脚本生成属于安全规划步骤。写入脚本或运行 Blender 是副作用步骤，需要明确确认。
+当 `write_files=false` 时，脚本生成属于安全规划步骤。写入脚本或运行 Blender 是实际操作步骤，需要明确确认。
 
 执行护栏：
 

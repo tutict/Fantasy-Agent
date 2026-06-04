@@ -27,7 +27,7 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             output_schema_ref="mcp/unreal-mcp/tools.yaml#run_editor_commandlet.output",
             side_effects=["launches Unreal Editor data validation"],
             safety_checks=[
-                "requires confirmed side effects",
+                "requires confirmed execution",
                 "project file must be generated/unreal/*.uproject",
                 "commandlet allowlist is limited to UE DataValidation",
                 "timeout required",
@@ -57,7 +57,7 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             output_schema_ref="mcp/unreal-mcp/tools.yaml#run_asset_ingest.output",
             side_effects=["launches Unreal Editor", "imports assets into project content"],
             safety_checks=[
-                "requires confirmed side effects",
+                "requires confirmed execution",
                 "project file must be generated/unreal/*.uproject",
                 "script must be generated/unreal/*.py",
                 "logs captured under generated/logs/unreal",
@@ -111,7 +111,7 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             output_schema_ref="mcp/unreal-mcp/tools.yaml#run_level_assembly.output",
             side_effects=["launches Unreal Editor", "writes or updates generated map assets"],
             safety_checks=[
-                "requires confirmed side effects",
+                "requires confirmed execution",
                 "project file must be generated/unreal/*.uproject",
                 "assembly script must be generated/unreal/*.py",
                 "logs captured under generated/logs/unreal",
@@ -136,7 +136,7 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             output_schema_ref="mcp/blender-mcp/tools.yaml#generate_asset_batch.output",
             side_effects=["runs Blender Python", "writes mesh exports"],
             safety_checks=[
-                "requires confirmed side effects",
+                "requires confirmed execution",
                 "export path must be generated/assets",
                 "script must avoid external downloads",
                 "logs captured under generated/logs/blender",
@@ -176,7 +176,7 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             output_schema_ref="mcp/godot-mcp/tools.yaml#run_godot_import.output",
             side_effects=["launches Godot headless import", "writes .godot import metadata"],
             safety_checks=[
-                "requires confirmed side effects",
+                "requires confirmed execution",
                 "project file must be generated/godot/*/project.godot",
                 "logs captured under generated/logs/godot",
             ],
@@ -212,7 +212,7 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             output_schema_ref="mcp/comfyui-mcp/tools.yaml#run_visual_reference_workflow.output",
             side_effects=["submits ComfyUI prompt jobs", "writes generated reference images"],
             safety_checks=[
-                "requires confirmed side effects",
+                "requires confirmed execution",
                 "ComfyUI endpoint must be local or explicitly approved",
                 "output path must be generated/comfyui",
                 "jobs must reference gameplay constraints",

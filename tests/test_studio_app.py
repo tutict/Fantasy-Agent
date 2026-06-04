@@ -21,7 +21,17 @@ def test_studio_serves_combined_desktop_panel():
     paths = {route.path for route in module.app.routes}
 
     assert module.health()["agent"] == "fantasy-agent-studio"
-    assert {"/", "/web-console", "/workbench", "/health", "/api/plan", "/api/mcp/status", "/mcp"} <= paths
+    assert {
+        "/",
+        "/web-console",
+        "/workbench",
+        "/health",
+        "/api/plan",
+        "/api/mcp/status",
+        "/api/manual-correction/targets",
+        "/api/manual-correction/open",
+        "/mcp",
+    } <= paths
     assert module.STATIC_DIR.joinpath("index.html").exists()
     assert module.WEB_CONSOLE_STATIC_DIR.joinpath("index.html").exists()
     assert module.WORKBENCH_PATH.exists()
@@ -45,6 +55,13 @@ def test_studio_serves_combined_desktop_panel():
     assert godot_status["engine_kind"] == "godot"
     assert godot_services["unreal"]["required"] is False
     assert godot_services["godot"]["required"] is True
+    correction_targets = module.correction_targets(engine="Godot 4")
+    assert correction_targets["engine_kind"] == "godot"
+    assert "godot" in {target["id"] for target in correction_targets["targets"]}
+    blocked = module.correction_open(
+        module.ManualCorrectionOpenRequest(target_id="godot", confirmed_side_effects=False)
+    )
+    assert blocked["status"] == "blocked"
 
 
 def test_studio_shell_includes_bilingual_ui_controls():
