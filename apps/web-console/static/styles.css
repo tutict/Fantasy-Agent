@@ -266,7 +266,8 @@ p {
 
 .handoff-panel,
 .correction-panel,
-.manual-correction-panel {
+.manual-correction-panel,
+.generate-panel {
   display: flex;
   flex-direction: column;
   gap: 11px;
@@ -1145,17 +1146,12 @@ input[type="text"]:focus {
 }
 
 /* Generate playable demo panel (M5a) */
-.generate-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 .generate-options {
   display: flex;
   flex-direction: column;
   gap: 6px;
   font-size: 13px;
+  color: var(--muted-strong);
 }
 
 .generate-options label {
@@ -1166,11 +1162,12 @@ input[type="text"]:focus {
 }
 
 .generate-confirm {
-  border: 1px solid var(--line-strong, #2a2f2c);
+  border: 1px solid var(--line-strong);
   border-radius: 10px;
   padding: 12px;
-  background: var(--accent-soft, rgba(0, 255, 204, 0.08));
+  background: var(--accent-soft);
   font-size: 13px;
+  color: var(--text-soft);
 }
 
 .generate-confirm ul {
@@ -1186,4 +1183,52 @@ input[type="text"]:focus {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.generate-stages .mcp-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.generate-stages .mcp-status-card[data-state="ready"] {
+  border-left-color: var(--accent);
+}
+
+.generate-stages .mcp-status-card[data-state="degraded"] {
+  border-left-color: var(--amber);
+}
+
+.generate-stages .mcp-status-card[data-state="unavailable"] {
+  border-left-color: var(--danger);
+}
+
+.generate-stages .mcp-status-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.generate-stages .mcp-status-card h4 {
+  font-size: 13px;
+  margin: 0;
+}
+
+.generate-stages .mcp-state {
+  font-size: 12px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.generate-stages .mcp-status-card p {
+  margin: 0;
+  color: var(--text-soft);
 }
