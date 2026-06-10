@@ -306,6 +306,29 @@ def _collision_for_kind(
     return _mark_collision(obj)
 
 
+def _bevel_edges(bpy: Any, obj: Any, width: float = 2.5, segments: int = 2) -> None:
+    """Bake a small chamfer onto a mesh's hard corners for a game-ready look.
+
+    Best-effort: a Bevel modifier applied destructively. Never blocks export.
+    """
+    if getattr(obj, "type", None) != "MESH":
+        return
+    try:
+        _set_active(bpy, obj)
+        modifier = obj.modifiers.new(name="FA_Bevel", type="BEVEL")
+        modifier.width = width  # centimeters (scene unit)
+        modifier.segments = segments
+        modifier.limit_method = "ANGLE"
+        modifier.angle_limit = 1.05  # ~60deg, only real corners
+        bpy.ops.object.modifier_apply(modifier="FA_Bevel")
+    except Exception:  # noqa: BLE001 - bevel is cosmetic; never block export
+        try:
+            if obj.modifiers.get("FA_Bevel") is not None:
+                obj.modifiers.remove(obj.modifiers["FA_Bevel"])
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _smart_uv_unwrap(bpy: Any, obj: Any) -> None:
     """Generate non-overlapping UVs for a mesh so textures map predictably."""
     if getattr(obj, "type", None) != "MESH":
@@ -421,9 +444,12 @@ def _create_asset_objects(
     objects = builders.get(kind, _asset_generic_greybox)(
         bpy, asset_name, dims, base, material, collection
     )
-    # Smart-UV-unwrap the visual meshes before adding collision (so collision
-    # proxies stay untouched). Game engines need sane UVs for any texturing.
+    # Bevel hard corners for a game-ready silhouette, then UV-unwrap (bevel
+    # changes topology, so UV must come after). Collision proxies are added
+    # afterwards and stay untouched. ui_proxy_mesh stays flat (thin billboard).
     for obj in objects:
+        if kind != "ui_proxy_mesh":
+            _bevel_edges(bpy, obj)
         _smart_uv_unwrap(bpy, obj)
     objects.append(
         _collision_for_kind(bpy, job, kind, dims, (base[0], base[1], dims[2] / 2.0), collection)
