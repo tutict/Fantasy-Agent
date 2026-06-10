@@ -1070,11 +1070,22 @@ input[type="text"]:focus {
 }
 
 @media (max-width: 1180px) {
-  .workspace {
-    grid-template-columns: 1fr;
+  /* Stacked single-column: let the page scroll instead of viewport-locking,
+     so the (tall) sidebar content isn't clipped inside a fixed-height shell. */
+  .shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
   }
 
-  .input-pane {
+  .workspace {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .input-pane,
+  .output-pane {
+    overflow: visible;
     min-height: auto;
   }
 
@@ -1086,10 +1097,6 @@ input[type="text"]:focus {
 @media (max-width: 860px) {
   .shell {
     padding: 8px;
-  }
-
-  .workspace {
-    min-height: calc(100vh - 16px);
   }
 
   .status-bar,
