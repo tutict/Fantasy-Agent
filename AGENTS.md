@@ -181,6 +181,15 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - Godot MCP 执行必须将工程保持在 `generated/godot/`，日志保持在 `generated/logs/godot/`。
 - 没有明确执行确认时，不得启动 Godot 或运行 headless import。
 
+执行编排（Executor）：
+
+- `fantasy_agent/executor.py` 的 `execute_godot_demo()` 是从 `DirectorBuildPlan` 到可运行 Godot 工程的编排层，串联现有 godot MCP 三步：`create_godot_project_structure(write_files=True)` → `validate_godot_project` → `run_godot_import(confirmed_side_effects=True)`，逐阶段回报状态/日志/产物，不重复实现引擎逻辑。
+- 工程文件由 `GameplaySpec` 驱动：`level_beats` 映射为路线分段（每个 beat 一段 floor + 由其 `required_assets` 关键词决定材质语义的标记体），`win_state`/`failure_states` 注入 `main.gd`。不同创意产出不同灰盒，而非固定模板。
+- 单次总确认门：`confirmed=False` 时只返回"将执行的副作用清单"且不写盘；`confirmed=True` 后每个副作用阶段仍各自带 `write_files` / `confirmed_side_effects` 标志。
+- session 产物布局：`generated/godot/sessions/<session_id>/<project>/`，保持在 `generated/godot/` 沙箱前缀内。
+- M1 不做失败自动重试；失败阶段附带捕获的日志路径。
+- CLI：`python -m fantasy_agent --prompt "..." --engine "Godot 4" --execute [--yes] [--godot-exe PATH] [--no-import]`。不带 `--yes` 打印副作用清单；不带 `--execute` 仍是纯规划。Godot 可执行文件由 `local_tools._find_godot()` 自动探测（含 `~/Downloads` 下的版本）。
+
 ## Blender Worker
 
 职责：

@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from fantasy_agent.contracts import (
+    GameplaySpec,
     GodotMCPCreateProjectRequest,
     GodotMCPResult,
     GodotMCPRunImportRequest,
@@ -98,7 +99,7 @@ class GodotMCPBridge:
         created_paths = [artifact.project_dir, *artifact.asset_dirs]
         written_files: list[str] = []
         if request.write_files:
-            written_files = self._write_project_artifact(artifact, request.plan)
+            written_files = self._write_project_artifact(artifact, request.plan, request.gameplay_spec)
         return GodotMCPResult(
             status="written" if request.write_files else "planned",
             artifact=artifact,
@@ -282,6 +283,7 @@ class GodotMCPBridge:
         self,
         artifact: GodotProjectArtifact,
         plan: GodotProjectPlan,
+        gameplay_spec: GameplaySpec | None = None,
     ) -> list[str]:
         project_dir = self._resolve_workspace_path(artifact.project_dir)
         project_dir.mkdir(parents=True, exist_ok=True)
@@ -307,7 +309,7 @@ class GodotMCPBridge:
 
         self._write_text(project_file, _project_godot(plan))
         self._write_text(main_scene_path, _main_scene())
-        self._write_text(self._resolve_workspace_path(main_script), _main_gd(plan))
+        self._write_text(self._resolve_workspace_path(main_script), _main_gd(plan, gameplay_spec))
         self._write_text(self._resolve_workspace_path(player_script), _player_controller_gd(plan))
         self._write_text(manifest_path, json.dumps(_manifest(plan, artifact), indent=2))
         return [
@@ -447,15 +449,91 @@ def _main_scene() -> str:
     )
 
 
-def _main_gd(plan: GodotProjectPlan) -> str:
-    payload = json.dumps(
-        {
-            "project_name": plan.project_name,
-            "automation_steps": plan.automation_steps,
-            "input_actions": plan.input_actions,
-        },
-        indent=2,
+def _default_route_body() -> str:
+    """The original fixed greybox route, used when no GameplaySpec is supplied."""
+    lines = [
+        '    _box("FA_RouteFloor_Start", Vector3(-6.0, 0.0, 0.0), Vector3(5.0, 0.25, 3.0), MAT_SAFE)',
+        '    _box("FA_RouteFloor_Mid", Vector3(0.0, 0.0, 0.0), Vector3(5.0, 0.25, 3.0), MAT_SAFE)',
+        '    _box("FA_RouteFloor_Final", Vector3(6.0, 0.0, 0.0), Vector3(5.0, 0.25, 3.0), MAT_SAFE)',
+        '    _box("FA_Ramp_Teach", Vector3(-2.6, 0.55, -1.25), Vector3(2.4, 0.3, 1.0), MAT_NEUTRAL)',
+        '    _box("FA_WallRun_Panel", Vector3(1.2, 1.5, -1.7), Vector3(3.5, 2.4, 0.24), MAT_NEUTRAL)',
+        '    _box("FA_Boost_Pad", Vector3(3.9, 0.18, 1.0), Vector3(1.5, 0.18, 0.9), MAT_EXIT)',
+        '    _box("FA_Fall_Hazard_A", Vector3(-0.1, -0.08, 2.0), Vector3(2.3, 0.12, 0.45), MAT_HAZARD)',
+        '    _box("FA_Fall_Hazard_B", Vector3(5.1, -0.08, -2.0), Vector3(2.8, 0.12, 0.45), MAT_HAZARD)',
+        '    _box("FA_Checkpoint_Gate", Vector3(0.0, 1.1, 0.0), Vector3(0.35, 2.2, 3.1), MAT_EXIT)',
+        '    _box("FA_Objective_Prop", Vector3(6.6, 0.75, 0.0), Vector3(0.8, 1.4, 0.8), MAT_OBJECTIVE)',
+        '    _box("FA_Exit_Gate", Vector3(8.8, 1.2, 0.0), Vector3(0.45, 2.4, 3.2), MAT_EXIT)',
+    ]
+    return "\n".join(lines)
+
+
+def _beat_material(required_assets: list[str]) -> str:
+    """Pick a material constant by scanning a beat's required-asset keywords."""
+    joined = " ".join(required_assets).casefold()
+    if any(word in joined for word in ("hazard", "trap", "danger", "fall")):
+        return "MAT_HAZARD"
+    if any(word in joined for word in ("exit", "gate", "goal", "finish")):
+        return "MAT_EXIT"
+    if any(word in joined for word in ("objective", "prop", "target", "pickup", "collect")):
+        return "MAT_OBJECTIVE"
+    return "MAT_SAFE"
+
+
+def _route_body_from_spec(gameplay_spec: GameplaySpec | None) -> str:
+    """Generate the _build_greybox_route body, one segment per level beat.
+
+    Falls back to the fixed greybox route when no spec is available so existing
+    behavior and tests are preserved.
+    """
+    if gameplay_spec is None or not gameplay_spec.level_beats:
+        return _default_route_body()
+
+    lines: list[str] = []
+    spacing = 6.0
+    start_x = -spacing * (len(gameplay_spec.level_beats) - 1) / 2.0
+    for index, beat in enumerate(gameplay_spec.level_beats):
+        x = start_x + index * spacing
+        safe_name = _slug(beat.name) or f"beat_{index}"
+        floor_name = f"FA_RouteFloor_{index}_{safe_name}"
+        lines.append(
+            f'    _box("{floor_name}", Vector3({x:.1f}, 0.0, 0.0), '
+            "Vector3(5.0, 0.25, 3.0), MAT_SAFE)"
+        )
+        material = _beat_material(beat.required_assets)
+        marker_name = f"FA_Beat_{index}_{safe_name}_Marker"
+        lines.append(
+            f'    _box("{marker_name}", Vector3({x:.1f}, 0.9, 0.0), '
+            f"Vector3(0.8, 1.4, 0.8), {material})"
+        )
+    # Final exit gate beyond the last beat.
+    exit_x = start_x + len(gameplay_spec.level_beats) * spacing
+    lines.append(
+        f'    _box("FA_Exit_Gate", Vector3({exit_x:.1f}, 1.2, 0.0), '
+        "Vector3(0.45, 2.4, 3.2), MAT_EXIT)"
     )
+    return "\n".join(lines)
+
+
+def _main_gd(plan: GodotProjectPlan, gameplay_spec: GameplaySpec | None = None) -> str:
+    handoff: dict[str, Any] = {
+        "project_name": plan.project_name,
+        "automation_steps": plan.automation_steps,
+        "input_actions": plan.input_actions,
+    }
+    if gameplay_spec is not None:
+        handoff["gameplay"] = {
+            "title": gameplay_spec.title,
+            "core_loop_steps": len(gameplay_spec.core_loop),
+            "win_state": gameplay_spec.win_state,
+            "failure_states": gameplay_spec.failure_states,
+            "level_beats": [beat.name for beat in gameplay_spec.level_beats],
+        }
+    payload = json.dumps(handoff, ensure_ascii=False, indent=2)
+    route_body = _route_body_from_spec(gameplay_spec)
+    objective_text = (
+        gameplay_spec.win_state if gameplay_spec is not None else "Reach exit"
+    )
+    objective_literal = json.dumps(objective_text, ensure_ascii=False)
     return f'''extends Node3D
 
 const HANDOFF := {payload}
@@ -470,6 +548,16 @@ func _ready() -> void:
     _build_lighting()
     _build_greybox_route()
     _build_ui_proxy()
+    _report_objective()
+
+
+func _report_objective() -> void:
+    # Win/fail intent is derived from the GameplaySpec so the slice reflects the idea.
+    print("[FantasyAgent] objective: ", {objective_literal})
+    if HANDOFF.has("gameplay"):
+        print("[FantasyAgent] win_state: ", HANDOFF["gameplay"]["win_state"])
+        for failure in HANDOFF["gameplay"]["failure_states"]:
+            print("[FantasyAgent] failure_state: ", failure)
 
 
 func _build_lighting() -> void:
@@ -486,17 +574,7 @@ func _build_lighting() -> void:
 
 
 func _build_greybox_route() -> void:
-    _box("FA_RouteFloor_Start", Vector3(-6.0, 0.0, 0.0), Vector3(5.0, 0.25, 3.0), MAT_SAFE)
-    _box("FA_RouteFloor_Mid", Vector3(0.0, 0.0, 0.0), Vector3(5.0, 0.25, 3.0), MAT_SAFE)
-    _box("FA_RouteFloor_Final", Vector3(6.0, 0.0, 0.0), Vector3(5.0, 0.25, 3.0), MAT_SAFE)
-    _box("FA_Ramp_Teach", Vector3(-2.6, 0.55, -1.25), Vector3(2.4, 0.3, 1.0), MAT_NEUTRAL)
-    _box("FA_WallRun_Panel", Vector3(1.2, 1.5, -1.7), Vector3(3.5, 2.4, 0.24), MAT_NEUTRAL)
-    _box("FA_Boost_Pad", Vector3(3.9, 0.18, 1.0), Vector3(1.5, 0.18, 0.9), MAT_EXIT)
-    _box("FA_Fall_Hazard_A", Vector3(-0.1, -0.08, 2.0), Vector3(2.3, 0.12, 0.45), MAT_HAZARD)
-    _box("FA_Fall_Hazard_B", Vector3(5.1, -0.08, -2.0), Vector3(2.8, 0.12, 0.45), MAT_HAZARD)
-    _box("FA_Checkpoint_Gate", Vector3(0.0, 1.1, 0.0), Vector3(0.35, 2.2, 3.1), MAT_EXIT)
-    _box("FA_Objective_Prop", Vector3(6.6, 0.75, 0.0), Vector3(0.8, 1.4, 0.8), MAT_OBJECTIVE)
-    _box("FA_Exit_Gate", Vector3(8.8, 1.2, 0.0), Vector3(0.45, 2.4, 3.2), MAT_EXIT)
+{route_body}
 
 
 func _build_ui_proxy() -> void:

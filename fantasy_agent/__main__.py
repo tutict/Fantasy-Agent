@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from datetime import datetime
 
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.generation import design_from_prompt
@@ -45,6 +46,26 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["summary", "json", "gdd"],
         default="summary",
         help="Output format (default summary).",
+    )
+    parser.add_argument(
+        "--execute",
+        action="store_true",
+        help="After planning, run the Godot executor to produce a runnable project.",
+    )
+    parser.add_argument(
+        "--godot-exe",
+        default=None,
+        help="Path to the Godot executable (defaults to auto-detection).",
+    )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Skip the execution confirmation gate and run side effects immediately.",
+    )
+    parser.add_argument(
+        "--no-import",
+        action="store_true",
+        help="With --execute, stop after validation (do not launch Godot).",
     )
     return parser
 
@@ -98,11 +119,41 @@ def main(argv: list[str] | None = None) -> int:
 
     plan = run_director_workflow(request)
 
+    if args.execute:
+        return _run_executor(plan, args)
+
     if args.format == "json":
         print(plan.model_dump_json(indent=2))
     else:
         _print_summary(plan)
     return 0
+
+
+def _run_executor(plan, args) -> int:
+    from fantasy_agent.executor import execute_godot_demo, format_execution_report
+    from fantasy_agent.local_tools import _find_godot
+
+    godot_exe = args.godot_exe or _find_godot()
+    if args.execute and not args.no_import and not godot_exe:
+        print(
+            "No Godot executable found. Pass --godot-exe PATH or use --no-import "
+            "to stop after validation.",
+            file=sys.stderr,
+        )
+        return 2
+
+    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    result = execute_godot_demo(
+        plan,
+        session_id=session_id,
+        confirmed=args.yes,
+        godot_exe=godot_exe or "godot",
+        run_import=not args.no_import,
+    )
+    print(format_execution_report(result))
+    if result.status == "confirmation_required":
+        return 0
+    return 0 if result.ok else 1
 
 
 if __name__ == "__main__":

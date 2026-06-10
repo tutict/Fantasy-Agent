@@ -294,6 +294,7 @@ class GodotMCPCreateProjectRequest(StrictModel):
     plan: GodotProjectPlan
     project_dir: str | None = None
     write_files: bool = False
+    gameplay_spec: GameplaySpec | None = None
 
 
 class GodotMCPValidateProjectRequest(StrictModel):
