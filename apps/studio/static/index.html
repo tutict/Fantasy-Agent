@@ -7,34 +7,6 @@
     <link rel="icon" href="data:," />
     <style>
       :root {
-        color-scheme: dark;
-        --bg: #070a08;
-        --grid-line-a: rgba(255, 255, 255, 0.018);
-        --grid-line-b: rgba(255, 255, 255, 0.014);
-        --chrome: rgba(6, 8, 7, 0.94);
-        --chrome-soft: rgba(8, 11, 9, 0.88);
-        --surface: rgba(255, 255, 255, 0.04);
-        --surface-strong: rgba(255, 255, 255, 0.07);
-        --surface-muted: rgba(255, 255, 255, 0.032);
-        --field: #0b0f0d;
-        --code-bg: rgba(0, 0, 0, 0.24);
-        --icon-bg: rgba(0, 0, 0, 0.18);
-        --line: rgba(255, 255, 255, 0.08);
-        --line-strong: rgba(0, 255, 204, 0.34);
-        --text: #ffffff;
-        --muted: #8b938b;
-        --muted-strong: #bac2b8;
-        --accent: #00ffcc;
-        --accent-soft: rgba(0, 255, 204, 0.12);
-        --danger: #ff6b6b;
-        --danger-soft: rgba(255, 107, 107, 0.12);
-        --warning: #e8a356;
-        --warning-soft: rgba(232, 163, 86, 0.12);
-        --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
-        --sidebar-width: 282px;
-      }
-
-      :root[data-theme="light"] {
         color-scheme: light;
         --bg: #f4f7f3;
         --grid-line-a: rgba(7, 10, 8, 0.045);
@@ -50,6 +22,7 @@
         --line: rgba(7, 10, 8, 0.12);
         --line-strong: rgba(0, 118, 101, 0.36);
         --text: #0b1713;
+        --text-soft: #3a463f;
         --muted: #5d695f;
         --muted-strong: #26332e;
         --accent: #007966;
@@ -59,6 +32,35 @@
         --warning: #8a520f;
         --warning-soft: rgba(138, 82, 15, 0.12);
         --shadow: 0 18px 44px rgba(19, 35, 29, 0.12);
+        --sidebar-width: 282px;
+      }
+
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --bg: #070a08;
+        --grid-line-a: rgba(255, 255, 255, 0.018);
+        --grid-line-b: rgba(255, 255, 255, 0.014);
+        --chrome: rgba(6, 8, 7, 0.94);
+        --chrome-soft: rgba(8, 11, 9, 0.88);
+        --surface: rgba(255, 255, 255, 0.04);
+        --surface-strong: rgba(255, 255, 255, 0.07);
+        --surface-muted: rgba(255, 255, 255, 0.032);
+        --field: #0b0f0d;
+        --code-bg: rgba(0, 0, 0, 0.24);
+        --icon-bg: rgba(0, 0, 0, 0.18);
+        --line: rgba(255, 255, 255, 0.08);
+        --line-strong: rgba(0, 255, 204, 0.34);
+        --text: #ffffff;
+        --text-soft: #c7cfc8;
+        --muted: #8b938b;
+        --muted-strong: #bac2b8;
+        --accent: #00ffcc;
+        --accent-soft: rgba(0, 255, 204, 0.12);
+        --danger: #ff6b6b;
+        --danger-soft: rgba(255, 107, 107, 0.12);
+        --warning: #e8a356;
+        --warning-soft: rgba(232, 163, 86, 0.12);
+        --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
       }
 
       * {
@@ -501,12 +503,12 @@
 
       .mcp-refresh:hover {
         border-color: var(--accent);
-        background: rgba(0, 255, 204, 0.18);
+        background: rgba(0, 121, 102, 0.16);
         transform: translateY(-1px);
       }
 
-      :root[data-theme="light"] .mcp-refresh:hover {
-        background: rgba(0, 121, 102, 0.16);
+      :root[data-theme="dark"] .mcp-refresh:hover {
+        background: rgba(0, 255, 204, 0.18);
       }
 
       .mcp-refresh:disabled {
@@ -950,7 +952,8 @@
         const params = new URLSearchParams(window.location.search);
         const requested = params.get("theme") || localStorage.getItem(THEME_KEY);
         if (requested === "light" || requested === "dark") return requested;
-        return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        // Light-first: default to light unless the OS explicitly prefers dark.
+        return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
       }
 
       function t(key) {

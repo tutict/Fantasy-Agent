@@ -353,7 +353,8 @@ function initialTheme() {
   const params = new URLSearchParams(window.location.search);
   const requested = params.get("theme") || localStorage.getItem(THEME_KEY);
   if (requested === "light" || requested === "dark") return requested;
-  return window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  // Light-first: default to light unless the OS explicitly prefers dark.
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
 let uiLocale = initialLocale();
