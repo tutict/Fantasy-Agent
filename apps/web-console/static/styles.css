@@ -107,7 +107,8 @@ input:focus-visible {
 }
 
 .shell {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   padding: 14px;
 }
 
@@ -116,7 +117,8 @@ input:focus-visible {
   grid-template-columns: minmax(330px, 410px) minmax(0, 1fr);
   gap: 12px;
   max-width: 1720px;
-  min-height: calc(100vh - 28px);
+  height: 100%;
+  min-height: 0;
   margin: 0 auto;
 }
 
