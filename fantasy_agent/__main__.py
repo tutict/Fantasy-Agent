@@ -83,6 +83,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="With --execute, run ComfyUI to generate visual references and copy them in.",
     )
     parser.add_argument(
+        "--with-gameplay",
+        action="store_true",
+        help="With --execute, generate real playable GDScript (mechanics + win/fail) via LLM, "
+        "falling back to deterministic templates if the Godot import fails.",
+    )
+    parser.add_argument(
         "--comfyui-endpoint",
         default=None,
         help="ComfyUI endpoint override (defaults to auto-detection).",
@@ -229,6 +235,7 @@ def _run_godot_executor(plan, args) -> int:
         blender_exe=blender_exe or "blender",
         with_visuals=args.with_visuals,
         comfyui_endpoint=args.comfyui_endpoint,
+        with_gameplay=args.with_gameplay,
     )
     print(format_execution_report(result))
     if result.status == "confirmation_required":

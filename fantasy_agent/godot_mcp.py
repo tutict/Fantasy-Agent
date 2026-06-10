@@ -99,7 +99,9 @@ class GodotMCPBridge:
         created_paths = [artifact.project_dir, *artifact.asset_dirs]
         written_files: list[str] = []
         if request.write_files:
-            written_files = self._write_project_artifact(artifact, request.plan, request.gameplay_spec)
+            written_files = self._write_project_artifact(
+                artifact, request.plan, request.gameplay_spec, request.gameplay_scripts
+            )
         return GodotMCPResult(
             status="written" if request.write_files else "planned",
             artifact=artifact,
@@ -284,7 +286,9 @@ class GodotMCPBridge:
         artifact: GodotProjectArtifact,
         plan: GodotProjectPlan,
         gameplay_spec: GameplaySpec | None = None,
+        gameplay_scripts: dict[str, str] | None = None,
     ) -> list[str]:
+        gameplay_scripts = gameplay_scripts or {}
         project_dir = self._resolve_workspace_path(artifact.project_dir)
         project_dir.mkdir(parents=True, exist_ok=True)
         for folder in plan.folders:
@@ -309,16 +313,37 @@ class GodotMCPBridge:
 
         self._write_text(project_file, _project_godot(plan))
         self._write_text(main_scene_path, _main_scene())
-        self._write_text(self._resolve_workspace_path(main_script), _main_gd(plan, gameplay_spec))
-        self._write_text(self._resolve_workspace_path(player_script), _player_controller_gd(plan))
-        self._write_text(manifest_path, json.dumps(_manifest(plan, artifact), indent=2))
-        return [
+        has_gameplay = bool(gameplay_scripts)
+        self._write_text(
+            self._resolve_workspace_path(main_script),
+            _main_gd(plan, gameplay_spec, with_gameplay=has_gameplay),
+        )
+        # Player controller: use the generated script if provided, else template.
+        player_src = gameplay_scripts.get("scripts/player_controller.gd")
+        self._write_text(
+            self._resolve_workspace_path(player_script),
+            player_src if player_src else _player_controller_gd(plan),
+        )
+        written = [
             self._display_path(project_file),
             self._display_path(main_scene_path),
             self._display_path(self._resolve_workspace_path(main_script)),
             self._display_path(self._resolve_workspace_path(player_script)),
-            self._display_path(manifest_path),
         ]
+        # Any extra generated scripts (e.g. game_manager.gd) beyond the player.
+        for rel, source in gameplay_scripts.items():
+            if rel == "scripts/player_controller.gd":
+                continue
+            extra_path = (Path(artifact.project_dir) / rel).as_posix()
+            resolved = self._resolve_workspace_path(extra_path)
+            resolved.parent.mkdir(parents=True, exist_ok=True)
+            self._write_text(resolved, source)
+            if extra_path not in artifact.script_paths:
+                artifact.script_paths.append(extra_path)
+            written.append(self._display_path(resolved))
+        self._write_text(manifest_path, json.dumps(_manifest(plan, artifact), indent=2))
+        written.append(self._display_path(manifest_path))
+        return written
 
     def _assert_godot_project_file(
         self,
@@ -531,7 +556,51 @@ def _route_body_from_spec(gameplay_spec: GameplaySpec | None) -> str:
     return "\n".join(lines)
 
 
-def _main_gd(plan: GodotProjectPlan, gameplay_spec: GameplaySpec | None = None) -> str:
+_GAMEPLAY_SPAWN_GD = '''
+func _spawn_gameplay() -> void:
+    var player_script := load("res://scripts/player_controller.gd")
+    if player_script != null:
+        var player: CharacterBody3D = player_script.new()
+        player.name = "FA_Player"
+        player.position = Vector3(-6.0, 1.0, 0.0)
+        var col := CollisionShape3D.new()
+        var caps := CapsuleShape3D.new()
+        caps.radius = 0.4
+        caps.height = 1.6
+        col.shape = caps
+        player.add_child(col)
+        var mesh := MeshInstance3D.new()
+        var capsule := CapsuleMesh.new()
+        capsule.radius = 0.4
+        capsule.height = 1.6
+        mesh.mesh = capsule
+        player.add_child(mesh)
+        add_child(player)
+    var gm_script := load("res://scripts/game_manager.gd")
+    if gm_script != null:
+        var gm: Node = gm_script.new()
+        gm.name = "FA_GameManager"
+        add_child(gm)
+        var exit := get_node_or_null("FA_Exit_Gate")
+        if exit != null and gm.has_method("reach_exit"):
+            var area := Area3D.new()
+            area.name = "FA_ExitTrigger"
+            var acol := CollisionShape3D.new()
+            var box := BoxShape3D.new()
+            box.size = Vector3(1.2, 3.0, 3.6)
+            acol.shape = box
+            area.add_child(acol)
+            exit.add_child(area)
+            area.body_entered.connect(func(_b: Node) -> void: gm.reach_exit())
+'''
+
+
+def _main_gd(
+    plan: GodotProjectPlan,
+    gameplay_spec: GameplaySpec | None = None,
+    *,
+    with_gameplay: bool = False,
+) -> str:
     handoff: dict[str, Any] = {
         "project_name": plan.project_name,
         "automation_steps": plan.automation_steps,
@@ -551,6 +620,12 @@ def _main_gd(plan: GodotProjectPlan, gameplay_spec: GameplaySpec | None = None) 
         gameplay_spec.win_state if gameplay_spec is not None else "Reach exit"
     )
     objective_literal = json.dumps(objective_text, ensure_ascii=False)
+    # When real gameplay scripts are present, spawn a controllable player and a
+    # game manager, and wire the exit gate's body to reach_exit().
+    gameplay_ready = (
+        "    _spawn_gameplay()\n" if with_gameplay else ""
+    )
+    gameplay_funcs = _GAMEPLAY_SPAWN_GD if with_gameplay else ""
     return f'''extends Node3D
 
 const HANDOFF := {payload}
@@ -566,7 +641,7 @@ func _ready() -> void:
     _build_greybox_route()
     _build_ui_proxy()
     _report_objective()
-
+{gameplay_ready}{gameplay_funcs}
 
 func _report_objective() -> void:
     # Win/fail intent is derived from the GameplaySpec so the slice reflects the idea.

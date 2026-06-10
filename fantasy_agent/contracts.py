@@ -295,6 +295,7 @@ class GodotMCPCreateProjectRequest(StrictModel):
     project_dir: str | None = None
     write_files: bool = False
     gameplay_spec: GameplaySpec | None = None
+    gameplay_scripts: dict[str, str] = Field(default_factory=dict)
 
 
 class GodotMCPValidateProjectRequest(StrictModel):

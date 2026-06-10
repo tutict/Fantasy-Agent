@@ -435,3 +435,58 @@ def test_unreal_validation_failure_keeps_generated_project(tmp_path: Path):
     assert result.stages[-1].name == "validate"
     assert result.stages[-1].status == "failed"
 
+
+
+# ── M6a: gameplay codegen stage ──────────────────────────────────────────────
+
+
+def test_with_gameplay_generates_scripts_and_imports(tmp_path: Path):
+    from unittest import mock
+
+    fake = {
+        "scripts/player_controller.gd": "extends CharacterBody3D\nfunc _ready():\n\tpass\n",
+        "scripts/game_manager.gd": "extends Node\nfunc reach_exit():\n\tpass\n",
+    }
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    with mock.patch("fantasy_agent.llm.complete_json", return_value=fake):
+        result = execute_godot_demo(
+            _plan(), session_id="g1", confirmed=True, godot_exe="godot",
+            with_gameplay=True, workspace_root=tmp_path, bridge=bridge,
+        )
+
+    assert result.ok
+    names = [s.name for s in result.stages]
+    assert names[0] == "gameplay"
+    assert names == ["gameplay", "create", "validate", "import"]
+    # game_manager.gd written into the project.
+    assert (tmp_path / result.project_dir / "scripts" / "game_manager.gd").exists()
+
+
+def test_with_gameplay_degrades_to_deterministic_when_llm_unavailable(tmp_path: Path):
+    from unittest import mock
+
+    import fantasy_agent.llm as llm
+
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    with mock.patch("fantasy_agent.llm.complete_json", side_effect=llm.LLMError("no key")):
+        result = execute_godot_demo(
+            _plan(), session_id="g2", confirmed=True, godot_exe="godot",
+            with_gameplay=True, workspace_root=tmp_path, bridge=bridge,
+        )
+
+    assert result.ok
+    gameplay = next(s for s in result.stages if s.name == "gameplay")
+    assert gameplay.status == "degraded"
+    # Deterministic player controller (sprint/wall-run/slide) was written.
+    player = (tmp_path / result.project_dir / "scripts" / "player_controller.gd").read_text(
+        encoding="utf-8"
+    )
+    assert "[SPRINT]" in player
+
+
+def test_with_gameplay_listed_in_confirmation_gate(tmp_path: Path):
+    result = execute_godot_demo(
+        _plan(), session_id="g3", confirmed=False, with_gameplay=True
+    )
+    assert result.status == "confirmation_required"
+    assert any("GDScript" in e for e in result.planned_side_effects)

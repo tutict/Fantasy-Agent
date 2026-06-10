@@ -77,8 +77,14 @@ def _planned_side_effects(
     with_assets: bool = False,
     blender_exe: str = "blender",
     with_visuals: bool = False,
+    with_gameplay: bool = False,
 ) -> list[str]:
     effects: list[str] = []
+    if with_gameplay:
+        effects.append(
+            "Generate real playable GDScript (player mechanics + win/fail + HUD) "
+            "from the gameplay spec"
+        )
     if with_visuals:
         effects.append(
             "Run ComfyUI to generate visual reference images (writes generated/comfyui/*)"
@@ -223,6 +229,35 @@ def _run_blender_stage(
     return exported
 
 
+def _run_gameplay_codegen(
+    plan: DirectorBuildPlan, stages: list[StageResult]
+) -> tuple[dict[str, str], bool]:
+    """Generate gameplay GDScript. Returns (scripts, was_llm_generated).
+
+    Tries the LLM first; on failure returns deterministic scripts. The
+    was_llm flag tells the caller whether to attempt a deterministic fallback
+    if the LLM scripts later fail the Godot import.
+    """
+    from fantasy_agent import gameplay_codegen
+
+    try:
+        scripts = gameplay_codegen._generate_with_llm(plan.gameplay_spec)
+        stages.append(
+            StageResult("gameplay", "done", detail=f"LLM generated {len(scripts)} scripts")
+        )
+        return scripts, True
+    except Exception as exc:  # noqa: BLE001 - degrade to deterministic
+        scripts = gameplay_codegen.deterministic_gameplay_scripts(plan.gameplay_spec)
+        stages.append(
+            StageResult(
+                "gameplay",
+                "degraded",
+                detail=f"LLM unavailable ({exc}); using deterministic scripts",
+            )
+        )
+        return scripts, False
+
+
 def execute_godot_demo(
     plan: DirectorBuildPlan,
     *,
@@ -235,6 +270,7 @@ def execute_godot_demo(
     blender_exe: str = "blender",
     with_visuals: bool = False,
     comfyui_endpoint: str | None = None,
+    with_gameplay: bool = False,
     bridge: GodotMCPBridge | None = None,
     blender_bridge: Any | None = None,
     comfyui_bridge: Any | None = None,
@@ -274,6 +310,7 @@ def execute_godot_demo(
         with_assets=with_assets,
         blender_exe=blender_exe,
         with_visuals=with_visuals,
+        with_gameplay=with_gameplay,
     )
 
     if not confirmed:
@@ -309,13 +346,20 @@ def execute_godot_demo(
             blender_bridge=blender_bridge,
         )
 
-    # Stage 1: create project files.
+    # Stage C (optional): generate real playable GDScript from the spec.
+    gameplay_scripts: dict[str, str] = {}
+    gameplay_was_llm = False
+    if with_gameplay:
+        gameplay_scripts, gameplay_was_llm = _run_gameplay_codegen(plan, stages)
+
+    # Stage 1: create project files (with generated gameplay scripts if any).
     create = bridge.create_godot_project_structure(
         GodotMCPCreateProjectRequest(
             plan=plan.godot_plan,
             project_dir=project_dir,
             write_files=True,
             gameplay_spec=plan.gameplay_spec,
+            gameplay_scripts=gameplay_scripts,
         )
     )
     if create.status != "written" or create.artifact is None:
@@ -395,6 +439,43 @@ def execute_godot_demo(
         )
     )
     if imported.status != "executed" or (imported.return_code not in (0, None)):
+        # If LLM-generated gameplay scripts broke the import, fall back to the
+        # deterministic templates and re-import once so the demo still runs.
+        if gameplay_was_llm:
+            from fantasy_agent.gameplay_codegen import deterministic_gameplay_scripts
+
+            fallback = deterministic_gameplay_scripts(plan.gameplay_spec)
+            bridge.create_godot_project_structure(
+                GodotMCPCreateProjectRequest(
+                    plan=plan.godot_plan,
+                    project_dir=project_dir,
+                    write_files=True,
+                    gameplay_spec=plan.gameplay_spec,
+                    gameplay_scripts=fallback,
+                )
+            )
+            reimport = bridge.run_godot_import(
+                GodotMCPRunImportRequest(
+                    project_file=project_file,
+                    godot_executable=godot_exe,
+                    confirmed_side_effects=True,
+                )
+            )
+            if reimport.status == "executed" and reimport.return_code in (0, None):
+                stages.append(
+                    StageResult(
+                        "gameplay",
+                        "degraded",
+                        detail="LLM scripts failed import; fell back to deterministic templates",
+                    )
+                )
+                stages.append(
+                    StageResult(
+                        "import", "done", detail="headless import ok (fallback)",
+                        logs=reimport.log_paths,
+                    )
+                )
+                return ExecutionResult("done", session_id, project_dir, stages, planned)
         stages.append(
             StageResult(
                 "import",

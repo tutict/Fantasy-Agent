@@ -202,6 +202,14 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - CLI：`python -m fantasy_agent --prompt "..." --engine "Godot 4" --execute [--yes] [--godot-exe PATH] [--no-import]`。不带 `--yes` 打印副作用清单；不带 `--execute` 仍是纯规划。Godot 可执行文件由 `local_tools._find_godot()` 自动探测（含 `~/Downloads` 下的版本）。
 - 资产链（M2）：加 `--with-assets` 在 create 前插入 Blender 阶段（导出 glb）并在 import 前复制进工程；`--blender-exe PATH` 覆盖探测。阶段顺序 blender→create→copy_assets→validate→import。Blender 失败自动降级为纯灰盒。`main.gd` 的 beat 标记体会先尝试 `load("res://assets/generated/<asset>.glb")`，缺失则回退到程序化 box——因此无资产时行为与纯灰盒一致。
 
+真实玩法代码生成（M6a）：
+
+- 加 `--with-gameplay` 在 create 前插入「玩法代码生成」阶段：由 `fantasy_agent/gameplay_codegen.py` 产出真实 GDScript——玩家控制器实现 `core_verbs`（如 parkour 的 sprint/wall-run/slide），game_manager 实现 `win_state`/`failure_states` 的真判定 + CanvasLayer Label HUD + 到时重开。生成的脚本写入工程，`main.gd` 实例化玩家 + game_manager 并把出口门接到 `reach_exit()`。
+- **LLM 优先 + 确定性回退**：`use_llm` 时用 `llm.complete_json` 让模型生成 GDScript；不可用/输出非法时回退到 axis-aware 确定性模板（仍比旧的 WASD+跳丰富）。
+- **导入校验 + 失败回退**：LLM 脚本若导致 Godot headless 导入报脚本错误，executor 自动用确定性模板重生成并重新导入，gameplay 阶段标记 `degraded`——保证 demo 一定能跑。
+- 阶段顺序：gameplay→create→validate→import，可与 `--with-assets`/`--with-visuals` 组合。
+- **范围**：M6a 只做玩家机制 + 胜负 + HUD，**不含敌人**（敌人是 M6b，需先给 GameplaySpec 加 EnemySpec 契约）。
+
 ## Blender Worker
 
 职责：
