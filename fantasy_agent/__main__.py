@@ -67,6 +67,16 @@ def _build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="With --execute, stop after validation (do not launch Godot).",
     )
+    parser.add_argument(
+        "--with-assets",
+        action="store_true",
+        help="With --execute, run Blender to export glb assets and copy them into the project.",
+    )
+    parser.add_argument(
+        "--blender-exe",
+        default=None,
+        help="Path to the Blender executable (defaults to auto-detection).",
+    )
     return parser
 
 
@@ -131,13 +141,22 @@ def main(argv: list[str] | None = None) -> int:
 
 def _run_executor(plan, args) -> int:
     from fantasy_agent.executor import execute_godot_demo, format_execution_report
-    from fantasy_agent.local_tools import _find_godot
+    from fantasy_agent.local_tools import _find_blender, _find_godot
 
     godot_exe = args.godot_exe or _find_godot()
     if args.execute and not args.no_import and not godot_exe:
         print(
             "No Godot executable found. Pass --godot-exe PATH or use --no-import "
             "to stop after validation.",
+            file=sys.stderr,
+        )
+        return 2
+
+    blender_exe = args.blender_exe or _find_blender()
+    if args.with_assets and not blender_exe:
+        print(
+            "No Blender executable found. Pass --blender-exe PATH or drop "
+            "--with-assets to build a greybox-only demo.",
             file=sys.stderr,
         )
         return 2
@@ -149,6 +168,8 @@ def _run_executor(plan, args) -> int:
         confirmed=args.yes,
         godot_exe=godot_exe or "godot",
         run_import=not args.no_import,
+        with_assets=args.with_assets,
+        blender_exe=blender_exe or "blender",
     )
     print(format_execution_report(result))
     if result.status == "confirmation_required":

@@ -189,6 +189,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - session 产物布局：`generated/godot/sessions/<session_id>/<project>/`，保持在 `generated/godot/` 沙箱前缀内。
 - M1 不做失败自动重试；失败阶段附带捕获的日志路径。
 - CLI：`python -m fantasy_agent --prompt "..." --engine "Godot 4" --execute [--yes] [--godot-exe PATH] [--no-import]`。不带 `--yes` 打印副作用清单；不带 `--execute` 仍是纯规划。Godot 可执行文件由 `local_tools._find_godot()` 自动探测（含 `~/Downloads` 下的版本）。
+- 资产链（M2）：加 `--with-assets` 在 create 前插入 Blender 阶段（导出 glb）并在 import 前复制进工程；`--blender-exe PATH` 覆盖探测。阶段顺序 blender→create→copy_assets→validate→import。Blender 失败自动降级为纯灰盒。`main.gd` 的 beat 标记体会先尝试 `load("res://assets/generated/<asset>.glb")`，缺失则回退到程序化 box——因此无资产时行为与纯灰盒一致。
 
 ## Blender Worker
 
@@ -213,6 +214,14 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - 每次导出都生成 `UCX_` 碰撞对象和 Unreal import manifest。
 - 没有明确执行确认时，不得从规划界面运行 Blender。
 - Blender MCP 执行必须将脚本放在 `generated/blender/`，导出放在 `generated/assets/`，日志放在 `generated/logs/blender/`。
+
+Blender → Godot 资产链（M2）：
+
+- Executor 的 `--with-assets` 路径会先跑 Blender 导出 **glb**（Godot 4 原生格式），再把 `.glb` 复制进 Godot 工程的 `assets/generated/`，由 `godot --headless --import` 导入。
+- 导出格式由 `BlenderAssetPlan.export_format` 决定；executor 在 Godot 路径下强制 `glb`。`enrich_blender_job` 按格式规范化扩展名（不再出现 `name.fbx.glb` 双扩展名）。
+- `fantasy_agent/godot_assets.py` 的 `copy_assets_into_godot_project` 只复制 `.glb`，`.fbx` 跳过并记录（Godot 需 fbx2gltf 转换器，M2 不处理；Unreal 线仍独立用 fbx）。
+- **降级语义**：Blender 不可用或执行失败时，blender 阶段标记 failed，整条链继续以纯灰盒完成，不中断。
+- 重要约束：Blender 阶段要求 `workspace_root` 为仓库根（生成的脚本需 import `fantasy_agent.blender_runtime`）。纯 Godot 路径无此约束。
 
 ## ComfyUI Worker
 

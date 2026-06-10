@@ -126,3 +126,102 @@ def test_main_gd_route_differs_by_prompt():
     script_a = _main_gd(prepare_godot_project(spec_a), spec_a)
     script_b = _main_gd(prepare_godot_project(spec_b), spec_b)
     assert script_a != script_b
+
+
+# ── M2: Blender asset stage ──────────────────────────────────────────────────
+
+
+class _FakeBlenderResult:
+    def __init__(self, status: str, exported_assets: list[str]):
+        self.status = status
+        self.exported_assets = exported_assets
+        self.log_paths: list[str] = []
+
+
+class _FakeBlenderBridge:
+    """Stub that mimics generate_asset_batch without launching Blender."""
+
+    def __init__(self, status: str = "executed", exported: list[str] | None = None, *, root=None):
+        self._status = status
+        self._exported = exported or []
+        self._root = root
+
+    def generate_asset_batch(self, request):
+        # Optionally drop real files so the copy stage has something to move.
+        if self._root is not None and self._status == "executed":
+            assets_dir = Path(self._root) / "generated" / "assets"
+            assets_dir.mkdir(parents=True, exist_ok=True)
+            for rel in self._exported:
+                (Path(self._root) / rel).write_bytes(b"glTF-stub")
+        return _FakeBlenderResult(self._status, self._exported)
+
+
+def test_with_assets_stage_order_and_copy(tmp_path: Path):
+    exported = ["generated/assets/start_marker.glb", "generated/assets/objective_prop.glb"]
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    blender = _FakeBlenderBridge(status="executed", exported=exported, root=tmp_path)
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m2",
+        confirmed=True,
+        godot_exe="godot",
+        with_assets=True,
+        workspace_root=tmp_path,
+        bridge=bridge,
+        blender_bridge=blender,
+    )
+
+    assert result.ok
+    names = [s.name for s in result.stages]
+    assert names == ["blender", "create", "copy_assets", "validate", "import"]
+    # glb actually copied into the project.
+    copied = list((tmp_path / result.project_dir / "assets" / "generated").glob("*.glb"))
+    assert len(copied) == 2
+
+
+def test_blender_failure_degrades_to_greybox(tmp_path: Path):
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    blender = _FakeBlenderBridge(status="failed", exported=[])
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m2fail",
+        confirmed=True,
+        godot_exe="godot",
+        with_assets=True,
+        workspace_root=tmp_path,
+        bridge=bridge,
+        blender_bridge=blender,
+    )
+
+    # Chain still completes (greybox), blender stage marked failed, no copy stage.
+    assert result.ok
+    names = [s.name for s in result.stages]
+    assert "blender" in names
+    assert next(s for s in result.stages if s.name == "blender").status == "failed"
+    assert "copy_assets" not in names
+    assert names[-1] == "import"
+
+
+def test_confirmation_gate_lists_blender_side_effects(tmp_path: Path):
+    result = execute_godot_demo(
+        _plan(), session_id="m2", confirmed=False, with_assets=True, blender_exe="blender"
+    )
+    assert result.status == "confirmation_required"
+    assert any("Blender" in e for e in result.planned_side_effects)
+    assert any("Copy exported glb" in e for e in result.planned_side_effects)
+
+
+# ── M2: spec-driven glb instancing in the template ───────────────────────────
+
+
+def test_main_gd_with_spec_emits_glb_load_with_fallback():
+    spec = design_from_prompt_deterministic(PromptRequest(prompt="rooftop parkour chase"))
+    script = _main_gd(prepare_godot_project(spec), spec)
+    assert "_spawn_marker" in script
+    assert "res://assets/generated/" in script
+    assert "ResourceLoader.exists" in script
+    # Box fallback helper still present.
+    assert "func _box(" in script
+

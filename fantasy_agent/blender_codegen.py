@@ -84,8 +84,15 @@ def enrich_blender_job(job: BlenderAssetJob, export_format: str = "fbx") -> Blen
         asset_kind = classify_asset_kind(asset_name, job.purpose)
     extension = "glb" if export_format == "glb" else "fbx"
     export_path = job.export_path
-    if not export_path.endswith((".fbx", ".glb")):
-        export_path = f"{export_path}.{extension}"
+    # Normalize the extension to match export_format: strip any existing
+    # .fbx/.glb suffix before appending the correct one. This avoids producing
+    # double extensions like "asset.fbx.glb" when the format differs from the
+    # suffix the path was authored with.
+    for known in (".fbx", ".glb"):
+        if export_path.lower().endswith(known):
+            export_path = export_path[: -len(known)]
+            break
+    export_path = f"{export_path}.{extension}"
     dimensions = job.dimensions_cm
     if dimensions == (100.0, 100.0, 100.0):
         dimensions = DEFAULT_DIMENSIONS_CM[asset_kind]

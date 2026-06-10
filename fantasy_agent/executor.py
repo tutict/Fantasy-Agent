@@ -17,8 +17,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from fantasy_agent.contracts import (
+    BlenderMCPExecuteRequest,
     DirectorBuildPlan,
     GodotMCPCreateProjectRequest,
     GodotMCPRunImportRequest,
@@ -62,13 +64,88 @@ def _session_project_dir(session_id: str, project_name: str) -> str:
     return f"generated/godot/sessions/{session_id}/{safe}"
 
 
-def _planned_side_effects(plan: DirectorBuildPlan, project_dir: str, godot_exe: str) -> list[str]:
-    return [
-        f"Write Godot project files under {project_dir}/ "
-        f"(project.godot, scenes, scripts, manifest)",
-        f"Validate the generated project at {project_dir}/project.godot",
-        f"Run headless import: {godot_exe} --headless --path {project_dir} --import",
-    ]
+def _planned_side_effects(
+    plan: DirectorBuildPlan,
+    project_dir: str,
+    godot_exe: str,
+    *,
+    with_assets: bool = False,
+    blender_exe: str = "blender",
+) -> list[str]:
+    effects: list[str] = []
+    if with_assets:
+        effects.append(
+            f"Run Blender to export glb assets: {blender_exe} --background --python <script> "
+            "(writes generated/assets/*.glb)"
+        )
+        effects.append(f"Copy exported glb assets into {project_dir}/assets/generated/")
+    effects.extend(
+        [
+            f"Write Godot project files under {project_dir}/ "
+            f"(project.godot, scenes, scripts, manifest)",
+            f"Validate the generated project at {project_dir}/project.godot",
+            f"Run headless import: {godot_exe} --headless --path {project_dir} --import",
+        ]
+    )
+    return effects
+
+
+def _run_blender_stage(
+    plan: DirectorBuildPlan,
+    stages: list[StageResult],
+    *,
+    blender_exe: str,
+    workspace_root: Path | str,
+    blender_bridge: Any | None,
+) -> list[str]:
+    """Run Blender to export glb assets. Returns exported .glb paths.
+
+    On any failure the stage is recorded as failed/blocked and an empty list is
+    returned, so the caller degrades to a pure greybox without breaking.
+    """
+
+    try:
+        if blender_bridge is None:
+            from fantasy_agent.blender_mcp import BlenderMCPBridge
+
+            blender_bridge = BlenderMCPBridge(workspace_root=workspace_root)
+        # Request glb explicitly for the Godot path.
+        glb_plan = plan.blender_plan.model_copy(update={"export_format": "glb"})
+        result = blender_bridge.generate_asset_batch(
+            BlenderMCPExecuteRequest(
+                plan=glb_plan,
+                blender_executable=blender_exe,
+                confirmed_side_effects=True,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001 - degrade gracefully on any failure
+        stages.append(
+            StageResult("blender", "failed", detail=f"{exc}; degrading to greybox")
+        )
+        return []
+
+    if result.status != "executed":
+        stages.append(
+            StageResult(
+                "blender",
+                "failed",
+                detail=f"status={result.status}; degrading to greybox",
+                logs=result.log_paths,
+            )
+        )
+        return []
+
+    exported = [a for a in result.exported_assets if a.lower().endswith(".glb")]
+    stages.append(
+        StageResult(
+            "blender",
+            "done",
+            detail=f"exported {len(exported)} glb",
+            artifacts=exported,
+            logs=result.log_paths,
+        )
+    )
+    return exported
 
 
 def execute_godot_demo(
@@ -79,28 +156,37 @@ def execute_godot_demo(
     godot_exe: str = "godot",
     workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
     run_import: bool = True,
+    with_assets: bool = False,
+    blender_exe: str = "blender",
     bridge: GodotMCPBridge | None = None,
+    blender_bridge: Any | None = None,
 ) -> ExecutionResult:
-    """Orchestrate create -> validate -> import for a Godot demo.
+    """Orchestrate (optional Blender) -> create -> validate -> import for a demo.
 
     Args:
         plan: The director build plan (provides godot_plan + gameplay_spec).
         session_id: Unique id for this run; outputs land under
-            generated/sessions/<session_id>/godot/.
+            generated/godot/sessions/<session_id>/.
         confirmed: Total-confirmation gate. If False, returns the planned side
             effects without writing or executing anything.
         godot_exe: Path to the Godot executable for headless import.
         workspace_root: Sandbox root (defaults to the repo root).
-        run_import: If False, stop after validate (no engine launch). Useful
-            when Godot is unavailable.
+        run_import: If False, stop after validate (no engine launch).
+        with_assets: If True, run a Blender stage to export glb assets and copy
+            them into the project. On any Blender failure the run degrades to a
+            pure greybox (the chain is not broken).
+        blender_exe: Path to the Blender executable.
         bridge: Optional pre-built GodotMCPBridge (for testing).
+        blender_bridge: Optional pre-built BlenderMCPBridge (for testing).
 
     Returns:
         ExecutionResult with per-stage status, artifacts, and logs.
     """
 
     project_dir = _session_project_dir(session_id, plan.godot_plan.project_name)
-    planned = _planned_side_effects(plan, project_dir, godot_exe)
+    planned = _planned_side_effects(
+        plan, project_dir, godot_exe, with_assets=with_assets, blender_exe=blender_exe
+    )
 
     if not confirmed:
         return ExecutionResult(
@@ -112,6 +198,17 @@ def execute_godot_demo(
 
     bridge = bridge or GodotMCPBridge(workspace_root=workspace_root)
     stages: list[StageResult] = []
+
+    # Stage 0 (optional): Blender asset export. Degrades to greybox on failure.
+    exported_glb: list[str] = []
+    if with_assets:
+        exported_glb = _run_blender_stage(
+            plan,
+            stages,
+            blender_exe=blender_exe,
+            workspace_root=workspace_root,
+            blender_bridge=blender_bridge,
+        )
 
     # Stage 1: create project files.
     create = bridge.create_godot_project_structure(
@@ -137,6 +234,21 @@ def execute_godot_demo(
     )
 
     project_file = create.artifact.project_file
+
+    # Stage 1b (optional): copy exported glb assets into the project so the
+    # import step picks them up and runtime load() calls resolve.
+    if with_assets and exported_glb:
+        from fantasy_agent.godot_assets import copy_assets_into_godot_project
+
+        copy_result = copy_assets_into_godot_project(
+            exported_glb, project_dir, workspace_root=workspace_root
+        )
+        detail = f"copied {len(copy_result.copied)} glb"
+        if copy_result.skipped:
+            detail += f", skipped {len(copy_result.skipped)}"
+        stages.append(
+            StageResult("copy_assets", "done", detail=detail, artifacts=copy_result.copied)
+        )
 
     # Stage 2: validate.
     validate = bridge.validate_godot_project(

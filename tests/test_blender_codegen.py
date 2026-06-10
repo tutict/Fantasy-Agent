@@ -100,3 +100,30 @@ def test_enrich_blender_plan_normalizes_unreal_asset_and_collision_names():
     assert job.collision_name == "UCX_wall_run_panel_set_00"
     assert manifest["assets"][0]["asset_name"] == "wall_run_panel_set"
     assert manifest["assets"][0]["collision_object"] == "UCX_wall_run_panel_set_00"
+
+
+def test_enrich_does_not_produce_double_extension_when_switching_to_glb():
+    # A path authored with .fbx, re-enriched as glb, must become .glb (not .fbx.glb).
+    plan = BlenderAssetPlan(
+        job_name="ext-test",
+        export_format="glb",
+        python_entrypoint="apps/blender-worker/app/procedural_asset_job.py",
+        handoff_artifacts=[],
+        jobs=[
+            BlenderAssetJob(
+                asset_name="floor_kit",
+                purpose="Modular floor.",
+                primitive_strategy="primitive",
+                export_path="generated/assets/floor_kit.fbx",
+                collision_hint="convex",
+            )
+        ],
+    )
+
+    job = enrich_blender_plan(plan).jobs[0]
+    assert job.export_path == "generated/assets/floor_kit.glb"
+    assert ".fbx.glb" not in job.export_path
+
+    # And fbx stays fbx with no doubling.
+    fbx_job = enrich_blender_plan(plan.model_copy(update={"export_format": "fbx"})).jobs[0]
+    assert fbx_job.export_path == "generated/assets/floor_kit.fbx"

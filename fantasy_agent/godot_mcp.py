@@ -479,6 +479,18 @@ def _beat_material(required_assets: list[str]) -> str:
     return "MAT_SAFE"
 
 
+def _beat_asset_glb(required_assets: list[str]) -> str:
+    """Expected glb filename for a beat's first required asset, or "" if none.
+
+    Mirrors prepare_blender_assets, which names exports by slugify(asset_need).
+    The returned value is a bare filename (no directory); the GDScript helper
+    resolves it under res://assets/generated/.
+    """
+    if not required_assets:
+        return ""
+    return f"{_slug(required_assets[0])}.glb"
+
+
 def _route_body_from_spec(gameplay_spec: GameplaySpec | None) -> str:
     """Generate the _build_greybox_route body, one segment per level beat.
 
@@ -501,9 +513,14 @@ def _route_body_from_spec(gameplay_spec: GameplaySpec | None) -> str:
         )
         material = _beat_material(beat.required_assets)
         marker_name = f"FA_Beat_{index}_{safe_name}_Marker"
+        # Prefer an imported glb for this beat's first required asset; the GDScript
+        # helper falls back to a greybox box when the asset is absent, so the
+        # no-asset path stays identical to M1.
+        asset_glb = _beat_asset_glb(beat.required_assets)
+        asset_literal = json.dumps(asset_glb, ensure_ascii=False)
         lines.append(
-            f'    _box("{marker_name}", Vector3({x:.1f}, 0.9, 0.0), '
-            f"Vector3(0.8, 1.4, 0.8), {material})"
+            f'    _spawn_marker("{marker_name}", Vector3({x:.1f}, 0.9, 0.0), '
+            f"Vector3(0.8, 1.4, 0.8), {material}, {asset_literal})"
         )
     # Final exit gate beyond the last beat.
     exit_x = start_x + len(gameplay_spec.level_beats) * spacing
@@ -584,6 +601,22 @@ func _build_ui_proxy() -> void:
     label.position = Vector3(-5.8, 2.2, 0.0)
     label.pixel_size = 0.035
     add_child(label)
+
+
+func _spawn_marker(node_name: String, origin: Vector3, size: Vector3, color: Color, asset_file: String) -> Node3D:
+    # Prefer an imported glb under res://assets/generated/; fall back to a
+    # greybox box when the asset is missing so the slice always builds.
+    if asset_file != "":
+        var res_path := "res://assets/generated/" + asset_file
+        if ResourceLoader.exists(res_path):
+            var packed := load(res_path)
+            if packed is PackedScene:
+                var instance: Node3D = packed.instantiate()
+                instance.name = node_name
+                instance.position = origin
+                add_child(instance)
+                return instance
+    return _box(node_name, origin, size, color)
 
 
 func _box(node_name: String, origin: Vector3, size: Vector3, color: Color) -> StaticBody3D:
