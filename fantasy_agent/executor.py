@@ -26,6 +26,10 @@ from fantasy_agent.contracts import (
     GodotMCPCreateProjectRequest,
     GodotMCPRunImportRequest,
     GodotMCPValidateProjectRequest,
+    UnrealMCPCreateProjectRequest,
+    UnrealMCPEditorCommandletRequest,
+    UnrealMCPPrepareAssetIngestRequest,
+    UnrealMCPPrepareLevelAssemblyRequest,
 )
 from fantasy_agent.godot_mcp import DEFAULT_WORKSPACE_ROOT, GodotMCPBridge
 
@@ -426,3 +430,178 @@ def format_execution_report(result: ExecutionResult) -> str:
         for log in stage.logs:
             lines.append(f"      log: {log}")
     return "\n".join(lines)
+
+
+def _unreal_session_project_dir(session_id: str, project_name: str) -> str:
+    from fantasy_agent.godot_mcp import _slug
+
+    safe = _slug(project_name) or "demo"
+    return f"generated/unreal/sessions/{session_id}/{safe}"
+
+
+def _unreal_planned_side_effects(project_dir: str, unreal_cmd: str, run_validation: bool) -> list[str]:
+    effects = [
+        f"Write Unreal project files under {project_dir}/ (.uproject, Config, Content, scripts)",
+        "Prepare asset ingest manifest + Python script",
+        "Prepare level assembly manifest + Python script",
+    ]
+    if run_validation:
+        effects.append(
+            f"Run DataValidation: {unreal_cmd} <project> -run=DataValidation -IncludeOnlyOnDiskAssets"
+        )
+    return effects
+
+
+def execute_unreal_demo(
+    plan: DirectorBuildPlan,
+    *,
+    session_id: str,
+    confirmed: bool = False,
+    unreal_cmd: str = "UnrealEditor-Cmd",
+    workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
+    run_validation: bool = True,
+    bridge: Any | None = None,
+) -> ExecutionResult:
+    """Orchestrate create -> prepare ingest -> prepare level -> DataValidation.
+
+    Generates a complete UE5 project and validates it with the DataValidation
+    commandlet. The heavyweight run_asset_ingest / run_level_assembly steps are
+    intentionally out of scope here (they require real fbx assets and a full
+    editor launch).
+
+    Args:
+        plan: Director build plan (provides unreal_plan + blender_plan manifest).
+        session_id: Unique id; outputs land under generated/unreal/sessions/<id>/.
+        confirmed: Total-confirmation gate. If False, returns planned side effects.
+        unreal_cmd: Path to UnrealEditor-Cmd for headless DataValidation.
+        workspace_root: Sandbox root.
+        run_validation: If False, stop after prepare_level (no editor launch).
+        bridge: Optional pre-built UnrealMCPBridge (for testing).
+
+    Returns:
+        ExecutionResult with per-stage status, artifacts, and logs.
+    """
+
+    project_dir = _unreal_session_project_dir(session_id, plan.unreal_plan.project_name)
+    planned = _unreal_planned_side_effects(project_dir, unreal_cmd, run_validation)
+
+    if not confirmed:
+        return ExecutionResult(
+            status="confirmation_required",
+            session_id=session_id,
+            project_dir=project_dir,
+            planned_side_effects=planned,
+        )
+
+    if bridge is None:
+        from fantasy_agent.unreal_mcp import UnrealMCPBridge
+
+        bridge = UnrealMCPBridge(workspace_root=workspace_root)
+    stages: list[StageResult] = []
+
+    # Write the Blender->Unreal import manifest so prepare_asset_ingest can read
+    # it. Source fbx files need not exist yet (require_existing_sources=False).
+    manifest_path = _write_unreal_import_manifest(plan, workspace_root)
+
+    # Stage 1: create project.
+    create = bridge.create_project_structure(
+        UnrealMCPCreateProjectRequest(
+            plan=plan.unreal_plan,
+            project_dir=project_dir,
+            write_files=True,
+        )
+    )
+    if create.status != "written" or create.artifact is None:
+        stages.append(
+            StageResult("create", "failed", detail="; ".join(create.risks) or "create failed")
+        )
+        return ExecutionResult("failed", session_id, project_dir, stages, planned)
+    project_file = create.artifact.project_file
+    stages.append(
+        StageResult(
+            "create", "done", detail=f"wrote {len(create.written_files)} files",
+            artifacts=create.written_files,
+        )
+    )
+
+    # Stage 2: prepare asset ingest.
+    ingest = bridge.prepare_asset_ingest(
+        UnrealMCPPrepareAssetIngestRequest(
+            project_file=project_file,
+            blender_import_manifest_path=manifest_path,
+            write_files=True,
+            require_existing_sources=False,
+        )
+    )
+    if ingest.status != "written" or ingest.manifest is None:
+        stages.append(
+            StageResult("prepare_ingest", "failed", detail="; ".join(ingest.risks) or "failed")
+        )
+        return ExecutionResult("failed", session_id, project_dir, stages, planned)
+    ingest_manifest_path = next(
+        (f for f in ingest.written_files if f.endswith((".yaml", ".yml", ".json"))),
+        "",
+    )
+    stages.append(
+        StageResult("prepare_ingest", "done", detail=f"{len(ingest.manifest.jobs)} ingest jobs")
+    )
+
+    # Stage 3: prepare level assembly.
+    level = bridge.prepare_level_assembly(
+        UnrealMCPPrepareLevelAssemblyRequest(
+            project_file=project_file,
+            ingest_manifest_path=ingest_manifest_path,
+            write_files=True,
+        )
+    )
+    if level.status != "written":
+        stages.append(
+            StageResult("prepare_level", "failed", detail="; ".join(level.risks) or "failed")
+        )
+        return ExecutionResult("failed", session_id, project_dir, stages, planned)
+    stages.append(StageResult("prepare_level", "done", detail="level manifest + script written"))
+
+    # Stage 4 (optional): DataValidation commandlet.
+    if not run_validation:
+        stages.append(StageResult("validate", "blocked", detail="run_validation=False"))
+        return ExecutionResult("done", session_id, project_dir, stages, planned)
+
+    validation = bridge.run_editor_commandlet(
+        UnrealMCPEditorCommandletRequest(
+            project_file=project_file,
+            commandlet="DataValidation",
+            unreal_editor_cmd=unreal_cmd,
+            confirmed_side_effects=True,
+        )
+    )
+    if validation.status != "executed" or (validation.return_code not in (0, None)):
+        stages.append(
+            StageResult(
+                "validate",
+                "failed",
+                detail=validation.stderr_tail or f"status={validation.status}",
+                logs=validation.log_paths,
+            )
+        )
+        return ExecutionResult("failed", session_id, project_dir, stages, planned)
+    stages.append(
+        StageResult("validate", "done", detail="DataValidation ok", logs=validation.log_paths)
+    )
+    return ExecutionResult("done", session_id, project_dir, stages, planned)
+
+
+def _write_unreal_import_manifest(plan: DirectorBuildPlan, workspace_root: Path | str) -> str:
+    """Serialize the Blender->Unreal import manifest to YAML and return its path."""
+    import yaml
+
+    from fantasy_agent.blender_codegen import build_unreal_import_manifest
+
+    manifest = build_unreal_import_manifest(plan.blender_plan)
+    rel = "generated/import-manifest.yaml"
+    dest = Path(workspace_root) / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return rel

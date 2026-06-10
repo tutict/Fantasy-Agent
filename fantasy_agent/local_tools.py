@@ -99,6 +99,21 @@ def _find_unreal() -> str | None:
     )
 
 
+def _unreal_cmd_executable(editor_path: str | None) -> str | None:
+    """Map a UnrealEditor.exe path to the sibling UnrealEditor-Cmd.exe.
+
+    Headless/commandlet runs use the -Cmd variant. If the sibling exists, return
+    it; otherwise fall back to the given path (it may already be the Cmd build).
+    """
+    if not editor_path:
+        return editor_path
+    path = Path(editor_path)
+    if path.stem.endswith("-Cmd"):
+        return editor_path
+    cmd = path.with_name(f"{path.stem}-Cmd{path.suffix}")
+    return str(cmd) if cmd.exists() else editor_path
+
+
 def _find_godot() -> str | None:
     env_path = _existing_env_path(["GODOT_EXECUTABLE"])
     if env_path:

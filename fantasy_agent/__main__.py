@@ -87,6 +87,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="ComfyUI endpoint override (defaults to auto-detection).",
     )
+    parser.add_argument(
+        "--unreal-exe",
+        default=None,
+        help="Path to UnrealEditor-Cmd (defaults to auto-detection) for --engine UE5.",
+    )
     return parser
 
 
@@ -150,6 +155,48 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_executor(plan, args) -> int:
+    engine = (args.engine or "").casefold()
+    if "ue" in engine or "unreal" in engine:
+        return _run_unreal_executor(plan, args)
+    return _run_godot_executor(plan, args)
+
+
+def _run_unreal_executor(plan, args) -> int:
+    from fantasy_agent.executor import execute_unreal_demo, format_execution_report
+    from fantasy_agent.local_tools import _find_unreal, _unreal_cmd_executable
+
+    if args.with_assets or args.with_visuals:
+        print(
+            "[note] --with-assets/--with-visuals are not applied on the Unreal path in M4 "
+            "(project generation + DataValidation only); ignoring.",
+            file=sys.stderr,
+        )
+
+    run_validation = not args.no_import
+    unreal_cmd = args.unreal_exe or _unreal_cmd_executable(_find_unreal())
+    if run_validation and not unreal_cmd:
+        print(
+            "No Unreal executable found. Pass --unreal-exe PATH or use --no-import "
+            "to stop after project generation.",
+            file=sys.stderr,
+        )
+        return 2
+
+    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    result = execute_unreal_demo(
+        plan,
+        session_id=session_id,
+        confirmed=args.yes,
+        unreal_cmd=unreal_cmd or "UnrealEditor-Cmd",
+        run_validation=run_validation,
+    )
+    print(format_execution_report(result))
+    if result.status == "confirmation_required":
+        return 0
+    return 0 if result.ok else 1
+
+
+def _run_godot_executor(plan, args) -> int:
     from fantasy_agent.executor import execute_godot_demo, format_execution_report
     from fantasy_agent.local_tools import _find_blender, _find_godot
 

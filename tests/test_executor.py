@@ -338,3 +338,100 @@ def test_visuals_and_assets_compose(tmp_path: Path):
         "import",
     ]
 
+
+# ── M4: Unreal executor (project generation + DataValidation) ────────────────
+
+
+def _unreal_plan(prompt: str = "rooftop parkour chase"):
+    return run_director_workflow(
+        PromptRequest(prompt=prompt, target_minutes=10, engine_version="UE5")
+    )
+
+
+def _unreal_bridge(tmp_path: Path, returncode: int = 0):
+    from fantasy_agent.unreal_mcp import UnrealMCPBridge
+
+    def runner(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0],
+            returncode=returncode,
+            stdout="data ok" if returncode == 0 else "",
+            stderr="" if returncode == 0 else "validation error",
+        )
+
+    return UnrealMCPBridge(tmp_path, runner=runner)
+
+
+def test_unreal_confirmation_gate_writes_nothing(tmp_path: Path):
+    from fantasy_agent.executor import execute_unreal_demo
+
+    result = execute_unreal_demo(
+        _unreal_plan(), session_id="u1", confirmed=False, workspace_root=tmp_path
+    )
+    assert result.status == "confirmation_required"
+    assert result.stages == []
+    assert any("DataValidation" in e for e in result.planned_side_effects)
+    assert not (tmp_path / "generated" / "unreal").exists()
+
+
+def test_unreal_executes_stage_order(tmp_path: Path):
+    from fantasy_agent.executor import execute_unreal_demo
+
+    result = execute_unreal_demo(
+        _unreal_plan(),
+        session_id="u2",
+        confirmed=True,
+        unreal_cmd="UnrealEditor-Cmd",
+        workspace_root=tmp_path,
+        bridge=_unreal_bridge(tmp_path),
+    )
+
+    assert result.ok
+    assert [s.name for s in result.stages] == [
+        "create",
+        "prepare_ingest",
+        "prepare_level",
+        "validate",
+    ]
+    assert list((tmp_path / result.project_dir).glob("*.uproject"))
+    assert result.project_dir.startswith("generated/unreal/sessions/u2/")
+
+
+def test_unreal_no_validation_stops_after_prepare_level(tmp_path: Path):
+    from fantasy_agent.executor import execute_unreal_demo
+
+    result = execute_unreal_demo(
+        _unreal_plan(),
+        session_id="u3",
+        confirmed=True,
+        workspace_root=tmp_path,
+        run_validation=False,
+        bridge=_unreal_bridge(tmp_path),
+    )
+
+    assert result.ok
+    names = {s.name: s.status for s in result.stages}
+    assert names["create"] == "done"
+    assert names["prepare_ingest"] == "done"
+    assert names["prepare_level"] == "done"
+    assert names["validate"] == "blocked"
+
+
+def test_unreal_validation_failure_keeps_generated_project(tmp_path: Path):
+    from fantasy_agent.executor import execute_unreal_demo
+
+    result = execute_unreal_demo(
+        _unreal_plan(),
+        session_id="u4",
+        confirmed=True,
+        unreal_cmd="UnrealEditor-Cmd",
+        workspace_root=tmp_path,
+        bridge=_unreal_bridge(tmp_path, returncode=1),
+    )
+
+    assert result.status == "failed"
+    # Project was still generated before validation failed.
+    assert list((tmp_path / result.project_dir).glob("*.uproject"))
+    assert result.stages[-1].name == "validate"
+    assert result.stages[-1].status == "failed"
+

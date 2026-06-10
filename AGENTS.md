@@ -160,6 +160,17 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 
 - Unreal MCP 只应执行 allowlist 内的工程创建、资产导入、地图验证和打包命令。
 
+执行编排（Executor，M4）：
+
+- `executor.py` 的 `execute_unreal_demo()` 编排：`create_project_structure` → `prepare_asset_ingest` → `prepare_level_assembly` → `run_editor_commandlet("DataValidation")`，生成完整 .uproject 工程并用 DataValidation 真跑验证。
+- **M4 范围**：工程生成 + DataValidation。重型的 `run_asset_ingest` / `run_level_assembly`（需真 fbx 资产 + 开 UE 编辑器）暂不跑，留作未来扩展。
+- prepare 阶段只写盘（沙箱内，无需确认）；DataValidation 过 `confirmed_side_effects` 门。`run_validation=False`（CLI `--no-import`）时止于 prepare_level，无 UE 环境也能出工程。
+- ingest 用 `require_existing_sources=False`：executor 先把 Blender→Unreal import manifest 写到 `generated/import-manifest.yaml`，源 fbx 不存在仅警告（M4 不强制先跑 Blender）。
+- 降级：DataValidation 失败标记 failed，但前面工程已生成（与 Godot import 失败一致）。
+- session 产物布局：`generated/unreal/sessions/<session_id>/<project>/`，保持在 `generated/unreal` 沙箱前缀内。
+- headless 用 `UnrealEditor-Cmd.exe`：`local_tools._unreal_cmd_executable()` 把探测到的 `UnrealEditor.exe` 映射到同目录 Cmd 版。
+- 引擎路由：CLI 按 `--engine` 分派——含 godot 走 Godot 路径，含 ue/unreal 走 Unreal 路径。`--engine UE5 --execute [--yes] [--unreal-exe PATH] [--no-import]`。`--with-assets`/`--with-visuals` 在 Unreal 路径下 M4 暂不适用（传了会提示忽略）。
+
 ## Godot Builder
 
 职责：
