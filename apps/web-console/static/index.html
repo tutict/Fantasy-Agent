@@ -96,6 +96,24 @@
             <h2 data-i18n="gatesTitle">Execution confirmations</h2>
             <div id="gate-summary" class="gate-stack"></div>
           </section>
+
+          <section class="generate-panel" aria-label="Generate playable demo">
+            <div class="pane-section-header">
+              <h2 data-i18n="generateTitle">Generate playable demo</h2>
+            </div>
+            <p class="handoff-note" data-i18n="generateHint">
+              Run the full executor chain for the loaded plan. Each side effect is confirmed once before anything is written.
+            </p>
+            <div class="generate-options">
+              <label><input type="checkbox" id="generate-with-assets" /> <span data-i18n="generateWithAssets">Include Blender assets</span></label>
+              <label><input type="checkbox" id="generate-with-visuals" /> <span data-i18n="generateWithVisuals">Include ComfyUI references</span></label>
+            </div>
+            <button class="primary-action" type="button" id="generate-demo-button" data-i18n="generateButton">
+              Generate playable demo
+            </button>
+            <div id="generate-confirm" class="generate-confirm" hidden></div>
+            <div id="generate-stages" class="generate-stages"></div>
+          </section>
         </aside>
 
         <section class="output-pane">

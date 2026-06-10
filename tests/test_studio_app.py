@@ -141,3 +141,64 @@ def test_studio_routes_plan_and_workbench_tools_through_one_server():
     )
     assert tool is not None
     assert tool["result"]["structuredContent"]["kind"] == "production_pipeline"
+
+
+def test_execute_confirmation_gate_runs_no_job():
+    module = _load_studio_app()
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.workflows import run_director_workflow
+
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+    req = module.ExecuteDemoRequest(plan=plan, engine="Godot 4", confirmed=False)
+    result = module.execute_demo(req)
+
+    assert result["status"] == "confirmation_required"
+    assert result["engine"] == "godot"
+    assert result["planned_side_effects"]
+    # No job was registered.
+    assert "job_id" not in result
+
+
+def test_execute_starts_job_and_polls(monkeypatch):
+    module = _load_studio_app()
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.executor import ExecutionResult, StageResult
+    from fantasy_agent.workflows import run_director_workflow
+
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+
+    # Stub the executor so no real engine runs.
+    def fake_godot(plan_arg, **kwargs):
+        if not kwargs.get("confirmed"):
+            return ExecutionResult(
+                status="confirmation_required", session_id="x", planned_side_effects=["write project"]
+            )
+        return ExecutionResult(
+            status="done",
+            session_id="x",
+            project_dir="generated/godot/sessions/x/demo",
+            stages=[StageResult("create", "done"), StageResult("import", "done")],
+        )
+
+    monkeypatch.setattr(module, "_build_execution_result", lambda req, *, confirmed: fake_godot(req.plan, confirmed=confirmed))
+
+    started = module.execute_demo(module.ExecuteDemoRequest(plan=plan, engine="Godot 4", confirmed=True))
+    assert started["status"] == "running"
+    job_id = started["job_id"]
+
+    # Drain the single-worker pool so the background job completes.
+    module._EXECUTE_POOL.shutdown(wait=True)
+
+    status = module.execute_status(job_id)
+    assert status["status"] == "done"
+    assert status["result"]["project_dir"].endswith("demo")
+    assert [s["name"] for s in status["result"]["stages"]] == ["create", "import"]
+
+
+def test_execute_status_unknown_job():
+    module = _load_studio_app()
+    assert module.execute_status("nope")["status"] == "unknown"

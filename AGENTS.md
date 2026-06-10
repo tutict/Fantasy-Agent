@@ -312,6 +312,14 @@ ComfyUI → Godot 参考链（M3）：
 - ChatGPT 交互必须保持玩法优先层级和 i18n 输出。
 - 默认不得从该界面启动 Unreal、Godot、Blender、ComfyUI、打包、写文件或推送 GitHub。
 
+studio 一键生成（M5a）：
+
+- studio 后端新增 `POST /api/execute`（body `{plan, engine, with_assets, with_visuals, confirmed}`）+ `GET /api/execute/{job_id}`，给执行链一个图形入口。
+- 两段式授权：`confirmed=false` 同步返回 `planned_side_effects`（确认门，不写盘）；前端展示清单、用户点「继续」后再以 `confirmed=true` 发起。
+- `confirmed=true` 时后端用单 worker `ThreadPoolExecutor` 起后台 job（避免并发跑多引擎），立即返回 `job_id`；前端轮询 `/api/execute/{job_id}` 拿阶段状态与产物，完成后展示 `project_dir`。
+- 引擎路由：`engine` 含 godot/ue/unreal 或从 `plan.gameplay_spec.engine_choice` 推断，分派到 `execute_godot_demo` / `execute_unreal_demo`。引擎可执行文件用 local_tools 探测。
+- 前端在 web-console（flow console）的执行确认区下方加「一键生成」面板，复用 MCP 状态卡片样式渲染阶段，i18n 中英双语。job 仅存内存，studio 为本地开发工具。
+
 ## QA Agent
 
 职责：

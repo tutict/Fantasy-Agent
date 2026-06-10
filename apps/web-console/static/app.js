@@ -175,7 +175,22 @@ const i18n = {
     manualOpenUnknownTarget: "Unknown correction target.",
     manualOpenUnavailable: "Correction target is unavailable.",
     manualOpenStarted: "Correction target opened",
-    manualOpenBlocked: "Correction target blocked"
+    manualOpenBlocked: "Correction target blocked",
+    generateTitle: "Generate playable demo",
+    generateHint:
+      "Run the full executor chain for the loaded plan. Each side effect is confirmed once before anything is written.",
+    generateButton: "Generate playable demo",
+    generateWithAssets: "Include Blender assets",
+    generateWithVisuals: "Include ComfyUI references",
+    generateRequiresPlan: "Load a planning handoff before generating a demo.",
+    generateConfirmTitle: "Confirm execution",
+    generateConfirmIntro: "The following side effects will run:",
+    generateConfirmProceed: "Proceed",
+    generateConfirmCancel: "Cancel",
+    generateRunning: "Generating demo…",
+    generateDone: "Demo generated",
+    generateFailed: "Demo generation failed",
+    generateArtifact: "Project"
   },
   "zh-CN": {
     productLabel: "流程控制台",
@@ -307,7 +322,21 @@ const i18n = {
     manualOpenUnknownTarget: "未知纠偏目标。",
     manualOpenUnavailable: "纠偏目标不可用。",
     manualOpenStarted: "已打开纠偏目标",
-    manualOpenBlocked: "纠偏目标已阻止"
+    manualOpenBlocked: "纠偏目标已阻止",
+    generateTitle: "一键生成可玩 demo",
+    generateHint: "对已加载的计划运行完整执行链。每个副作用在写盘前会先确认一次。",
+    generateButton: "一键生成可玩 demo",
+    generateWithAssets: "包含 Blender 资产",
+    generateWithVisuals: "包含 ComfyUI 参考图",
+    generateRequiresPlan: "请先加载策划交接，再生成 demo。",
+    generateConfirmTitle: "确认执行",
+    generateConfirmIntro: "以下副作用将被执行：",
+    generateConfirmProceed: "继续",
+    generateConfirmCancel: "取消",
+    generateRunning: "正在生成 demo…",
+    generateDone: "demo 已生成",
+    generateFailed: "demo 生成失败",
+    generateArtifact: "工程"
   }
 };
 
@@ -1063,6 +1092,111 @@ document.querySelectorAll("[data-correction-mode]").forEach((button) => {
     renderManualCorrectionTools();
   });
 });
+
+const generateDemoButton = document.querySelector("#generate-demo-button");
+const generateConfirmBox = document.querySelector("#generate-confirm");
+const generateStagesBox = document.querySelector("#generate-stages");
+let generatePollTimer = null;
+
+function buildExecutePayload(confirmed) {
+  return {
+    plan: currentPlan,
+    engine: usesGodotEngine(currentPlan) ? "godot" : "unreal",
+    with_assets: !!document.querySelector("#generate-with-assets")?.checked,
+    with_visuals: !!document.querySelector("#generate-with-visuals")?.checked,
+    confirmed
+  };
+}
+
+async function postExecute(confirmed) {
+  const response = await fetch("/api/execute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildExecutePayload(confirmed))
+  });
+  return response.json();
+}
+
+function renderGenerateStages(result) {
+  const stages = Array.isArray(result?.stages) ? result.stages : [];
+  generateStagesBox.innerHTML = stages
+    .map((stage) => {
+      const state =
+        stage.status === "done"
+          ? "ready"
+          : stage.status === "failed"
+          ? "unavailable"
+          : "degraded";
+      return `<article class="mcp-status-card" data-state="${state}">
+        <div class="mcp-status-top"><h4>${stage.name}</h4><span class="mcp-state">${stage.status}</span></div>
+        <p>${stage.detail || ""}</p>
+      </article>`;
+    })
+    .join("");
+  if (result?.project_dir) {
+    generateStagesBox.innerHTML += `<p class="handoff-note">${t("generateArtifact")}: <code>${result.project_dir}</code></p>`;
+  }
+}
+
+function pollGenerate(jobId) {
+  if (generatePollTimer) clearInterval(generatePollTimer);
+  generatePollTimer = setInterval(async () => {
+    const job = await fetch(`/api/execute/${jobId}`).then((r) => r.json());
+    if (job.result) renderGenerateStages(job.result);
+    if (job.status !== "running") {
+      clearInterval(generatePollTimer);
+      generatePollTimer = null;
+      generateDemoButton.disabled = false;
+      if (job.status === "done") {
+        setStatus("ready");
+        addActivity(t("generateDone"), job.result?.project_dir || "");
+      } else {
+        setStatus("error");
+        addActivity(t("generateFailed"), job.error || job.status);
+      }
+    }
+  }, 1500);
+}
+
+async function startGenerate() {
+  generateConfirmBox.hidden = true;
+  generateDemoButton.disabled = true;
+  setStatus("running");
+  addActivity(t("generateRunning"), "");
+  const started = await postExecute(true);
+  if (started.job_id) {
+    pollGenerate(started.job_id);
+  } else {
+    generateDemoButton.disabled = false;
+    setStatus("error");
+    addActivity(t("generateFailed"), started.status || "");
+  }
+}
+
+async function onGenerateClick() {
+  if (!currentPlan) {
+    addActivity(t("generateRequiresPlan"), t("openPlanningHint"));
+    setStatus("error");
+    return;
+  }
+  const preview = await postExecute(false);
+  const effects = Array.isArray(preview?.planned_side_effects) ? preview.planned_side_effects : [];
+  generateConfirmBox.hidden = false;
+  generateConfirmBox.innerHTML = `
+    <strong>${t("generateConfirmTitle")}</strong>
+    <p>${t("generateConfirmIntro")}</p>
+    <ul>${effects.map((e) => `<li>${e}</li>`).join("")}</ul>
+    <div class="handoff-actions">
+      <button class="primary-action" type="button" id="generate-proceed">${t("generateConfirmProceed")}</button>
+      <button class="ghost-action" type="button" id="generate-cancel">${t("generateConfirmCancel")}</button>
+    </div>`;
+  generateConfirmBox.querySelector("#generate-proceed").addEventListener("click", startGenerate);
+  generateConfirmBox.querySelector("#generate-cancel").addEventListener("click", () => {
+    generateConfirmBox.hidden = true;
+  });
+}
+
+generateDemoButton.addEventListener("click", onGenerateClick);
 
 loadHandoffButton.addEventListener("click", () => loadPlanningHandoff());
 recordCorrectionButton.addEventListener("click", recordCorrection);

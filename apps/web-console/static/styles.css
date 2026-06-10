@@ -1139,3 +1139,47 @@ input[type="text"]:focus {
     grid-template-columns: 1fr;
   }
 }
+
+/* Generate playable demo panel (M5a) */
+.generate-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.generate-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.generate-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.generate-confirm {
+  border: 1px solid var(--line-strong, #2a2f2c);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--accent-soft, rgba(0, 255, 204, 0.08));
+  font-size: 13px;
+}
+
+.generate-confirm ul {
+  margin: 8px 0;
+  padding-left: 18px;
+}
+
+.generate-confirm li {
+  margin-bottom: 4px;
+}
+
+.generate-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}

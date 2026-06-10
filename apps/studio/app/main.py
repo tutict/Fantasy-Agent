@@ -62,6 +62,25 @@ class ManualCorrectionOpenRequest(BaseModel):
     confirmed_side_effects: bool = False
 
 
+class ExecuteDemoRequest(BaseModel):
+    plan: DirectorBuildPlan
+    engine: str = ""  # inferred from plan when empty
+    with_assets: bool = False
+    with_visuals: bool = False
+    confirmed: bool = False
+
+
+# DirectorBuildPlan is imported from another module; ensure the forward
+# reference is resolved so this model is fully defined.
+ExecuteDemoRequest.model_rebuild()
+
+
+# In-memory execution job registry. Jobs run on a single worker so we never
+# launch two engines at once. Not persisted — studio is a local dev tool.
+_EXECUTE_POOL = ThreadPoolExecutor(max_workers=1)
+_EXECUTE_JOBS: dict[str, dict[str, Any]] = {}
+
+
 def _jsonrpc_result(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
 
@@ -540,3 +559,83 @@ async def mcp(request: Request) -> Response:
 async def debug_tool(tool_name: str, request: Request) -> dict[str, Any]:
     arguments = await request.json()
     return call_workbench_tool(tool_name, arguments)
+
+
+def _infer_engine(plan: DirectorBuildPlan, override: str) -> str:
+    """Return 'godot' or 'unreal' from an explicit override or the plan."""
+    text = (override or "").casefold()
+    if "godot" in text:
+        return "godot"
+    if "ue" in text or "unreal" in text:
+        return "unreal"
+    choice = (getattr(plan.gameplay_spec, "engine_choice", "") or "").casefold()
+    if "godot" in choice:
+        return "godot"
+    if "ue" in choice or "unreal" in choice:
+        return "unreal"
+    # Default to Godot — the lighter, fully self-contained path.
+    return "godot"
+
+
+def _build_execution_result(req: ExecuteDemoRequest, *, confirmed: bool):
+    """Call the right executor; returns an ExecutionResult."""
+    from fantasy_agent.executor import execute_godot_demo, execute_unreal_demo
+    from fantasy_agent.local_tools import _find_blender, _find_godot, _find_unreal, _unreal_cmd_executable
+
+    from datetime import datetime
+
+    engine = _infer_engine(req.plan, req.engine)
+    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if engine == "unreal":
+        return execute_unreal_demo(
+            req.plan,
+            session_id=session_id,
+            confirmed=confirmed,
+            unreal_cmd=_unreal_cmd_executable(_find_unreal()) or "UnrealEditor-Cmd",
+        )
+    return execute_godot_demo(
+        req.plan,
+        session_id=session_id,
+        confirmed=confirmed,
+        godot_exe=_find_godot() or "godot",
+        with_assets=req.with_assets,
+        blender_exe=_find_blender() or "blender",
+        with_visuals=req.with_visuals,
+    )
+
+
+def _run_execution_job(job_id: str, req: ExecuteDemoRequest) -> None:
+    from dataclasses import asdict
+
+    try:
+        result = _build_execution_result(req, confirmed=True)
+        _EXECUTE_JOBS[job_id] = {"status": result.status, "result": asdict(result)}
+    except Exception as exc:  # noqa: BLE001 - surface any executor failure to the UI
+        _EXECUTE_JOBS[job_id] = {"status": "failed", "error": str(exc)}
+
+
+@app.post("/api/execute")
+def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
+    if not req.confirmed:
+        # Confirmation gate: report side effects without writing or executing.
+        preview = _build_execution_result(req, confirmed=False)
+        return {
+            "status": "confirmation_required",
+            "engine": _infer_engine(req.plan, req.engine),
+            "planned_side_effects": preview.planned_side_effects,
+        }
+
+    from datetime import datetime
+
+    job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _EXECUTE_JOBS[job_id] = {"status": "running"}
+    _EXECUTE_POOL.submit(_run_execution_job, job_id, req)
+    return {"status": "running", "job_id": job_id, "engine": _infer_engine(req.plan, req.engine)}
+
+
+@app.get("/api/execute/{job_id}")
+def execute_status(job_id: str) -> dict[str, Any]:
+    job = _EXECUTE_JOBS.get(job_id)
+    if job is None:
+        return {"status": "unknown", "job_id": job_id}
+    return {"job_id": job_id, **job}
