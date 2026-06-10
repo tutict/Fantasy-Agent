@@ -71,3 +71,49 @@ def copy_assets_into_godot_project(
         result.copied.append(f"assets/generated/{src.name}")
 
     return result
+
+
+_IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".webp")
+
+
+def copy_references_into_godot_project(
+    images: list[str],
+    project_dir: str,
+    *,
+    workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
+) -> AssetCopyResult:
+    """Copy ComfyUI reference images into <project_dir>/references/comfyui/.
+
+    These are art-direction references, not engine textures: they are archived
+    for review (per AGENTS.md, generated images must pass Creative Review before
+    becoming engine textures), never auto-applied to meshes.
+
+    Args:
+        images: Workspace-relative paths to reference images
+            (e.g. "generated/comfyui/foo/concept.png").
+        project_dir: Workspace-relative Godot project dir under generated/godot.
+        workspace_root: Sandbox root.
+
+    Returns:
+        AssetCopyResult with copied res:// names, skipped, and missing entries.
+    """
+
+    root = Path(workspace_root).resolve()
+    dest_dir = root / project_dir / "references" / "comfyui"
+    _assert_under(dest_dir, root)
+    result = AssetCopyResult()
+
+    for rel in images:
+        src = (root / rel).resolve()
+        _assert_under(src, root)
+        if src.suffix.lower() not in _IMAGE_SUFFIXES:
+            result.skipped.append(rel)
+            continue
+        if not src.exists():
+            result.missing.append(rel)
+            continue
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest_dir / src.name)
+        result.copied.append(f"references/comfyui/{src.name}")
+
+    return result

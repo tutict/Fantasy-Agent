@@ -225,3 +225,116 @@ def test_main_gd_with_spec_emits_glb_load_with_fallback():
     # Box fallback helper still present.
     assert "func _box(" in script
 
+
+# ── M3: ComfyUI visual reference stage ───────────────────────────────────────
+
+
+class _FakeComfyResult:
+    def __init__(self, status: str, generated_images: list[str]):
+        self.status = status
+        self.generated_images = generated_images
+        self.log_paths: list[str] = []
+
+
+class _FakeComfyBridge:
+    """Stub mimicking run_visual_reference_workflow without hitting ComfyUI."""
+
+    def __init__(self, status: str = "executed", images: list[str] | None = None, *, root=None):
+        self._status = status
+        self._images = images or []
+        self._root = root
+
+    def run_visual_reference_workflow(self, request):
+        if self._root is not None and self._status == "executed":
+            for rel in self._images:
+                p = Path(self._root) / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_bytes(b"\x89PNG-stub")
+        return _FakeComfyResult(self._status, self._images)
+
+
+def test_with_visuals_stage_order_and_copy(tmp_path: Path):
+    images = ["generated/comfyui/rooftop/concept.png", "generated/comfyui/rooftop/ui.png"]
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    comfy = _FakeComfyBridge(status="executed", images=images, root=tmp_path)
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m3",
+        confirmed=True,
+        godot_exe="godot",
+        with_visuals=True,
+        workspace_root=tmp_path,
+        bridge=bridge,
+        comfyui_bridge=comfy,
+    )
+
+    assert result.ok
+    names = [s.name for s in result.stages]
+    assert names == ["comfyui", "create", "copy_refs", "validate", "import"]
+    copied = list((tmp_path / result.project_dir / "references" / "comfyui").glob("*.png"))
+    assert len(copied) == 2
+
+
+def test_comfyui_failure_does_not_break_chain(tmp_path: Path):
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    comfy = _FakeComfyBridge(status="failed", images=[])
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m3fail",
+        confirmed=True,
+        godot_exe="godot",
+        with_visuals=True,
+        workspace_root=tmp_path,
+        bridge=bridge,
+        comfyui_bridge=comfy,
+    )
+
+    assert result.ok  # chain still completes without references
+    names = [s.name for s in result.stages]
+    assert next(s for s in result.stages if s.name == "comfyui").status == "failed"
+    assert "copy_refs" not in names
+    assert names[-1] == "import"
+
+
+def test_confirmation_gate_lists_comfyui_side_effects(tmp_path: Path):
+    result = execute_godot_demo(_plan(), session_id="m3", confirmed=False, with_visuals=True)
+    assert result.status == "confirmation_required"
+    assert any("ComfyUI" in e for e in result.planned_side_effects)
+    assert any("reference images" in e for e in result.planned_side_effects)
+
+
+def test_visuals_and_assets_compose(tmp_path: Path):
+    images = ["generated/comfyui/rooftop/concept.png"]
+    glb = ["generated/assets/start_marker.glb"]
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    comfy = _FakeComfyBridge(status="executed", images=images, root=tmp_path)
+    blender = _FakeBlenderBridge(status="executed", exported=glb, root=tmp_path)
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m3both",
+        confirmed=True,
+        godot_exe="godot",
+        with_visuals=True,
+        with_assets=True,
+        workspace_root=tmp_path,
+        bridge=bridge,
+        comfyui_bridge=comfy,
+        blender_bridge=blender,
+    )
+
+    assert result.ok
+    names = [s.name for s in result.stages]
+    # ComfyUI runs first, then Blender, then create and both copies.
+    assert names == [
+        "comfyui",
+        "blender",
+        "create",
+        "copy_assets",
+        "copy_refs",
+        "validate",
+        "import",
+    ]
+

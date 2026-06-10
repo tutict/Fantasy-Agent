@@ -21,6 +21,7 @@ from typing import Any
 
 from fantasy_agent.contracts import (
     BlenderMCPExecuteRequest,
+    ComfyUIMCPExecuteRequest,
     DirectorBuildPlan,
     GodotMCPCreateProjectRequest,
     GodotMCPRunImportRequest,
@@ -71,8 +72,14 @@ def _planned_side_effects(
     *,
     with_assets: bool = False,
     blender_exe: str = "blender",
+    with_visuals: bool = False,
 ) -> list[str]:
     effects: list[str] = []
+    if with_visuals:
+        effects.append(
+            "Run ComfyUI to generate visual reference images (writes generated/comfyui/*)"
+        )
+        effects.append(f"Copy reference images into {project_dir}/references/comfyui/")
     if with_assets:
         effects.append(
             f"Run Blender to export glb assets: {blender_exe} --background --python <script> "
@@ -88,6 +95,70 @@ def _planned_side_effects(
         ]
     )
     return effects
+
+
+def _run_comfyui_stage(
+    plan: DirectorBuildPlan,
+    stages: list[StageResult],
+    *,
+    workspace_root: Path | str,
+    endpoint: str | None,
+    comfyui_bridge: Any | None,
+) -> list[str]:
+    """Run ComfyUI to generate visual reference images. Returns image paths.
+
+    On any failure (offline, missing checkpoint, error) the stage is recorded as
+    failed and an empty list is returned, so the caller continues without
+    references rather than breaking the chain.
+    """
+
+    try:
+        if comfyui_bridge is None:
+            from fantasy_agent.comfyui_mcp import ComfyUIMCPBridge
+
+            comfyui_bridge = ComfyUIMCPBridge(workspace_root=workspace_root)
+        visual_plan = plan.comfyui_plan
+        checkpoint = visual_plan.checkpoint_name or ""
+        request_kwargs: dict[str, Any] = {
+            "plan": visual_plan,
+            "checkpoint_name": checkpoint,
+            "confirmed_side_effects": True,
+            "wait_for_completion": True,
+        }
+        if endpoint:
+            request_kwargs["endpoint_candidates"] = [endpoint]
+            request_kwargs["auto_discover_endpoint"] = False
+        result = comfyui_bridge.run_visual_reference_workflow(
+            ComfyUIMCPExecuteRequest(**request_kwargs)
+        )
+    except Exception as exc:  # noqa: BLE001 - degrade gracefully on any failure
+        stages.append(
+            StageResult("comfyui", "failed", detail=f"{exc}; continuing without references")
+        )
+        return []
+
+    if result.status not in ("executed", "queued"):
+        stages.append(
+            StageResult(
+                "comfyui",
+                "failed",
+                detail=f"status={result.status}; continuing without references",
+                logs=result.log_paths,
+            )
+        )
+        return []
+
+    images = list(result.generated_images)
+    stages.append(
+        StageResult(
+            "comfyui",
+            "done",
+            detail=f"generated {len(images)} reference images",
+            artifacts=images,
+            logs=result.log_paths,
+        )
+    )
+    return images
 
 
 def _run_blender_stage(
@@ -158,10 +229,13 @@ def execute_godot_demo(
     run_import: bool = True,
     with_assets: bool = False,
     blender_exe: str = "blender",
+    with_visuals: bool = False,
+    comfyui_endpoint: str | None = None,
     bridge: GodotMCPBridge | None = None,
     blender_bridge: Any | None = None,
+    comfyui_bridge: Any | None = None,
 ) -> ExecutionResult:
-    """Orchestrate (optional Blender) -> create -> validate -> import for a demo.
+    """Orchestrate (optional ComfyUI/Blender) -> create -> validate -> import.
 
     Args:
         plan: The director build plan (provides godot_plan + gameplay_spec).
@@ -176,8 +250,13 @@ def execute_godot_demo(
             them into the project. On any Blender failure the run degrades to a
             pure greybox (the chain is not broken).
         blender_exe: Path to the Blender executable.
+        with_visuals: If True, run a ComfyUI stage to generate visual reference
+            images and copy them into references/comfyui/. On any failure the
+            run continues without references (the chain is not broken).
+        comfyui_endpoint: Optional ComfyUI endpoint override.
         bridge: Optional pre-built GodotMCPBridge (for testing).
         blender_bridge: Optional pre-built BlenderMCPBridge (for testing).
+        comfyui_bridge: Optional pre-built ComfyUIMCPBridge (for testing).
 
     Returns:
         ExecutionResult with per-stage status, artifacts, and logs.
@@ -185,7 +264,12 @@ def execute_godot_demo(
 
     project_dir = _session_project_dir(session_id, plan.godot_plan.project_name)
     planned = _planned_side_effects(
-        plan, project_dir, godot_exe, with_assets=with_assets, blender_exe=blender_exe
+        plan,
+        project_dir,
+        godot_exe,
+        with_assets=with_assets,
+        blender_exe=blender_exe,
+        with_visuals=with_visuals,
     )
 
     if not confirmed:
@@ -199,7 +283,18 @@ def execute_godot_demo(
     bridge = bridge or GodotMCPBridge(workspace_root=workspace_root)
     stages: list[StageResult] = []
 
-    # Stage 0 (optional): Blender asset export. Degrades to greybox on failure.
+    # Stage A (optional): ComfyUI visual references. Degrades on failure.
+    reference_images: list[str] = []
+    if with_visuals:
+        reference_images = _run_comfyui_stage(
+            plan,
+            stages,
+            workspace_root=workspace_root,
+            endpoint=comfyui_endpoint,
+            comfyui_bridge=comfyui_bridge,
+        )
+
+    # Stage B (optional): Blender asset export. Degrades to greybox on failure.
     exported_glb: list[str] = []
     if with_assets:
         exported_glb = _run_blender_stage(
@@ -248,6 +343,21 @@ def execute_godot_demo(
             detail += f", skipped {len(copy_result.skipped)}"
         stages.append(
             StageResult("copy_assets", "done", detail=detail, artifacts=copy_result.copied)
+        )
+
+    # Stage 1c (optional): copy ComfyUI reference images into the project for
+    # review (art-direction archive; not applied as textures).
+    if with_visuals and reference_images:
+        from fantasy_agent.godot_assets import copy_references_into_godot_project
+
+        ref_result = copy_references_into_godot_project(
+            reference_images, project_dir, workspace_root=workspace_root
+        )
+        detail = f"copied {len(ref_result.copied)} references"
+        if ref_result.skipped:
+            detail += f", skipped {len(ref_result.skipped)}"
+        stages.append(
+            StageResult("copy_refs", "done", detail=detail, artifacts=ref_result.copied)
         )
 
     # Stage 2: validate.

@@ -247,6 +247,14 @@ Blender → Godot 资产链（M2）：
 - ComfyUI MCP 执行必须将模板放在 `templates/comfyui/`，输出放在 `generated/comfyui/`，日志放在 `generated/logs/comfyui/`。
 - 没有明确执行确认时，不得向 ComfyUI 提交 prompt。
 
+ComfyUI → Godot 参考链（M3）：
+
+- Executor 的 `--with-visuals` 路径会跑 ComfyUI 出概念/角色/UI/材质参考图，再把图片复制进 Godot 工程的 `references/comfyui/`。`fantasy_agent/godot_assets.py` 的 `copy_references_into_godot_project` 只收图片扩展名（png/jpg/webp）、保持沙箱前缀校验。
+- **边界**：参考图是艺术方向**归档**，供 Creative Review 审阅，**不自动贴到 3D 模型上**——这正是「生成图成为引擎纹理前必须经审阅」约束的体现。把图变成实际纹理是 Creative Review 通过后的后续工作。
+- **降级语义**（与 Blender 一致）：ComfyUI 离线/未加载 checkpoint/执行失败时，comfyui 阶段标记 failed，整条链继续完成（无参考图），不中断。
+- 执行是 HTTP（非 subprocess），端点默认限本地（`allow_remote_endpoint` 默认 false）。`local_tools._comfyui_target()` 自动探测 `http://127.0.0.1:8001` 等候选。
+- CLI：加 `--with-visuals` 触发，`--comfyui-endpoint` 覆盖。可与 `--with-assets` 组合，阶段顺序 comfyui→blender→create→copy_assets→copy_refs→validate→import。
+
 ## Creative Review Agent
 
 职责：

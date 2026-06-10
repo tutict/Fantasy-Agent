@@ -77,6 +77,16 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Path to the Blender executable (defaults to auto-detection).",
     )
+    parser.add_argument(
+        "--with-visuals",
+        action="store_true",
+        help="With --execute, run ComfyUI to generate visual references and copy them in.",
+    )
+    parser.add_argument(
+        "--comfyui-endpoint",
+        default=None,
+        help="ComfyUI endpoint override (defaults to auto-detection).",
+    )
     return parser
 
 
@@ -170,6 +180,8 @@ def _run_executor(plan, args) -> int:
         run_import=not args.no_import,
         with_assets=args.with_assets,
         blender_exe=blender_exe or "blender",
+        with_visuals=args.with_visuals,
+        comfyui_endpoint=args.comfyui_endpoint,
     )
     print(format_execution_report(result))
     if result.status == "confirmation_required":
