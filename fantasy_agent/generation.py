@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import logging
+import os
 import re
 
 from fantasy_agent.contracts import (
@@ -11,6 +14,8 @@ from fantasy_agent.contracts import (
     SystemSpec,
 )
 from fantasy_agent.i18n import build_i18n_bundle, contains_cjk
+
+logger = logging.getLogger(__name__)
 
 
 def _clean_title(prompt: str) -> str:
@@ -396,8 +401,13 @@ def _asset_needs_for_axis(axis: str) -> list[str]:
     ]
 
 
-def design_from_prompt(request: PromptRequest) -> GameplaySpec:
-    """Create a scoped first-pass gameplay design without pretending assets exist."""
+def design_from_prompt_deterministic(request: PromptRequest) -> GameplaySpec:
+    """Create a scoped first-pass gameplay design without pretending assets exist.
+
+    Deterministic, keyword-driven baseline. Always succeeds and always returns a
+    valid GameplaySpec, so it doubles as the fallback when the LLM backend is
+    unavailable or produces unusable output.
+    """
 
     axis = _detect_axis(request.prompt)
     title = _clean_title(request.prompt)
@@ -486,3 +496,123 @@ def design_from_prompt(request: PromptRequest) -> GameplaySpec:
     )
     spec.i18n = build_i18n_bundle(request, spec, axis, verbs)
     return spec
+
+
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_llm_system_prompt() -> str:
+    schema_hint = json.dumps(
+        {
+            "title": "str",
+            "logline": "str",
+            "target_session_minutes": "int 5-15",
+            "player_fantasy": "str",
+            "design_pillars": ["str (3 to 5 items)"],
+            "core_verbs": ["str (>=3 items)"],
+            "core_loop": [
+                {"order": "int", "action": "str", "player_decision": "str", "feedback": "str"}
+            ],
+            "systems": [
+                {
+                    "name": "str",
+                    "purpose": "str",
+                    "inputs": ["str"],
+                    "outputs": ["str"],
+                    "failure_pressure": "str",
+                }
+            ],
+            "progression": {
+                "first_minute": "str",
+                "midpoint_shift": "str",
+                "final_minutes": "str",
+                "unlocks": ["str"],
+            },
+            "win_state": "str",
+            "failure_states": ["str"],
+            "level_beats": [
+                {
+                    "name": "str",
+                    "duration_minutes": "int",
+                    "gameplay_focus": "str",
+                    "required_assets": ["str"],
+                    "success_condition": "str",
+                }
+            ],
+            "asset_needs": ["str"],
+            "qa_focus": ["str"],
+            "notes_for_unreal": ["str"],
+            "notes_for_blender": ["str"],
+            "notes_for_comfyui": ["str"],
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+    return (
+        "You are the Gameplay Agent for an AI game-production pipeline. Turn a raw "
+        "game idea into a single playable vertical slice design.\n\n"
+        "Hard rules:\n"
+        "- Output ONLY a JSON object, no prose, no markdown fences.\n"
+        "- core_loop, systems, and core_verbs must each have at least 3 entries.\n"
+        "- design_pillars must have 3 to 5 entries.\n"
+        "- Every mechanic must change a player decision and be testable in a greybox.\n"
+        "- Keep scope to one cohesive loop sized for the target session minutes.\n\n"
+        "JSON shape (types are hints, not literals):\n"
+        f"{schema_hint}"
+    )
+
+
+def _design_with_llm(request: PromptRequest) -> GameplaySpec:
+    """Generate a GameplaySpec via the LLM backend. Raises on any failure."""
+
+    from fantasy_agent import llm
+
+    user_prompt = (
+        f"Game idea:\n{request.prompt.strip()}\n\n"
+        f"Target session length: {request.target_minutes} minutes.\n"
+        f"Engine: {request.engine_version}. Platforms: {', '.join(request.platforms)}.\n"
+    )
+    if request.constraints:
+        user_prompt += "Constraints:\n" + "\n".join(f"- {c}" for c in request.constraints) + "\n"
+    user_prompt += "\nReturn the GameplaySpec JSON now."
+
+    data = llm.complete_json(
+        system=_build_llm_system_prompt(),
+        user=user_prompt,
+        temperature=0.7,
+    )
+    # Pydantic enforces the contract (extra="forbid", min_length, etc.).
+    spec = GameplaySpec.model_validate(data)
+
+    # Attach i18n using deterministic axis/verb detection, matching the
+    # deterministic path so downstream localization stays consistent.
+    axis = _detect_axis(request.prompt)
+    spec.i18n = build_i18n_bundle(request, spec, axis, _verbs_for_axis(axis))
+    return spec
+
+
+def design_from_prompt(request: PromptRequest, *, use_llm: bool | None = None) -> GameplaySpec:
+    """Create a first-pass gameplay design, optionally using the LLM backend.
+
+    Args:
+        request: The prompt and scope constraints.
+        use_llm: If True, try the LLM backend first. If None (default), read the
+            ``FANTASY_AGENT_USE_LLM`` environment variable. If the LLM path fails
+            for any reason (missing package or key, API error, invalid output),
+            this falls back to the deterministic generator and never raises.
+
+    Returns:
+        A valid GameplaySpec, always.
+    """
+
+    if use_llm is None:
+        use_llm = _env_flag("FANTASY_AGENT_USE_LLM")
+
+    if use_llm:
+        try:
+            return _design_with_llm(request)
+        except Exception as exc:  # noqa: BLE001 - any failure must degrade gracefully
+            logger.warning("LLM gameplay design failed (%s); using deterministic fallback.", exc)
+
+    return design_from_prompt_deterministic(request)

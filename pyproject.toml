@@ -15,10 +15,16 @@ dependencies = [
 orchestration = [
     "langgraph>=0.2"
 ]
+llm = [
+    "anthropic>=0.40"
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6"
 ]
+
+[project.scripts]
+fantasy-agent = "fantasy_agent.__main__:main"
 
 [tool.ruff]
 line-length = 100

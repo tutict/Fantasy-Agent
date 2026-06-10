@@ -1,0 +1,109 @@
+"""Command-line entry point for Fantasy Agent.
+
+Run the full director workflow from a prompt and print the resulting build plan.
+
+Examples:
+    python -m fantasy_agent --prompt "a 2D platformer where a cat collects fish"
+    python -m fantasy_agent --prompt "..." --llm --minutes 8 --engine "Godot 4"
+
+The --llm flag opts into the LLM backend for gameplay design; without it (the
+default) the deterministic generator is used. When --llm is set but the backend
+is unavailable, generation falls back to deterministic output automatically.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+
+from fantasy_agent.contracts import PromptRequest
+from fantasy_agent.generation import design_from_prompt
+from fantasy_agent.gdd import render_gdd
+from fantasy_agent.workflows import run_director_workflow
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="fantasy-agent",
+        description="Generate a gameplay-first build plan from a game idea.",
+    )
+    parser.add_argument("--prompt", required=True, help="Raw game idea (min 8 chars).")
+    parser.add_argument(
+        "--minutes", type=int, default=10, help="Target session length, 5-15 (default 10)."
+    )
+    parser.add_argument(
+        "--engine", default="UE5", help='Target engine, e.g. "UE5" or "Godot 4" (default UE5).'
+    )
+    parser.add_argument(
+        "--llm",
+        action="store_true",
+        help="Use the LLM backend for gameplay design (falls back if unavailable).",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["summary", "json", "gdd"],
+        default="summary",
+        help="Output format (default summary).",
+    )
+    return parser
+
+
+def _print_summary(plan) -> None:
+    spec = plan.gameplay_spec
+    print(f"# {spec.title}")
+    print(f"  {spec.logline}\n")
+    print(f"  Session target : {spec.target_session_minutes} min")
+    print(f"  Core verbs     : {', '.join(spec.core_verbs)}")
+    print(f"  Core loop      : {len(spec.core_loop)} steps")
+    print(f"  Systems        : {', '.join(s.name for s in spec.systems)}")
+    print(f"  Win state      : {spec.win_state}")
+    print(f"  Level beats    : {', '.join(b.name for b in spec.level_beats)}")
+    print(f"  Asset needs    : {len(spec.asset_needs)} items")
+    print()
+    print(f"  Godot plan     : {plan.godot_plan.project_name}")
+    print(f"  Unreal plan    : {plan.unreal_plan.project_name}")
+    print(f"  Blender jobs   : {len(plan.blender_plan.jobs)}")
+    print(f"  QA checks      : {len(plan.qa_plan.smoke_tests)} smoke tests")
+    print("\n  Next actions:")
+    for action in plan.next_actions:
+        print(f"    - {action}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+
+    try:
+        request = PromptRequest(
+            prompt=args.prompt,
+            target_minutes=args.minutes,
+            engine_version=args.engine,
+        )
+    except Exception as exc:  # noqa: BLE001 - surface validation errors cleanly
+        print(f"Invalid request: {exc}", file=sys.stderr)
+        return 2
+
+    if args.format == "gdd":
+        # GDD only needs the spec, not the full plan.
+        spec = design_from_prompt(request, use_llm=args.llm)
+        print(render_gdd(spec).markdown)
+        return 0
+
+    # run_director_workflow calls design_from_prompt internally (with default,
+    # env-driven behavior). Opt into the LLM path for the whole workflow by
+    # setting the flag in-process, so every downstream plan derives from the
+    # same gameplay spec rather than swapping one field after the fact.
+    if args.llm:
+        os.environ["FANTASY_AGENT_USE_LLM"] = "1"
+
+    plan = run_director_workflow(request)
+
+    if args.format == "json":
+        print(plan.model_dump_json(indent=2))
+    else:
+        _print_summary(plan)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -85,6 +85,19 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - 只有能在灰盒地图中测试的循环才有效。
 - 失败状态必须帮助玩家理解下一次尝试。
 
+可选 LLM 后端：
+
+- 默认使用确定性生成（`design_from_prompt_deterministic`），基于关键词与模板，无需任何外部依赖或 API key。
+- 设置环境变量 `FANTASY_AGENT_USE_LLM=1`（或在 CLI 传 `--llm`）可启用 LLM 后端，由 `fantasy_agent/llm.py` 统一调用 Claude 生成 `GameplaySpec`。
+- 模型默认 `claude-opus-4-8`，可通过 `FANTASY_AGENT_MODEL` 覆盖；凭据走标准的 `ANTHROPIC_API_KEY`。
+- LLM 依赖是可选安装项：`pip install fantasy-agent[llm]`。
+- 任何 LLM 失败（未安装、无 key、API 错误、输出非法或未通过 `GameplaySpec` 校验）都会自动回退到确定性生成，绝不中断流程。无论走哪条路径，返回的都是同一套 `GameplaySpec` 契约，下游 Unreal/Godot/Blender/ComfyUI/QA 编排无需改动。
+
+命令行入口：
+
+- `python -m fantasy_agent --prompt "游戏创意" [--llm] [--minutes 10] [--engine "Godot 4"] [--format summary|json|gdd]`
+- 安装后亦可用 `fantasy-agent` 控制台命令。
+
 ## GDD Writer
 
 职责：
