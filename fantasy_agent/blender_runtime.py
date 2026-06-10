@@ -271,6 +271,58 @@ def _collision_cube(
     return obj
 
 
+def _mark_collision(obj: Any) -> Any:
+    obj.display_type = "WIRE"
+    obj.hide_render = True
+    obj["unreal_collision"] = True
+    return obj
+
+
+def _collision_for_kind(
+    bpy: Any,
+    job: dict[str, Any],
+    kind: str,
+    dimensions: tuple[float, float, float],
+    location: tuple[float, float, float],
+    collection: str,
+) -> Any:
+    """Collision proxy whose shape matches the visible geometry per kind.
+
+    - ramp: wedge (so the slope is solid, not a tall box)
+    - hazard_marker: cylinder (approximates the cone footprint)
+    - everything else: box (correct for walls/doors/gates/props/ui)
+    """
+    material = _make_material(bpy, "collision", (0.0, 0.0, 0.0, 0.12))
+    name = _collision_name(job)
+    x, y, z = dimensions
+    if kind == "ramp":
+        obj = _wedge_mesh(bpy, name, dimensions, location, material, collection)
+    elif kind == "hazard_marker":
+        obj = _cylinder(
+            bpy, name, max(x, y) / 2.0, z, (location[0], location[1], z / 2.0), material, collection
+        )
+    else:
+        obj = _cube(bpy, name, dimensions, location, material, collection)
+    return _mark_collision(obj)
+
+
+def _smart_uv_unwrap(bpy: Any, obj: Any) -> None:
+    """Generate non-overlapping UVs for a mesh so textures map predictably."""
+    if getattr(obj, "type", None) != "MESH":
+        return
+    try:
+        _set_active(bpy, obj)
+        bpy.ops.object.mode_set(mode="EDIT")
+        bpy.ops.mesh.select_all(action="SELECT")
+        bpy.ops.uv.smart_project(angle_limit=1.15, island_margin=0.02)
+        bpy.ops.object.mode_set(mode="OBJECT")
+    except Exception:  # noqa: BLE001 - UV is best-effort; never block export
+        try:
+            bpy.ops.object.mode_set(mode="OBJECT")
+        except Exception:  # noqa: BLE001
+            pass
+
+
 def _wedge_mesh(
     bpy: Any,
     name: str,
@@ -369,7 +421,13 @@ def _create_asset_objects(
     objects = builders.get(kind, _asset_generic_greybox)(
         bpy, asset_name, dims, base, material, collection
     )
-    objects.append(_collision_cube(bpy, job, dims, (base[0], base[1], dims[2] / 2.0), collection))
+    # Smart-UV-unwrap the visual meshes before adding collision (so collision
+    # proxies stay untouched). Game engines need sane UVs for any texturing.
+    for obj in objects:
+        _smart_uv_unwrap(bpy, obj)
+    objects.append(
+        _collision_for_kind(bpy, job, kind, dims, (base[0], base[1], dims[2] / 2.0), collection)
+    )
     for obj in objects:
         _floor_origin(bpy, obj)
         obj["fantasy_agent_asset_kind"] = kind
