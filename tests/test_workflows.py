@@ -102,6 +102,17 @@ def test_director_workflow_specializes_parkour_prompts():
     assert any("checkpoint" in beat.gameplay_focus.lower() for beat in plan.gameplay_spec.level_beats)
 
 
+def test_director_workflow_detects_chinese_parkour_prompt():
+    # Chinese "跑酷" (parkour) must resolve to the parkour axis, not the
+    # generic systems fallback, in the deterministic planner.
+    request = PromptRequest(prompt="我想做一个跑酷的demo", target_minutes=10)
+
+    plan = run_director_workflow(request)
+
+    assert plan.gameplay_spec.core_verbs == ["sprint", "vault", "wall-run", "slide"]
+    assert "Momentum Chain" in {system.name for system in plan.gameplay_spec.systems}
+
+
 def test_director_workflow_specializes_chinese_portfolio_godot_story():
     seed_request = IdeaDiscoveryRequest(
         raw_idea=(

@@ -71,18 +71,40 @@ def _detect_axis(prompt: str) -> str:
             "wall run",
             "vault",
             "slide",
+            # Chinese
+            "跑酷",
+            "翻越",
+            "墙跑",
+            "滑铲",
+            "屋顶",
+            "飞檐走壁",
         ]
     ):
         return "parkour"
-    if any(term in text for term in ["stealth", "sneak", "shadow"]):
+    if any(
+        term in text
+        for term in ["stealth", "sneak", "shadow", "潜行", "躲藏", "暗杀", "潜入"]
+    ):
         return "stealth"
-    if any(term in text for term in ["survival", "hunger", "storm", "oxygen"]):
+    if any(
+        term in text
+        for term in ["survival", "hunger", "storm", "oxygen", "生存", "饥饿", "求生"]
+    ):
         return "survival"
-    if any(term in text for term in ["puzzle", "logic", "switch", "portal"]):
+    if any(
+        term in text
+        for term in ["puzzle", "logic", "switch", "portal", "解谜", "谜题", "机关", "传送门"]
+    ):
         return "puzzle"
-    if any(term in text for term in ["combat", "fight", "boss", "weapon"]):
+    if any(
+        term in text
+        for term in ["combat", "fight", "boss", "weapon", "战斗", "格斗", "武器", "打斗"]
+    ):
         return "combat"
-    if any(term in text for term in ["race", "speed", "chase"]):
+    if any(
+        term in text
+        for term in ["race", "speed", "chase", "竞速", "赛车", "追逐", "竞赛"]
+    ):
         return "mobility"
     return "systems"
 
