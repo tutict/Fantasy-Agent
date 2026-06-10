@@ -22,6 +22,20 @@ MATERIALS: dict[str, tuple[float, float, float, float]] = {
     "ramp": (0.30, 0.42, 0.62, 1.0),
 }
 
+# PBR surface params per material key: (roughness, metallic, emission_strength).
+# objective/exit get a slight emission so they read as interactive at a glance.
+MATERIAL_PBR: dict[str, tuple[float, float, float]] = {
+    "neutral": (0.85, 0.0, 0.0),
+    "safe": (0.7, 0.0, 0.0),
+    "hazard": (0.5, 0.1, 0.6),
+    "objective": (0.4, 0.2, 1.2),
+    "exit": (0.45, 0.1, 0.9),
+    "ui": (0.6, 0.0, 0.4),
+    "door": (0.75, 0.05, 0.0),
+    "ramp": (0.8, 0.0, 0.0),
+    "collision": (1.0, 0.0, 0.0),
+}
+
 DEFAULT_DIMENSIONS_CM: dict[str, tuple[float, float, float]] = {
     "modular_wall": (400.0, 30.0, 300.0),
     "door": (160.0, 24.0, 260.0),
@@ -177,8 +191,31 @@ def _link_to_collection(bpy: Any, obj: Any, collection_name: str) -> None:
 
 def _make_material(bpy: Any, name: str, color: tuple[float, float, float, float]) -> Any:
     material_name = f"MI_FA_{name}"
-    material = bpy.data.materials.get(material_name) or bpy.data.materials.new(material_name)
-    material.diffuse_color = color
+    existing = bpy.data.materials.get(material_name)
+    if existing is not None:
+        return existing
+    material = bpy.data.materials.new(material_name)
+    material.diffuse_color = color  # viewport / fallback shading
+    roughness, metallic, emission = MATERIAL_PBR.get(name, (0.85, 0.0, 0.0))
+    # Build a Principled BSDF node tree so the material exports as real PBR.
+    try:
+        material.use_nodes = True
+        nodes = material.node_tree.nodes
+        bsdf = nodes.get("Principled BSDF")
+        if bsdf is not None:
+            bsdf.inputs["Base Color"].default_value = color
+            bsdf.inputs["Roughness"].default_value = roughness
+            bsdf.inputs["Metallic"].default_value = metallic
+            if emission > 0.0:
+                # Emission color input name differs across versions; set defensively.
+                if "Emission Color" in bsdf.inputs:
+                    bsdf.inputs["Emission Color"].default_value = color
+                elif "Emission" in bsdf.inputs:
+                    bsdf.inputs["Emission"].default_value = color
+                if "Emission Strength" in bsdf.inputs:
+                    bsdf.inputs["Emission Strength"].default_value = emission
+    except Exception:  # noqa: BLE001 - fall back to flat diffuse if nodes unavailable
+        material.use_nodes = False
     return material
 
 
@@ -571,6 +608,10 @@ def _export_asset(bpy: Any, export_path: str, export_format: str, objects: list[
             export_format="GLB",
             use_selection=True,
             export_apply=True,
+            export_normals=True,
+            export_tangents=True,
+            export_materials="EXPORT",
+            export_vertex_color="MATERIAL",
         )
         return
     bpy.ops.export_scene.fbx(
@@ -580,4 +621,5 @@ def _export_asset(bpy: Any, export_path: str, export_format: str, objects: list[
         apply_unit_scale=True,
         add_leaf_bones=False,
         bake_space_transform=False,
+        mesh_smooth_type="FACE",
     )
