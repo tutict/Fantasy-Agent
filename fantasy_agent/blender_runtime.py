@@ -502,6 +502,15 @@ def _asset_door(
             material,
             collection,
         ),
+        # Recessed inset panel so the door reads as a real door, not a slab.
+        _cube(
+            bpy,
+            f"{asset_name}_inset",
+            (x * 0.40, y * 0.5, z * 0.62),
+            (base[0], base[1] - y * 0.3, z * 0.41),
+            material,
+            collection,
+        ),
         _cube(
             bpy,
             f"{asset_name}_frame_l",
@@ -567,7 +576,26 @@ def _asset_hazard_marker(
         material,
         collection,
     )
-    return [cone, base_plate]
+    # Two warning bands around the cone for a recognizable hazard silhouette.
+    band_lo = _cylinder(
+        bpy,
+        f"{asset_name}_band_lo",
+        max(x, y) * 0.34,
+        6.0,
+        (base[0], base[1], z * 0.34),
+        material,
+        collection,
+    )
+    band_hi = _cylinder(
+        bpy,
+        f"{asset_name}_band_hi",
+        max(x, y) * 0.22,
+        6.0,
+        (base[0], base[1], z * 0.6),
+        material,
+        collection,
+    )
+    return [cone, base_plate, band_lo, band_hi]
 
 
 def _asset_objective_prop(
