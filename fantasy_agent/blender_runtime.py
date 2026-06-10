@@ -36,14 +36,28 @@ MATERIAL_PBR: dict[str, tuple[float, float, float]] = {
     "collision": (1.0, 0.0, 0.0),
 }
 
+# Player capsule metrics (centimeters) used to derive asset scale so props
+# relate to the character rather than arbitrary numbers. Roughly a 1.8m human.
+PLAYER_HEIGHT_CM = 180.0
+PLAYER_WIDTH_CM = 60.0
+PLAYER_STEP_CM = 45.0  # comfortable step-up height
+PLAYER_REACH_CM = 220.0  # standing reach
+
 DEFAULT_DIMENSIONS_CM: dict[str, tuple[float, float, float]] = {
-    "modular_wall": (400.0, 30.0, 300.0),
-    "door": (160.0, 24.0, 260.0),
-    "ramp": (300.0, 220.0, 120.0),
-    "hazard_marker": (110.0, 110.0, 130.0),
-    "objective_prop": (120.0, 120.0, 170.0),
-    "exit_gate": (240.0, 40.0, 300.0),
-    "ui_proxy_mesh": (190.0, 6.0, 110.0),
+    # wall: a bit over 1.5x player height, thin, wide enough to block a lane
+    "modular_wall": (PLAYER_WIDTH_CM * 6.5, 30.0, PLAYER_HEIGHT_CM * 1.65),
+    # door: clearable width ~ player width x2.6, header above reach
+    "door": (PLAYER_WIDTH_CM * 2.6, 24.0, PLAYER_REACH_CM * 1.18),
+    # ramp: long enough to walk, rise reachable in a couple steps
+    "ramp": (PLAYER_HEIGHT_CM * 1.65, PLAYER_STEP_CM * 4.9, PLAYER_STEP_CM * 2.65),
+    # hazard: chest-to-head height so it's a clear obstacle
+    "hazard_marker": (PLAYER_WIDTH_CM * 1.8, PLAYER_WIDTH_CM * 1.8, PLAYER_HEIGHT_CM * 0.72),
+    # objective: pedestal+beacon around player height
+    "objective_prop": (PLAYER_WIDTH_CM * 2.0, PLAYER_WIDTH_CM * 2.0, PLAYER_HEIGHT_CM * 0.95),
+    # exit gate: walk-through, taller than player
+    "exit_gate": (PLAYER_WIDTH_CM * 4.0, 40.0, PLAYER_HEIGHT_CM * 1.65),
+    # ui proxy: a readable billboard near eye level
+    "ui_proxy_mesh": (PLAYER_HEIGHT_CM * 1.05, 6.0, PLAYER_HEIGHT_CM * 0.6),
     "generic_greybox": (100.0, 100.0, 100.0),
 }
 
@@ -278,6 +292,41 @@ def _mark_collision(obj: Any) -> Any:
     return obj
 
 
+def _add_socket(bpy: Any, name: str, location: tuple[float, float, float], collection: str) -> Any:
+    """Create a named Empty as an attachment/interaction socket.
+
+    Engines read these as anchor points (lock position, trigger center, pickup
+    spot). Exported as an object named SOCKET_<role>.
+    """
+    empty = bpy.data.objects.new(name, None)
+    empty.empty_display_type = "ARROWS"
+    empty.empty_display_size = 20.0
+    empty.location = location
+    empty["fantasy_agent_socket"] = True
+    _link_to_collection(bpy, empty, collection)
+    return empty
+
+
+def _sockets_for_kind(
+    bpy: Any,
+    asset_name: str,
+    kind: str,
+    dims: tuple[float, float, float],
+    base: tuple[float, float, float],
+    collection: str,
+) -> list[Any]:
+    """Per-kind interaction sockets (Empties). Empty list for kinds without one."""
+    x, y, z = dims
+    bx, by, _bz = base
+    if kind == "door":
+        return [_add_socket(bpy, f"SOCKET_{asset_name}_lock", (bx + x * 0.32, by, z * 0.5), collection)]
+    if kind == "exit_gate":
+        return [_add_socket(bpy, f"SOCKET_{asset_name}_trigger", (bx, by, z * 0.5), collection)]
+    if kind == "objective_prop":
+        return [_add_socket(bpy, f"SOCKET_{asset_name}_pickup", (bx, by, z * 0.95), collection)]
+    return []
+
+
 def _collision_for_kind(
     bpy: Any,
     job: dict[str, Any],
@@ -458,6 +507,12 @@ def _create_asset_objects(
         _floor_origin(bpy, obj)
         obj["fantasy_agent_asset_kind"] = kind
         obj["fantasy_agent_role"] = job["purpose"]
+    # Interaction sockets (Empties) — added after mesh passes; tagged but not
+    # floor-origin'd (they are anchor points, not geometry).
+    for socket in _sockets_for_kind(bpy, asset_name, kind, dims, base, collection):
+        socket["fantasy_agent_asset_kind"] = kind
+        socket["fantasy_agent_role"] = job["purpose"]
+        objects.append(socket)
     return objects
 
 
@@ -729,7 +784,7 @@ def _export_asset(bpy: Any, export_path: str, export_format: str, objects: list[
     bpy.ops.export_scene.fbx(
         filepath=export_path,
         use_selection=True,
-        object_types={"MESH"},
+        object_types={"MESH", "EMPTY"},
         apply_unit_scale=True,
         add_leaf_bones=False,
         bake_space_transform=False,
