@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import os
@@ -39,6 +39,8 @@ REPO_ROOT = APP_DIR.parents[1]
 STATIC_DIR = APP_DIR / "static"
 WEB_CONSOLE_STATIC_DIR = REPO_ROOT / "apps" / "web-console" / "static"
 CHATGPT_WORKBENCH_STATIC_DIR = REPO_ROOT / "apps" / "chatgpt-workbench" / "static"
+FRONTEND_DIST_DIR = REPO_ROOT / "apps" / "frontend" / "dist"
+FRONTEND_INDEX_PATH = FRONTEND_DIST_DIR / "index.html"
 WORKBENCH_PATH = CHATGPT_WORKBENCH_STATIC_DIR / "workbench.html"
 
 app = FastAPI(
@@ -49,6 +51,8 @@ app = FastAPI(
 
 app.mount("/studio-static", StaticFiles(directory=str(STATIC_DIR)), name="studio_static")
 app.mount("/assets", StaticFiles(directory=str(WEB_CONSOLE_STATIC_DIR)), name="web_console_assets")
+if FRONTEND_DIST_DIR.exists():
+    app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIST_DIR)), name="frontend_assets")
 app.mount(
     "/static",
     StaticFiles(directory=str(CHATGPT_WORKBENCH_STATIC_DIR)),
@@ -76,7 +80,7 @@ ExecuteDemoRequest.model_rebuild()
 
 
 # In-memory execution job registry. Jobs run on a single worker so we never
-# launch two engines at once. Not persisted — studio is a local dev tool.
+    # launch two engines at once. Not persisted - studio is a local dev tool.
 _EXECUTE_POOL = ThreadPoolExecutor(max_workers=1)
 _EXECUTE_JOBS: dict[str, dict[str, Any]] = {}
 
@@ -106,6 +110,12 @@ def _initialize(request_id: Any, params: dict[str, Any]) -> dict[str, Any]:
 
 def _read_widget() -> str:
     return WORKBENCH_PATH.read_text(encoding="utf-8")
+
+
+def _frontend_index_or(static_path: Path) -> FileResponse:
+    if FRONTEND_INDEX_PATH.exists():
+        return FileResponse(FRONTEND_INDEX_PATH)
+    return FileResponse(static_path)
 
 
 def _mcp_status_item(
@@ -480,12 +490,12 @@ def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+    return _frontend_index_or(STATIC_DIR / "index.html")
 
 
 @app.get("/web-console")
 def web_console() -> FileResponse:
-    return FileResponse(WEB_CONSOLE_STATIC_DIR / "index.html")
+    return _frontend_index_or(WEB_CONSOLE_STATIC_DIR / "index.html")
 
 
 @app.get("/workbench")
@@ -573,7 +583,7 @@ def _infer_engine(plan: DirectorBuildPlan, override: str) -> str:
         return "godot"
     if "ue" in choice or "unreal" in choice:
         return "unreal"
-    # Default to Godot — the lighter, fully self-contained path.
+    # Default to Godot - the lighter, fully self-contained path.
     return "godot"
 
 
@@ -639,3 +649,4 @@ def execute_status(job_id: str) -> dict[str, Any]:
     if job is None:
         return {"status": "unknown", "job_id": job_id}
     return {"job_id": job_id, **job}
+

@@ -20,27 +20,29 @@ def test_web_console_static_ui_exposes_flow_console_sections():
     module = _load_web_console_app()
     html = module.STATIC_DIR.joinpath("index.html").read_text(encoding="utf-8")
     js = module.STATIC_DIR.joinpath("app.js").read_text(encoding="utf-8")
+    frontend_source = module.REPO_ROOT.joinpath("apps/frontend/src/console/FlowConsole.tsx").read_text(encoding="utf-8")
+    frontend_i18n = module.REPO_ROOT.joinpath("apps/frontend/src/shared/i18n.ts").read_text(encoding="utf-8")
 
     assert module.health()["agent"] == "web-console"
-    assert 'id="stage-strip"' in html
-    assert 'id="gate-summary"' in html
-    assert 'id="review-panel"' in html
-    assert 'id="activity-log"' in html
-    assert 'id="load-handoff-button"' in html
-    assert 'id="correction-notes"' in html
-    assert 'id="manual-tool-grid"' in html
-    assert 'id="open-recommended-tool-button"' in html
+    assert 'id="stage-strip"' in html or 'id="stage-strip"' in frontend_source
+    assert 'id="gate-summary"' in html or 'id="gate-summary"' in frontend_source
+    assert 'id="review-panel"' in html or 'id={`${tab}-panel`}' in frontend_source
+    assert 'id="activity-log"' in html or 'id="activity-log"' in frontend_source
+    assert 'id="load-handoff-button"' in html or 'id="load-handoff-button"' in frontend_source
+    assert 'id="correction-notes"' in html or 'id="correction-notes"' in frontend_source
+    assert 'id="manual-tool-grid"' in html or 'id="manual-tool-grid"' in frontend_source
+    assert 'id="open-recommended-tool-button"' in html or 'id="open-recommended-tool-button"' in frontend_source
     assert 'id="plan-form"' not in html
-    assert "Flow console" in html
-    assert "流程控制台" in js
-    assert "策划交接" in js
-    assert "纠偏队列" in js
-    assert "手动纠偏入口" in js
-    assert "/api/manual-correction/open" in js
-    assert "fantasy-agent-planning-handoff" in js
-    assert "usesGodotEngine" in js
-    assert "创意审阅" in js
-    assert "执行前确认" in js
+    assert "Flow console" in html or "Flow console" in frontend_i18n
+    assert "\u6d41\u7a0b\u63a7\u5236\u53f0" in frontend_i18n
+    assert "\u7b56\u5212\u4ea4\u63a5" in frontend_i18n
+    assert "\u7ea0\u504f\u961f\u5217" in frontend_i18n
+    assert "\u624b\u52a8\u7ea0\u504f\u5165\u53e3" in frontend_i18n
+    assert "/api/manual-correction/open" in js or "openManualCorrectionTarget" in frontend_source
+    assert "fantasy-agent-planning-handoff" in js or "fantasy-agent-planning-handoff" in frontend_source
+    assert "usesGodotEngine" in js or "usesGodotEngine" in frontend_source
+    assert "\u521b\u610f\u5ba1\u9605" in frontend_i18n
+    assert "\u6267\u884c\u524d\u786e\u8ba4" in frontend_i18n
     targets = module.correction_targets()
     assert targets["engine_kind"] == "unreal"
     assert {"planning", "comfyui", "blender", "unreal", "generated"} <= {
@@ -50,6 +52,14 @@ def test_web_console_static_ui_exposes_flow_console_sections():
         module.ManualCorrectionOpenRequest(target_id="blender", confirmed_side_effects=False)
     )
     assert blocked["status"] == "blocked"
+
+
+def test_web_console_prefers_vite_frontend_dist_when_available(monkeypatch):
+    module = _load_web_console_app()
+    frontend_index = module.STATIC_DIR / "index.html"
+    monkeypatch.setattr(module, "FRONTEND_INDEX_PATH", frontend_index)
+
+    assert Path(module.index().path) == frontend_index
 
 
 def test_web_console_plan_payload_feeds_review_and_pipeline_ui():

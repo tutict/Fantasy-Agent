@@ -1,0 +1,23 @@
+{
+  "name": "fantasy-agent-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "frontend:dev": "vite --host 127.0.0.1",
+    "frontend:build": "vite build",
+    "frontend:preview": "vite preview --host 127.0.0.1",
+    "frontend:typecheck": "tsc --noEmit -p apps/frontend/tsconfig.json"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "typescript": "7.0.1-rc",
+    "react": "latest",
+    "react-dom": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "latest",
+    "@types/react-dom": "latest"
+  }
+}

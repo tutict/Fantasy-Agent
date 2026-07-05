@@ -1,0 +1,20 @@
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  base: "/frontend/",
+  plugins: [react()],
+  root: "apps/frontend",
+  build: {
+    outDir: "dist",
+    emptyOutDir: true
+  },
+  server: {
+    port: 5173,
+    proxy: {
+      "/api": "http://127.0.0.1:7860",
+      "/mcp": "http://127.0.0.1:7860",
+      "/workbench": "http://127.0.0.1:7860"
+    }
+  }
+});

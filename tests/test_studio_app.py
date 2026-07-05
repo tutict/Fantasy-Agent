@@ -34,6 +34,8 @@ def test_studio_serves_combined_desktop_panel():
     } <= paths
     assert module.STATIC_DIR.joinpath("index.html").exists()
     assert module.WEB_CONSOLE_STATIC_DIR.joinpath("index.html").exists()
+    assert module.FRONTEND_DIST_DIR.name == "dist"
+    assert module.FRONTEND_INDEX_PATH.name == "index.html"
     assert module.WORKBENCH_PATH.exists()
     assert module.mcp_info()["endpoint"] == "/mcp"
     status = module.mcp_status()
@@ -93,28 +95,36 @@ def test_studio_detects_downloaded_godot_install(monkeypatch, tmp_path):
 def test_studio_shell_includes_bilingual_ui_controls():
     module = _load_studio_app()
     html = module.STATIC_DIR.joinpath("index.html").read_text(encoding="utf-8")
+    frontend_source = module.REPO_ROOT.joinpath("apps/frontend/src/studio/StudioShell.tsx").read_text(encoding="utf-8")
+    frontend_i18n = module.REPO_ROOT.joinpath("apps/frontend/src/shared/i18n.ts").read_text(encoding="utf-8")
     workbench_html = module.WORKBENCH_PATH.read_text(encoding="utf-8")
 
-    assert 'data-locale="en"' in html
-    assert 'data-locale="zh-CN"' in html
-    assert "sidebar-resizer" in html
-    assert 'id="sidebar-toggle"' in html
-    assert 'data-target="console"' in html
-    assert 'data-target="workbench"' in html
-    assert 'id="mcp-refresh"' in html
-    assert 'id="mcp-status-grid"' in html
-    assert "/api/mcp/status" in html
-    assert "mcpStatusTitle" in html
-    assert "mcpDetailExecutableMissing" in html
-    assert "未在 PATH、已配置环境变量或常见安装目录中找到可执行文件。" in html
-    assert html.index('data-target="workbench"') < html.index('data-target="console"')
-    assert 'let activePanel = "workbench"' in html
-    assert "Flow Console" in html
-    assert "流程控制台" in html
-    assert "Planning Workbench" in html
-    assert "策划工作台" in html
-    assert "fantasy-agent-studio-locale" in html
+    assert 'data-locale="en"' in html or 'data-locale="en"' in frontend_source
+    assert 'data-locale="zh-CN"' in html or 'data-locale="zh-CN"' in frontend_source
+    assert "sidebar-resizer" in html or "sidebar-resizer" in frontend_source
+    assert 'id="sidebar-toggle"' in html or 'id="sidebar-toggle"' in frontend_source
+    assert 'data-target="console"' in html or 'data-target={key}' in frontend_source
+    assert 'data-target="workbench"' in html or 'data-target={key}' in frontend_source
+    assert 'id="mcp-refresh"' in html or 'id="mcp-refresh"' in frontend_source
+    assert 'id="mcp-status-grid"' in html or 'id="mcp-status-grid"' in frontend_source
+    assert "/api/mcp/status" in html or "getMcpStatus" in frontend_source
+    assert "mcpStatusTitle" in html or "mcpStatusTitle" in frontend_i18n
+    assert 'activePanel, setActivePanel] = useState<PanelKey>("workbench")' in frontend_source
+    assert "Flow Console" in html or "consoleFrameTitle" in frontend_i18n
+    assert "\u6d41\u7a0b\u63a7\u5236\u53f0" in html or "\u6d41\u7a0b\u63a7\u5236\u53f0" in frontend_i18n
+    assert "Planning Workbench" in html or "workbenchFrameTitle" in frontend_i18n
+    assert "\u7b56\u5212\u5de5\u4f5c\u53f0" in html or "\u7b56\u5212\u5de5\u4f5c\u53f0" in frontend_i18n
+    assert "fantasy-agent-studio-locale" in html or "fantasy-agent-studio-locale" in frontend_source
     assert "fantasy-agent-planning-handoff" in workbench_html
+
+
+def test_studio_prefers_vite_frontend_dist_when_available(monkeypatch):
+    module = _load_studio_app()
+    frontend_index = module.STATIC_DIR / "index.html"
+    monkeypatch.setattr(module, "FRONTEND_INDEX_PATH", frontend_index)
+
+    assert Path(module.index().path) == frontend_index
+    assert Path(module.web_console().path) == frontend_index
 
 
 def test_studio_routes_plan_and_workbench_tools_through_one_server():

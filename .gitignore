@@ -49,3 +49,7 @@ legacy/traffic-management-platform/flutter_app/ios/Flutter/Generated.xcconfig
 legacy/traffic-management-platform/flutter_app/linux/flutter/ephemeral/
 legacy/traffic-management-platform/flutter_app/macos/Flutter/ephemeral/
 legacy/traffic-management-platform/flutter_app/windows/flutter/ephemeral/
+
+# Node frontend artifacts
+node_modules/
+apps/frontend/dist/

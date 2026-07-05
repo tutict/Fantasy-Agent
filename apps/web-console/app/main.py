@@ -13,7 +13,10 @@ from fantasy_agent.local_tools import manual_correction_targets, open_manual_cor
 from fantasy_agent.workflows import decompose_production_tasks, run_director_workflow
 
 APP_DIR = Path(__file__).resolve().parents[1]
+REPO_ROOT = APP_DIR.parents[1]
 STATIC_DIR = APP_DIR / "static"
+FRONTEND_DIST_DIR = REPO_ROOT / "apps" / "frontend" / "dist"
+FRONTEND_INDEX_PATH = FRONTEND_DIST_DIR / "index.html"
 
 app = FastAPI(
     title="Fantasy Agent Flow Console",
@@ -22,6 +25,8 @@ app = FastAPI(
 )
 
 app.mount("/assets", StaticFiles(directory=str(STATIC_DIR)), name="assets")
+if FRONTEND_DIST_DIR.exists():
+    app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIST_DIR)), name="frontend_assets")
 
 
 class ManualCorrectionOpenRequest(BaseModel):
@@ -32,6 +37,8 @@ class ManualCorrectionOpenRequest(BaseModel):
 
 @app.get("/")
 def index() -> FileResponse:
+    if FRONTEND_INDEX_PATH.exists():
+        return FileResponse(FRONTEND_INDEX_PATH)
     return FileResponse(STATIC_DIR / "index.html")
 
 
@@ -62,3 +69,4 @@ def correction_open(request: ManualCorrectionOpenRequest) -> dict[str, Any]:
         engine=request.engine,
         confirmed_side_effects=request.confirmed_side_effects,
     )
+
