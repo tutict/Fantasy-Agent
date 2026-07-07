@@ -1,5 +1,8 @@
 import type {
   ApprovalManifestResponse,
+  AssetExecuteJob,
+  AssetExecutePreview,
+  AssetExecuteStart,
   CreativeReview,
   ExecuteJob,
   ExecutePreview,
@@ -46,7 +49,8 @@ export function previewExecute(
   withAssets: boolean,
   withVisuals: boolean,
   withGameplay: boolean,
-  enemyTuning: EnemyPressureTuning
+  enemyTuning: EnemyPressureTuning,
+  approvalManifestPath?: string
 ): Promise<ExecutePreview> {
   return jsonRequest<ExecutePreview>("/api/execute", {
     method: "POST",
@@ -57,6 +61,7 @@ export function previewExecute(
       with_visuals: withVisuals,
       with_gameplay: withGameplay,
       enemy_tuning: enemyTuning,
+      approval_manifest_path: approvalManifestPath || undefined,
       confirmed: false
     })
   });
@@ -68,7 +73,8 @@ export function startExecute(
   withAssets: boolean,
   withVisuals: boolean,
   withGameplay: boolean,
-  enemyTuning: EnemyPressureTuning
+  enemyTuning: EnemyPressureTuning,
+  approvalManifestPath?: string
 ): Promise<ExecuteStart> {
   return jsonRequest<ExecuteStart>("/api/execute", {
     method: "POST",
@@ -79,6 +85,7 @@ export function startExecute(
       with_visuals: withVisuals,
       with_gameplay: withGameplay,
       enemy_tuning: enemyTuning,
+      approval_manifest_path: approvalManifestPath || undefined,
       confirmed: true
     })
   });
@@ -102,4 +109,41 @@ export function writeApprovalManifest(
     method: "POST",
     body: JSON.stringify({ review, decisions })
   });
+}
+
+
+export function previewAssetExecution(
+  plan: DirectorBuildPlan,
+  withAssets: boolean,
+  withVisuals: boolean
+): Promise<AssetExecutePreview> {
+  return jsonRequest<AssetExecutePreview>("/api/assets/execute", {
+    method: "POST",
+    body: JSON.stringify({
+      plan,
+      with_assets: withAssets,
+      with_visuals: withVisuals,
+      confirmed: false
+    })
+  });
+}
+
+export function startAssetExecution(
+  plan: DirectorBuildPlan,
+  withAssets: boolean,
+  withVisuals: boolean
+): Promise<AssetExecuteStart> {
+  return jsonRequest<AssetExecuteStart>("/api/assets/execute", {
+    method: "POST",
+    body: JSON.stringify({
+      plan,
+      with_assets: withAssets,
+      with_visuals: withVisuals,
+      confirmed: true
+    })
+  });
+}
+
+export function getAssetExecutionJob(jobId: string): Promise<AssetExecuteJob> {
+  return jsonRequest<AssetExecuteJob>(`/api/assets/execute/${encodeURIComponent(jobId)}`);
 }

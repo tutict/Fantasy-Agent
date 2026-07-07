@@ -272,11 +272,12 @@ curl -X POST http://127.0.0.1:8000/plan `
 - 真实工具执行仍然受显式执行确认控制。
 - M6b 敌人系统已经从 Gameplay DSL 接到 Godot 原型，支持 patrol/chase/stationary/ranged 灰盒敌人。
 - M6c 敌人压力指标与调参已经接入执行链和 Studio 生成面板。
+- M6d 资产执行面板已经接入 Studio / Flow Console，可独立运行 ComfyUI 与 Blender 资产工人并展示阶段结果。
+- M6e approval-gated ingest 已接入 Godot 资产复制，只有 manifest 中 approved 的 Blender GLB 会进入 `assets/generated/`。
 - Creative Review 决策已经可以写入 `generated/asset-approval-manifest.yaml`。
 
 下一步优先级：
 
-- 将已确认的 ComfyUI 和 Blender 执行接入 Studio。
-- 将已批准资产自动进入 Unreal 或 Godot 导入。
+- 为 approval-gated ingest 增加更细的 QA 覆盖与人工预览。
 - 通过受控 MCP 执行确认运行真实 PIE、Godot headless import 和 packaged playtest。
 - 为生成图片和模型 manifest 增加更丰富的预览能力。

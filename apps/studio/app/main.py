@@ -86,6 +86,13 @@ class ApprovalManifestResponse(BaseModel):
     manifest: AssetApprovalManifest
 
 
+class AssetExecutionRequest(BaseModel):
+    plan: DirectorBuildPlan
+    with_assets: bool = False
+    with_visuals: bool = False
+    confirmed: bool = False
+
+
 class ExecuteDemoRequest(BaseModel):
     plan: DirectorBuildPlan
     engine: str = ""  # inferred from plan when empty
@@ -93,6 +100,7 @@ class ExecuteDemoRequest(BaseModel):
     with_visuals: bool = False
     with_gameplay: bool = False
     enemy_tuning: EnemyPressureTuning = Field(default_factory=EnemyPressureTuning)
+    approval_manifest_path: str | None = None
     confirmed: bool = False
 
 
@@ -100,6 +108,7 @@ class ExecuteDemoRequest(BaseModel):
 # reference is resolved so this model is fully defined.
 ApprovalManifestRequest.model_rebuild()
 ApprovalManifestResponse.model_rebuild()
+AssetExecutionRequest.model_rebuild()
 ExecuteDemoRequest.model_rebuild()
 
 
@@ -107,6 +116,7 @@ ExecuteDemoRequest.model_rebuild()
     # launch two engines at once. Not persisted - studio is a local dev tool.
 _EXECUTE_POOL = ThreadPoolExecutor(max_workers=1)
 _EXECUTE_JOBS: dict[str, dict[str, Any]] = {}
+_ASSET_JOBS: dict[str, dict[str, Any]] = {}
 
 
 def _jsonrpc_result(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
@@ -637,6 +647,7 @@ def _build_execution_result(req: ExecuteDemoRequest, *, confirmed: bool):
         with_visuals=req.with_visuals,
         with_gameplay=req.with_gameplay,
         enemy_tuning=req.enemy_tuning,
+        approval_manifest_path=req.approval_manifest_path,
     )
 
 
@@ -662,6 +673,59 @@ def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestRes
     )
     rel = path.relative_to(REPO_ROOT).as_posix()
     return ApprovalManifestResponse(status="written", manifest_path=rel, manifest=manifest)
+
+
+def _build_asset_execution_result(req: AssetExecutionRequest, *, confirmed: bool):
+    from fantasy_agent.executor import execute_asset_pipeline
+    from fantasy_agent.local_tools import _find_blender
+
+    from datetime import datetime
+
+    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return execute_asset_pipeline(
+        req.plan,
+        session_id=session_id,
+        confirmed=confirmed,
+        workspace_root=REPO_ROOT,
+        with_assets=req.with_assets,
+        blender_exe=_find_blender() or "blender",
+        with_visuals=req.with_visuals,
+    )
+
+
+def _run_asset_execution_job(job_id: str, req: AssetExecutionRequest) -> None:
+    from dataclasses import asdict
+
+    try:
+        result = _build_asset_execution_result(req, confirmed=True)
+        _ASSET_JOBS[job_id] = {"status": result.status, "result": asdict(result)}
+    except Exception as exc:  # noqa: BLE001 - surface worker failures to the UI
+        _ASSET_JOBS[job_id] = {"status": "failed", "error": str(exc)}
+
+
+@app.post("/api/assets/execute")
+def execute_assets(req: AssetExecutionRequest) -> dict[str, Any]:
+    if not req.confirmed:
+        preview = _build_asset_execution_result(req, confirmed=False)
+        return {
+            "status": "confirmation_required",
+            "planned_side_effects": preview.planned_side_effects,
+        }
+
+    from datetime import datetime
+
+    job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _ASSET_JOBS[job_id] = {"status": "running"}
+    _EXECUTE_POOL.submit(_run_asset_execution_job, job_id, req)
+    return {"status": "running", "job_id": job_id}
+
+
+@app.get("/api/assets/execute/{job_id}")
+def asset_execute_status(job_id: str) -> dict[str, Any]:
+    job = _ASSET_JOBS.get(job_id)
+    if job is None:
+        return {"status": "unknown", "job_id": job_id}
+    return {"job_id": job_id, **job}
 
 
 def _run_execution_job(job_id: str, req: ExecuteDemoRequest) -> None:

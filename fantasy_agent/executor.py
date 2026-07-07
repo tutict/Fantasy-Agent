@@ -34,6 +34,10 @@ from fantasy_agent.contracts import (
     UnrealMCPPrepareAssetIngestRequest,
     UnrealMCPPrepareLevelAssemblyRequest,
 )
+from fantasy_agent.approval_manifest import (
+    filter_approved_blender_assets,
+    load_asset_approval_manifest,
+)
 from fantasy_agent.godot_mcp import DEFAULT_WORKSPACE_ROOT, GodotMCPBridge
 
 
@@ -81,6 +85,7 @@ def _planned_side_effects(
     blender_exe: str = "blender",
     with_visuals: bool = False,
     with_gameplay: bool = False,
+    approval_manifest_path: str | None = None,
 ) -> list[str]:
     effects: list[str] = []
     if with_gameplay:
@@ -101,7 +106,11 @@ def _planned_side_effects(
             f"Run Blender to export glb assets: {blender_exe} --background --python <script> "
             "(writes generated/assets/*.glb)"
         )
-        effects.append(f"Copy exported glb assets into {project_dir}/assets/generated/")
+        if approval_manifest_path:
+            effects.append(
+                f"Filter Blender exports through approval manifest: {approval_manifest_path}"
+            )
+        effects.append(f"Copy exported glb assets approved by manifest into {project_dir}/assets/generated/")
     effects.extend(
         [
             f"Write Godot project files under {project_dir}/ "
@@ -322,6 +331,73 @@ def _run_gameplay_codegen(
         return scripts, False
 
 
+def _asset_planned_side_effects(
+    *,
+    with_assets: bool,
+    blender_exe: str,
+    with_visuals: bool,
+) -> list[str]:
+    effects: list[str] = []
+    if with_visuals:
+        effects.append("Run ComfyUI to generate visual reference images")
+    if with_assets:
+        effects.append(
+            f"Run Blender to export glb assets: {blender_exe} --background --python <script>"
+        )
+    if not effects:
+        effects.append("No asset workers selected")
+    return effects
+
+
+def execute_asset_pipeline(
+    plan: DirectorBuildPlan,
+    *,
+    session_id: str,
+    confirmed: bool = False,
+    workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
+    with_assets: bool = False,
+    blender_exe: str = "blender",
+    with_visuals: bool = False,
+    comfyui_endpoint: str | None = None,
+    blender_bridge: Any | None = None,
+    comfyui_bridge: Any | None = None,
+) -> ExecutionResult:
+    planned = _asset_planned_side_effects(
+        with_assets=with_assets,
+        blender_exe=blender_exe,
+        with_visuals=with_visuals,
+    )
+    if not confirmed:
+        return ExecutionResult(
+            status="confirmation_required",
+            session_id=session_id,
+            planned_side_effects=planned,
+        )
+
+    stages: list[StageResult] = []
+    if with_visuals:
+        _run_comfyui_stage(
+            plan,
+            stages,
+            workspace_root=workspace_root,
+            endpoint=comfyui_endpoint,
+            comfyui_bridge=comfyui_bridge,
+        )
+    if with_assets:
+        _run_blender_stage(
+            plan,
+            stages,
+            blender_exe=blender_exe,
+            workspace_root=workspace_root,
+            blender_bridge=blender_bridge,
+        )
+    if not stages:
+        stages.append(StageResult("assets", "blocked", detail="No asset workers selected"))
+
+    status = "failed" if any(stage.status == "failed" for stage in stages) else "done"
+    return ExecutionResult(status, session_id, stages=stages, planned_side_effects=planned)
+
+
 def execute_godot_demo(
     plan: DirectorBuildPlan,
     *,
@@ -336,6 +412,7 @@ def execute_godot_demo(
     comfyui_endpoint: str | None = None,
     with_gameplay: bool = False,
     enemy_tuning: EnemyPressureTuning | None = None,
+    approval_manifest_path: str | None = None,
     bridge: GodotMCPBridge | None = None,
     blender_bridge: Any | None = None,
     comfyui_bridge: Any | None = None,
@@ -360,6 +437,7 @@ def execute_godot_demo(
             run continues without references (the chain is not broken).
         comfyui_endpoint: Optional ComfyUI endpoint override.
         enemy_tuning: Enemy pressure multipliers for generated Godot enemies.
+        approval_manifest_path: Optional generated approval manifest for asset copy gating.
         bridge: Optional pre-built GodotMCPBridge (for testing).
         blender_bridge: Optional pre-built BlenderMCPBridge (for testing).
         comfyui_bridge: Optional pre-built ComfyUIMCPBridge (for testing).
@@ -378,6 +456,7 @@ def execute_godot_demo(
         blender_exe=blender_exe,
         with_visuals=with_visuals,
         with_gameplay=with_gameplay,
+        approval_manifest_path=approval_manifest_path,
     )
 
     if not confirmed:
@@ -412,6 +491,36 @@ def execute_godot_demo(
             workspace_root=workspace_root,
             blender_bridge=blender_bridge,
         )
+
+    if with_assets and exported_glb and approval_manifest_path:
+        try:
+            manifest = load_asset_approval_manifest(
+                approval_manifest_path, workspace_root=workspace_root
+            )
+            approval = filter_approved_blender_assets(
+                exported_glb, manifest, manifest_path=approval_manifest_path
+            )
+            exported_glb = approval.approved
+            detail = f"{len(approval.approved)} approved, {len(approval.skipped)} skipped"
+            stages.append(
+                StageResult(
+                    "approval_gate",
+                    "done",
+                    detail=detail,
+                    artifacts=[approval_manifest_path],
+                    logs=approval.skipped,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - gate assets, keep greybox running
+            exported_glb = []
+            stages.append(
+                StageResult(
+                    "approval_gate",
+                    "blocked",
+                    detail=f"{exc}; no Blender assets copied",
+                    artifacts=[approval_manifest_path],
+                )
+            )
 
     # Stage C (optional): generate real playable GDScript from the spec.
     gameplay_scripts: dict[str, str] = {}

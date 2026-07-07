@@ -216,6 +216,10 @@ export interface ExecuteJob {
   error?: string;
 }
 
+export type AssetExecutePreview = ExecutePreview;
+export type AssetExecuteStart = ExecuteStart;
+export type AssetExecuteJob = ExecuteJob;
+
 export interface McpService {
   id?: string;
   label?: string;

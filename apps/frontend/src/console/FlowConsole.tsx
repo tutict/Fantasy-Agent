@@ -1,10 +1,13 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
+  getAssetExecutionJob,
   getExecuteJob,
   getManualCorrectionTargets,
   openManualCorrectionTarget as openManualCorrectionTargetApi,
+  previewAssetExecution,
   previewExecute,
+  startAssetExecution,
   startExecute,
   writeApprovalManifest
 } from "../shared/api";
@@ -114,6 +117,11 @@ export function FlowConsole() {
   const [generateEffects, setGenerateEffects] = useState<string[] | null>(null);
   const [generateResult, setGenerateResult] = useState<ExecuteResult | null>(null);
   const [pollJobId, setPollJobId] = useState<string | null>(null);
+  const [assetWithAssets, setAssetWithAssets] = useState(true);
+  const [assetWithVisuals, setAssetWithVisuals] = useState(true);
+  const [assetEffects, setAssetEffects] = useState<string[] | null>(null);
+  const [assetResult, setAssetResult] = useState<ExecuteResult | null>(null);
+  const [pollAssetJobId, setPollAssetJobId] = useState<string | null>(null);
   const [approvalManifestPath, setApprovalManifestPath] = useState<string>("");
 
   const t = useMemo(() => makeTranslator(locale, consoleI18n), [locale]);
@@ -271,6 +279,33 @@ export function FlowConsole() {
     return () => window.clearInterval(timer);
   }, [addActivity, pollJobId, t]);
 
+  useEffect(() => {
+    if (!pollAssetJobId) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const job = await getAssetExecutionJob(pollAssetJobId);
+        if (job.result) setAssetResult(job.result);
+        if (job.status !== "running") {
+          window.clearInterval(timer);
+          setPollAssetJobId(null);
+          if (job.status === "done") {
+            setStatus("ready");
+            addActivity(t("assetExecutionDone"), "");
+          } else {
+            setStatus("error");
+            addActivity(t("assetExecutionFailed"), job.error || job.status || "");
+          }
+        }
+      } catch (error) {
+        setStatus("error");
+        addActivity(t("assetExecutionFailed"), String(error));
+        setPollAssetJobId(null);
+        window.clearInterval(timer);
+      }
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [addActivity, pollAssetJobId, t]);
+
   const recordCorrection = () => {
     const notes = correctionNotes.trim();
     if (!currentPlan) {
@@ -320,7 +355,8 @@ export function FlowConsole() {
         withAssets,
         withVisuals,
         withGameplay,
-        enemyTuning
+        enemyTuning,
+        approvalManifestPath || "generated/asset-approval-manifest.yaml"
       );
       setGenerateEffects(preview.planned_side_effects || []);
     } catch (error) {
@@ -342,7 +378,8 @@ export function FlowConsole() {
         withAssets,
         withVisuals,
         withGameplay,
-        enemyTuning
+        enemyTuning,
+        approvalManifestPath || "generated/asset-approval-manifest.yaml"
       );
       if (started.job_id) {
         setPollJobId(started.job_id);
@@ -369,6 +406,41 @@ export function FlowConsole() {
     } catch (error) {
       setStatus("error");
       addActivity(t("approvalManifestFailed"), String(error));
+    }
+  };
+
+  const onAssetExecutionClick = async () => {
+    if (!currentPlan) {
+      addActivity(t("generateRequiresPlan"), t("openPlanningHint"));
+      setStatus("error");
+      return;
+    }
+    try {
+      const preview = await previewAssetExecution(currentPlan, assetWithAssets, assetWithVisuals);
+      setAssetEffects(preview.planned_side_effects || []);
+    } catch (error) {
+      setStatus("error");
+      addActivity(t("assetExecutionFailed"), String(error));
+    }
+  };
+
+  const startAssetWorkers = async () => {
+    if (!currentPlan) return;
+    setAssetEffects(null);
+    setAssetResult(null);
+    setStatus("running");
+    addActivity(t("assetExecutionRunning"), "");
+    try {
+      const started = await startAssetExecution(currentPlan, assetWithAssets, assetWithVisuals);
+      if (started.job_id) {
+        setPollAssetJobId(started.job_id);
+      } else {
+        setStatus("error");
+        addActivity(t("assetExecutionFailed"), started.status || "");
+      }
+    } catch (error) {
+      setStatus("error");
+      addActivity(t("assetExecutionFailed"), String(error));
     }
   };
 
@@ -545,6 +617,51 @@ export function FlowConsole() {
                   <GateItem title={t("defaultGateUnreal")} detail={t("waitingForPlan")} />
                 </>
               )}
+            </div>
+          </section>
+
+          <section className="generate-panel" aria-label="Run approved asset workers">
+            <div className="pane-section-header">
+              <h2>{t("assetExecutionTitle")}</h2>
+            </div>
+            <p className="handoff-note">{t("assetExecutionHint")}</p>
+            <div className="generate-options">
+              <label>
+                <input type="checkbox" id="asset-with-assets" checked={assetWithAssets} onChange={(event) => setAssetWithAssets(event.target.checked)} /> <span>{t("generateWithAssets")}</span>
+              </label>
+              <label>
+                <input type="checkbox" id="asset-with-visuals" checked={assetWithVisuals} onChange={(event) => setAssetWithVisuals(event.target.checked)} /> <span>{t("generateWithVisuals")}</span>
+              </label>
+            </div>
+            <button className="secondary-action" type="button" id="asset-execute-button" disabled={status === "running"} onClick={() => void onAssetExecutionClick()}>
+              {t("assetExecutionButton")}
+            </button>
+            {assetEffects ? (
+              <div id="asset-execute-confirm" className="generate-confirm">
+                <strong>{t("generateConfirmTitle")}</strong>
+                <p>{t("generateConfirmIntro")}</p>
+                <ul>{assetEffects.map((effect) => <li key={effect}>{effect}</li>)}</ul>
+                <div className="handoff-actions">
+                  <button className="primary-action" type="button" id="asset-execute-proceed" onClick={() => void startAssetWorkers()}>
+                    {t("generateConfirmProceed")}
+                  </button>
+                  <button className="ghost-action" type="button" id="asset-execute-cancel" onClick={() => setAssetEffects(null)}>
+                    {t("generateConfirmCancel")}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            <div id="asset-execute-stages" className="generate-stages">
+              {assetResult?.stages?.map((stage) => (
+                <article className="mcp-status-card" data-state={stage.status === "done" ? "ready" : stage.status === "failed" ? "unavailable" : "degraded"} key={stage.name}>
+                  <div className="mcp-status-top">
+                    <h4>{stage.name}</h4>
+                    <span className="mcp-state">{stage.status}</span>
+                  </div>
+                  <p>{stage.detail}</p>
+                  {stage.artifacts?.length ? <code>{stage.artifacts.join(", ")}</code> : null}
+                </article>
+              ))}
             </div>
           </section>
 

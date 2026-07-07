@@ -241,6 +241,7 @@ Blender → Godot 资产链（M2）：
 - Executor 的 `--with-assets` 路径会先跑 Blender 导出 **glb**（Godot 4 原生格式），再把 `.glb` 复制进 Godot 工程的 `assets/generated/`，由 `godot --headless --import` 导入。
 - 导出格式由 `BlenderAssetPlan.export_format` 决定；executor 在 Godot 路径下强制 `glb`。`enrich_blender_job` 按格式规范化扩展名（不再出现 `name.fbx.glb` 双扩展名）。
 - `fantasy_agent/godot_assets.py` 的 `copy_assets_into_godot_project` 只复制 `.glb`，`.fbx` 跳过并记录（Godot 需 fbx2gltf 转换器，M2 不处理；Unreal 线仍独立用 fbx）。
+- **approval-gated ingest（M6e）**：传入 `approval_manifest_path` 时，executor 会先读取 `generated/asset-approval-manifest.yaml` 或指定 manifest，只把 Creative Review 标记为 approved 的 Blender GLB 复制到 Godot 工程；revision/rejected/pending 资产只记录在 `approval_gate` 阶段，不进入 `assets/generated/`。
 - **降级语义**：Blender 不可用或执行失败时，blender 阶段标记 failed，整条链继续以纯灰盒完成，不中断。
 - 重要约束：Blender 阶段要求 `workspace_root` 为仓库根（生成的脚本需 import `fantasy_agent.blender_runtime`）。纯 Godot 路径无此约束。
 
@@ -322,13 +323,14 @@ ComfyUI → Godot 参考链（M3）：
 - ChatGPT 交互必须保持玩法优先层级和 i18n 输出。
 - 默认不得从该界面启动 Unreal、Godot、Blender、ComfyUI、打包、写文件或推送 GitHub。
 
-studio 一键生成（M5a）：
+studio 一键生成（M5a / M6c / M6d）：
 
-- studio 后端新增 `POST /api/execute`（body `{plan, engine, with_assets, with_visuals, confirmed}`）+ `GET /api/execute/{job_id}`，给执行链一个图形入口。
+- studio 后端提供 `POST /api/execute`（body `{plan, engine, with_assets, with_visuals, with_gameplay, enemy_tuning, approval_manifest_path, confirmed}`）+ `GET /api/execute/{job_id}`，给引擎执行链一个图形入口。
+- studio 后端提供 `POST /api/assets/execute`（body `{plan, with_assets, with_visuals, confirmed}`）+ `GET /api/assets/execute/{job_id}`，用于只运行 ComfyUI / Blender 资产工人，不创建 Godot 或 Unreal 工程。
 - 两段式授权：`confirmed=false` 同步返回 `planned_side_effects`（确认门，不写盘）；前端展示清单、用户点「继续」后再以 `confirmed=true` 发起。
 - `confirmed=true` 时后端用单 worker `ThreadPoolExecutor` 起后台 job（避免并发跑多引擎），立即返回 `job_id`；前端轮询 `/api/execute/{job_id}` 拿阶段状态与产物，完成后展示 `project_dir`。
 - 引擎路由：`engine` 含 godot/ue/unreal 或从 `plan.gameplay_spec.engine_choice` 推断，分派到 `execute_godot_demo` / `execute_unreal_demo`。引擎可执行文件用 local_tools 探测。
-- 前端在 web-console（flow console）的执行确认区下方加「一键生成」面板，复用 MCP 状态卡片样式渲染阶段，i18n 中英双语。job 仅存内存，studio 为本地开发工具。
+- 前端在 web-console（flow console）的执行确认区下方提供「一键生成」与「资产工人执行」面板，复用 MCP 状态卡片样式渲染阶段，i18n 中英双语。job 仅存内存，studio 为本地开发工具。
 
 ## QA Agent
 

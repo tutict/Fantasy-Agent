@@ -180,6 +180,141 @@ def test_with_assets_stage_order_and_copy(tmp_path: Path):
     assert len(copied) == 2
 
 
+def test_with_assets_approval_manifest_copies_only_approved(tmp_path: Path):
+    import yaml
+
+    exported = [
+        "generated/assets/start_marker.glb",
+        "generated/assets/objective_prop.glb",
+        "generated/assets/rejected_gate.glb",
+    ]
+    manifest_path = tmp_path / "generated" / "asset-approval-manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "source": "studio.approval-manifest",
+                "schema_version": "0.1",
+                "approval_gate": "blocks_unreal_ingest",
+                "decisions": [
+                    {
+                        "asset_id": "start_marker",
+                        "source": "blender",
+                        "asset_path": "generated/assets/start_marker.fbx",
+                        "gameplay_role": "objective_prop",
+                        "decision": "approved",
+                        "risks": [],
+                    },
+                    {
+                        "asset_id": "objective_prop",
+                        "source": "blender",
+                        "asset_path": "generated/assets/objective_prop.fbx",
+                        "gameplay_role": "objective_prop",
+                        "decision": "needs_revision",
+                        "risks": [],
+                    },
+                    {
+                        "asset_id": "rejected_gate",
+                        "source": "blender",
+                        "asset_path": "generated/assets/rejected_gate.fbx",
+                        "gameplay_role": "exit_gate",
+                        "decision": "rejected",
+                        "risks": [],
+                    },
+                ],
+                "approved_asset_ids": ["start_marker"],
+                "revision_asset_ids": ["objective_prop"],
+                "rejected_asset_ids": ["rejected_gate"],
+                "pending_asset_ids": [],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    blender = _FakeBlenderBridge(status="executed", exported=exported, root=tmp_path)
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m2approved",
+        confirmed=True,
+        godot_exe="godot",
+        with_assets=True,
+        approval_manifest_path="generated/asset-approval-manifest.yaml",
+        workspace_root=tmp_path,
+        bridge=bridge,
+        blender_bridge=blender,
+    )
+
+    assert result.ok
+    names = [s.name for s in result.stages]
+    assert names == ["blender", "approval_gate", "create", "copy_assets", "validate", "import"]
+    gate = next(s for s in result.stages if s.name == "approval_gate")
+    assert gate.detail == "1 approved, 2 skipped"
+    copied = sorted(p.name for p in (tmp_path / result.project_dir / "assets" / "generated").glob("*.glb"))
+    assert copied == ["start_marker.glb"]
+
+
+def test_with_assets_missing_approval_manifest_blocks_asset_copy(tmp_path: Path):
+    exported = ["generated/assets/start_marker.glb"]
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    blender = _FakeBlenderBridge(status="executed", exported=exported, root=tmp_path)
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m2blocked",
+        confirmed=True,
+        godot_exe="godot",
+        with_assets=True,
+        approval_manifest_path="generated/asset-approval-manifest.yaml",
+        workspace_root=tmp_path,
+        bridge=bridge,
+        blender_bridge=blender,
+    )
+
+    assert result.ok
+    gate = next(s for s in result.stages if s.name == "approval_gate")
+    assert gate.status == "blocked"
+    assert "copy_assets" not in [s.name for s in result.stages]
+    assert not (tmp_path / result.project_dir / "assets" / "generated" / "start_marker.glb").exists()
+
+
+def test_asset_pipeline_runs_comfyui_and_blender_without_godot_project(tmp_path: Path):
+    from fantasy_agent.executor import execute_asset_pipeline
+
+    images = ["generated/comfyui/rooftop/concept.png"]
+    glb = ["generated/assets/start_marker.glb"]
+    comfy = _FakeComfyBridge(status="executed", images=images, root=tmp_path)
+    blender = _FakeBlenderBridge(status="executed", exported=glb, root=tmp_path)
+
+    result = execute_asset_pipeline(
+        _plan(),
+        session_id="assets1",
+        confirmed=True,
+        with_visuals=True,
+        with_assets=True,
+        workspace_root=tmp_path,
+        comfyui_bridge=comfy,
+        blender_bridge=blender,
+    )
+
+    assert result.ok
+    assert [s.name for s in result.stages] == ["comfyui", "blender"]
+    assert not (tmp_path / "generated" / "godot").exists()
+
+
+def test_asset_pipeline_confirmation_gate_lists_workers(tmp_path: Path):
+    from fantasy_agent.executor import execute_asset_pipeline
+
+    result = execute_asset_pipeline(
+        _plan(), session_id="assets2", confirmed=False, with_visuals=True, with_assets=True
+    )
+
+    assert result.status == "confirmation_required"
+    assert any("ComfyUI" in effect for effect in result.planned_side_effects)
+    assert any("Blender" in effect for effect in result.planned_side_effects)
+
+
 def test_blender_failure_degrades_to_greybox(tmp_path: Path):
     bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
     blender = _FakeBlenderBridge(status="failed", exported=[])

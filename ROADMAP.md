@@ -62,6 +62,8 @@
 - M6b 敌人系统：`GameplaySpec.enemies`、Godot `enemy_controller.gd`、路线敌人生成和失败联动已完成第一轮垂直切片。
 - M6c 敌人压力：执行链生成 deterministic enemy pressure report，Studio 可调敌人数、速度、侦测、巡逻和远程间隔倍率。
 - Approval manifest：Creative Review 决策可持久化到 `generated/asset-approval-manifest.yaml`，继续阻塞未经批准的资产导入。
+- M6d 资产执行：Studio / Flow Console 已能独立触发 ComfyUI 与 Blender 资产工人，复用两段式确认和后台 job 轮询。
+- M6e 审批门控导入：Godot `--with-assets` 路径会按 approval manifest 过滤 Blender GLB，未批准资产不会复制进工程。
 
 ## 第七阶段：可玩原型自动化
 

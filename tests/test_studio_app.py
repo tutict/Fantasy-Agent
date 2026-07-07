@@ -241,3 +241,61 @@ def test_write_approval_manifest_api_writes_generated_yaml(monkeypatch, tmp_path
     assert "approved_asset_ids:" in text
     assert first in text
     assert second in response.manifest.revision_asset_ids
+
+
+def test_asset_execute_confirmation_gate_runs_no_job():
+    module = _load_studio_app()
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.workflows import run_director_workflow
+
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+    req = module.AssetExecutionRequest(plan=plan, with_assets=True, with_visuals=True, confirmed=False)
+    result = module.execute_assets(req)
+
+    assert result["status"] == "confirmation_required"
+    assert any("Blender" in effect for effect in result["planned_side_effects"])
+    assert any("ComfyUI" in effect for effect in result["planned_side_effects"])
+    assert "job_id" not in result
+
+
+def test_asset_execute_starts_job_and_polls(monkeypatch):
+    module = _load_studio_app()
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.executor import ExecutionResult, StageResult
+    from fantasy_agent.workflows import run_director_workflow
+
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+
+    def fake_assets(req, *, confirmed):
+        if not confirmed:
+            return ExecutionResult(
+                status="confirmation_required", session_id="a", planned_side_effects=["run assets"]
+            )
+        return ExecutionResult(
+            status="done",
+            session_id="a",
+            stages=[StageResult("comfyui", "done"), StageResult("blender", "done")],
+        )
+
+    monkeypatch.setattr(module, "_build_asset_execution_result", fake_assets)
+
+    started = module.execute_assets(
+        module.AssetExecutionRequest(plan=plan, with_assets=True, with_visuals=True, confirmed=True)
+    )
+    assert started["status"] == "running"
+    job_id = started["job_id"]
+
+    module._EXECUTE_POOL.shutdown(wait=True)
+
+    status = module.asset_execute_status(job_id)
+    assert status["status"] == "done"
+    assert [s["name"] for s in status["result"]["stages"]] == ["comfyui", "blender"]
+
+
+def test_asset_execute_status_unknown_job():
+    module = _load_studio_app()
+    assert module.asset_execute_status("nope")["status"] == "unknown"
