@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fantasy_agent.contracts import CreativeReviewRequest, PromptRequest
 from fantasy_agent.workflows import (
+    build_asset_approval_manifest,
     prepare_blender_assets,
     prepare_comfyui_visuals,
     prepare_creative_review,
@@ -68,3 +69,32 @@ def test_creative_review_agent_endpoint_returns_report_model():
         "generated/creative-review-report.yaml",
         "generated/asset-approval-manifest.yaml",
     ]
+
+
+def test_build_asset_approval_manifest_classifies_review_decisions():
+    director_plan = run_director_workflow(
+        PromptRequest(
+            prompt="a stealth courier escapes a haunted train station",
+            target_minutes=10,
+        )
+    )
+    review = prepare_creative_review(
+        director_plan.gameplay_spec,
+        director_plan.blender_plan,
+        director_plan.comfyui_plan,
+    )
+    first = review.items[0].asset_id
+    second = review.items[1].asset_id
+    third = review.items[2].asset_id
+
+    manifest = build_asset_approval_manifest(
+        review,
+        {first: "approved", second: "needs_revision", third: "rejected"},
+    )
+
+    assert manifest.approval_gate == "blocks_unreal_ingest"
+    assert manifest.approved_asset_ids == [first]
+    assert manifest.revision_asset_ids == [second]
+    assert manifest.rejected_asset_ids == [third]
+    assert review.items[3].asset_id in manifest.pending_asset_ids
+    assert next(d for d in manifest.decisions if d.asset_id == second).revision_prompt

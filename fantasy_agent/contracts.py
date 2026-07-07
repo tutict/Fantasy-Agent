@@ -198,6 +198,25 @@ class EnemySpec(StrictModel):
     count: int = Field(default=1, ge=1, le=12)
 
 
+class EnemyPressureTuning(StrictModel):
+    enemy_count_multiplier: float = Field(default=1.0, ge=0.0, le=3.0)
+    move_speed_multiplier: float = Field(default=1.0, ge=0.25, le=3.0)
+    detection_radius_multiplier: float = Field(default=1.0, ge=0.25, le=3.0)
+    patrol_radius_multiplier: float = Field(default=1.0, ge=0.25, le=3.0)
+    ranged_interval_multiplier: float = Field(default=1.0, ge=0.25, le=3.0)
+
+
+class EnemyPressureReport(StrictModel):
+    source: str = "fantasy-agent.enemy-pressure"
+    schema_version: str = "0.1"
+    enemy_count: int = Field(ge=0)
+    behavior_counts: dict[EnemyBehavior, int] = Field(default_factory=dict)
+    pressure_score: float = Field(ge=0)
+    tuning: EnemyPressureTuning = Field(default_factory=EnemyPressureTuning)
+    metrics: dict[str, float | int | str] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class GameplaySpec(StrictModel):
     schema_version: str = "0.1"
     title: str
@@ -307,6 +326,7 @@ class GodotMCPCreateProjectRequest(StrictModel):
     write_files: bool = False
     gameplay_spec: GameplaySpec | None = None
     gameplay_scripts: dict[str, str] = Field(default_factory=dict)
+    enemy_tuning: EnemyPressureTuning = Field(default_factory=EnemyPressureTuning)
 
 
 class GodotMCPValidateProjectRequest(StrictModel):
@@ -716,6 +736,27 @@ class CreativeReviewReport(StrictModel):
     revision_asset_ids: list[str] = Field(default_factory=list)
     rejected_asset_ids: list[str] = Field(default_factory=list)
     handoff_artifacts: list[str] = Field(default_factory=list)
+
+
+class AssetApprovalDecision(StrictModel):
+    asset_id: str
+    source: CreativeReviewSource
+    asset_path: str
+    gameplay_role: str
+    decision: Literal["approved", "needs_revision", "rejected", "pending_user_review"]
+    revision_prompt: str | None = None
+    risks: list[str] = Field(default_factory=list)
+
+
+class AssetApprovalManifest(StrictModel):
+    source: str = "studio.approval-manifest"
+    schema_version: str = "0.1"
+    approval_gate: Literal["blocks_unreal_ingest"] = "blocks_unreal_ingest"
+    decisions: list[AssetApprovalDecision]
+    approved_asset_ids: list[str] = Field(default_factory=list)
+    revision_asset_ids: list[str] = Field(default_factory=list)
+    rejected_asset_ids: list[str] = Field(default_factory=list)
+    pending_asset_ids: list[str] = Field(default_factory=list)
 
 
 class CreativeReviewRequest(StrictModel):

@@ -236,11 +236,15 @@ export function ReviewPanel({
   review,
   decisions,
   setDecision,
+  manifestPath,
+  onWriteManifest,
   t
 }: {
   review?: CreativeReview;
   decisions: Record<string, string>;
   setDecision: (assetId: string, decision: string) => void;
+  manifestPath?: string;
+  onWriteManifest?: () => void;
   t: Translator;
 }) {
   const items = review?.items || [];
@@ -272,6 +276,14 @@ export function ReviewPanel({
                 {t("approvalGate")}: {review.approval_gate}
               </span>
             </div>
+            <button className="secondary-action" type="button" onClick={onWriteManifest}>
+              {t("writeApprovalManifest")}
+            </button>
+            {manifestPath ? (
+              <p className="handoff-note">
+                {t("approvalManifestWritten")}: <code>{manifestPath}</code>
+              </p>
+            ) : null}
           </>
         ) : null}
       </aside>

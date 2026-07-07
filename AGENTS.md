@@ -209,6 +209,7 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - **导入校验 + 失败回退**：LLM 脚本若导致 Godot headless 导入报脚本错误，executor 自动用确定性模板重生成并重新导入，gameplay 阶段标记 `degraded`——保证 demo 一定能跑。
 - 阶段顺序：gameplay→create→validate→import，可与 `--with-assets`/`--with-visuals` 组合。
 - **真实敌人闭环（M6b）**：`GameplaySpec.enemies` 由确定性/LLM 规划生成，`--with-gameplay` 写出 `enemy_controller.gd`，`main.gd` 沿路线生成 patrol/chase/stationary/ranged 敌人；敌人只通过 `game_manager.fail_from_enemy()` 触发失败，不直接重启场景。
+- **敌人压力调参（M6c）**：`EnemyPressureTuning` 可调整敌人数、移动速度、侦测半径、巡逻半径和远程攻击间隔；executor 写出 deterministic enemy pressure report，Studio 生成面板可在确认执行前调参。
 - **范围**：M6a 先完成玩家机制 + 胜负 + HUD；M6b 已接入 `EnemySpec`、`enemy_controller.gd` 和 `main.gd` 敌人实例化，让声明的敌人能在 Godot 灰盒中产生失败压力。
 
 ## Blender Worker

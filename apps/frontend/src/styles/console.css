@@ -1168,6 +1168,60 @@ input[type="text"]:focus {
   cursor: pointer;
 }
 
+
+.enemy-tuning-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface);
+}
+
+.enemy-tuning-panel p {
+  margin: 4px 0 0;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.enemy-roster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.enemy-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 8px;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.tuning-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tuning-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.tuning-field input {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+
 .generate-confirm {
   border: 1px solid var(--line-strong);
   border-radius: 10px;

@@ -457,13 +457,23 @@ def test_with_gameplay_generates_scripts_and_imports(tmp_path: Path):
     assert result.ok
     names = [s.name for s in result.stages]
     assert names[0] == "gameplay"
-    assert names == ["gameplay", "create", "validate", "import"]
+    assert names == ["gameplay", "create", "enemy_metrics", "validate", "import"]
+    enemy_metrics = next(s for s in result.stages if s.name == "enemy_metrics")
+    assert "pressure_score=" in enemy_metrics.detail
+    assert enemy_metrics.artifacts
+    assert enemy_metrics.artifacts[0].endswith("/data/enemy-pressure-report.json")
     # Gameplay scripts, including M6b enemies, were written into the project.
     assert (tmp_path / result.project_dir / "scripts" / "game_manager.gd").exists()
     assert (tmp_path / result.project_dir / "scripts" / "enemy_controller.gd").exists()
+    report = (tmp_path / result.project_dir / "data" / "enemy-pressure-report.json").read_text(
+        encoding="utf-8"
+    )
+    assert '"enemy_count"' in report
+    assert '"pressure_score"' in report
     main = (tmp_path / result.project_dir / "scripts" / "main.gd").read_text(encoding="utf-8")
     assert "_spawn_enemies(gm)" in main
     assert "FA_Enemy_" in main
+    assert '"enemy_tuning"' in main
 
 
 def test_with_gameplay_degrades_to_deterministic_when_llm_unavailable(tmp_path: Path):
@@ -497,3 +507,37 @@ def test_with_gameplay_listed_in_confirmation_gate(tmp_path: Path):
     )
     assert result.status == "confirmation_required"
     assert any("GDScript" in e for e in result.planned_side_effects)
+    assert any("enemy pressure tuning" in e for e in result.planned_side_effects)
+
+
+def test_with_gameplay_accepts_enemy_pressure_tuning(tmp_path: Path):
+    from fantasy_agent.contracts import EnemyPressureTuning
+
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    result = execute_godot_demo(
+        _plan(),
+        session_id="g4",
+        confirmed=True,
+        godot_exe="godot",
+        with_gameplay=True,
+        enemy_tuning=EnemyPressureTuning(
+            enemy_count_multiplier=2.0,
+            move_speed_multiplier=1.5,
+            detection_radius_multiplier=1.25,
+            patrol_radius_multiplier=1.1,
+            ranged_interval_multiplier=0.75,
+        ),
+        workspace_root=tmp_path,
+        bridge=bridge,
+    )
+
+    assert result.ok
+    enemy_metrics = next(s for s in result.stages if s.name == "enemy_metrics")
+    assert "pressure_score=" in enemy_metrics.detail
+    report = (tmp_path / result.project_dir / "data" / "enemy-pressure-report.json").read_text(
+        encoding="utf-8"
+    )
+    assert '"enemy_count_multiplier": 2.0' in report
+    main = (tmp_path / result.project_dir / "scripts" / "main.gd").read_text(encoding="utf-8")
+    assert '"move_speed_multiplier": 1.5' in main
+    assert "count_multiplier" in main

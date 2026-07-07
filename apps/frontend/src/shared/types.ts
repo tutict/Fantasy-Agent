@@ -5,6 +5,23 @@ export type StatusState = "idle" | "ready" | "running" | "error";
 export type CorrectionMode = "gameplay" | "visuals" | "scope" | "import";
 export type ManualTargetId = "planning" | "comfyui" | "blender" | "unreal" | "godot" | "generated" | "engine";
 
+export type EnemyBehavior = "patrol" | "chase" | "stationary" | "ranged";
+
+export interface EnemySpec {
+  name?: string;
+  behavior?: EnemyBehavior;
+  hp?: number;
+  count?: number;
+}
+
+export interface EnemyPressureTuning {
+  enemy_count_multiplier: number;
+  move_speed_multiplier: number;
+  detection_radius_multiplier: number;
+  patrol_radius_multiplier: number;
+  ranged_interval_multiplier: number;
+}
+
 export interface GameplaySpec {
   title?: string;
   target_session_minutes?: number;
@@ -13,6 +30,7 @@ export interface GameplaySpec {
   failure_states?: string[];
   core_loop?: Array<{ action?: string; player_decision?: string }>;
   systems?: Array<{ name?: string; purpose?: string }>;
+  enemies?: EnemySpec[];
   i18n?: {
     field_translations?: {
       title?: Partial<Record<Locale, string>>;
@@ -78,6 +96,17 @@ export interface CreativeReview {
   };
   required_user_decisions?: string[];
   approval_gate?: string;
+}
+
+export interface ApprovalManifestResponse {
+  status?: string;
+  manifest_path?: string;
+  manifest?: {
+    approved_asset_ids?: string[];
+    revision_asset_ids?: string[];
+    rejected_asset_ids?: string[];
+    pending_asset_ids?: string[];
+  };
 }
 
 export interface UnrealPlan {
@@ -170,6 +199,8 @@ export interface ExecuteStage {
   name?: string;
   status?: string;
   detail?: string;
+  artifacts?: string[];
+  logs?: string[];
 }
 
 export interface ExecuteResult {

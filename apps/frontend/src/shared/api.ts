@@ -1,11 +1,13 @@
 import type {
+  ApprovalManifestResponse,
+  CreativeReview,
   ExecuteJob,
   ExecutePreview,
   ExecuteStart,
   ManualTargetsPayload,
   McpStatus
 } from "./types";
-import type { DirectorBuildPlan } from "./types";
+import type { DirectorBuildPlan, EnemyPressureTuning } from "./types";
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -42,7 +44,9 @@ export function previewExecute(
   plan: DirectorBuildPlan,
   engine: string,
   withAssets: boolean,
-  withVisuals: boolean
+  withVisuals: boolean,
+  withGameplay: boolean,
+  enemyTuning: EnemyPressureTuning
 ): Promise<ExecutePreview> {
   return jsonRequest<ExecutePreview>("/api/execute", {
     method: "POST",
@@ -51,6 +55,8 @@ export function previewExecute(
       engine,
       with_assets: withAssets,
       with_visuals: withVisuals,
+      with_gameplay: withGameplay,
+      enemy_tuning: enemyTuning,
       confirmed: false
     })
   });
@@ -60,7 +66,9 @@ export function startExecute(
   plan: DirectorBuildPlan,
   engine: string,
   withAssets: boolean,
-  withVisuals: boolean
+  withVisuals: boolean,
+  withGameplay: boolean,
+  enemyTuning: EnemyPressureTuning
 ): Promise<ExecuteStart> {
   return jsonRequest<ExecuteStart>("/api/execute", {
     method: "POST",
@@ -69,6 +77,8 @@ export function startExecute(
       engine,
       with_assets: withAssets,
       with_visuals: withVisuals,
+      with_gameplay: withGameplay,
+      enemy_tuning: enemyTuning,
       confirmed: true
     })
   });
@@ -81,4 +91,15 @@ export function getExecuteJob(jobId: string): Promise<ExecuteJob> {
 export function getMcpStatus(engine: string): Promise<McpStatus> {
   const query = new URLSearchParams({ engine });
   return jsonRequest<McpStatus>(`/api/mcp/status?${query.toString()}`);
+}
+
+
+export function writeApprovalManifest(
+  review: CreativeReview,
+  decisions: Record<string, string>
+): Promise<ApprovalManifestResponse> {
+  return jsonRequest<ApprovalManifestResponse>("/api/creative-review/approval-manifest", {
+    method: "POST",
+    body: JSON.stringify({ review, decisions })
+  });
 }

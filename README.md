@@ -271,11 +271,11 @@ curl -X POST http://127.0.0.1:8000/plan `
 - Creative Review 审阅关卡已经接入 Director 流水线。
 - 真实工具执行仍然受显式执行确认控制。
 - M6b 敌人系统已经从 Gameplay DSL 接到 Godot 原型，支持 patrol/chase/stationary/ranged 灰盒敌人。
+- M6c 敌人压力指标与调参已经接入执行链和 Studio 生成面板。
+- Creative Review 决策已经可以写入 `generated/asset-approval-manifest.yaml`。
 
 下一步优先级：
 
-- 将 M6b 敌人压力接入更丰富的 playtest 指标与调参面板。
-- 将审阅决定持久化为 approval manifest。
 - 将已确认的 ComfyUI 和 Blender 执行接入 Studio。
 - 将已批准资产自动进入 Unreal 或 Godot 导入。
 - 通过受控 MCP 执行确认运行真实 PIE、Godot headless import 和 packaged playtest。

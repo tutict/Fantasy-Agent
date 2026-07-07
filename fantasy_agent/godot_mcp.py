@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from fantasy_agent.contracts import (
+    EnemyPressureTuning,
     GameplaySpec,
     GodotMCPCreateProjectRequest,
     GodotMCPResult,
@@ -100,7 +101,11 @@ class GodotMCPBridge:
         written_files: list[str] = []
         if request.write_files:
             written_files = self._write_project_artifact(
-                artifact, request.plan, request.gameplay_spec, request.gameplay_scripts
+                artifact,
+                request.plan,
+                request.gameplay_spec,
+                request.gameplay_scripts,
+                request.enemy_tuning,
             )
         return GodotMCPResult(
             status="written" if request.write_files else "planned",
@@ -287,8 +292,10 @@ class GodotMCPBridge:
         plan: GodotProjectPlan,
         gameplay_spec: GameplaySpec | None = None,
         gameplay_scripts: dict[str, str] | None = None,
+        enemy_tuning: EnemyPressureTuning | None = None,
     ) -> list[str]:
         gameplay_scripts = gameplay_scripts or {}
+        enemy_tuning = enemy_tuning or EnemyPressureTuning()
         project_dir = self._resolve_workspace_path(artifact.project_dir)
         project_dir.mkdir(parents=True, exist_ok=True)
         for folder in plan.folders:
@@ -317,7 +324,12 @@ class GodotMCPBridge:
         has_gameplay = bool(gameplay_scripts)
         self._write_text(
             self._resolve_workspace_path(main_script),
-            _main_gd(plan, gameplay_spec, with_gameplay=has_gameplay),
+            _main_gd(
+                plan,
+                gameplay_spec,
+                with_gameplay=has_gameplay,
+                enemy_tuning=enemy_tuning,
+            ),
         )
         # Player controller: use the generated script if provided, else template.
         player_src = gameplay_scripts.get("scripts/player_controller.gd")
@@ -607,12 +619,21 @@ func _spawn_enemies(gm: Node) -> void:
     var enemies: Array = HANDOFF["gameplay"].get("enemies", [])
     if enemies.is_empty():
         return
+    var tuning: Dictionary = HANDOFF["gameplay"].get("enemy_tuning", {})
+    var count_multiplier := float(tuning.get("enemy_count_multiplier", 1.0))
+    var speed_multiplier := float(tuning.get("move_speed_multiplier", 1.0))
+    var detection_multiplier := float(tuning.get("detection_radius_multiplier", 1.0))
+    var patrol_multiplier := float(tuning.get("patrol_radius_multiplier", 1.0))
+    var ranged_interval_multiplier := float(tuning.get("ranged_interval_multiplier", 1.0))
     var enemy_script := load("res://scripts/enemy_controller.gd")
     if enemy_script == null:
         return
     var spawned := 0
     for enemy in enemies:
-        var count := int(enemy.get("count", 1))
+        var base_count := int(enemy.get("count", 1))
+        var count := 0
+        if count_multiplier > 0.0:
+            count = max(1, int(round(float(base_count) * count_multiplier)))
         for _i in range(count):
             var instance: Area3D = enemy_script.new()
             var behavior := str(enemy.get("behavior", "patrol"))
@@ -621,6 +642,18 @@ func _spawn_enemies(gm: Node) -> void:
             instance.position = _enemy_spawn_position(spawned)
             if instance.has_method("setup"):
                 instance.setup(enemy_name, behavior, int(enemy.get("hp", 3)), gm)
+            var move_speed_value = instance.get("move_speed")
+            if move_speed_value != null:
+                instance.set("move_speed", float(move_speed_value) * speed_multiplier)
+            var detection_radius_value = instance.get("detection_radius")
+            if detection_radius_value != null:
+                instance.set("detection_radius", float(detection_radius_value) * detection_multiplier)
+            var patrol_radius_value = instance.get("patrol_radius")
+            if patrol_radius_value != null:
+                instance.set("patrol_radius", float(patrol_radius_value) * patrol_multiplier)
+            var ranged_interval_value = instance.get("ranged_interval")
+            if ranged_interval_value != null:
+                instance.set("ranged_interval", float(ranged_interval_value) * ranged_interval_multiplier)
             _decorate_enemy(instance, behavior)
             add_child(instance)
             spawned += 1
@@ -666,6 +699,7 @@ def _main_gd(
     gameplay_spec: GameplaySpec | None = None,
     *,
     with_gameplay: bool = False,
+    enemy_tuning: EnemyPressureTuning | None = None,
 ) -> str:
     handoff: dict[str, Any] = {
         "project_name": plan.project_name,
@@ -673,6 +707,7 @@ def _main_gd(
         "input_actions": plan.input_actions,
     }
     if gameplay_spec is not None:
+        enemy_tuning = enemy_tuning or EnemyPressureTuning()
         handoff["gameplay"] = {
             "title": gameplay_spec.title,
             "core_loop_steps": len(gameplay_spec.core_loop),
@@ -680,6 +715,7 @@ def _main_gd(
             "failure_states": gameplay_spec.failure_states,
             "level_beats": [beat.name for beat in gameplay_spec.level_beats],
             "enemies": [enemy.model_dump(mode="json") for enemy in gameplay_spec.enemies],
+            "enemy_tuning": enemy_tuning.model_dump(mode="json"),
         }
     payload = json.dumps(handoff, ensure_ascii=False, indent=2)
     route_body = _route_body_from_spec(gameplay_spec)

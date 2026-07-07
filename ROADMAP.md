@@ -60,6 +60,8 @@
 - 运行结构校验与可选 headless import。
 - 将 Godot 作为轻量 playability 验证目标，而不是替代 Unreal 主线。
 - M6b 敌人系统：`GameplaySpec.enemies`、Godot `enemy_controller.gd`、路线敌人生成和失败联动已完成第一轮垂直切片。
+- M6c 敌人压力：执行链生成 deterministic enemy pressure report，Studio 可调敌人数、速度、侦测、巡逻和远程间隔倍率。
+- Approval manifest：Creative Review 决策可持久化到 `generated/asset-approval-manifest.yaml`，继续阻塞未经批准的资产导入。
 
 ## 第七阶段：可玩原型自动化
 

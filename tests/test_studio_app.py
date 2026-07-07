@@ -212,3 +212,32 @@ def test_execute_starts_job_and_polls(monkeypatch):
 def test_execute_status_unknown_job():
     module = _load_studio_app()
     assert module.execute_status("nope")["status"] == "unknown"
+
+
+def test_write_approval_manifest_api_writes_generated_yaml(monkeypatch, tmp_path):
+    module = _load_studio_app()
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.workflows import run_director_workflow
+
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+    review = plan.creative_review
+    first = review.items[0].asset_id
+    second = review.items[1].asset_id
+    req = module.ApprovalManifestRequest(
+        review=review,
+        decisions={first: "approved", second: "needs_revision"},
+    )
+
+    response = module.write_approval_manifest(req)
+
+    assert response.status == "written"
+    assert response.manifest_path == "generated/asset-approval-manifest.yaml"
+    output = tmp_path / response.manifest_path
+    assert output.exists()
+    text = output.read_text(encoding="utf-8")
+    assert "approved_asset_ids:" in text
+    assert first in text
+    assert second in response.manifest.revision_asset_ids

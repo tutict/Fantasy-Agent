@@ -5,7 +5,8 @@ import {
   getManualCorrectionTargets,
   openManualCorrectionTarget as openManualCorrectionTargetApi,
   previewExecute,
-  startExecute
+  startExecute,
+  writeApprovalManifest
 } from "../shared/api";
 import { consoleI18n, makeTranslator } from "../shared/i18n";
 import {
@@ -20,6 +21,7 @@ import {
 import type {
   CorrectionMode,
   DirectorBuildPlan,
+  EnemyPressureTuning,
   ExecuteResult,
   Locale,
   ManualCorrectionTarget,
@@ -57,6 +59,14 @@ const correctionModeManualTargets: Record<CorrectionMode, string> = {
   visuals: "comfyui",
   scope: "planning",
   import: "engine"
+};
+
+const defaultEnemyTuning: EnemyPressureTuning = {
+  enemy_count_multiplier: 1.0,
+  move_speed_multiplier: 1.0,
+  detection_radius_multiplier: 1.0,
+  patrol_radius_multiplier: 1.0,
+  ranged_interval_multiplier: 1.0
 };
 
 const manualTargetKeys: Record<string, { label: string; detail: string }> = {
@@ -99,9 +109,12 @@ export function FlowConsole() {
   const [logOpen, setLogOpen] = useState(true);
   const [withAssets, setWithAssets] = useState(false);
   const [withVisuals, setWithVisuals] = useState(false);
+  const [withGameplay, setWithGameplay] = useState(false);
+  const [enemyTuning, setEnemyTuning] = useState<EnemyPressureTuning>(defaultEnemyTuning);
   const [generateEffects, setGenerateEffects] = useState<string[] | null>(null);
   const [generateResult, setGenerateResult] = useState<ExecuteResult | null>(null);
   const [pollJobId, setPollJobId] = useState<string | null>(null);
+  const [approvalManifestPath, setApprovalManifestPath] = useState<string>("");
 
   const t = useMemo(() => makeTranslator(locale, consoleI18n), [locale]);
   const titleForPlan = useCallback((plan: DirectorBuildPlan) => preferredTitle(plan, locale, t), [locale, t]);
@@ -146,6 +159,11 @@ export function FlowConsole() {
 
   const targets = manualTargetsPayload?.targets?.length ? manualTargetsPayload.targets : fallbackManualTargets();
   const recommendedTarget = targets.find((target) => target.id === recommendedManualTargetId()) || targets[0];
+  const enemies = currentPlan?.gameplay_spec?.enemies || [];
+
+  const setEnemyTuningValue = useCallback((key: keyof EnemyPressureTuning, value: number) => {
+    setEnemyTuning((current) => ({ ...current, [key]: value }));
+  }, []);
 
   const loadManualTargets = useCallback(async () => {
     try {
@@ -296,7 +314,14 @@ export function FlowConsole() {
       return;
     }
     try {
-      const preview = await previewExecute(currentPlan, usesGodotEngine(currentPlan) ? "godot" : "unreal", withAssets, withVisuals);
+      const preview = await previewExecute(
+        currentPlan,
+        usesGodotEngine(currentPlan) ? "godot" : "unreal",
+        withAssets,
+        withVisuals,
+        withGameplay,
+        enemyTuning
+      );
       setGenerateEffects(preview.planned_side_effects || []);
     } catch (error) {
       setStatus("error");
@@ -311,7 +336,14 @@ export function FlowConsole() {
     setStatus("running");
     addActivity(t("generateRunning"), "");
     try {
-      const started = await startExecute(currentPlan, usesGodotEngine(currentPlan) ? "godot" : "unreal", withAssets, withVisuals);
+      const started = await startExecute(
+        currentPlan,
+        usesGodotEngine(currentPlan) ? "godot" : "unreal",
+        withAssets,
+        withVisuals,
+        withGameplay,
+        enemyTuning
+      );
       if (started.job_id) {
         setPollJobId(started.job_id);
       } else {
@@ -321,6 +353,22 @@ export function FlowConsole() {
     } catch (error) {
       setStatus("error");
       addActivity(t("generateFailed"), String(error));
+    }
+  };
+
+  const onWriteApprovalManifest = async () => {
+    if (!currentPlan?.creative_review) {
+      setStatus("error");
+      addActivity(t("approvalManifestFailed"), t("noItems"));
+      return;
+    }
+    try {
+      const response = await writeApprovalManifest(currentPlan.creative_review, reviewDecisions);
+      setApprovalManifestPath(response.manifest_path || "");
+      addActivity(t("approvalManifestWritten"), response.manifest_path || "");
+    } catch (error) {
+      setStatus("error");
+      addActivity(t("approvalManifestFailed"), String(error));
     }
   };
 
@@ -512,7 +560,48 @@ export function FlowConsole() {
               <label>
                 <input type="checkbox" id="generate-with-visuals" checked={withVisuals} onChange={(event) => setWithVisuals(event.target.checked)} /> <span>{t("generateWithVisuals")}</span>
               </label>
+              <label>
+                <input type="checkbox" id="generate-with-gameplay" checked={withGameplay} onChange={(event) => setWithGameplay(event.target.checked)} /> <span>{t("generateWithGameplay")}</span>
+              </label>
             </div>
+            {withGameplay ? (
+              <div className="enemy-tuning-panel">
+                <div>
+                  <strong>{t("enemyPressureTitle")}</strong>
+                  <p>{t("enemyPressureHint")}</p>
+                </div>
+                <div className="enemy-roster">
+                  {enemies.length ? enemies.map((enemy, index) => (
+                    <span className="enemy-chip" key={`${enemy.name || "enemy"}-${index}`}>
+                      {enemy.name || t("enemyFallbackName")} / {enemy.behavior || "patrol"} x{enemy.count || 1}
+                    </span>
+                  )) : <span className="enemy-chip">{t("enemyRosterEmpty")}</span>}
+                </div>
+                <div className="tuning-grid">
+                  {(
+                    [
+                      ["enemy_count_multiplier", "enemyCountMultiplier", 0, 3],
+                      ["move_speed_multiplier", "enemySpeedMultiplier", 0.25, 3],
+                      ["detection_radius_multiplier", "enemyDetectionMultiplier", 0.25, 3],
+                      ["patrol_radius_multiplier", "enemyPatrolMultiplier", 0.25, 3],
+                      ["ranged_interval_multiplier", "enemyRangedIntervalMultiplier", 0.25, 3]
+                    ] as Array<[keyof EnemyPressureTuning, string, number, number]>
+                  ).map(([key, labelKey, min, max]) => (
+                    <label className="tuning-field" key={key}>
+                      <span>{t(labelKey)}</span>
+                      <input
+                        type="number"
+                        min={min}
+                        max={max}
+                        step="0.05"
+                        value={enemyTuning[key]}
+                        onChange={(event) => setEnemyTuningValue(key, Number(event.target.value))}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <button className="primary-action" type="button" id="generate-demo-button" disabled={status === "running"} onClick={() => void onGenerateClick()}>
               {t("generateButton")}
             </button>
@@ -539,6 +628,7 @@ export function FlowConsole() {
                     <span className="mcp-state">{stage.status}</span>
                   </div>
                   <p>{stage.detail}</p>
+                  {stage.artifacts?.length ? <code>{stage.artifacts.join(", ")}</code> : null}
                 </article>
               ))}
               {generateResult?.project_dir ? (
@@ -625,6 +715,8 @@ export function FlowConsole() {
                   setReviewDecisions((decisions) => ({ ...decisions, [assetId]: decision }));
                   addActivity(t("reviewDecision"), `${assetId}: ${statusLabel(decision, t)}`);
                 }}
+                manifestPath={approvalManifestPath}
+                onWriteManifest={() => void onWriteApprovalManifest()}
                 t={t}
               />
             </Panel>

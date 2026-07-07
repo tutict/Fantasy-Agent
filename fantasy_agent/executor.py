@@ -17,12 +17,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+import json
 from typing import Any
 
 from fantasy_agent.contracts import (
     BlenderMCPExecuteRequest,
     ComfyUIMCPExecuteRequest,
     DirectorBuildPlan,
+    EnemyPressureReport,
+    EnemyPressureTuning,
     GodotMCPCreateProjectRequest,
     GodotMCPRunImportRequest,
     GodotMCPValidateProjectRequest,
@@ -84,6 +87,9 @@ def _planned_side_effects(
         effects.append(
             "Generate real playable GDScript (player mechanics + win/fail + HUD) "
             "from the gameplay spec"
+        )
+        effects.append(
+            "Apply enemy pressure tuning and write a deterministic enemy pressure report"
         )
     if with_visuals:
         effects.append(
@@ -229,6 +235,64 @@ def _run_blender_stage(
     return exported
 
 
+def _build_enemy_pressure_report(
+    plan: DirectorBuildPlan,
+    tuning: EnemyPressureTuning,
+) -> EnemyPressureReport:
+    weights = {"patrol": 1.0, "chase": 1.4, "stationary": 0.8, "ranged": 1.2}
+    behavior_counts = {"patrol": 0, "chase": 0, "stationary": 0, "ranged": 0}
+    weighted = 0.0
+    tuned_enemy_count = 0
+    for enemy in plan.gameplay_spec.enemies:
+        base_count = enemy.count
+        if tuning.enemy_count_multiplier == 0:
+            tuned_count = 0
+        else:
+            tuned_count = max(1, round(base_count * tuning.enemy_count_multiplier))
+        behavior_counts[enemy.behavior] += int(tuned_count)
+        tuned_enemy_count += int(tuned_count)
+        weighted += weights[enemy.behavior] * int(tuned_count)
+    if tuned_enemy_count:
+        speed_factor = (tuning.move_speed_multiplier + tuning.detection_radius_multiplier) / 2.0
+        ranged_factor = 1.0 / tuning.ranged_interval_multiplier
+        pressure_score = round(weighted * speed_factor * ranged_factor, 2)
+    else:
+        pressure_score = 0.0
+    warnings: list[str] = []
+    if pressure_score >= 10.0:
+        warnings.append("High enemy pressure; verify the slice still teaches before punishing.")
+    if tuning.enemy_count_multiplier == 0 and plan.gameplay_spec.enemies:
+        warnings.append("Enemy roster exists but tuning disables all enemy instances.")
+    metrics: dict[str, float | int | str] = {
+        "declared_enemy_groups": len(plan.gameplay_spec.enemies),
+        "tuned_enemy_count": tuned_enemy_count,
+        "pressure_band": "none" if pressure_score == 0 else "high" if pressure_score >= 10 else "medium" if pressure_score >= 5 else "low",
+    }
+    return EnemyPressureReport(
+        enemy_count=tuned_enemy_count,
+        behavior_counts=behavior_counts,
+        pressure_score=pressure_score,
+        tuning=tuning,
+        metrics=metrics,
+        warnings=warnings,
+    )
+
+
+def _write_enemy_pressure_report(
+    report: EnemyPressureReport,
+    project_dir: str,
+    workspace_root: Path | str,
+) -> str:
+    report_rel = (Path(project_dir) / "data" / "enemy-pressure-report.json").as_posix()
+    report_path = Path(workspace_root) / report_rel
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(report.model_dump(mode="json"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    return report_rel
+
+
 def _run_gameplay_codegen(
     plan: DirectorBuildPlan, stages: list[StageResult]
 ) -> tuple[dict[str, str], bool]:
@@ -271,6 +335,7 @@ def execute_godot_demo(
     with_visuals: bool = False,
     comfyui_endpoint: str | None = None,
     with_gameplay: bool = False,
+    enemy_tuning: EnemyPressureTuning | None = None,
     bridge: GodotMCPBridge | None = None,
     blender_bridge: Any | None = None,
     comfyui_bridge: Any | None = None,
@@ -294,6 +359,7 @@ def execute_godot_demo(
             images and copy them into references/comfyui/. On any failure the
             run continues without references (the chain is not broken).
         comfyui_endpoint: Optional ComfyUI endpoint override.
+        enemy_tuning: Enemy pressure multipliers for generated Godot enemies.
         bridge: Optional pre-built GodotMCPBridge (for testing).
         blender_bridge: Optional pre-built BlenderMCPBridge (for testing).
         comfyui_bridge: Optional pre-built ComfyUIMCPBridge (for testing).
@@ -302,6 +368,7 @@ def execute_godot_demo(
         ExecutionResult with per-stage status, artifacts, and logs.
     """
 
+    enemy_tuning = enemy_tuning or EnemyPressureTuning()
     project_dir = _session_project_dir(session_id, plan.godot_plan.project_name)
     planned = _planned_side_effects(
         plan,
@@ -360,6 +427,7 @@ def execute_godot_demo(
             write_files=True,
             gameplay_spec=plan.gameplay_spec,
             gameplay_scripts=gameplay_scripts,
+            enemy_tuning=enemy_tuning,
         )
     )
     if create.status != "written" or create.artifact is None:
@@ -377,6 +445,23 @@ def execute_godot_demo(
     )
 
     project_file = create.artifact.project_file
+
+    if with_gameplay:
+        enemy_report = _build_enemy_pressure_report(plan, enemy_tuning)
+        report_path = _write_enemy_pressure_report(enemy_report, project_dir, workspace_root)
+        detail = (
+            f"{enemy_report.enemy_count} enemies, pressure_score="
+            f"{enemy_report.pressure_score}, band={enemy_report.metrics.get('pressure_band')}"
+        )
+        stages.append(
+            StageResult(
+                "enemy_metrics",
+                "done",
+                detail=detail,
+                artifacts=[report_path],
+                logs=enemy_report.warnings,
+            )
+        )
 
     # Stage 1b (optional): copy exported glb assets into the project so the
     # import step picks them up and runtime load() calls resolve.
@@ -452,6 +537,7 @@ def execute_godot_demo(
                     write_files=True,
                     gameplay_spec=plan.gameplay_spec,
                     gameplay_scripts=fallback,
+                    enemy_tuning=enemy_tuning,
                 )
             )
             reimport = bridge.run_godot_import(

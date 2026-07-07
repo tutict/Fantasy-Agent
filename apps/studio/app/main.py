@@ -13,7 +13,7 @@ from urllib import error, request
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from fantasy_agent.chatgpt_app import (
     SERVER_NAME,
@@ -26,13 +26,20 @@ from fantasy_agent.chatgpt_app import (
     widget_resource_meta,
 )
 from fantasy_agent.contracts import (
+    AssetApprovalManifest,
+    CreativeReviewReport,
     DirectorBuildPlan,
     DirectorTaskBreakdown,
+    EnemyPressureTuning,
     PromptRequest,
     default_comfyui_endpoint_candidates,
 )
 from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
-from fantasy_agent.workflows import decompose_production_tasks, run_director_workflow
+from fantasy_agent.workflows import (
+    build_asset_approval_manifest,
+    decompose_production_tasks,
+    run_director_workflow,
+)
 
 APP_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = APP_DIR.parents[1]
@@ -66,16 +73,33 @@ class ManualCorrectionOpenRequest(BaseModel):
     confirmed_side_effects: bool = False
 
 
+
+
+class ApprovalManifestRequest(BaseModel):
+    review: CreativeReviewReport
+    decisions: dict[str, str] = Field(default_factory=dict)
+
+
+class ApprovalManifestResponse(BaseModel):
+    status: str
+    manifest_path: str
+    manifest: AssetApprovalManifest
+
+
 class ExecuteDemoRequest(BaseModel):
     plan: DirectorBuildPlan
     engine: str = ""  # inferred from plan when empty
     with_assets: bool = False
     with_visuals: bool = False
+    with_gameplay: bool = False
+    enemy_tuning: EnemyPressureTuning = Field(default_factory=EnemyPressureTuning)
     confirmed: bool = False
 
 
 # DirectorBuildPlan is imported from another module; ensure the forward
 # reference is resolved so this model is fully defined.
+ApprovalManifestRequest.model_rebuild()
+ApprovalManifestResponse.model_rebuild()
 ExecuteDemoRequest.model_rebuild()
 
 
@@ -611,7 +635,33 @@ def _build_execution_result(req: ExecuteDemoRequest, *, confirmed: bool):
         with_assets=req.with_assets,
         blender_exe=_find_blender() or "blender",
         with_visuals=req.with_visuals,
+        with_gameplay=req.with_gameplay,
+        enemy_tuning=req.enemy_tuning,
     )
+
+
+def _approval_manifest_path() -> Path:
+    path = REPO_ROOT / "generated" / "asset-approval-manifest.yaml"
+    resolved = path.resolve()
+    generated_root = (REPO_ROOT / "generated").resolve()
+    if generated_root not in resolved.parents and resolved != generated_root:
+        raise RuntimeError("approval manifest path must stay under generated/")
+    return resolved
+
+
+@app.post("/api/creative-review/approval-manifest", response_model=ApprovalManifestResponse)
+def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestResponse:
+    import yaml
+
+    manifest = build_asset_approval_manifest(req.review, req.decisions)
+    path = _approval_manifest_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    rel = path.relative_to(REPO_ROOT).as_posix()
+    return ApprovalManifestResponse(status="written", manifest_path=rel, manifest=manifest)
 
 
 def _run_execution_job(job_id: str, req: ExecuteDemoRequest) -> None:

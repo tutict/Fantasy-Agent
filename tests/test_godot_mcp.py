@@ -140,7 +140,7 @@ def test_godot_mcp_rejects_paths_outside_generated_godot(tmp_path: Path):
 
 def test_create_with_gameplay_scripts_writes_enemy_controller(tmp_path: Path):
     from fantasy_agent.generation import design_from_prompt_deterministic
-    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.contracts import EnemyPressureTuning, PromptRequest
     from fantasy_agent.gameplay_codegen import deterministic_gameplay_scripts
 
     spec = design_from_prompt_deterministic(PromptRequest(prompt="rooftop parkour chase"))
@@ -153,11 +153,19 @@ def test_create_with_gameplay_scripts_writes_enemy_controller(tmp_path: Path):
             write_files=True,
             gameplay_spec=spec,
             gameplay_scripts=scripts,
+            enemy_tuning=EnemyPressureTuning(
+                enemy_count_multiplier=1.5,
+                move_speed_multiplier=1.25,
+                detection_radius_multiplier=1.1,
+            ),
         )
     )
 
     assert "generated/godot/mcpprototype/scripts/enemy_controller.gd" in result.written_files
     main = (tmp_path / "generated/godot/mcpprototype/scripts/main.gd").read_text(encoding="utf-8")
     assert '"enemies"' in main
+    assert '"enemy_count_multiplier": 1.5' in main
+    assert "count_multiplier" in main
+    assert "move_speed_value" in main
     assert "_spawn_enemies(gm)" in main
     assert 'player.add_to_group("player")' in main
