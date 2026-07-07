@@ -188,6 +188,16 @@ class LevelBeat(StrictModel):
     success_condition: str
 
 
+EnemyBehavior = Literal["patrol", "chase", "stationary", "ranged"]
+
+
+class EnemySpec(StrictModel):
+    name: str
+    behavior: EnemyBehavior = "patrol"
+    hp: int = Field(default=3, ge=1)
+    count: int = Field(default=1, ge=1, le=12)
+
+
 class GameplaySpec(StrictModel):
     schema_version: str = "0.1"
     title: str
@@ -207,6 +217,7 @@ class GameplaySpec(StrictModel):
     notes_for_unreal: list[str]
     notes_for_blender: list[str]
     notes_for_comfyui: list[str]
+    enemies: list[EnemySpec] = Field(default_factory=list)
     i18n: I18nBundle | None = None
 
 

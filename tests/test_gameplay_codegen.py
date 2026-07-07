@@ -1,4 +1,4 @@
-"""Tests for gameplay GDScript generation (M6a)."""
+"""Tests for gameplay GDScript generation (M6a/M6b)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ from unittest import mock
 
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.gameplay_codegen import (
+    ENEMY_SCRIPT,
     GAME_MANAGER_SCRIPT,
     PLAYER_SCRIPT,
     deterministic_gameplay_scripts,
@@ -38,6 +39,17 @@ def test_deterministic_game_manager_has_win_fail_hud():
     assert "_win" in gm and "_fail" in gm
     assert "Label" in gm  # HUD
     assert "reload_current_scene" in gm
+    assert "func fail_from_enemy" in gm
+
+
+def test_deterministic_enemy_controller_has_m6b_behaviors():
+    scripts = deterministic_gameplay_scripts(_parkour_spec())
+    enemy = scripts[ENEMY_SCRIPT]
+    assert enemy.startswith("extends Area3D")
+    for behavior in ["patrol", "chase", "stationary", "ranged"]:
+        assert behavior in enemy
+    assert "fail_from_enemy" in enemy
+    assert 'get_first_node_in_group("player")' in enemy
 
 
 def test_generate_uses_llm_when_available():
@@ -59,6 +71,7 @@ def test_generate_falls_back_when_llm_returns_invalid():
         scripts = generate_gameplay_scripts(spec, use_llm=True)
     # Deterministic fallback markers present.
     assert "[SPRINT]" in scripts[PLAYER_SCRIPT]
+    assert ENEMY_SCRIPT in scripts
 
 
 def test_generate_falls_back_when_llm_raises():
@@ -68,6 +81,7 @@ def test_generate_falls_back_when_llm_raises():
     with mock.patch("fantasy_agent.llm.complete_json", side_effect=llm.LLMError("boom")):
         scripts = generate_gameplay_scripts(spec, use_llm=True)
     assert "func reach_exit" in scripts[GAME_MANAGER_SCRIPT]
+    assert "fail_from_enemy" in scripts[GAME_MANAGER_SCRIPT]
 
 
 def test_default_path_is_deterministic_without_flag(monkeypatch):

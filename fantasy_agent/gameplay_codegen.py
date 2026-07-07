@@ -1,17 +1,17 @@
-"""Generate real playable GDScript from a GameplaySpec (M6a).
+"""Generate real playable GDScript from a GameplaySpec (M6a/M6b).
 
 Two paths:
 - LLM (llm.complete_json): asks the model to implement the spec's core_verbs as
   a CharacterBody3D controller and the win/fail states as a game_manager with a
   Label-based HUD. Returns {filename: gdscript}.
 - Deterministic fallback: axis-aware templates that are richer than the old
-  WASD+jump greybox (e.g. parkour gets wall-run/slide/sprint), so the demo is
-  always playable even without an LLM.
+  WASD+jump greybox (e.g. parkour gets wall-run/slide/sprint) plus simple M6b
+  enemies, so the demo is always playable even without an LLM.
 
 The executor validates LLM output via a real Godot headless import and falls
 back to the deterministic scripts if the import reports script errors.
 
-M6a scope: player mechanics + win/fail + HUD. Enemies are M6b.
+M6b scope: declared enemies get simple greybox behavior and fail-state pressure.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # Filenames the executor mounts; keep stable so the scene wiring matches.
 PLAYER_SCRIPT = "scripts/player_controller.gd"
 GAME_MANAGER_SCRIPT = "scripts/game_manager.gd"
+ENEMY_SCRIPT = "scripts/enemy_controller.gd"
 
 
 def generate_gameplay_scripts(
@@ -78,6 +79,7 @@ def deterministic_gameplay_scripts(spec: GameplaySpec) -> dict[str, str]:
     return {
         PLAYER_SCRIPT: _player_controller(axis),
         GAME_MANAGER_SCRIPT: _game_manager(spec),
+        ENEMY_SCRIPT: _enemy_controller(),
     }
 
 
@@ -181,6 +183,12 @@ func reach_exit() -> void:
     _win()
 
 
+func fail_from_enemy(reason: String) -> void:
+    if _ended:
+        return
+    _fail(reason)
+
+
 func _win() -> void:
     _ended = true
     _update_hud("WIN — {win}")
@@ -204,6 +212,102 @@ func _update_hud(text: String) -> void:
 '''
 
 
+def _enemy_controller() -> str:
+    return """extends Area3D
+
+@export var behavior := "patrol"      # [ENEMY_BEHAVIOR]
+@export var hp := 3                   # [ENEMY_HP]
+@export var move_speed := 2.4         # [ENEMY_MOVE_SPEED]
+@export var patrol_radius := 2.5      # [PATROL_RADIUS]
+@export var detection_radius := 6.0   # [DETECTION_RADIUS]
+@export var ranged_interval := 1.6    # [RANGED_INTERVAL]
+
+var _origin := Vector3.ZERO
+var _direction := 1.0
+var _ranged_timer := 0.0
+var _player: Node3D
+var _game_manager: Node
+var _label := ""
+
+
+func setup(enemy_name: String, enemy_behavior: String, enemy_hp: int, game_manager: Node) -> void:
+    _label = enemy_name
+    behavior = enemy_behavior
+    hp = enemy_hp
+    _game_manager = game_manager
+
+
+func _ready() -> void:
+    _origin = global_position
+    monitoring = true
+    body_entered.connect(_on_body_entered)
+
+
+func _physics_process(delta: float) -> void:
+    if _player == null:
+        _player = get_tree().get_first_node_in_group("player")
+    match behavior:
+        "chase":
+            _chase(delta)
+        "patrol":
+            _patrol(delta)
+        "ranged":
+            _ranged(delta)
+        "stationary":
+            _stationary()
+        _:
+            _patrol(delta)
+
+
+func _patrol(delta: float) -> void:
+    position.x += _direction * move_speed * delta
+    if abs(position.x - _origin.x) >= patrol_radius:
+        _direction *= -1.0
+    _fail_if_player_close("Patrol caught the player")
+
+
+func _chase(delta: float) -> void:
+    if _player == null:
+        return
+    var offset := _player.global_position - global_position
+    if offset.length() <= detection_radius:
+        global_position += offset.normalized() * move_speed * delta
+    _fail_if_player_close("Chaser reached the player")
+
+
+func _stationary() -> void:
+    _fail_if_player_close("Sentry zone was breached")
+
+
+func _ranged(delta: float) -> void:
+    if _player == null:
+        return
+    var distance := global_position.distance_to(_player.global_position)
+    if distance > detection_radius:
+        return
+    _ranged_timer += delta
+    if _ranged_timer >= ranged_interval:
+        _ranged_timer = 0.0
+        _notify_failure("Ranged pressure pinned the player")
+
+
+func _fail_if_player_close(reason: String) -> void:
+    if _player != null and global_position.distance_to(_player.global_position) <= 1.15:
+        _notify_failure(reason)
+
+
+func _on_body_entered(body: Node) -> void:
+    if body.is_in_group("player") or body.name == "FA_Player":
+        _notify_failure("Enemy contact: " + _label)
+
+
+func _notify_failure(reason: String) -> void:
+    if _game_manager != null and _game_manager.has_method("fail_from_enemy"):
+        _game_manager.fail_from_enemy(reason)
+"""
+
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # LLM path
 # ──────────────────────────────────────────────────────────────────────────
@@ -212,16 +316,20 @@ def _build_codegen_system_prompt() -> str:
     return (
         "You generate Godot 4 GDScript for a playable 3D greybox prototype.\n\n"
         "Output ONLY a JSON object mapping filename to GDScript source:\n"
-        '{ "scripts/player_controller.gd": "...", "scripts/game_manager.gd": "..." }\n\n'
+        '{ "scripts/player_controller.gd": "...", "scripts/game_manager.gd": "...", '
+        '"scripts/enemy_controller.gd": "..." }\n\n'
         "Hard rules:\n"
         "- player_controller.gd: extends CharacterBody3D, implement EVERY core_verb "
         "as real movement (e.g. sprint/vault/wall-run/slide), using move_and_slide().\n"
         "- game_manager.gd: extends Node, implement the win_state and failure_states "
         "as real logic with a CanvasLayer+Label HUD; expose reach_exit() for the exit "
-        "gate to call; reload the scene a few seconds after win/fail.\n"
+        "gate to call; expose fail_from_enemy(reason) for enemy_controller.gd; reload "
+        "the scene a few seconds after win/fail.\n"
+        "- enemy_controller.gd: extends Area3D; implement only the declared enemies "
+        "with simple patrol/chase/stationary/ranged behavior and call "
+        "game_manager.fail_from_enemy(reason) on contact or ranged pressure.\n"
         "- Valid Godot 4 GDScript only (4-space indent, typed where natural). No @tool. "
         "No external resources. Tunables get a # [NAME] anchor comment.\n"
-        "- Do NOT spawn enemies (out of scope).\n"
         "- Output strictly the JSON object, no prose, no markdown fences."
     )
 
@@ -236,6 +344,7 @@ def _generate_with_llm(spec: GameplaySpec) -> dict[str, str]:
         "systems": [s.model_dump() for s in spec.systems],
         "win_state": spec.win_state,
         "failure_states": spec.failure_states,
+        "enemies": [e.model_dump() for e in spec.enemies],
     }
     user = (
         "Implement playable GDScript for this gameplay spec.\n\n"
@@ -245,7 +354,7 @@ def _generate_with_llm(spec: GameplaySpec) -> dict[str, str]:
     data = llm.complete_json(system=_build_codegen_system_prompt(), user=user, max_tokens=6000)
 
     scripts: dict[str, str] = {}
-    for name in (PLAYER_SCRIPT, GAME_MANAGER_SCRIPT):
+    for name in (PLAYER_SCRIPT, GAME_MANAGER_SCRIPT, ENEMY_SCRIPT):
         value = data.get(name)
         if not isinstance(value, str) or "extends" not in value:
             raise ValueError(f"LLM output missing valid GDScript for {name}")

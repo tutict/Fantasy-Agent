@@ -6,6 +6,7 @@ import os
 import re
 
 from fantasy_agent.contracts import (
+    EnemySpec,
     GameplaySpec,
     LevelBeat,
     LoopStep,
@@ -423,6 +424,51 @@ def _asset_needs_for_axis(axis: str) -> list[str]:
     ]
 
 
+def _prompt_mentions_enemy(prompt: str) -> bool:
+    text = prompt.lower()
+    return any(
+        term in text or term in prompt
+        for term in [
+            "enemy",
+            "enemies",
+            "monster",
+            "guard",
+            "drone",
+            "turret",
+            "pursuer",
+            "chase",
+            "hostile",
+            "敌人",
+            "怪物",
+            "追兵",
+            "哨兵",
+        ]
+    )
+
+
+def _enemies_for_axis(axis: str, prompt: str = "") -> list[EnemySpec]:
+    """Default enemy roster per mechanic axis. Empty where enemies don't fit."""
+    if axis == "stealth":
+        return [
+            EnemySpec(name="Patrol Guard", behavior="patrol", hp=3, count=3),
+            EnemySpec(name="Watch Sentry", behavior="stationary", hp=2, count=2),
+        ]
+    if axis == "combat":
+        return [
+            EnemySpec(name="Charger", behavior="chase", hp=4, count=3),
+            EnemySpec(name="Turret", behavior="ranged", hp=3, count=1),
+        ]
+    if axis == "survival":
+        return [EnemySpec(name="Stalker", behavior="chase", hp=3, count=2)]
+    if axis == "parkour":
+        return [EnemySpec(name="Pursuer Drone", behavior="chase", hp=2, count=1)]
+    # puzzle / mobility / career / systems: no combat enemies by default, unless
+    # the prompt explicitly asks for hostile pressure.
+    if _prompt_mentions_enemy(prompt):
+        return [EnemySpec(name="Pressure Drone", behavior="chase", hp=2, count=1)]
+    return []
+
+
 def design_from_prompt_deterministic(request: PromptRequest) -> GameplaySpec:
     """Create a scoped first-pass gameplay design without pretending assets exist.
 
@@ -499,6 +545,7 @@ def design_from_prompt_deterministic(request: PromptRequest) -> GameplaySpec:
         failure_states=failure_states,
         level_beats=_level_beats_for_axis(axis, target_minutes),
         asset_needs=_asset_needs_for_axis(axis),
+        enemies=_enemies_for_axis(axis, request.prompt),
         qa_focus=[
             "Can a new player finish in one to three attempts?",
             "Does every failure state explain itself?",
@@ -567,6 +614,14 @@ def _build_llm_system_prompt() -> str:
             "notes_for_unreal": ["str"],
             "notes_for_blender": ["str"],
             "notes_for_comfyui": ["str"],
+            "enemies": [
+                {
+                    "name": "str",
+                    "behavior": "patrol | chase | stationary | ranged",
+                    "hp": "int >=1",
+                    "count": "int 1-12",
+                }
+            ],
         },
         ensure_ascii=False,
         indent=2,
@@ -579,6 +634,7 @@ def _build_llm_system_prompt() -> str:
         "- core_loop, systems, and core_verbs must each have at least 3 entries.\n"
         "- design_pillars must have 3 to 5 entries.\n"
         "- Every mechanic must change a player decision and be testable in a greybox.\n"
+        "- Enemy rosters should be empty when enemies do not serve the loop; when present, keep count small and behavior readable.\n"
         "- Keep scope to one cohesive loop sized for the target session minutes.\n\n"
         "JSON shape (types are hints, not literals):\n"
         f"{schema_hint}"

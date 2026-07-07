@@ -458,8 +458,12 @@ def test_with_gameplay_generates_scripts_and_imports(tmp_path: Path):
     names = [s.name for s in result.stages]
     assert names[0] == "gameplay"
     assert names == ["gameplay", "create", "validate", "import"]
-    # game_manager.gd written into the project.
+    # Gameplay scripts, including M6b enemies, were written into the project.
     assert (tmp_path / result.project_dir / "scripts" / "game_manager.gd").exists()
+    assert (tmp_path / result.project_dir / "scripts" / "enemy_controller.gd").exists()
+    main = (tmp_path / result.project_dir / "scripts" / "main.gd").read_text(encoding="utf-8")
+    assert "_spawn_enemies(gm)" in main
+    assert "FA_Enemy_" in main
 
 
 def test_with_gameplay_degrades_to_deterministic_when_llm_unavailable(tmp_path: Path):
@@ -482,6 +486,9 @@ def test_with_gameplay_degrades_to_deterministic_when_llm_unavailable(tmp_path: 
         encoding="utf-8"
     )
     assert "[SPRINT]" in player
+    enemy = (tmp_path / result.project_dir / "scripts" / "enemy_controller.gd").read_text(encoding="utf-8")
+    assert "extends Area3D" in enemy
+    assert "fail_from_enemy" in enemy
 
 
 def test_with_gameplay_listed_in_confirmation_gate(tmp_path: Path):

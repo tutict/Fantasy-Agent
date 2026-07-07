@@ -142,3 +142,27 @@ def test_director_workflow_specializes_chinese_portfolio_godot_story():
     assert not any(stage.id == "unreal_production" for stage in plan.production_pipeline.stages)
     assert "雾外之路" in plan.gdd.markdown_by_locale["zh-CN"]
     assert "应聘门" in plan.gdd.markdown_by_locale["zh-CN"]
+
+
+
+def test_enemy_rosters_follow_axis_and_explicit_prompt():
+    stealth = run_director_workflow(
+        PromptRequest(prompt="a stealth courier escapes a haunted train station")
+    ).gameplay_spec
+    assert {enemy.behavior for enemy in stealth.enemies} >= {"patrol", "stationary"}
+
+    parkour = run_director_workflow(
+        PromptRequest(prompt="a rooftop parkour demo with a chase drone")
+    ).gameplay_spec
+    assert any(enemy.behavior == "chase" for enemy in parkour.enemies)
+
+    career = run_director_workflow(
+        PromptRequest(prompt="a portfolio story about choosing your own road")
+    ).gameplay_spec
+    assert career.enemies == []
+
+    explicit = run_director_workflow(
+        PromptRequest(prompt="a calm puzzle game with one hostile drone enemy")
+    ).gameplay_spec
+    assert len(explicit.enemies) == 1
+    assert explicit.enemies[0].behavior == "chase"

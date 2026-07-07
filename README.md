@@ -33,7 +33,7 @@
 - ComfyUI 视觉参考规划与受控 MCP 工作流准备。
 - Creative Review 审阅关卡，用于批准、修改或拒绝生成图片与模型。
 - Unreal 项目结构、资产导入、关卡组装、验证和测试计划。
-- Godot 快速可玩工程交接，用于轻量验证玩法循环。
+- Godot 快速可玩工程交接，用于轻量验证玩法循环；`--with-gameplay` 已包含 M6b 敌人灰盒压力。
 - ChatGPT Apps 兼容的只读工作台工具。
 - 面向冒烟测试、可玩性、失败反馈、打包和性能风险的 QA 计划。
 
@@ -270,9 +270,11 @@ curl -X POST http://127.0.0.1:8000/plan `
 - MCP 连接检测页已经能检测所需本地应用。
 - Creative Review 审阅关卡已经接入 Director 流水线。
 - 真实工具执行仍然受显式执行确认控制。
+- M6b 敌人系统已经从 Gameplay DSL 接到 Godot 原型，支持 patrol/chase/stationary/ranged 灰盒敌人。
 
 下一步优先级：
 
+- 将 M6b 敌人压力接入更丰富的 playtest 指标与调参面板。
 - 将审阅决定持久化为 approval manifest。
 - 将已确认的 ComfyUI 和 Blender 执行接入 Studio。
 - 将已批准资产自动进入 Unreal 或 Godot 导入。

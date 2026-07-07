@@ -59,6 +59,7 @@
 - 生成 `project.godot`、主场景、GDScript prototype 脚本和 import manifest。
 - 运行结构校验与可选 headless import。
 - 将 Godot 作为轻量 playability 验证目标，而不是替代 Unreal 主线。
+- M6b 敌人系统：`GameplaySpec.enemies`、Godot `enemy_controller.gd`、路线敌人生成和失败联动已完成第一轮垂直切片。
 
 ## 第七阶段：可玩原型自动化
 

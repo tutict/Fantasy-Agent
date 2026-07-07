@@ -304,6 +304,7 @@ class GodotMCPBridge:
         manifest_path = self._resolve_workspace_path(artifact.manifest_path)
         main_script = _script_path_by_name(artifact.script_paths, "main.gd")
         player_script = _script_path_by_name(artifact.script_paths, "player_controller.gd")
+        enemy_script = _script_path_by_name(artifact.script_paths, "enemy_controller.gd")
         if main_script is None:
             main_script = (Path(artifact.project_dir) / "scripts" / "main.gd").as_posix()
             artifact.script_paths.append(main_script)
@@ -330,6 +331,10 @@ class GodotMCPBridge:
             self._display_path(self._resolve_workspace_path(main_script)),
             self._display_path(self._resolve_workspace_path(player_script)),
         ]
+        if enemy_script and "scripts/enemy_controller.gd" not in gameplay_scripts:
+            resolved_enemy = self._resolve_workspace_path(enemy_script)
+            self._write_text(resolved_enemy, _enemy_controller_gd())
+            written.append(self._display_path(resolved_enemy))
         # Any extra generated scripts (e.g. game_manager.gd) beyond the player.
         for rel, source in gameplay_scripts.items():
             if rel == "scripts/player_controller.gd":
@@ -562,6 +567,7 @@ func _spawn_gameplay() -> void:
     if player_script != null:
         var player: CharacterBody3D = player_script.new()
         player.name = "FA_Player"
+        player.add_to_group("player")
         player.position = Vector3(-6.0, 1.0, 0.0)
         var col := CollisionShape3D.new()
         var caps := CapsuleShape3D.new()
@@ -592,6 +598,66 @@ func _spawn_gameplay() -> void:
             area.add_child(acol)
             exit.add_child(area)
             area.body_entered.connect(func(_b: Node) -> void: gm.reach_exit())
+        _spawn_enemies(gm)
+
+
+func _spawn_enemies(gm: Node) -> void:
+    if not HANDOFF.has("gameplay"):
+        return
+    var enemies: Array = HANDOFF["gameplay"].get("enemies", [])
+    if enemies.is_empty():
+        return
+    var enemy_script := load("res://scripts/enemy_controller.gd")
+    if enemy_script == null:
+        return
+    var spawned := 0
+    for enemy in enemies:
+        var count := int(enemy.get("count", 1))
+        for _i in range(count):
+            var instance: Area3D = enemy_script.new()
+            var behavior := str(enemy.get("behavior", "patrol"))
+            var enemy_name := str(enemy.get("name", "Enemy"))
+            instance.name = "FA_Enemy_%s_%02d" % [behavior, spawned]
+            instance.position = _enemy_spawn_position(spawned)
+            if instance.has_method("setup"):
+                instance.setup(enemy_name, behavior, int(enemy.get("hp", 3)), gm)
+            _decorate_enemy(instance, behavior)
+            add_child(instance)
+            spawned += 1
+
+
+func _enemy_spawn_position(index: int) -> Vector3:
+    # Distribute threats along the route, away from the player spawn and final exit.
+    var x := -2.0 + float(index) * 2.2
+    var z := -1.35 if index % 2 == 0 else 1.35
+    return Vector3(x, 0.85, z)
+
+
+func _decorate_enemy(enemy: Area3D, behavior: String) -> void:
+    var collision := CollisionShape3D.new()
+    var shape := SphereShape3D.new()
+    shape.radius = 0.75
+    collision.shape = shape
+    enemy.add_child(collision)
+
+    var mesh := MeshInstance3D.new()
+    var box := BoxMesh.new()
+    box.size = Vector3(0.8, 0.8, 0.8)
+    mesh.mesh = box
+    var color := MAT_HAZARD
+    if behavior == "stationary":
+        color = MAT_OBJECTIVE
+    elif behavior == "ranged":
+        color = MAT_EXIT
+    mesh.material_override = _material(color)
+    enemy.add_child(mesh)
+
+    var label := Label3D.new()
+    label.name = enemy.name + "_Label"
+    label.text = behavior
+    label.position = Vector3(0.0, 0.9, 0.0)
+    label.pixel_size = 0.03
+    enemy.add_child(label)
 '''
 
 
@@ -613,6 +679,7 @@ def _main_gd(
             "win_state": gameplay_spec.win_state,
             "failure_states": gameplay_spec.failure_states,
             "level_beats": [beat.name for beat in gameplay_spec.level_beats],
+            "enemies": [enemy.model_dump(mode="json") for enemy in gameplay_spec.enemies],
         }
     payload = json.dumps(handoff, ensure_ascii=False, indent=2)
     route_body = _route_body_from_spec(gameplay_spec)
@@ -754,6 +821,25 @@ func fantasy_agent_handoff() -> Dictionary:
         "notes": "Replace with gameplay-specific movement after the greybox loop is validated."
     }}
 '''
+
+
+
+def _enemy_controller_gd() -> str:
+    return """extends Area3D
+
+var _label := "Enemy"
+
+
+func setup(enemy_name: String, enemy_behavior: String, enemy_hp: int, game_manager: Node) -> void:
+    _label = enemy_name
+
+
+func fantasy_agent_handoff() -> Dictionary:
+    return {
+        "role": "prototype_enemy_controller",
+        "notes": "Generated when a plan declares enemy_controller.gd without a gameplay script pass."
+    }
+"""
 
 
 def _manifest(plan: GodotProjectPlan, artifact: GodotProjectArtifact) -> dict[str, Any]:
