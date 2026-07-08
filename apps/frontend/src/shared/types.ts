@@ -195,12 +195,25 @@ export interface ExecuteStart {
   engine?: string;
 }
 
+export interface ApprovalGateMetadata {
+  manifest_path?: string;
+  report_path?: string;
+  approved_assets?: string[];
+  skipped_assets?: string[];
+  approved_asset_ids?: string[];
+  revision_asset_ids?: string[];
+  rejected_asset_ids?: string[];
+  pending_asset_ids?: string[];
+  blocked_reason?: string;
+}
+
 export interface ExecuteStage {
   name?: string;
   status?: string;
   detail?: string;
   artifacts?: string[];
   logs?: string[];
+  metadata?: ApprovalGateMetadata & Record<string, unknown>;
 }
 
 export interface ExecuteResult {

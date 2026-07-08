@@ -50,6 +50,7 @@ class StageResult:
     detail: str = ""
     artifacts: list[str] = field(default_factory=list)
     logs: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -349,6 +350,45 @@ def _asset_planned_side_effects(
     return effects
 
 
+def _write_approval_gate_report(
+    approval: Any,
+    project_dir: str,
+    workspace_root: Path | str,
+) -> str:
+    import yaml
+
+    root = Path(workspace_root)
+    path = root / project_dir / "generated" / "approval-gate-report.yaml"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "source": "executor.approval-gate",
+        "schema_version": "0.1",
+        "manifest_path": approval.manifest_path,
+        "summary": {
+            "approved_count": len(approval.approved),
+            "skipped_count": len(approval.skipped),
+            "revision_count": len(approval.revision_asset_ids),
+            "rejected_count": len(approval.rejected_asset_ids),
+            "pending_count": len(approval.pending_asset_ids),
+        },
+        "approved_assets": approval.approved,
+        "skipped_assets": approval.skipped,
+        "approved_asset_ids": approval.approved_asset_ids,
+        "revision_asset_ids": approval.revision_asset_ids,
+        "rejected_asset_ids": approval.rejected_asset_ids,
+        "pending_asset_ids": approval.pending_asset_ids,
+        "qa_notes": [
+            "Only approved Blender GLB assets are eligible for Godot copy.",
+            "Skipped assets remain available in generated/assets for review or revision.",
+        ],
+    }
+    path.write_text(
+        yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    return path.relative_to(root).as_posix()
+
+
 def execute_asset_pipeline(
     plan: DirectorBuildPlan,
     *,
@@ -502,13 +542,26 @@ def execute_godot_demo(
             )
             exported_glb = approval.approved
             detail = f"{len(approval.approved)} approved, {len(approval.skipped)} skipped"
+            approval_report = _write_approval_gate_report(
+                approval, project_dir, workspace_root
+            )
             stages.append(
                 StageResult(
                     "approval_gate",
                     "done",
                     detail=detail,
-                    artifacts=[approval_manifest_path],
+                    artifacts=[approval_manifest_path, approval_report],
                     logs=approval.skipped,
+                    metadata={
+                        "manifest_path": approval_manifest_path,
+                        "report_path": approval_report,
+                        "approved_assets": approval.approved,
+                        "skipped_assets": approval.skipped,
+                        "approved_asset_ids": approval.approved_asset_ids,
+                        "revision_asset_ids": approval.revision_asset_ids,
+                        "rejected_asset_ids": approval.rejected_asset_ids,
+                        "pending_asset_ids": approval.pending_asset_ids,
+                    },
                 )
             )
         except Exception as exc:  # noqa: BLE001 - gate assets, keep greybox running
@@ -519,6 +572,12 @@ def execute_godot_demo(
                     "blocked",
                     detail=f"{exc}; no Blender assets copied",
                     artifacts=[approval_manifest_path],
+                    metadata={
+                        "manifest_path": approval_manifest_path,
+                        "approved_assets": [],
+                        "skipped_assets": [],
+                        "blocked_reason": str(exc),
+                    },
                 )
             )
 

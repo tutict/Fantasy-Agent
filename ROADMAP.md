@@ -64,6 +64,7 @@
 - Approval manifest：Creative Review 决策可持久化到 `generated/asset-approval-manifest.yaml`，继续阻塞未经批准的资产导入。
 - M6d 资产执行：Studio / Flow Console 已能独立触发 ComfyUI 与 Blender 资产工人，复用两段式确认和后台 job 轮询。
 - M6e 审批门控导入：Godot `--with-assets` 路径会按 approval manifest 过滤 Blender GLB，未批准资产不会复制进工程。
+- M6f 审批门控 QA 与预览：executor 写出 `approval-gate-report.yaml`，前端阶段卡片显示 manifest、报告路径、批准/跳过资产和待修订状态。
 
 ## 第七阶段：可玩原型自动化
 

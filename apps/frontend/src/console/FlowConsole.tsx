@@ -26,6 +26,7 @@ import type {
   DirectorBuildPlan,
   EnemyPressureTuning,
   ExecuteResult,
+  ExecuteStage,
   Locale,
   ManualCorrectionTarget,
   ManualTargetsPayload,
@@ -652,16 +653,7 @@ export function FlowConsole() {
               </div>
             ) : null}
             <div id="asset-execute-stages" className="generate-stages">
-              {assetResult?.stages?.map((stage) => (
-                <article className="mcp-status-card" data-state={stage.status === "done" ? "ready" : stage.status === "failed" ? "unavailable" : "degraded"} key={stage.name}>
-                  <div className="mcp-status-top">
-                    <h4>{stage.name}</h4>
-                    <span className="mcp-state">{stage.status}</span>
-                  </div>
-                  <p>{stage.detail}</p>
-                  {stage.artifacts?.length ? <code>{stage.artifacts.join(", ")}</code> : null}
-                </article>
-              ))}
+              {assetResult?.stages?.map((stage) => <ExecutionStageCard key={stage.name} stage={stage} t={t} />)}
             </div>
           </section>
 
@@ -738,16 +730,7 @@ export function FlowConsole() {
               </div>
             ) : null}
             <div id="generate-stages" className="generate-stages">
-              {generateResult?.stages?.map((stage) => (
-                <article className="mcp-status-card" data-state={stage.status === "done" ? "ready" : stage.status === "failed" ? "unavailable" : "degraded"} key={stage.name}>
-                  <div className="mcp-status-top">
-                    <h4>{stage.name}</h4>
-                    <span className="mcp-state">{stage.status}</span>
-                  </div>
-                  <p>{stage.detail}</p>
-                  {stage.artifacts?.length ? <code>{stage.artifacts.join(", ")}</code> : null}
-                </article>
-              ))}
+              {generateResult?.stages?.map((stage) => <ExecutionStageCard key={stage.name} stage={stage} t={t} />)}
               {generateResult?.project_dir ? (
                 <p className="handoff-note">
                   {t("generateArtifact")}: <code>{generateResult.project_dir}</code>
@@ -886,6 +869,53 @@ export function FlowConsole() {
         </section>
       </section>
     </main>
+  );
+}
+
+function ExecutionStageCard({ stage, t }: { stage: ExecuteStage; t: (key: string) => string }) {
+  const metadata = stage.metadata || {};
+  const approved = metadata.approved_assets || [];
+  const skipped = metadata.skipped_assets || [];
+  const revision = metadata.revision_asset_ids || [];
+  const rejected = metadata.rejected_asset_ids || [];
+  const pending = metadata.pending_asset_ids || [];
+  const hasApprovalPreview = stage.name === "approval_gate" && Object.keys(metadata).length > 0;
+
+  return (
+    <article className="mcp-status-card" data-state={stage.status === "done" ? "ready" : stage.status === "failed" ? "unavailable" : "degraded"}>
+      <div className="mcp-status-top">
+        <h4>{stage.name}</h4>
+        <span className="mcp-state">{stage.status}</span>
+      </div>
+      <p>{stage.detail}</p>
+      {stage.artifacts?.length ? <code>{stage.artifacts.join(", ")}</code> : null}
+      {hasApprovalPreview ? (
+        <div className="approval-preview">
+          <div className="approval-summary">
+            <span>{t("approvalGateApproved")}: {approved.length}</span>
+            <span>{t("approvalGateSkipped")}: {skipped.length}</span>
+            <span>{t("approvalGateRevision")}: {revision.length}</span>
+            <span>{t("approvalGateRejected")}: {rejected.length}</span>
+            <span>{t("approvalGatePending")}: {pending.length}</span>
+          </div>
+          {metadata.manifest_path ? <p>{t("approvalGateManifest")}: <code>{metadata.manifest_path}</code></p> : null}
+          {metadata.report_path ? <p>{t("approvalGateReport")}: <code>{metadata.report_path}</code></p> : null}
+          {metadata.blocked_reason ? <p>{t("approvalGateBlockedReason")}: {metadata.blocked_reason}</p> : null}
+          {approved.length ? <AssetList title={t("approvalGateApprovedAssets")} items={approved} /> : null}
+          {skipped.length ? <AssetList title={t("approvalGateSkippedAssets")} items={skipped} /> : null}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function AssetList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <div className="approval-assets">
+      <strong>{title}</strong>
+      <ul>{items.slice(0, 6).map((item) => <li key={item}>{item}</li>)}</ul>
+      {items.length > 6 ? <span>+{items.length - 6}</span> : null}
+    </div>
   );
 }
 

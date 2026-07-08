@@ -274,10 +274,11 @@ curl -X POST http://127.0.0.1:8000/plan `
 - M6c 敌人压力指标与调参已经接入执行链和 Studio 生成面板。
 - M6d 资产执行面板已经接入 Studio / Flow Console，可独立运行 ComfyUI 与 Blender 资产工人并展示阶段结果。
 - M6e approval-gated ingest 已接入 Godot 资产复制，只有 manifest 中 approved 的 Blender GLB 会进入 `assets/generated/`。
+- M6f approval gate QA 与预览闭环已接入：执行阶段会写出 `approval-gate-report.yaml`，Studio 会显示 approved / skipped / revision / rejected / pending 摘要。
 - Creative Review 决策已经可以写入 `generated/asset-approval-manifest.yaml`。
 
 下一步优先级：
 
-- 为 approval-gated ingest 增加更细的 QA 覆盖与人工预览。
+- 进入 M7 真实运行验证：Godot headless import、packaged playtest 和后续 Unreal PIE/DataValidation。
 - 通过受控 MCP 执行确认运行真实 PIE、Godot headless import 和 packaged playtest。
 - 为生成图片和模型 manifest 增加更丰富的预览能力。

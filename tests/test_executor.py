@@ -251,6 +251,25 @@ def test_with_assets_approval_manifest_copies_only_approved(tmp_path: Path):
     assert names == ["blender", "approval_gate", "create", "copy_assets", "validate", "import"]
     gate = next(s for s in result.stages if s.name == "approval_gate")
     assert gate.detail == "1 approved, 2 skipped"
+    assert gate.metadata["approved_assets"] == ["generated/assets/start_marker.glb"]
+    assert gate.metadata["skipped_assets"] == [
+        "generated/assets/objective_prop.glb",
+        "generated/assets/rejected_gate.glb",
+    ]
+    assert gate.metadata["revision_asset_ids"] == ["objective_prop"]
+    assert gate.metadata["rejected_asset_ids"] == ["rejected_gate"]
+    assert gate.metadata["report_path"].endswith("approval-gate-report.yaml")
+    report_path = tmp_path / str(gate.metadata["report_path"])
+    report = yaml.safe_load(report_path.read_text(encoding="utf-8"))
+    assert report["summary"] == {
+        "approved_count": 1,
+        "skipped_count": 2,
+        "revision_count": 1,
+        "rejected_count": 1,
+        "pending_count": 0,
+    }
+    assert report["approved_assets"] == ["generated/assets/start_marker.glb"]
+    assert "Skipped assets remain available" in " ".join(report["qa_notes"])
     copied = sorted(p.name for p in (tmp_path / result.project_dir / "assets" / "generated").glob("*.glb"))
     assert copied == ["start_marker.glb"]
 
@@ -275,6 +294,8 @@ def test_with_assets_missing_approval_manifest_blocks_asset_copy(tmp_path: Path)
     assert result.ok
     gate = next(s for s in result.stages if s.name == "approval_gate")
     assert gate.status == "blocked"
+    assert gate.metadata["manifest_path"] == "generated/asset-approval-manifest.yaml"
+    assert "blocked_reason" in gate.metadata
     assert "copy_assets" not in [s.name for s in result.stages]
     assert not (tmp_path / result.project_dir / "assets" / "generated" / "start_marker.glb").exists()
 
