@@ -5,6 +5,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 from glob import glob
 from pathlib import Path
+from uuid import uuid4
 import re
 import shutil
 from typing import Any
@@ -714,7 +715,7 @@ def execute_assets(req: AssetExecutionRequest) -> dict[str, Any]:
 
     from datetime import datetime
 
-    job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    job_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}-{uuid4().hex[:8]}"
     _ASSET_JOBS[job_id] = {"status": "running"}
     _EXECUTE_POOL.submit(_run_asset_execution_job, job_id, req)
     return {"status": "running", "job_id": job_id}
@@ -751,7 +752,7 @@ def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
 
     from datetime import datetime
 
-    job_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    job_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}-{uuid4().hex[:8]}"
     _EXECUTE_JOBS[job_id] = {"status": "running"}
     _EXECUTE_POOL.submit(_run_execution_job, job_id, req)
     return {"status": "running", "job_id": job_id, "engine": _infer_engine(req.plan, req.engine)}

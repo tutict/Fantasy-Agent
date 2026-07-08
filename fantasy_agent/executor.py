@@ -35,6 +35,7 @@ from fantasy_agent.contracts import (
     UnrealMCPPrepareLevelAssemblyRequest,
 )
 from fantasy_agent.approval_manifest import (
+    DEFAULT_APPROVAL_MANIFEST_PATH,
     filter_approved_blender_assets,
     load_asset_approval_manifest,
 )
@@ -477,7 +478,7 @@ def execute_godot_demo(
             run continues without references (the chain is not broken).
         comfyui_endpoint: Optional ComfyUI endpoint override.
         enemy_tuning: Enemy pressure multipliers for generated Godot enemies.
-        approval_manifest_path: Optional generated approval manifest for asset copy gating.
+        approval_manifest_path: Optional generated approval manifest for asset copy gating. Defaults to generated/asset-approval-manifest.yaml when with_assets=True.
         bridge: Optional pre-built GodotMCPBridge (for testing).
         blender_bridge: Optional pre-built BlenderMCPBridge (for testing).
         comfyui_bridge: Optional pre-built ComfyUIMCPBridge (for testing).
@@ -487,6 +488,8 @@ def execute_godot_demo(
     """
 
     enemy_tuning = enemy_tuning or EnemyPressureTuning()
+    if with_assets and not approval_manifest_path:
+        approval_manifest_path = DEFAULT_APPROVAL_MANIFEST_PATH
     project_dir = _session_project_dir(session_id, plan.godot_plan.project_name)
     planned = _planned_side_effects(
         plan,
@@ -509,6 +512,7 @@ def execute_godot_demo(
 
     bridge = bridge or GodotMCPBridge(workspace_root=workspace_root)
     stages: list[StageResult] = []
+    approval_result: Any | None = None
 
     # Stage A (optional): ComfyUI visual references. Degrades on failure.
     reference_images: list[str] = []
@@ -542,19 +546,16 @@ def execute_godot_demo(
             )
             exported_glb = approval.approved
             detail = f"{len(approval.approved)} approved, {len(approval.skipped)} skipped"
-            approval_report = _write_approval_gate_report(
-                approval, project_dir, workspace_root
-            )
+            approval_result = approval
             stages.append(
                 StageResult(
                     "approval_gate",
                     "done",
                     detail=detail,
-                    artifacts=[approval_manifest_path, approval_report],
+                    artifacts=[approval_manifest_path],
                     logs=approval.skipped,
                     metadata={
                         "manifest_path": approval_manifest_path,
-                        "report_path": approval_report,
                         "approved_assets": approval.approved,
                         "skipped_assets": approval.skipped,
                         "approved_asset_ids": approval.approved_asset_ids,
@@ -613,6 +614,15 @@ def execute_godot_demo(
     )
 
     project_file = create.artifact.project_file
+
+    if approval_result is not None:
+        approval_report = _write_approval_gate_report(
+            approval_result, project_dir, workspace_root
+        )
+        gate = next((stage for stage in stages if stage.name == "approval_gate"), None)
+        if gate is not None:
+            gate.artifacts.append(approval_report)
+            gate.metadata["report_path"] = approval_report
 
     if with_gameplay:
         enemy_report = _build_enemy_pressure_report(plan, enemy_tuning)

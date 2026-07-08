@@ -286,7 +286,12 @@ def test_asset_execute_starts_job_and_polls(monkeypatch):
     started = module.execute_assets(
         module.AssetExecutionRequest(plan=plan, with_assets=True, with_visuals=True, confirmed=True)
     )
+    second = module.execute_assets(
+        module.AssetExecutionRequest(plan=plan, with_assets=True, with_visuals=True, confirmed=True)
+    )
     assert started["status"] == "running"
+    assert second["status"] == "running"
+    assert started["job_id"] != second["job_id"]
     job_id = started["job_id"]
 
     module._EXECUTE_POOL.shutdown(wait=True)
@@ -294,6 +299,27 @@ def test_asset_execute_starts_job_and_polls(monkeypatch):
     status = module.asset_execute_status(job_id)
     assert status["status"] == "done"
     assert [s["name"] for s in status["result"]["stages"]] == ["comfyui", "blender"]
+
+
+def test_execute_demo_job_ids_do_not_collide(monkeypatch):
+    module = _load_studio_app()
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.executor import ExecutionResult
+    from fantasy_agent.workflows import run_director_workflow
+
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+
+    def fake_execute(req, *, confirmed):
+        return ExecutionResult(status="done", session_id="x")
+
+    monkeypatch.setattr(module, "_build_execution_result", fake_execute)
+    first = module.execute_demo(module.ExecuteDemoRequest(plan=plan, engine="godot", confirmed=True))
+    second = module.execute_demo(module.ExecuteDemoRequest(plan=plan, engine="godot", confirmed=True))
+
+    assert first["job_id"] != second["job_id"]
+    module._EXECUTE_POOL.shutdown(wait=True)
 
 
 def test_asset_execute_status_unknown_job():
