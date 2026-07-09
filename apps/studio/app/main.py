@@ -5,7 +5,6 @@ import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
 from glob import glob
 from pathlib import Path
-from uuid import uuid4
 import re
 import shutil
 from typing import Any
@@ -36,6 +35,7 @@ from fantasy_agent.contracts import (
     default_comfyui_endpoint_candidates,
 )
 from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
+from fantasy_agent.studio_jobs import InMemoryJobRegistry
 from fantasy_agent.workflows import (
     build_asset_approval_manifest,
     decompose_production_tasks,
@@ -113,11 +113,11 @@ AssetExecutionRequest.model_rebuild()
 ExecuteDemoRequest.model_rebuild()
 
 
-# In-memory execution job registry. Jobs run on a single worker so we never
-    # launch two engines at once. Not persisted - studio is a local dev tool.
+# Jobs run on a single worker so we never launch two engines at once.
+# They are intentionally in-memory because Studio is a local dev tool.
 _EXECUTE_POOL = ThreadPoolExecutor(max_workers=1)
-_EXECUTE_JOBS: dict[str, dict[str, Any]] = {}
-_ASSET_JOBS: dict[str, dict[str, Any]] = {}
+_EXECUTE_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
+_ASSET_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
 
 
 def _jsonrpc_result(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
@@ -694,74 +694,34 @@ def _build_asset_execution_result(req: AssetExecutionRequest, *, confirmed: bool
     )
 
 
-def _run_asset_execution_job(job_id: str, req: AssetExecutionRequest) -> None:
-    from dataclasses import asdict
-
-    try:
-        result = _build_asset_execution_result(req, confirmed=True)
-        _ASSET_JOBS[job_id] = {"status": result.status, "result": asdict(result)}
-    except Exception as exc:  # noqa: BLE001 - surface worker failures to the UI
-        _ASSET_JOBS[job_id] = {"status": "failed", "error": str(exc)}
-
-
 @app.post("/api/assets/execute")
 def execute_assets(req: AssetExecutionRequest) -> dict[str, Any]:
     if not req.confirmed:
         preview = _build_asset_execution_result(req, confirmed=False)
-        return {
-            "status": "confirmation_required",
-            "planned_side_effects": preview.planned_side_effects,
-        }
+        return _ASSET_JOB_REGISTRY.preview(preview)
 
-    from datetime import datetime
-
-    job_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}-{uuid4().hex[:8]}"
-    _ASSET_JOBS[job_id] = {"status": "running"}
-    _EXECUTE_POOL.submit(_run_asset_execution_job, job_id, req)
+    job_id = _ASSET_JOB_REGISTRY.submit(lambda: _build_asset_execution_result(req, confirmed=True))
     return {"status": "running", "job_id": job_id}
 
 
 @app.get("/api/assets/execute/{job_id}")
 def asset_execute_status(job_id: str) -> dict[str, Any]:
-    job = _ASSET_JOBS.get(job_id)
-    if job is None:
-        return {"status": "unknown", "job_id": job_id}
-    return {"job_id": job_id, **job}
-
-
-def _run_execution_job(job_id: str, req: ExecuteDemoRequest) -> None:
-    from dataclasses import asdict
-
-    try:
-        result = _build_execution_result(req, confirmed=True)
-        _EXECUTE_JOBS[job_id] = {"status": result.status, "result": asdict(result)}
-    except Exception as exc:  # noqa: BLE001 - surface any executor failure to the UI
-        _EXECUTE_JOBS[job_id] = {"status": "failed", "error": str(exc)}
+    return _ASSET_JOB_REGISTRY.status(job_id)
 
 
 @app.post("/api/execute")
 def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
+    engine = _infer_engine(req.plan, req.engine)
     if not req.confirmed:
         # Confirmation gate: report side effects without writing or executing.
         preview = _build_execution_result(req, confirmed=False)
-        return {
-            "status": "confirmation_required",
-            "engine": _infer_engine(req.plan, req.engine),
-            "planned_side_effects": preview.planned_side_effects,
-        }
+        return _EXECUTE_JOB_REGISTRY.preview(preview, engine=engine)
 
-    from datetime import datetime
-
-    job_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}-{uuid4().hex[:8]}"
-    _EXECUTE_JOBS[job_id] = {"status": "running"}
-    _EXECUTE_POOL.submit(_run_execution_job, job_id, req)
-    return {"status": "running", "job_id": job_id, "engine": _infer_engine(req.plan, req.engine)}
+    job_id = _EXECUTE_JOB_REGISTRY.submit(lambda: _build_execution_result(req, confirmed=True))
+    return {"status": "running", "job_id": job_id, "engine": engine}
 
 
 @app.get("/api/execute/{job_id}")
 def execute_status(job_id: str) -> dict[str, Any]:
-    job = _EXECUTE_JOBS.get(job_id)
-    if job is None:
-        return {"status": "unknown", "job_id": job_id}
-    return {"job_id": job_id, **job}
+    return _EXECUTE_JOB_REGISTRY.status(job_id)
 

@@ -40,6 +40,7 @@ from fantasy_agent.approval_manifest import (
     load_asset_approval_manifest,
 )
 from fantasy_agent.godot_mcp import DEFAULT_WORKSPACE_ROOT, GodotMCPBridge
+from fantasy_agent.path_safety import resolve_workspace_path
 
 
 @dataclass
@@ -295,7 +296,11 @@ def _write_enemy_pressure_report(
     workspace_root: Path | str,
 ) -> str:
     report_rel = (Path(project_dir) / "data" / "enemy-pressure-report.json").as_posix()
-    report_path = Path(workspace_root) / report_rel
+    report_path = resolve_workspace_path(
+        report_rel,
+        workspace_root=workspace_root,
+        required_prefix="generated/godot",
+    )
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(
         json.dumps(report.model_dump(mode="json"), ensure_ascii=False, indent=2),
@@ -358,8 +363,12 @@ def _write_approval_gate_report(
 ) -> str:
     import yaml
 
-    root = Path(workspace_root)
-    path = root / project_dir / "generated" / "approval-gate-report.yaml"
+    report_rel = (Path(project_dir) / "generated" / "approval-gate-report.yaml").as_posix()
+    path = resolve_workspace_path(
+        report_rel,
+        workspace_root=workspace_root,
+        required_prefix="generated/godot",
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "source": "executor.approval-gate",
@@ -387,7 +396,114 @@ def _write_approval_gate_report(
         yaml.safe_dump(payload, sort_keys=False, allow_unicode=True),
         encoding="utf-8",
     )
-    return path.relative_to(root).as_posix()
+    return report_rel
+
+
+def _approval_gate_stage(approval: Any, approval_manifest_path: str) -> StageResult:
+    return StageResult(
+        "approval_gate",
+        "done",
+        detail=f"{len(approval.approved)} approved, {len(approval.skipped)} skipped",
+        artifacts=[approval_manifest_path],
+        logs=approval.skipped,
+        metadata={
+            "manifest_path": approval_manifest_path,
+            "approved_assets": approval.approved,
+            "skipped_assets": approval.skipped,
+            "approved_asset_ids": approval.approved_asset_ids,
+            "revision_asset_ids": approval.revision_asset_ids,
+            "rejected_asset_ids": approval.rejected_asset_ids,
+            "pending_asset_ids": approval.pending_asset_ids,
+        },
+    )
+
+
+def _blocked_approval_gate_stage(approval_manifest_path: str, exc: Exception) -> StageResult:
+    return StageResult(
+        "approval_gate",
+        "blocked",
+        detail=f"{exc}; no Blender assets copied",
+        artifacts=[approval_manifest_path],
+        metadata={
+            "manifest_path": approval_manifest_path,
+            "approved_assets": [],
+            "skipped_assets": [],
+            "blocked_reason": str(exc),
+        },
+    )
+
+
+def _run_approval_gate(
+    exported_glb: list[str],
+    approval_manifest_path: str,
+    *,
+    workspace_root: Path | str,
+) -> tuple[list[str], Any | None, StageResult]:
+    try:
+        manifest = load_asset_approval_manifest(
+            approval_manifest_path, workspace_root=workspace_root
+        )
+        approval = filter_approved_blender_assets(
+            exported_glb, manifest, manifest_path=approval_manifest_path
+        )
+        return approval.approved, approval, _approval_gate_stage(approval, approval_manifest_path)
+    except Exception as exc:  # noqa: BLE001 - gate assets, keep greybox running
+        return [], None, _blocked_approval_gate_stage(approval_manifest_path, exc)
+
+
+def _attach_approval_gate_report(
+    stages: list[StageResult],
+    approval_result: Any,
+    project_dir: str,
+    workspace_root: Path | str,
+) -> None:
+    approval_report = _write_approval_gate_report(
+        approval_result, project_dir, workspace_root
+    )
+    gate = next((stage for stage in stages if stage.name == "approval_gate"), None)
+    if gate is not None:
+        gate.artifacts.append(approval_report)
+        gate.metadata["report_path"] = approval_report
+
+
+def _run_copy_assets_stage(
+    stages: list[StageResult],
+    exported_glb: list[str],
+    project_dir: str,
+    *,
+    workspace_root: Path | str,
+) -> None:
+    from fantasy_agent.godot_assets import copy_assets_into_godot_project
+
+    copy_result = copy_assets_into_godot_project(
+        exported_glb, project_dir, workspace_root=workspace_root
+    )
+    detail = f"copied {len(copy_result.copied)} glb"
+    if copy_result.skipped:
+        detail += f", skipped {len(copy_result.skipped)}"
+    stages.append(
+        StageResult("copy_assets", "done", detail=detail, artifacts=copy_result.copied)
+    )
+
+
+def _run_copy_refs_stage(
+    stages: list[StageResult],
+    reference_images: list[str],
+    project_dir: str,
+    *,
+    workspace_root: Path | str,
+) -> None:
+    from fantasy_agent.godot_assets import copy_references_into_godot_project
+
+    ref_result = copy_references_into_godot_project(
+        reference_images, project_dir, workspace_root=workspace_root
+    )
+    detail = f"copied {len(ref_result.copied)} references"
+    if ref_result.skipped:
+        detail += f", skipped {len(ref_result.skipped)}"
+    stages.append(
+        StageResult("copy_refs", "done", detail=detail, artifacts=ref_result.copied)
+    )
 
 
 def execute_asset_pipeline(
@@ -537,50 +653,12 @@ def execute_godot_demo(
         )
 
     if with_assets and exported_glb and approval_manifest_path:
-        try:
-            manifest = load_asset_approval_manifest(
-                approval_manifest_path, workspace_root=workspace_root
-            )
-            approval = filter_approved_blender_assets(
-                exported_glb, manifest, manifest_path=approval_manifest_path
-            )
-            exported_glb = approval.approved
-            detail = f"{len(approval.approved)} approved, {len(approval.skipped)} skipped"
-            approval_result = approval
-            stages.append(
-                StageResult(
-                    "approval_gate",
-                    "done",
-                    detail=detail,
-                    artifacts=[approval_manifest_path],
-                    logs=approval.skipped,
-                    metadata={
-                        "manifest_path": approval_manifest_path,
-                        "approved_assets": approval.approved,
-                        "skipped_assets": approval.skipped,
-                        "approved_asset_ids": approval.approved_asset_ids,
-                        "revision_asset_ids": approval.revision_asset_ids,
-                        "rejected_asset_ids": approval.rejected_asset_ids,
-                        "pending_asset_ids": approval.pending_asset_ids,
-                    },
-                )
-            )
-        except Exception as exc:  # noqa: BLE001 - gate assets, keep greybox running
-            exported_glb = []
-            stages.append(
-                StageResult(
-                    "approval_gate",
-                    "blocked",
-                    detail=f"{exc}; no Blender assets copied",
-                    artifacts=[approval_manifest_path],
-                    metadata={
-                        "manifest_path": approval_manifest_path,
-                        "approved_assets": [],
-                        "skipped_assets": [],
-                        "blocked_reason": str(exc),
-                    },
-                )
-            )
+        exported_glb, approval_result, gate_stage = _run_approval_gate(
+            exported_glb,
+            approval_manifest_path,
+            workspace_root=workspace_root,
+        )
+        stages.append(gate_stage)
 
     # Stage C (optional): generate real playable GDScript from the spec.
     gameplay_scripts: dict[str, str] = {}
@@ -616,13 +694,7 @@ def execute_godot_demo(
     project_file = create.artifact.project_file
 
     if approval_result is not None:
-        approval_report = _write_approval_gate_report(
-            approval_result, project_dir, workspace_root
-        )
-        gate = next((stage for stage in stages if stage.name == "approval_gate"), None)
-        if gate is not None:
-            gate.artifacts.append(approval_report)
-            gate.metadata["report_path"] = approval_report
+        _attach_approval_gate_report(stages, approval_result, project_dir, workspace_root)
 
     if with_gameplay:
         enemy_report = _build_enemy_pressure_report(plan, enemy_tuning)
@@ -644,31 +716,15 @@ def execute_godot_demo(
     # Stage 1b (optional): copy exported glb assets into the project so the
     # import step picks them up and runtime load() calls resolve.
     if with_assets and exported_glb:
-        from fantasy_agent.godot_assets import copy_assets_into_godot_project
-
-        copy_result = copy_assets_into_godot_project(
-            exported_glb, project_dir, workspace_root=workspace_root
-        )
-        detail = f"copied {len(copy_result.copied)} glb"
-        if copy_result.skipped:
-            detail += f", skipped {len(copy_result.skipped)}"
-        stages.append(
-            StageResult("copy_assets", "done", detail=detail, artifacts=copy_result.copied)
+        _run_copy_assets_stage(
+            stages, exported_glb, project_dir, workspace_root=workspace_root
         )
 
     # Stage 1c (optional): copy ComfyUI reference images into the project for
     # review (art-direction archive; not applied as textures).
     if with_visuals and reference_images:
-        from fantasy_agent.godot_assets import copy_references_into_godot_project
-
-        ref_result = copy_references_into_godot_project(
-            reference_images, project_dir, workspace_root=workspace_root
-        )
-        detail = f"copied {len(ref_result.copied)} references"
-        if ref_result.skipped:
-            detail += f", skipped {len(ref_result.skipped)}"
-        stages.append(
-            StageResult("copy_refs", "done", detail=detail, artifacts=ref_result.copied)
+        _run_copy_refs_stage(
+            stages, reference_images, project_dir, workspace_root=workspace_root
         )
 
     # Stage 2: validate.

@@ -1,36 +1,21 @@
 ﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
-  getAssetExecutionJob,
-  getExecuteJob,
-  getManualCorrectionTargets,
   openManualCorrectionTarget as openManualCorrectionTargetApi,
   previewAssetExecution,
   previewExecute,
   startAssetExecution,
-  startExecute,
-  writeApprovalManifest
+  startExecute
 } from "../shared/api";
 import { consoleI18n, makeTranslator } from "../shared/i18n";
-import {
-  CONSOLE_LOCALE_KEY,
-  HANDOFF_KEY,
-  THEME_KEY,
-  initialLocale,
-  initialTheme,
-  readPlanningHandoff,
-  savePlanningHandoff
-} from "../shared/storage";
+import { CONSOLE_LOCALE_KEY, THEME_KEY, initialLocale, initialTheme } from "../shared/storage";
 import type {
   CorrectionMode,
-  DirectorBuildPlan,
   EnemyPressureTuning,
   ExecuteResult,
   ExecuteStage,
   Locale,
   ManualCorrectionTarget,
-  ManualTargetsPayload,
-  PlanningHandoff,
   StatusState,
   Theme
 } from "../shared/types";
@@ -44,11 +29,20 @@ import {
   TasksPanel,
   VisualsPanel,
   localizedStageTitle,
-  preferredTitle,
   selectedEngineVersion,
   statusLabel,
   usesGodotEngine
 } from "./rendering";
+import {
+  localizedRoute,
+  useActivityLog,
+  useApprovalManifest,
+  useAssetJobPolling,
+  useDemoJobPolling,
+  useEnemyTuning,
+  useManualTargets,
+  usePlanningHandoff
+} from "./hooks";
 import "../styles/console.css";
 
 const correctionModeKeys: Record<CorrectionMode, string> = {
@@ -65,14 +59,6 @@ const correctionModeManualTargets: Record<CorrectionMode, string> = {
   import: "engine"
 };
 
-const defaultEnemyTuning: EnemyPressureTuning = {
-  enemy_count_multiplier: 1.0,
-  move_speed_multiplier: 1.0,
-  detection_radius_multiplier: 1.0,
-  patrol_radius_multiplier: 1.0,
-  ranged_interval_multiplier: 1.0
-};
-
 const manualTargetKeys: Record<string, { label: string; detail: string }> = {
   planning: { label: "manualTargetPlanning", detail: "manualPlanningDetail" },
   comfyui: { label: "manualTargetComfyui", detail: "manualComfyMissing" },
@@ -84,37 +70,19 @@ const manualTargetKeys: Record<string, { label: string; detail: string }> = {
 
 type TabKey = "overview" | "pipeline" | "tasks" | "review" | "build" | "visuals" | "qa" | "gdd" | "dsl";
 
-interface ActivityEntry {
-  time: string;
-  label: string;
-  message: string;
-}
-
-interface CorrectionEntry {
-  mode: CorrectionMode;
-  notes: string;
-  createdAt: string;
-}
-
 export function FlowConsole() {
   const [locale, setLocale] = useState<Locale>(() => initialLocale(CONSOLE_LOCALE_KEY));
   const [theme, setTheme] = useState<Theme>(() => initialTheme());
   const [status, setStatus] = useState<StatusState>("idle");
-  const [currentPlan, setCurrentPlan] = useState<DirectorBuildPlan | null>(null);
-  const [currentHandoff, setCurrentHandoff] = useState<PlanningHandoff | null>(null);
   const [gddLocale, setGddLocale] = useState<Locale>(locale);
   const [selectedCorrectionMode, setSelectedCorrectionMode] = useState<CorrectionMode>("gameplay");
-  const [reviewDecisions, setReviewDecisions] = useState<Record<string, string>>({});
-  const [correctionEntries, setCorrectionEntries] = useState<CorrectionEntry[]>([]);
-  const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
-  const [manualTargetsPayload, setManualTargetsPayload] = useState<ManualTargetsPayload | null>(null);
+  const [correctionEntries, setCorrectionEntries] = useState<Array<{ mode: CorrectionMode; notes: string; createdAt: string }>>([]);
   const [correctionNotes, setCorrectionNotes] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
   const [logOpen, setLogOpen] = useState(true);
   const [withAssets, setWithAssets] = useState(false);
   const [withVisuals, setWithVisuals] = useState(false);
   const [withGameplay, setWithGameplay] = useState(false);
-  const [enemyTuning, setEnemyTuning] = useState<EnemyPressureTuning>(defaultEnemyTuning);
   const [generateEffects, setGenerateEffects] = useState<string[] | null>(null);
   const [generateResult, setGenerateResult] = useState<ExecuteResult | null>(null);
   const [pollJobId, setPollJobId] = useState<string | null>(null);
@@ -123,15 +91,21 @@ export function FlowConsole() {
   const [assetEffects, setAssetEffects] = useState<string[] | null>(null);
   const [assetResult, setAssetResult] = useState<ExecuteResult | null>(null);
   const [pollAssetJobId, setPollAssetJobId] = useState<string | null>(null);
-  const [approvalManifestPath, setApprovalManifestPath] = useState<string>("");
 
   const t = useMemo(() => makeTranslator(locale, consoleI18n), [locale]);
-  const titleForPlan = useCallback((plan: DirectorBuildPlan) => preferredTitle(plan, locale, t), [locale, t]);
-
-  const addActivity = useCallback((label: string, message: string) => {
-    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    setActivityEntries((entries) => [{ time, label, message }, ...entries].slice(0, 30));
-  }, []);
+  const { activityEntries, addActivity } = useActivityLog();
+  const { enemyTuning, setEnemyTuningValue } = useEnemyTuning();
+  const {
+    currentPlan,
+    currentHandoff,
+    reviewDecisions,
+    setReviewDecisions,
+    titleForPlan,
+    renderHandoffTitle,
+    loadPlanningHandoff
+  } = usePlanningHandoff({ locale, t, addActivity, setStatus });
+  const { manualTargetsPayload, loadManualTargets, fallbackManualTargets } = useManualTargets(currentPlan);
+  const { approvalManifestPath, onWriteApprovalManifest } = useApprovalManifest({ currentPlan, reviewDecisions, setStatus, addActivity, t });
 
   const modeLabel = useCallback((mode: CorrectionMode) => t(correctionModeKeys[mode] || "modeGameplay"), [t]);
 
@@ -155,61 +129,9 @@ export function FlowConsole() {
     [t]
   );
 
-  const fallbackManualTargets = useCallback((): ManualCorrectionTarget[] => {
-    const engineTarget = usesGodotEngine(currentPlan) ? "godot" : "unreal";
-    return ["planning", "comfyui", "blender", engineTarget, "generated"].map((id) => ({
-      id: id as ManualCorrectionTarget["id"],
-      status: id === "planning" || id === "generated" ? "ready" : "degraded",
-      target: id === "planning" ? "/workbench" : "-",
-      openable: id === "planning" || id === "generated",
-      detail_key: manualTargetKeys[id]?.detail
-    }));
-  }, [currentPlan]);
-
   const targets = manualTargetsPayload?.targets?.length ? manualTargetsPayload.targets : fallbackManualTargets();
   const recommendedTarget = targets.find((target) => target.id === recommendedManualTargetId()) || targets[0];
   const enemies = currentPlan?.gameplay_spec?.enemies || [];
-
-  const setEnemyTuningValue = useCallback((key: keyof EnemyPressureTuning, value: number) => {
-    setEnemyTuning((current) => ({ ...current, [key]: value }));
-  }, []);
-
-  const loadManualTargets = useCallback(async () => {
-    try {
-      const payload = await getManualCorrectionTargets(selectedEngineVersion(currentPlan));
-      setManualTargetsPayload(payload);
-    } catch {
-      setManualTargetsPayload(null);
-    }
-  }, [currentPlan]);
-
-  const renderHandoffTitle = useCallback((handoff: PlanningHandoff | null) => handoff?.title || titleForPlan(handoff?.plan || {}) || t("emptyTitle"), [titleForPlan, t]);
-
-  const loadPlanningHandoff = useCallback(
-    (options: { silent?: boolean; activityLabel?: string } = {}) => {
-      const handoff = readPlanningHandoff(titleForPlan);
-      setCurrentHandoff(handoff);
-      if (!handoff?.plan) {
-        if (!options.silent) {
-          setStatus("error");
-          addActivity(t("handoffEmpty"), t("openPlanningHint"));
-        }
-        return false;
-      }
-      setCurrentPlan(handoff.plan);
-      setReviewDecisions((decisions) => {
-        const next = { ...decisions };
-        for (const item of handoff.plan?.creative_review?.items || []) {
-          if (item.asset_id) next[item.asset_id] = next[item.asset_id] || item.approval_status || "";
-        }
-        return next;
-      });
-      setStatus("ready");
-      if (!options.silent) addActivity(options.activityLabel || t("handoffLoaded"), renderHandoffTitle(handoff));
-      return true;
-    },
-    [addActivity, renderHandoffTitle, t, titleForPlan]
-  );
 
   useEffect(() => {
     document.documentElement.lang = locale;
@@ -222,90 +144,26 @@ export function FlowConsole() {
     localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  useEffect(() => {
-    loadPlanningHandoff({ silent: true });
-  }, [loadPlanningHandoff]);
+  useDemoJobPolling({
+    jobId: pollJobId,
+    setJobId: setPollJobId,
+    setResult: setGenerateResult,
+    setStatus,
+    addActivity,
+    doneLabel: t("generateDone"),
+    failedLabel: t("generateFailed"),
+    projectDirOnDone: true
+  });
 
-  useEffect(() => {
-    void loadManualTargets();
-  }, [loadManualTargets]);
-
-  useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === HANDOFF_KEY) loadPlanningHandoff({ activityLabel: t("handoffReceived") });
-    };
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      const data = event.data as { method?: string; plan?: DirectorBuildPlan; source?: string };
-      if (data?.method === "fantasy-agent/planning-handoff" && data.plan?.gameplay_spec) {
-        const handoff = savePlanningHandoff(data.plan, preferredTitle(data.plan, locale, t), data.source || "planning-workbench");
-        setCurrentHandoff(handoff);
-        setCurrentPlan(data.plan);
-        setStatus("ready");
-        addActivity(t("handoffReceived"), renderHandoffTitle(handoff));
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("message", onMessage);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("message", onMessage);
-    };
-  }, [addActivity, loadPlanningHandoff, locale, renderHandoffTitle, t]);
-
-  useEffect(() => {
-    if (!pollJobId) return;
-    const timer = window.setInterval(async () => {
-      try {
-        const job = await getExecuteJob(pollJobId);
-        if (job.result) setGenerateResult(job.result);
-        if (job.status !== "running") {
-          window.clearInterval(timer);
-          setPollJobId(null);
-          if (job.status === "done") {
-            setStatus("ready");
-            addActivity(t("generateDone"), job.result?.project_dir || "");
-          } else {
-            setStatus("error");
-            addActivity(t("generateFailed"), job.error || job.status || "");
-          }
-        }
-      } catch (error) {
-        setStatus("error");
-        addActivity(t("generateFailed"), String(error));
-        setPollJobId(null);
-        window.clearInterval(timer);
-      }
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [addActivity, pollJobId, t]);
-
-  useEffect(() => {
-    if (!pollAssetJobId) return;
-    const timer = window.setInterval(async () => {
-      try {
-        const job = await getAssetExecutionJob(pollAssetJobId);
-        if (job.result) setAssetResult(job.result);
-        if (job.status !== "running") {
-          window.clearInterval(timer);
-          setPollAssetJobId(null);
-          if (job.status === "done") {
-            setStatus("ready");
-            addActivity(t("assetExecutionDone"), "");
-          } else {
-            setStatus("error");
-            addActivity(t("assetExecutionFailed"), job.error || job.status || "");
-          }
-        }
-      } catch (error) {
-        setStatus("error");
-        addActivity(t("assetExecutionFailed"), String(error));
-        setPollAssetJobId(null);
-        window.clearInterval(timer);
-      }
-    }, 1500);
-    return () => window.clearInterval(timer);
-  }, [addActivity, pollAssetJobId, t]);
+  useAssetJobPolling({
+    jobId: pollAssetJobId,
+    setJobId: setPollAssetJobId,
+    setResult: setAssetResult,
+    setStatus,
+    addActivity,
+    doneLabel: t("assetExecutionDone"),
+    failedLabel: t("assetExecutionFailed")
+  });
 
   const recordCorrection = () => {
     const notes = correctionNotes.trim();
@@ -391,22 +249,6 @@ export function FlowConsole() {
     } catch (error) {
       setStatus("error");
       addActivity(t("generateFailed"), String(error));
-    }
-  };
-
-  const onWriteApprovalManifest = async () => {
-    if (!currentPlan?.creative_review) {
-      setStatus("error");
-      addActivity(t("approvalManifestFailed"), t("noItems"));
-      return;
-    }
-    try {
-      const response = await writeApprovalManifest(currentPlan.creative_review, reviewDecisions);
-      setApprovalManifestPath(response.manifest_path || "");
-      addActivity(t("approvalManifestWritten"), response.manifest_path || "");
-    } catch (error) {
-      setStatus("error");
-      addActivity(t("approvalManifestFailed"), String(error));
     }
   };
 
@@ -943,11 +785,6 @@ function SegmentedControl({
       ))}
     </div>
   );
-}
-
-function localizedRoute(path: string, locale: Locale, theme: Theme) {
-  const search = new URLSearchParams({ locale, theme });
-  return `${path}?${search.toString()}`;
 }
 
 function formatSavedAt(savedAt: string | null | undefined, locale: Locale) {

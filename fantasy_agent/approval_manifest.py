@@ -9,6 +9,7 @@ import yaml
 
 from fantasy_agent.contracts import AssetApprovalManifest
 from fantasy_agent.godot_mcp import DEFAULT_WORKSPACE_ROOT, GodotMCPSafetyError
+from fantasy_agent.path_safety import WorkspacePathError, resolve_workspace_path
 
 DEFAULT_APPROVAL_MANIFEST_PATH = "generated/asset-approval-manifest.yaml"
 
@@ -24,11 +25,15 @@ class ApprovalFilterResult:
     pending_asset_ids: list[str] = field(default_factory=list)
 
 
-def _assert_under(path: Path, root: Path) -> None:
+def _resolve_manifest_path(
+    manifest_path: str,
+    *,
+    workspace_root: Path | str,
+) -> Path:
     try:
-        path.resolve().relative_to(root.resolve())
-    except ValueError as exc:
-        raise GodotMCPSafetyError(f"Path escapes workspace: {path}") from exc
+        return resolve_workspace_path(manifest_path, workspace_root=workspace_root)
+    except WorkspacePathError as exc:
+        raise GodotMCPSafetyError(str(exc)) from exc
 
 
 def load_asset_approval_manifest(
@@ -36,9 +41,7 @@ def load_asset_approval_manifest(
     *,
     workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
 ) -> AssetApprovalManifest:
-    root = Path(workspace_root).resolve()
-    path = (root / manifest_path).resolve()
-    _assert_under(path, root)
+    path = _resolve_manifest_path(manifest_path, workspace_root=workspace_root)
     if not path.exists():
         raise FileNotFoundError(manifest_path)
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}

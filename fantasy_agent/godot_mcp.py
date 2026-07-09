@@ -9,6 +9,11 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from fantasy_agent.path_safety import (
+    WorkspacePathError,
+    display_workspace_path,
+    resolve_workspace_path,
+)
 from fantasy_agent.contracts import (
     EnemyPressureTuning,
     GameplaySpec,
@@ -377,23 +382,20 @@ class GodotMCPBridge:
         return resolved
 
     def _assert_relative_under(self, path: str, required_prefix: str) -> None:
-        if Path(path).is_absolute():
-            raise GodotMCPSafetyError(f"Absolute paths are not allowed: {path}")
-        normalized = Path(path.replace("\\", "/"))
-        if ".." in normalized.parts:
-            raise GodotMCPSafetyError(f"Parent traversal is not allowed: {path}")
-        prefix = Path(required_prefix)
-        if normalized.parts[: len(prefix.parts)] != prefix.parts:
-            raise GodotMCPSafetyError(f"Path must stay under {required_prefix}: {path}")
-        self._resolve_workspace_path(path)
+        try:
+            resolve_workspace_path(
+                path,
+                workspace_root=self.workspace_root,
+                required_prefix=required_prefix,
+            )
+        except WorkspacePathError as exc:
+            raise GodotMCPSafetyError(str(exc)) from exc
 
     def _resolve_workspace_path(self, path: str) -> Path:
-        resolved = (self.workspace_root / path).resolve()
         try:
-            resolved.relative_to(self.workspace_root)
-        except ValueError as exc:
-            raise GodotMCPSafetyError(f"Path escapes workspace: {path}") from exc
-        return resolved
+            return resolve_workspace_path(path, workspace_root=self.workspace_root)
+        except WorkspacePathError as exc:
+            raise GodotMCPSafetyError(str(exc)) from exc
 
     def _log_paths(self, project_name: str, operation: str) -> tuple[Path, Path]:
         safe_name = _slug(project_name)
@@ -405,7 +407,7 @@ class GodotMCPBridge:
         path.write_text(text, encoding="utf-8")
 
     def _display_path(self, path: Path) -> str:
-        return path.relative_to(self.workspace_root).as_posix()
+        return display_workspace_path(path, workspace_root=self.workspace_root)
 
 
 def call_godot_mcp_tool(

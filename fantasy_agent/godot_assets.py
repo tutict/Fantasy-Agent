@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from fantasy_agent.godot_mcp import DEFAULT_WORKSPACE_ROOT, GodotMCPSafetyError
+from fantasy_agent.path_safety import WorkspacePathError, resolve_workspace_path
 
 
 @dataclass
@@ -27,11 +28,11 @@ class AssetCopyResult:
     missing: list[str] = field(default_factory=list)  # listed but not found
 
 
-def _assert_under(path: Path, root: Path) -> None:
+def _resolve_copy_path(path: str, *, workspace_root: Path | str) -> Path:
     try:
-        path.resolve().relative_to(root.resolve())
-    except ValueError as exc:
-        raise GodotMCPSafetyError(f"Path escapes workspace: {path}") from exc
+        return resolve_workspace_path(path, workspace_root=workspace_root)
+    except WorkspacePathError as exc:
+        raise GodotMCPSafetyError(str(exc)) from exc
 
 
 def copy_assets_into_godot_project(
@@ -53,13 +54,14 @@ def copy_assets_into_godot_project(
     """
 
     root = Path(workspace_root).resolve()
-    dest_dir = root / project_dir / "assets" / "generated"
-    _assert_under(dest_dir, root)
+    dest_dir = _resolve_copy_path(
+        (Path(project_dir.replace("\\", "/")) / "assets" / "generated").as_posix(),
+        workspace_root=root,
+    )
     result = AssetCopyResult()
 
     for rel in exported_assets:
-        src = (root / rel).resolve()
-        _assert_under(src, root)
+        src = _resolve_copy_path(rel, workspace_root=root)
         if src.suffix.lower() != ".glb":
             result.skipped.append(rel)
             continue
@@ -99,13 +101,14 @@ def copy_references_into_godot_project(
     """
 
     root = Path(workspace_root).resolve()
-    dest_dir = root / project_dir / "references" / "comfyui"
-    _assert_under(dest_dir, root)
+    dest_dir = _resolve_copy_path(
+        (Path(project_dir.replace("\\", "/")) / "references" / "comfyui").as_posix(),
+        workspace_root=root,
+    )
     result = AssetCopyResult()
 
     for rel in images:
-        src = (root / rel).resolve()
-        _assert_under(src, root)
+        src = _resolve_copy_path(rel, workspace_root=root)
         if src.suffix.lower() not in _IMAGE_SUFFIXES:
             result.skipped.append(rel)
             continue
