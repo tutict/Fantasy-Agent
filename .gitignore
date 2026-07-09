@@ -1,6 +1,9 @@
 .idea/
 .vscode/
 
+# Local agent/tool configuration
+.claude/*.local.json
+
 __pycache__/
 *.py[cod]
 .pytest_cache/
