@@ -229,7 +229,7 @@ class DamageModel(StrictModel):
 class CombatEncounterSpec(StrictModel):
     encounter_id: str = Field(min_length=1)
     beat: str = Field(min_length=1)
-    enemy_roles: list[str] = Field(default_factory=list)
+    enemy_roles: list[str] = Field(min_length=1)
     pressure_goal: str = Field(min_length=1)
     telegraphs: list[str] = Field(min_length=1)
     player_counterplay: list[str] = Field(min_length=1)
@@ -238,8 +238,8 @@ class CombatEncounterSpec(StrictModel):
 class CombatSpec(StrictModel):
     source: str = "gameplay-agent"
     schema_version: str = "0.1"
-    encounters: list[CombatEncounterSpec] = Field(default_factory=list)
-    enemy_roles: list[str] = Field(default_factory=list)
+    encounters: list[CombatEncounterSpec] = Field(min_length=1)
+    enemy_roles: list[str] = Field(min_length=1)
     damage_model: DamageModel = Field(default_factory=DamageModel)
     failure_pressure: str = Field(min_length=1)
     telegraphs: list[str] = Field(min_length=1)

@@ -294,15 +294,19 @@ def _build_resource_pipeline(
 ) -> ResourcePipelineSpec:
     assets: list[ResourcePipelineAsset] = []
     if creative_review is not None:
+        review_decisions = _review_decision_by_asset_id(creative_review)
         for item in creative_review.items:
+            approval_status = review_decisions.get(item.asset_id, _approval_status(item.approval_status))
             assets.append(
                 ResourcePipelineAsset(
                     asset_id=item.asset_id,
                     source=item.source,
                     role=item.gameplay_role,
-                    approval_status=_approval_status(item.approval_status),
+                    approval_status=approval_status,
                     engine_destination=_engine_destination(item.source, item.asset_id),
-                    blocked_reason="Awaiting Creative Review approval.",
+                    blocked_reason=None
+                    if approval_status == "approved"
+                    else "Awaiting Creative Review approval.",
                 )
             )
     elif blender_plan is not None:
@@ -393,6 +397,17 @@ def _approval_status(status: str) -> str:
     if status in {"approved", "needs_revision", "rejected", "pending_user_review"}:
         return status
     return "pending_user_review"
+
+
+def _review_decision_by_asset_id(review: CreativeReviewReport) -> dict[str, str]:
+    decisions: dict[str, str] = {}
+    for asset_id in review.approved_asset_ids:
+        decisions[asset_id] = "approved"
+    for asset_id in review.revision_asset_ids:
+        decisions[asset_id] = "needs_revision"
+    for asset_id in review.rejected_asset_ids:
+        decisions[asset_id] = "rejected"
+    return decisions
 
 
 def _engine_destination(source: str, asset_id: str) -> str:

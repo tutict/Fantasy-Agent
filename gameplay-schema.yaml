@@ -717,10 +717,12 @@ $defs:
         type: string
       encounters:
         type: array
+        minItems: 1
         items:
           $ref: "#/$defs/combat_encounter_spec"
       enemy_roles:
         type: array
+        minItems: 1
         items:
           type: string
       damage_model:
@@ -744,6 +746,7 @@ $defs:
     required:
       - encounter_id
       - beat
+      - enemy_roles
       - pressure_goal
       - telegraphs
       - player_counterplay
@@ -754,6 +757,7 @@ $defs:
         type: string
       enemy_roles:
         type: array
+        minItems: 1
         items:
           type: string
       pressure_goal:

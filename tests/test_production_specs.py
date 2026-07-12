@@ -4,14 +4,21 @@ import pytest
 from pydantic import ValidationError
 
 from fantasy_agent.contracts import (
+    CombatEncounterSpec,
     CombatSpec,
+    CreativeReviewReport,
     DamageModel,
     PromptRequest,
     ResourcePipelineAsset,
 )
 from fantasy_agent.production_specs import build_production_spec_bundle
 from fantasy_agent.spec_validation import validate_production_spec_bundle
-from fantasy_agent.workflows import run_director_workflow
+from fantasy_agent.workflows import (
+    prepare_blender_assets,
+    prepare_comfyui_visuals,
+    prepare_creative_review,
+    run_director_workflow,
+)
 
 
 def test_production_spec_bundle_derives_agent_executable_specs():
@@ -105,6 +112,16 @@ def test_contract_boundaries_reject_invalid_numeric_specs():
         )
 
     with pytest.raises(ValidationError):
+        CombatEncounterSpec(
+            encounter_id="encounter_empty_role",
+            beat="Prototype",
+            enemy_roles=[],
+            pressure_goal="Force route decisions.",
+            telegraphs=["Readable wind-up."],
+            player_counterplay=["Dodge during cooldown."],
+        )
+
+    with pytest.raises(ValidationError):
         ResourcePipelineAsset(
             asset_id="bad_asset",
             source="blender",
@@ -125,3 +142,34 @@ def test_build_production_spec_bundle_accepts_old_gameplay_spec_only():
     assert bundle.level.objective_gates
     assert bundle.numeric.tuning_bounds
     assert json.loads(bundle.model_dump_json())["schema_version"] == "0.1"
+
+def test_resource_pipeline_uses_report_level_creative_review_decisions():
+    plan = run_director_workflow(
+        PromptRequest(prompt="a stealth courier escapes a haunted train station")
+    )
+    blender_plan = prepare_blender_assets(plan.gameplay_spec)
+    comfyui_plan = prepare_comfyui_visuals(plan.gameplay_spec)
+    review = prepare_creative_review(plan.gameplay_spec, blender_plan, comfyui_plan)
+    assert len(review.items) >= 3
+    approved_item = review.items[0]
+    revised_item = review.items[1]
+    rejected_item = review.items[2]
+    report = CreativeReviewReport(
+        art_direction=review.art_direction,
+        items=review.items,
+        required_user_decisions=review.required_user_decisions,
+        approved_asset_ids=[approved_item.asset_id],
+        revision_asset_ids=[revised_item.asset_id],
+        rejected_asset_ids=[rejected_item.asset_id],
+    )
+
+    bundle = build_production_spec_bundle(plan.gameplay_spec, creative_review=report)
+    assets_by_id = {asset.asset_id: asset for asset in bundle.resource_pipeline.assets}
+
+    assert assets_by_id[approved_item.asset_id].approval_status == "approved"
+    assert assets_by_id[approved_item.asset_id].blocked_reason is None
+    assert assets_by_id[revised_item.asset_id].approval_status == "needs_revision"
+    assert assets_by_id[rejected_item.asset_id].approval_status == "rejected"
+    assert approved_item.asset_id not in bundle.resource_pipeline.blocked_assets
+    assert revised_item.asset_id in bundle.resource_pipeline.blocked_assets
+    assert rejected_item.asset_id in bundle.resource_pipeline.blocked_assets
