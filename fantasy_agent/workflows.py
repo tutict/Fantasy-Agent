@@ -25,6 +25,7 @@ from fantasy_agent.contracts import (
 from fantasy_agent.blender_codegen import enrich_blender_plan, slugify
 from fantasy_agent.gdd import render_gdd
 from fantasy_agent.generation import design_from_prompt
+from fantasy_agent.production_specs import build_production_spec_bundle
 
 
 BLENDER_KIT_JOBS: tuple[tuple[str, str, BlenderAssetKind], ...] = (
@@ -1269,6 +1270,11 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
     blender_plan = prepare_blender_assets(gameplay_spec)
     comfyui_plan = prepare_comfyui_visuals(gameplay_spec)
     creative_review = prepare_creative_review(gameplay_spec, blender_plan, comfyui_plan)
+    production_spec_bundle = build_production_spec_bundle(
+        gameplay_spec,
+        blender_plan=blender_plan,
+        creative_review=creative_review,
+    )
     qa_plan = prepare_qa_plan(gameplay_spec)
     production_pipeline = prepare_production_pipeline(
         request=request,
@@ -1282,6 +1288,7 @@ def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
     )
     return DirectorBuildPlan(
         gameplay_spec=gameplay_spec,
+        production_spec_bundle=production_spec_bundle,
         gdd=render_gdd(gameplay_spec),
         unreal_plan=unreal_plan,
         godot_plan=godot_plan,

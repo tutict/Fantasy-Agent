@@ -217,6 +217,153 @@ class EnemyPressureReport(StrictModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+
+class DamageModel(StrictModel):
+    player_hp: int = Field(default=5, ge=1, le=999)
+    enemy_hp_default: int = Field(default=3, ge=1, le=100)
+    contact_damage: int = Field(default=1, ge=0, le=100)
+    ranged_damage: int = Field(default=1, ge=0, le=100)
+    recovery_seconds: float = Field(default=1.0, ge=0.0, le=30.0)
+
+
+class CombatEncounterSpec(StrictModel):
+    encounter_id: str = Field(min_length=1)
+    beat: str = Field(min_length=1)
+    enemy_roles: list[str] = Field(default_factory=list)
+    pressure_goal: str = Field(min_length=1)
+    telegraphs: list[str] = Field(min_length=1)
+    player_counterplay: list[str] = Field(min_length=1)
+
+
+class CombatSpec(StrictModel):
+    source: str = "gameplay-agent"
+    schema_version: str = "0.1"
+    encounters: list[CombatEncounterSpec] = Field(default_factory=list)
+    enemy_roles: list[str] = Field(default_factory=list)
+    damage_model: DamageModel = Field(default_factory=DamageModel)
+    failure_pressure: str = Field(min_length=1)
+    telegraphs: list[str] = Field(min_length=1)
+    player_counterplay: list[str] = Field(min_length=1)
+
+
+class LevelSegmentSpec(StrictModel):
+    name: str = Field(min_length=1)
+    duration_minutes: int = Field(ge=1, le=15)
+    gameplay_focus: str = Field(min_length=1)
+    spawn_zone: str = Field(min_length=1)
+    safe_zone: str = Field(min_length=1)
+    objective_gate: str = Field(min_length=1)
+    placement_rules: list[str] = Field(min_length=1)
+
+
+class LevelSpec(StrictModel):
+    source: str = "level-director"
+    schema_version: str = "0.1"
+    teaching_segment: LevelSegmentSpec
+    mid_segments: list[LevelSegmentSpec] = Field(default_factory=list)
+    final_test: LevelSegmentSpec
+    spawn_zones: list[str] = Field(default_factory=list)
+    safe_zones: list[str] = Field(default_factory=list)
+    objective_gates: list[str] = Field(default_factory=list)
+    hazard_rules: list[str] = Field(default_factory=list)
+    encounter_placement_rules: list[str] = Field(default_factory=list)
+
+
+class NumericTuningSpec(StrictModel):
+    source: str = "gameplay-agent"
+    schema_version: str = "0.1"
+    player_move_speed: float = Field(default=8.0, ge=1.0, le=40.0)
+    player_hp: int = Field(default=5, ge=1, le=999)
+    target_session_minutes: int = Field(ge=5, le=15)
+    pressure_clock_seconds: int = Field(ge=60, le=1800)
+    enemy_pressure: EnemyPressureTuning = Field(default_factory=EnemyPressureTuning)
+    resource_costs: dict[str, float] = Field(default_factory=dict)
+    tuning_bounds: dict[str, tuple[float, float]] = Field(default_factory=dict)
+    qa_risks: list[str] = Field(default_factory=list)
+
+
+class NarrativeBeatSpec(StrictModel):
+    beat_id: str = Field(min_length=1)
+    level_beat: str = Field(min_length=1)
+    player_goal: str = Field(min_length=1)
+    objective_copy: str = Field(min_length=1)
+    failure_feedback: str = Field(min_length=1)
+
+
+class NarrativeSpec(StrictModel):
+    source: str = "gdd-writer"
+    schema_version: str = "0.1"
+    player_fantasy: str = Field(min_length=1)
+    premise: str = Field(min_length=1)
+    beats: list[NarrativeBeatSpec] = Field(min_length=1)
+    objective_copy: list[str] = Field(min_length=1)
+    failure_feedback: list[str] = Field(min_length=1)
+    hud_text: dict[str, str] = Field(default_factory=dict)
+    gameplay_priority_rule: str = "Narrative copy must clarify objectives and failure, not override playable goals."
+
+
+class ConfigTable(StrictModel):
+    table_id: str = Field(min_length=1)
+    format: Literal["yaml", "json", "csv-ready"] = "yaml"
+    primary_key: str = Field(min_length=1)
+    rows: list[dict[str, str | int | float | bool]] = Field(default_factory=list)
+    export_path: str = Field(min_length=1)
+
+
+class ConfigTableSpec(StrictModel):
+    source: str = "config-table-agent"
+    schema_version: str = "0.1"
+    tables: list[ConfigTable] = Field(default_factory=list)
+    handoff_artifacts: list[str] = Field(default_factory=list)
+
+
+class ResourcePipelineAsset(StrictModel):
+    asset_id: str = Field(min_length=1)
+    source: Literal["blender", "comfyui"]
+    role: str = Field(min_length=1)
+    approval_status: Literal["pending_user_review", "approved", "needs_revision", "rejected"]
+    engine_destination: str = Field(min_length=1)
+    blocked_reason: str | None = None
+
+
+class ResourcePipelineSpec(StrictModel):
+    source: str = "creative-review-agent"
+    schema_version: str = "0.1"
+    assets: list[ResourcePipelineAsset] = Field(default_factory=list)
+    approval_manifest_path: str = "generated/asset-approval-manifest.yaml"
+    ingest_rules: list[str] = Field(default_factory=list)
+    blocked_assets: list[str] = Field(default_factory=list)
+
+
+class SpecValidationIssue(StrictModel):
+    severity: Literal["error", "warning"]
+    spec: str
+    field: str
+    message: str
+
+
+class SpecValidationReport(StrictModel):
+    source: str = "fantasy-agent.spec-validation"
+    schema_version: str = "0.1"
+    status: Literal["passed", "warning", "failed"]
+    issues: list[SpecValidationIssue] = Field(default_factory=list)
+    coverage: dict[str, bool] = Field(default_factory=dict)
+
+
+class ProductionSpecBundle(StrictModel):
+    source: str = "fantasy-agent.production-specs"
+    schema_version: str = "0.1"
+    gameplay_spec_title: str
+    combat: CombatSpec | None = None
+    level: LevelSpec
+    numeric: NumericTuningSpec
+    narrative: NarrativeSpec
+    config_tables: ConfigTableSpec
+    resource_pipeline: ResourcePipelineSpec
+    validation: SpecValidationReport | None = None
+    handoff_artifacts: list[str] = Field(default_factory=list)
+
+
 class GameplaySpec(StrictModel):
     schema_version: str = "0.1"
     title: str
@@ -327,6 +474,7 @@ class GodotMCPCreateProjectRequest(StrictModel):
     gameplay_spec: GameplaySpec | None = None
     gameplay_scripts: dict[str, str] = Field(default_factory=dict)
     enemy_tuning: EnemyPressureTuning = Field(default_factory=EnemyPressureTuning)
+    production_spec_bundle: ProductionSpecBundle | None = None
 
 
 class GodotMCPValidateProjectRequest(StrictModel):
@@ -839,6 +987,7 @@ class DirectorTaskBreakdown(StrictModel):
 
 class DirectorBuildPlan(StrictModel):
     gameplay_spec: GameplaySpec
+    production_spec_bundle: ProductionSpecBundle | None = None
     gdd: GDDDocument
     unreal_plan: UnrealProjectPlan
     godot_plan: GodotProjectPlan

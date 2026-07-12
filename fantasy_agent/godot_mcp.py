@@ -23,6 +23,7 @@ from fantasy_agent.contracts import (
     GodotMCPValidateProjectRequest,
     GodotProjectArtifact,
     GodotProjectPlan,
+    ProductionSpecBundle,
     GodotProjectValidationReport,
 )
 
@@ -111,6 +112,7 @@ class GodotMCPBridge:
                 request.gameplay_spec,
                 request.gameplay_scripts,
                 request.enemy_tuning,
+                request.production_spec_bundle,
             )
         return GodotMCPResult(
             status="written" if request.write_files else "planned",
@@ -298,6 +300,7 @@ class GodotMCPBridge:
         gameplay_spec: GameplaySpec | None = None,
         gameplay_scripts: dict[str, str] | None = None,
         enemy_tuning: EnemyPressureTuning | None = None,
+        production_spec_bundle: ProductionSpecBundle | None = None,
     ) -> list[str]:
         gameplay_scripts = gameplay_scripts or {}
         enemy_tuning = enemy_tuning or EnemyPressureTuning()
@@ -334,6 +337,7 @@ class GodotMCPBridge:
                 gameplay_spec,
                 with_gameplay=has_gameplay,
                 enemy_tuning=enemy_tuning,
+                production_spec_bundle=production_spec_bundle,
             ),
         )
         # Player controller: use the generated script if provided, else template.
@@ -702,6 +706,7 @@ def _main_gd(
     *,
     with_gameplay: bool = False,
     enemy_tuning: EnemyPressureTuning | None = None,
+    production_spec_bundle: ProductionSpecBundle | None = None,
 ) -> str:
     handoff: dict[str, Any] = {
         "project_name": plan.project_name,
@@ -718,6 +723,20 @@ def _main_gd(
             "level_beats": [beat.name for beat in gameplay_spec.level_beats],
             "enemies": [enemy.model_dump(mode="json") for enemy in gameplay_spec.enemies],
             "enemy_tuning": enemy_tuning.model_dump(mode="json"),
+        }
+    if production_spec_bundle is not None:
+        handoff["production_specs"] = {
+            "schema_version": production_spec_bundle.schema_version,
+            "combat_enabled": production_spec_bundle.combat is not None,
+            "level_objective_gates": production_spec_bundle.level.objective_gates,
+            "numeric": production_spec_bundle.numeric.model_dump(mode="json"),
+            "config_tables": [table.table_id for table in production_spec_bundle.config_tables.tables],
+            "resource_pipeline": {
+                "asset_count": len(production_spec_bundle.resource_pipeline.assets),
+                "blocked_assets": production_spec_bundle.resource_pipeline.blocked_assets,
+                "approval_manifest_path": production_spec_bundle.resource_pipeline.approval_manifest_path,
+            },
+            "validation": production_spec_bundle.validation.model_dump(mode="json") if production_spec_bundle.validation else None,
         }
     payload = json.dumps(handoff, ensure_ascii=False, indent=2)
     route_body = _route_body_from_spec(gameplay_spec)

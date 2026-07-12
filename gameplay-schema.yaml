@@ -653,6 +653,468 @@ $defs:
         type: array
         items:
           type: string
+
+  production_spec_bundle:
+    type: object
+    additionalProperties: false
+    required:
+      - source
+      - schema_version
+      - gameplay_spec_title
+      - level
+      - numeric
+      - narrative
+      - config_tables
+      - resource_pipeline
+      - handoff_artifacts
+    properties:
+      source:
+        type: string
+        default: fantasy-agent.production-specs
+      schema_version:
+        type: string
+        default: "0.1"
+      gameplay_spec_title:
+        type: string
+      combat:
+        anyOf:
+          - $ref: "#/$defs/combat_spec"
+          - type: "null"
+      level:
+        $ref: "#/$defs/level_spec"
+      numeric:
+        $ref: "#/$defs/numeric_tuning_spec"
+      narrative:
+        $ref: "#/$defs/narrative_spec"
+      config_tables:
+        $ref: "#/$defs/config_table_spec"
+      resource_pipeline:
+        $ref: "#/$defs/resource_pipeline_spec"
+      validation:
+        anyOf:
+          - $ref: "#/$defs/spec_validation_report"
+          - type: "null"
+      handoff_artifacts:
+        type: array
+        items:
+          type: string
+  combat_spec:
+    type: object
+    additionalProperties: false
+    required:
+      - source
+      - schema_version
+      - encounters
+      - enemy_roles
+      - damage_model
+      - failure_pressure
+      - telegraphs
+      - player_counterplay
+    properties:
+      source:
+        type: string
+      schema_version:
+        type: string
+      encounters:
+        type: array
+        items:
+          $ref: "#/$defs/combat_encounter_spec"
+      enemy_roles:
+        type: array
+        items:
+          type: string
+      damage_model:
+        $ref: "#/$defs/damage_model"
+      failure_pressure:
+        type: string
+        minLength: 1
+      telegraphs:
+        type: array
+        minItems: 1
+        items:
+          type: string
+      player_counterplay:
+        type: array
+        minItems: 1
+        items:
+          type: string
+  combat_encounter_spec:
+    type: object
+    additionalProperties: false
+    required:
+      - encounter_id
+      - beat
+      - pressure_goal
+      - telegraphs
+      - player_counterplay
+    properties:
+      encounter_id:
+        type: string
+      beat:
+        type: string
+      enemy_roles:
+        type: array
+        items:
+          type: string
+      pressure_goal:
+        type: string
+      telegraphs:
+        type: array
+        minItems: 1
+        items:
+          type: string
+      player_counterplay:
+        type: array
+        minItems: 1
+        items:
+          type: string
+  damage_model:
+    type: object
+    additionalProperties: false
+    properties:
+      player_hp:
+        type: integer
+        minimum: 1
+        maximum: 999
+      enemy_hp_default:
+        type: integer
+        minimum: 1
+        maximum: 100
+      contact_damage:
+        type: integer
+        minimum: 0
+        maximum: 100
+      ranged_damage:
+        type: integer
+        minimum: 0
+        maximum: 100
+      recovery_seconds:
+        type: number
+        minimum: 0
+        maximum: 30
+  level_spec:
+    type: object
+    additionalProperties: false
+    required:
+      - teaching_segment
+      - final_test
+      - objective_gates
+    properties:
+      source:
+        type: string
+      schema_version:
+        type: string
+      teaching_segment:
+        $ref: "#/$defs/level_segment_spec"
+      mid_segments:
+        type: array
+        items:
+          $ref: "#/$defs/level_segment_spec"
+      final_test:
+        $ref: "#/$defs/level_segment_spec"
+      spawn_zones:
+        type: array
+        items:
+          type: string
+      safe_zones:
+        type: array
+        items:
+          type: string
+      objective_gates:
+        type: array
+        minItems: 1
+        items:
+          type: string
+      hazard_rules:
+        type: array
+        items:
+          type: string
+      encounter_placement_rules:
+        type: array
+        items:
+          type: string
+  level_segment_spec:
+    type: object
+    additionalProperties: false
+    required:
+      - name
+      - duration_minutes
+      - gameplay_focus
+      - spawn_zone
+      - safe_zone
+      - objective_gate
+      - placement_rules
+    properties:
+      name:
+        type: string
+      duration_minutes:
+        type: integer
+        minimum: 1
+        maximum: 15
+      gameplay_focus:
+        type: string
+      spawn_zone:
+        type: string
+      safe_zone:
+        type: string
+      objective_gate:
+        type: string
+      placement_rules:
+        type: array
+        minItems: 1
+        items:
+          type: string
+  numeric_tuning_spec:
+    type: object
+    additionalProperties: false
+    required:
+      - target_session_minutes
+      - pressure_clock_seconds
+      - enemy_pressure
+    properties:
+      source:
+        type: string
+      schema_version:
+        type: string
+      player_move_speed:
+        type: number
+        minimum: 1
+        maximum: 40
+      player_hp:
+        type: integer
+        minimum: 1
+        maximum: 999
+      target_session_minutes:
+        type: integer
+        minimum: 5
+        maximum: 15
+      pressure_clock_seconds:
+        type: integer
+        minimum: 60
+        maximum: 1800
+      enemy_pressure:
+        $ref: "#/$defs/enemy_pressure_tuning"
+      resource_costs:
+        type: object
+        additionalProperties:
+          type: number
+      tuning_bounds:
+        type: object
+      qa_risks:
+        type: array
+        items:
+          type: string
+  enemy_pressure_tuning:
+    type: object
+    additionalProperties: false
+    properties:
+      enemy_count_multiplier:
+        type: number
+        minimum: 0
+        maximum: 3
+      move_speed_multiplier:
+        type: number
+        minimum: 0.25
+        maximum: 3
+      detection_radius_multiplier:
+        type: number
+        minimum: 0.25
+        maximum: 3
+      patrol_radius_multiplier:
+        type: number
+        minimum: 0.25
+        maximum: 3
+      ranged_interval_multiplier:
+        type: number
+        minimum: 0.25
+        maximum: 3
+  narrative_spec:
+    type: object
+    additionalProperties: false
+    required:
+      - player_fantasy
+      - premise
+      - beats
+      - objective_copy
+      - failure_feedback
+    properties:
+      source:
+        type: string
+      schema_version:
+        type: string
+      player_fantasy:
+        type: string
+      premise:
+        type: string
+      beats:
+        type: array
+        minItems: 1
+        items:
+          $ref: "#/$defs/narrative_beat_spec"
+      objective_copy:
+        type: array
+        minItems: 1
+        items:
+          type: string
+      failure_feedback:
+        type: array
+        minItems: 1
+        items:
+          type: string
+      hud_text:
+        type: object
+        additionalProperties:
+          type: string
+      gameplay_priority_rule:
+        type: string
+  narrative_beat_spec:
+    type: object
+    additionalProperties: false
+    required:
+      - beat_id
+      - level_beat
+      - player_goal
+      - objective_copy
+      - failure_feedback
+    properties:
+      beat_id:
+        type: string
+      level_beat:
+        type: string
+      player_goal:
+        type: string
+      objective_copy:
+        type: string
+      failure_feedback:
+        type: string
+  config_table_spec:
+    type: object
+    additionalProperties: false
+    required:
+      - tables
+    properties:
+      source:
+        type: string
+      schema_version:
+        type: string
+      tables:
+        type: array
+        items:
+          $ref: "#/$defs/config_table"
+      handoff_artifacts:
+        type: array
+        items:
+          type: string
+  config_table:
+    type: object
+    additionalProperties: false
+    required:
+      - table_id
+      - format
+      - primary_key
+      - rows
+      - export_path
+    properties:
+      table_id:
+        type: string
+      format:
+        enum:
+          - yaml
+          - json
+          - csv-ready
+      primary_key:
+        type: string
+      rows:
+        type: array
+        items:
+          type: object
+      export_path:
+        type: string
+  resource_pipeline_spec:
+    type: object
+    additionalProperties: false
+    required:
+      - assets
+      - approval_manifest_path
+      - ingest_rules
+      - blocked_assets
+    properties:
+      source:
+        type: string
+      schema_version:
+        type: string
+      assets:
+        type: array
+        items:
+          $ref: "#/$defs/resource_pipeline_asset"
+      approval_manifest_path:
+        type: string
+      ingest_rules:
+        type: array
+        items:
+          type: string
+      blocked_assets:
+        type: array
+        items:
+          type: string
+  resource_pipeline_asset:
+    type: object
+    additionalProperties: false
+    required:
+      - asset_id
+      - source
+      - role
+      - approval_status
+      - engine_destination
+    properties:
+      asset_id:
+        type: string
+      source:
+        enum:
+          - blender
+          - comfyui
+      role:
+        type: string
+      approval_status:
+        enum:
+          - pending_user_review
+          - approved
+          - needs_revision
+          - rejected
+      engine_destination:
+        type: string
+        minLength: 1
+      blocked_reason:
+        type:
+          - string
+          - "null"
+  spec_validation_report:
+    type: object
+    additionalProperties: false
+    required:
+      - source
+      - schema_version
+      - status
+      - issues
+      - coverage
+    properties:
+      source:
+        type: string
+      schema_version:
+        type: string
+      status:
+        enum:
+          - passed
+          - warning
+          - failed
+      issues:
+        type: array
+        items:
+          type: object
+      coverage:
+        type: object
+        additionalProperties:
+          type: boolean
   i18n_bundle:
     type: object
     additionalProperties: false

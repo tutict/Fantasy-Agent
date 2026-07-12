@@ -43,7 +43,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["summary", "json", "gdd"],
+        choices=["summary", "json", "gdd", "specs"],
         default="summary",
         help="Output format (default summary).",
     )
@@ -158,7 +158,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.execute:
         return _run_executor(plan, args)
 
-    if args.format == "json":
+    if args.format == "specs":
+        print(plan.production_spec_bundle.model_dump_json(indent=2))
+    elif args.format == "json":
         print(plan.model_dump_json(indent=2))
     else:
         _print_summary(plan)

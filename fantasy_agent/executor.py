@@ -309,6 +309,53 @@ def _write_enemy_pressure_report(
     return report_rel
 
 
+
+def _write_production_spec_exports(
+    plan: DirectorBuildPlan,
+    project_dir: str,
+    workspace_root: Path | str,
+) -> list[str]:
+    """Write M7 production spec bundle and config tables into the Godot project."""
+
+    if plan.production_spec_bundle is None:
+        return []
+
+    import yaml
+
+    bundle = plan.production_spec_bundle
+    written: list[str] = []
+    data_dir = Path(project_dir) / "data"
+    bundle_rel = (data_dir / "production-spec-bundle.yaml").as_posix()
+    bundle_path = resolve_workspace_path(
+        bundle_rel,
+        workspace_root=workspace_root,
+        required_prefix="generated/godot",
+    )
+    bundle_path.parent.mkdir(parents=True, exist_ok=True)
+    bundle_path.write_text(
+        yaml.safe_dump(bundle.model_dump(mode="json"), sort_keys=False, allow_unicode=True),
+        encoding="utf-8",
+    )
+    written.append(bundle_rel)
+
+    config_dir = data_dir / "config"
+    for table in bundle.config_tables.tables:
+        table_rel = (config_dir / f"{table.table_id}.yaml").as_posix()
+        table_path = resolve_workspace_path(
+            table_rel,
+            workspace_root=workspace_root,
+            required_prefix="generated/godot",
+        )
+        table_path.parent.mkdir(parents=True, exist_ok=True)
+        table_path.write_text(
+            yaml.safe_dump(table.model_dump(mode="json"), sort_keys=False, allow_unicode=True),
+            encoding="utf-8",
+        )
+        written.append(table_rel)
+
+    return written
+
+
 def _run_gameplay_codegen(
     plan: DirectorBuildPlan, stages: list[StageResult]
 ) -> tuple[dict[str, str], bool]:
@@ -675,6 +722,7 @@ def execute_godot_demo(
             gameplay_spec=plan.gameplay_spec,
             gameplay_scripts=gameplay_scripts,
             enemy_tuning=enemy_tuning,
+            production_spec_bundle=plan.production_spec_bundle,
         )
     )
     if create.status != "written" or create.artifact is None:
@@ -682,12 +730,17 @@ def execute_godot_demo(
             StageResult("create", "failed", detail="; ".join(create.risks) or "create failed")
         )
         return ExecutionResult("failed", session_id, project_dir, stages, planned)
+    spec_exports = _write_production_spec_exports(plan, project_dir, workspace_root)
+    create_artifacts = [*create.written_files, *spec_exports]
+    create_detail = f"wrote {len(create.written_files)} files"
+    if spec_exports:
+        create_detail += f", exported {len(spec_exports)} production spec files"
     stages.append(
         StageResult(
             "create",
             "done",
-            detail=f"wrote {len(create.written_files)} files",
-            artifacts=create.written_files,
+            detail=create_detail,
+            artifacts=create_artifacts,
         )
     )
 
@@ -772,6 +825,7 @@ def execute_godot_demo(
                     gameplay_spec=plan.gameplay_spec,
                     gameplay_scripts=fallback,
                     enemy_tuning=enemy_tuning,
+                    production_spec_bundle=plan.production_spec_bundle,
                 )
             )
             reimport = bridge.run_godot_import(

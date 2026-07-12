@@ -786,3 +786,31 @@ def test_with_gameplay_accepts_enemy_pressure_tuning(tmp_path: Path):
     main = (tmp_path / result.project_dir / "scripts" / "main.gd").read_text(encoding="utf-8")
     assert '"move_speed_multiplier": 1.5' in main
     assert "count_multiplier" in main
+
+
+
+def test_godot_execution_exports_production_specs(tmp_path: Path):
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m7",
+        confirmed=True,
+        godot_exe="godot",
+        workspace_root=tmp_path,
+        bridge=bridge,
+        run_import=False,
+    )
+
+    assert result.ok
+    create = next(stage for stage in result.stages if stage.name == "create")
+    assert any(path.endswith("data/production-spec-bundle.yaml") for path in create.artifacts)
+    assert any(path.endswith("data/config/enemies.yaml") for path in create.artifacts)
+    bundle = tmp_path / result.project_dir / "data" / "production-spec-bundle.yaml"
+    assert bundle.exists()
+    assert "ProductionSpecBundle" not in bundle.read_text(encoding="utf-8")
+    assert "combat:" in bundle.read_text(encoding="utf-8")
+    main = (tmp_path / result.project_dir / "scripts" / "main.gd").read_text(encoding="utf-8")
+    assert '"production_specs"' in main
+    assert '"level_objective_gates"' in main
+    assert '"config_tables"' in main
