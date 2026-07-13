@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   openManualCorrectionTarget as openManualCorrectionTargetApi,
@@ -26,6 +26,7 @@ import {
   PipelinePanel,
   QaPanel,
   ReviewPanel,
+  SpecBundlePanel,
   TasksPanel,
   VisualsPanel,
   localizedStageTitle,
@@ -41,7 +42,8 @@ import {
   useDemoJobPolling,
   useEnemyTuning,
   useManualTargets,
-  usePlanningHandoff
+  usePlanningHandoff,
+  useSpecPreview
 } from "./hooks";
 import "../styles/console.css";
 
@@ -68,7 +70,7 @@ const manualTargetKeys: Record<string, { label: string; detail: string }> = {
   generated: { label: "manualTargetGenerated", detail: "manualGeneratedDetail" }
 };
 
-type TabKey = "overview" | "pipeline" | "tasks" | "review" | "build" | "visuals" | "qa" | "gdd" | "dsl";
+type TabKey = "overview" | "pipeline" | "tasks" | "review" | "build" | "visuals" | "specs" | "qa" | "gdd" | "dsl";
 
 export function FlowConsole() {
   const [locale, setLocale] = useState<Locale>(() => initialLocale(CONSOLE_LOCALE_KEY));
@@ -100,12 +102,21 @@ export function FlowConsole() {
     currentHandoff,
     reviewDecisions,
     setReviewDecisions,
+    updateProductionSpecBundle,
     titleForPlan,
     renderHandoffTitle,
     loadPlanningHandoff
   } = usePlanningHandoff({ locale, t, addActivity, setStatus });
   const { manualTargetsPayload, loadManualTargets, fallbackManualTargets } = useManualTargets(currentPlan);
-  const { approvalManifestPath, onWriteApprovalManifest } = useApprovalManifest({ currentPlan, reviewDecisions, setStatus, addActivity, t });
+  const { specPreview, specPreviewError } = useSpecPreview(currentPlan, activeTab === "specs");
+  const { approvalManifestPath, onWriteApprovalManifest } = useApprovalManifest({
+    currentPlan,
+    reviewDecisions,
+    setStatus,
+    addActivity,
+    t,
+    onBundleSynced: updateProductionSpecBundle
+  });
 
   const modeLabel = useCallback((mode: CorrectionMode) => t(correctionModeKeys[mode] || "modeGameplay"), [t]);
 
@@ -629,6 +640,7 @@ export function FlowConsole() {
               ["review", "tabReview"],
               ["build", "tabBuild"],
               ["visuals", "tabVisuals"],
+              ["specs", "tabSpecs"],
               ["qa", "tabQa"],
               ["gdd", "tabGdd"],
               ["dsl", "tabDsl"]
@@ -667,6 +679,14 @@ export function FlowConsole() {
             </Panel>
             <Panel tab="visuals" activeTab={activeTab}>
               {currentPlan ? <VisualsPanel comfy={currentPlan.comfyui_plan} review={currentPlan.creative_review} t={t} /> : null}
+            </Panel>
+            <Panel tab="specs" activeTab={activeTab}>
+              <SpecBundlePanel
+                bundle={currentPlan?.production_spec_bundle}
+                preview={specPreview}
+                error={specPreviewError}
+                t={t}
+              />
             </Panel>
             <Panel tab="qa" activeTab={activeTab}>
               {currentPlan ? <QaPanel qa={currentPlan.qa_plan} t={t} /> : null}

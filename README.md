@@ -276,13 +276,30 @@ curl -X POST http://127.0.0.1:8000/plan `
 - M6e approval-gated ingest 已接入 Godot 资产复制，只有 manifest 中 approved 的 Blender GLB 会进入 `assets/generated/`。
 - M6f approval gate QA 与预览闭环已接入：执行阶段会写出 `approval-gate-report.yaml`，Studio 会显示 approved / skipped / revision / rejected / pending 摘要。
 - Creative Review 决策已经可以写入 `generated/asset-approval-manifest.yaml`。
+- M7.1-M7.5 已完成第一轮：Bundle 加载/阻断、Godot Spec 驱动、配置编译、Studio 追踪和 Unreal adapter/QA 已贯通。
 
 下一步优先级：
 
-- 进入 M7 真实运行验证：Godot headless import、packaged playtest 和后续 Unreal PIE/DataValidation。
-- 通过受控 MCP 执行确认运行真实 PIE、Godot headless import 和 packaged playtest。
-- 为生成图片和模型 manifest 增加更丰富的预览能力。
+- 在真实 Unreal Editor 中导入 M7 DataTable/DataAsset adapter 源并运行 PIE/DataValidation。
+- 增加 Godot packaged playtest 与运行时指标采集，让机器 QA 使用真实 playtest 数据。
+- 为 schema version 增加 migration、bundle diff 和变更审批能力。
 
-## M7 Agent ????? Spec
+## M7 Agent 可执行生产 Spec
 
-M7 ?????Agent ??? spec????? `ProductionSpecBundle`??????????????????????? Pydantic contract ?????????? `--format specs` ? Godot ???????Godot ????????? `data/production-spec-bundle.yaml` ? `data/config/*.yaml`??????? Creative Review / approval manifest ???
+M7 将 `GameplaySpec` 提升为可加载、可校验、可编译、可追踪、可阻断的 `ProductionSpecBundle` 权威输入：
+
+- **M7.1**：支持 YAML/JSON bundle loader、跨 Spec 深度校验、`--spec-file` 和执行前阻断。
+- **M7.2**：Godot 的路线、战斗、数值、HUD 与失败反馈优先由 `CombatSpec`、`LevelSpec`、`NumericTuningSpec`、`NarrativeSpec` 驱动；旧 `GameplaySpec` 仅保留兼容回退。
+- **M7.3**：`ConfigTableCompiler` 可确定性输出 YAML、JSON、CSV-ready 配置；Creative Review manifest 会同步 `ResourcePipelineSpec` 的 approval 状态。
+- **M7.4**：Flow Console 提供 Spec Bundle 面板，展示深度校验、编译产物、字段到产物追踪和机器 QA。
+- **M7.5**：Unreal adapter 会生成 `DT_Enemies.json`、`DT_Encounters.json`、`DA_ProductionSpec.json`、`SpecTrace.json` 和 `QA_Executable.json`，再进入 DataValidation。
+
+CLI 示例：
+
+```powershell
+python -m fantasy_agent --spec-file generated/specs/production-spec-bundle.yaml --format specs
+python -m fantasy_agent --spec-file generated/specs/production-spec-bundle.yaml --engine "Godot 4" --execute --yes --with-gameplay
+python -m fantasy_agent --spec-file generated/specs/production-spec-bundle.yaml --engine "UE5" --execute --yes --no-import
+```
+
+任何深度校验错误都会在工程写盘前产生 `spec_validation: failed`，不会继续创建 Godot 或 Unreal 工程。

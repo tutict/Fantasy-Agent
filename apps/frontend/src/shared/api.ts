@@ -8,7 +8,9 @@ import type {
   ExecutePreview,
   ExecuteStart,
   ManualTargetsPayload,
-  McpStatus
+  McpStatus,
+  ProductionSpecBundle,
+  SpecBundlePreviewResponse
 } from "./types";
 import type { DirectorBuildPlan, EnemyPressureTuning } from "./types";
 
@@ -103,11 +105,16 @@ export function getMcpStatus(engine: string): Promise<McpStatus> {
 
 export function writeApprovalManifest(
   review: CreativeReview,
-  decisions: Record<string, string>
+  decisions: Record<string, string>,
+  productionSpecBundle?: ProductionSpecBundle
 ): Promise<ApprovalManifestResponse> {
   return jsonRequest<ApprovalManifestResponse>("/api/creative-review/approval-manifest", {
     method: "POST",
-    body: JSON.stringify({ review, decisions })
+    body: JSON.stringify({
+      review,
+      decisions,
+      production_spec_bundle: productionSpecBundle
+    })
   });
 }
 
@@ -146,4 +153,18 @@ export function startAssetExecution(
 
 export function getAssetExecutionJob(jobId: string): Promise<AssetExecuteJob> {
   return jsonRequest<AssetExecuteJob>(`/api/assets/execute/${encodeURIComponent(jobId)}`);
+}
+
+
+export function previewSpecBundle(
+  productionSpecBundle: ProductionSpecBundle,
+  target: "godot" | "unreal"
+): Promise<SpecBundlePreviewResponse> {
+  return jsonRequest<SpecBundlePreviewResponse>("/api/specs/preview", {
+    method: "POST",
+    body: JSON.stringify({
+      production_spec_bundle: productionSpecBundle,
+      target
+    })
+  });
 }

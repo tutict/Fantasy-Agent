@@ -19,7 +19,17 @@ function App() {
   return <StudioShell />;
 }
 
-createRoot(document.getElementById("root") as HTMLElement).render(
+declare global {
+  interface Window {
+    __fantasyAgentRoot?: ReturnType<typeof createRoot>;
+  }
+}
+
+const rootElement = document.getElementById("root");
+if (!rootElement) throw new Error("Missing #root container");
+const root = window.__fantasyAgentRoot ?? createRoot(rootElement);
+window.__fantasyAgentRoot = root;
+root.render(
   <StrictMode>
     <App />
   </StrictMode>

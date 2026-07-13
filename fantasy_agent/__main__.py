@@ -17,6 +17,7 @@ import argparse
 import os
 import sys
 from datetime import datetime
+from pathlib import Path
 
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.generation import design_from_prompt
@@ -29,7 +30,12 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="fantasy-agent",
         description="Generate a gameplay-first build plan from a game idea.",
     )
-    parser.add_argument("--prompt", required=True, help="Raw game idea (min 8 chars).")
+    parser.add_argument("--prompt", help="Raw game idea (min 8 chars).")
+    parser.add_argument(
+        "--spec-file",
+        default=None,
+        help="Load an existing ProductionSpecBundle YAML/JSON as the execution authority.",
+    )
     parser.add_argument(
         "--minutes", type=int, default=10, help="Target session length, 5-15 (default 10)."
     )
@@ -129,6 +135,38 @@ def _print_summary(plan) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    if args.spec_file:
+        from fantasy_agent.production_spec_runtime import (
+            director_plan_from_production_spec_bundle,
+            load_production_spec_bundle,
+        )
+
+        try:
+            bundle = load_production_spec_bundle(args.spec_file, workspace_root=Path.cwd())
+        except Exception as exc:  # noqa: BLE001 - surface validation errors cleanly
+            print(f"Invalid production spec bundle: {exc}", file=sys.stderr)
+            return 2
+        if not args.execute and args.format == "specs":
+            print(bundle.model_dump_json(indent=2))
+            return 0
+        plan = director_plan_from_production_spec_bundle(
+            bundle,
+            engine_version=args.engine,
+        )
+        if args.execute:
+            return _run_executor(plan, args)
+        if args.format == "json":
+            print(plan.model_dump_json(indent=2))
+        elif args.format == "gdd":
+            print(plan.gdd.markdown)
+        else:
+            _print_summary(plan)
+        return 0
+
+    if not args.prompt:
+        print("Invalid request: provide --prompt or --spec-file.", file=sys.stderr)
+        return 2
 
     try:
         request = PromptRequest(

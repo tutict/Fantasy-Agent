@@ -61,15 +61,26 @@ gameplay-spec.yaml
 DSL 是事实来源。下游智能体不能静默添加 spec 中不存在的机制。
 
 
-## M7 Agent ????? Spec
+## M7 Agent 可执行生产 Spec
 
-`GameplaySpec` ????? DSL ??????M7 ? `DirectorBuildPlan.production_spec_bundle` ??? `ProductionSpecBundle`?????????????????????????????????????
+`ProductionSpecBundle` 是 M7 的执行权威，`GameplaySpec` 是兼容视图。Bundle 的字段必须能追踪到配置、运行时 handoff、引擎 adapter 或 QA 断言。
 
-- `CombatSpec`?encounter?enemy role?damage model?telegraph ? player counterplay?
-- `LevelSpec`???????????????spawn/safe/objective gate ? placement rules?
-- `NumericTuningSpec`?????????????????????? QA ???
-- `NarrativeSpec`?player fantasy?premise?objective copy?failure feedback ? HUD ???
-- `ConfigTableSpec`?enemies?encounters?tuning?level beats?narrative beats ? YAML/JSON/CSV-ready ?? manifest?
-- `ResourcePipelineSpec`?Blender / ComfyUI / Creative Review / approval manifest ???????????????
+| Spec | 执行职责 | 主要产物 |
+| --- | --- | --- |
+| `CombatSpec` | encounter、enemy role、damage、telegraph、counterplay | Godot enemy handoff、Unreal encounter DataTable |
+| `LevelSpec` | 教学段、中段、最终测试、spawn/safe zone、objective gate | Godot 路线与 gate、Unreal DataAsset |
+| `NumericTuningSpec` | 玩家数值、压力时钟、敌人倍率、调参边界 | Godot runtime、QA metrics |
+| `NarrativeSpec` | objective copy、HUD、失败反馈 | Godot HUD/game manager、Unreal DataAsset |
+| `ConfigTableSpec` | 主键、行、格式和安全导出路径 | YAML、JSON、CSV-ready、DataTable adapter |
+| `ResourcePipelineSpec` | source、role、approval、destination、blocked reason | approval-gated ingest、资源追踪 |
 
-CLI ?? `python -m fantasy_agent --prompt "..." --format specs` ??? bundle?Godot ???????? `generated/godot/sessions/<session>/<project>/data/production-spec-bundle.yaml`???? `data/config/*.yaml`?
+执行规则：
+
+1. `load_production_spec_bundle()` 只接受 workspace 内的 YAML/JSON 和受支持的 schema version。
+2. `validate_production_spec_bundle()` 检查跨 Spec 引用、时长、counterplay、调参边界、表主键、导出路径和审批一致性。
+3. 错误级 issue 在 create 阶段前阻断；warning 可继续但必须显式呈现。
+4. 编译器输出 `SpecCompileResult.artifacts` 与 `traces`，每个 trace 记录 `spec_field -> artifact_path -> consumer`。
+5. Creative Review manifest 写入后同步资源审批状态；只有 approved 资产可 ingest。
+6. Unreal 机器 QA 输出结构化 assertion/result，error 失败会阻断，warning 标记 degraded。
+
+CLI：`python -m fantasy_agent --spec-file <bundle.yaml|bundle.json> --format specs`。执行时可继续组合 `--engine`、`--execute`、`--yes`、`--with-gameplay` 与审批参数。

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -362,6 +362,51 @@ class ProductionSpecBundle(StrictModel):
     resource_pipeline: ResourcePipelineSpec
     validation: SpecValidationReport | None = None
     handoff_artifacts: list[str] = Field(default_factory=list)
+
+
+class CompiledSpecArtifact(StrictModel):
+    path: str = Field(min_length=1)
+    media_type: str = Field(min_length=1)
+    content: str
+
+
+class SpecTraceRecord(StrictModel):
+    spec_field: str = Field(min_length=1)
+    artifact_path: str = Field(min_length=1)
+    consumer: str = Field(min_length=1)
+
+
+class SpecCompileResult(StrictModel):
+    target: Literal["config", "godot", "unreal"]
+    artifacts: list[CompiledSpecArtifact] = Field(default_factory=list)
+    traces: list[SpecTraceRecord] = Field(default_factory=list)
+    runtime_handoff: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutableQAAssertion(StrictModel):
+    assertion_id: str = Field(min_length=1)
+    metric_key: str = Field(min_length=1)
+    operator: Literal["eq", "gte", "lte", "between", "non_empty", "all_approved"]
+    expected: bool | int | float | str | list[int | float] | None = None
+    severity: Literal["error", "warning"] = "error"
+
+
+class ExecutableQAResult(StrictModel):
+    assertion_id: str = Field(min_length=1)
+    metric_key: str = Field(min_length=1)
+    passed: bool
+    actual: bool | int | float | str | list[str] | None = None
+    expected: bool | int | float | str | list[int | float] | None = None
+    severity: Literal["error", "warning"] = "error"
+    message: str = ""
+
+
+class ExecutableQAReport(StrictModel):
+    source: str = "fantasy-agent.executable-qa"
+    schema_version: str = "0.1"
+    status: Literal["passed", "warning", "failed"]
+    assertions: list[ExecutableQAAssertion] = Field(default_factory=list)
+    results: list[ExecutableQAResult] = Field(default_factory=list)
 
 
 class GameplaySpec(StrictModel):

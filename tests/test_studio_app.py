@@ -325,3 +325,71 @@ def test_execute_demo_job_ids_do_not_collide(monkeypatch):
 def test_asset_execute_status_unknown_job():
     module = _load_studio_app()
     assert module.asset_execute_status("nope")["status"] == "unknown"
+
+
+def test_approval_manifest_api_returns_synchronized_bundle(monkeypatch, tmp_path):
+    module = _load_studio_app()
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.workflows import run_director_workflow
+
+    plan = run_director_workflow(
+        PromptRequest(prompt="a stealth courier escapes a haunted station")
+    )
+    assert plan.production_spec_bundle is not None
+    item = plan.creative_review.items[0]
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+
+    response = module.write_approval_manifest(
+        module.ApprovalManifestRequest(
+            review=plan.creative_review,
+            decisions={item.asset_id: "approved"},
+            production_spec_bundle=plan.production_spec_bundle,
+        )
+    )
+
+    assert response.production_spec_bundle is not None
+    synced = next(
+        asset
+        for asset in response.production_spec_bundle.resource_pipeline.assets
+        if asset.asset_id == item.asset_id
+    )
+    assert synced.approval_status == "approved"
+    assert synced.blocked_reason is None
+    assert (tmp_path / "generated" / "specs" / "production-spec-bundle.yaml").exists()
+
+def test_spec_bundle_preview_api_returns_validation_artifacts_and_traces():
+    module = _load_studio_app()
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.workflows import run_director_workflow
+
+    plan = run_director_workflow(
+        PromptRequest(prompt="a combat arena with guards and ranged turrets")
+    )
+    assert plan.production_spec_bundle is not None
+
+    response = module.preview_spec_bundle(
+        module.SpecBundlePreviewRequest(
+            production_spec_bundle=plan.production_spec_bundle,
+            target="godot",
+        )
+    )
+
+    assert response.validation.status in {"passed", "warning"}
+    assert response.artifacts
+    assert response.traces
+    assert response.executable_qa.results
+    assert "/api/specs/preview" in {route.path for route in module.app.routes}
+
+
+def test_frontend_includes_spec_bundle_panel():
+    module = _load_studio_app()
+    flow_source = module.REPO_ROOT.joinpath(
+        "apps/frontend/src/console/FlowConsole.tsx"
+    ).read_text(encoding="utf-8")
+    rendering_source = module.REPO_ROOT.joinpath(
+        "apps/frontend/src/console/rendering.tsx"
+    ).read_text(encoding="utf-8")
+
+    assert '["specs", "tabSpecs"]' in flow_source
+    assert "SpecBundlePanel" in flow_source
+    assert "spec-trace-list" in rendering_source

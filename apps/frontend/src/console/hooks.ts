@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { getAssetExecutionJob, getExecuteJob, getManualCorrectionTargets, writeApprovalManifest } from "../shared/api";
+import { getAssetExecutionJob, getExecuteJob, getManualCorrectionTargets, previewSpecBundle, writeApprovalManifest } from "../shared/api";
 import { HANDOFF_KEY, readPlanningHandoff, savePlanningHandoff } from "../shared/storage";
 import type {
   CorrectionMode,
@@ -10,6 +10,8 @@ import type {
   ManualCorrectionTarget,
   ManualTargetsPayload,
   PlanningHandoff,
+  ProductionSpecBundle,
+  SpecBundlePreviewResponse,
   StatusState,
   Theme
 } from "../shared/types";
@@ -55,6 +57,42 @@ export function useEnemyTuning() {
 
   return { enemyTuning, setEnemyTuningValue };
 }
+
+export function useSpecPreview(currentPlan: DirectorBuildPlan | null, enabled: boolean) {
+  const [specPreview, setSpecPreview] = useState<SpecBundlePreviewResponse | null>(null);
+  const [specPreviewError, setSpecPreviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled || !currentPlan?.production_spec_bundle) {
+      setSpecPreview(null);
+      setSpecPreviewError(null);
+      return;
+    }
+    let active = true;
+    void previewSpecBundle(
+      currentPlan.production_spec_bundle,
+      usesGodotEngine(currentPlan) ? "godot" : "unreal"
+    )
+      .then((preview) => {
+        if (active) {
+          setSpecPreview(preview);
+          setSpecPreviewError(null);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setSpecPreview(null);
+          setSpecPreviewError(String(error));
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentPlan, enabled]);
+
+  return { specPreview, specPreviewError };
+}
+
 
 const fallbackManualTargetDetailKeys: Record<string, string> = {
   planning: "manualPlanningDetail",
@@ -187,11 +225,18 @@ export function usePlanningHandoff({
     };
   }, [acceptHandoff, loadPlanningHandoff, locale, t]);
 
+  const updateProductionSpecBundle = useCallback((bundle: ProductionSpecBundle) => {
+    setCurrentPlan((current) =>
+      current ? { ...current, production_spec_bundle: bundle } : current
+    );
+  }, []);
+
   return {
     currentPlan,
     currentHandoff,
     reviewDecisions,
     setReviewDecisions,
+    updateProductionSpecBundle,
     titleForPlan,
     renderHandoffTitle,
     loadPlanningHandoff
@@ -260,13 +305,15 @@ export function useApprovalManifest({
   reviewDecisions,
   setStatus,
   addActivity,
-  t
+  t,
+  onBundleSynced
 }: {
   currentPlan: DirectorBuildPlan | null;
   reviewDecisions: Record<string, string>;
   setStatus: (status: StatusState) => void;
   addActivity: (label: string, message: string) => void;
   t: (key: string) => string;
+  onBundleSynced: (bundle: ProductionSpecBundle) => void;
 }) {
   const [approvalManifestPath, setApprovalManifestPath] = useState("");
 
@@ -277,14 +324,19 @@ export function useApprovalManifest({
       return;
     }
     try {
-      const response = await writeApprovalManifest(currentPlan.creative_review, reviewDecisions);
+      const response = await writeApprovalManifest(
+        currentPlan.creative_review,
+        reviewDecisions,
+        currentPlan.production_spec_bundle
+      );
+      if (response.production_spec_bundle) onBundleSynced(response.production_spec_bundle);
       setApprovalManifestPath(response.manifest_path || "");
       addActivity(t("approvalManifestWritten"), response.manifest_path || "");
     } catch (error) {
       setStatus("error");
       addActivity(t("approvalManifestFailed"), String(error));
     }
-  }, [addActivity, currentPlan, reviewDecisions, setStatus, t]);
+  }, [addActivity, currentPlan, onBundleSynced, reviewDecisions, setStatus, t]);
 
   return { approvalManifestPath, setApprovalManifestPath, onWriteApprovalManifest };
 }

@@ -352,6 +352,16 @@ studio 一键生成（M5a / M6c / M6d）：
 - 先测试循环，再做打磨。
 - 检查完成时间、重开流程、目标可读性和打包构建行为。
 
-## M7 Agent ????? Spec
+## M7 Agent 可执行生产 Spec
 
-M7 ? `GameplaySpec` ??? `ProductionSpecBundle` ????`CombatSpec`?`LevelSpec`?`NumericTuningSpec`?`NarrativeSpec`?`ConfigTableSpec` ? `ResourcePipelineSpec` ?? agent ??????????? Pydantic contract?Godot ???? create ???? `data/production-spec-bundle.yaml` ? `data/config/*.yaml`??? `main.gd` handoff ??? combat/level/numeric/resource ?????????? Creative Review ? approval manifest gate ???
+M7 以 `DirectorBuildPlan.production_spec_bundle` 作为执行权威，包含 `CombatSpec`、`LevelSpec`、`NumericTuningSpec`、`NarrativeSpec`、`ConfigTableSpec` 与 `ResourcePipelineSpec`。
+
+规则：
+
+- Agent 可从 YAML/JSON 读取现有 bundle；`schema_version` 不支持或深度校验失败时必须在任何工程写盘前阻断。
+- `--spec-file` 不重新生成设计，只构造兼容下游计划；`GameplaySpec` 仅服务旧接口和未迁移路径。
+- Godot 运行时 handoff 必须优先使用 Combat/Level/Numeric/Narrative Spec，输出 `data/production-spec-runtime.json`、配置表和 `data/spec-trace.json`。
+- `ConfigTableCompiler` 必须确定性排序、校验主键和导出路径，并支持 YAML、JSON、CSV-ready。
+- Creative Review 写入 approval manifest 后必须同步 `ResourcePipelineSpec.assets[].approval_status` 与 `blocked_assets`；未批准资产不得进入引擎 ingest。
+- Studio Spec Bundle 面板必须展示校验状态、编译产物、字段到产物追踪和机器可执行 QA。
+- Unreal adapter 输出 DataTable/DataAsset JSON 源与 `QA_Executable.json`；错误级 QA 阻断后续执行，警告级 QA 以 degraded 状态继续。

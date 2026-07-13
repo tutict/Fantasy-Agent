@@ -316,26 +316,36 @@ def _progression_for_axis(axis: str) -> ProgressionSpec:
     )
 
 
+def _beat_durations(target_minutes: int) -> tuple[int, int, int]:
+    # PromptRequest allows 5-15 minutes and spec validation requires the beat
+    # durations to sum exactly to that target. Short sessions shrink the
+    # teaching and final beats; targets >= 7 keep the classic 2/N/3 pacing.
+    teaching = 2 if target_minutes >= 7 else 1
+    final = 3 if target_minutes >= 7 else 2
+    return teaching, target_minutes - teaching - final, final
+
+
 def _level_beats_for_axis(axis: str, target_minutes: int) -> list[LevelBeat]:
+    teaching_minutes, mid_minutes, final_minutes = _beat_durations(target_minutes)
     if axis == "parkour":
         return [
             LevelBeat(
                 name="Warmup Rooftop",
-                duration_minutes=2,
+                duration_minutes=teaching_minutes,
                 gameplay_focus="Teach sprinting, vault timing, and checkpoint gate language.",
                 required_assets=["start marker", "checkpoint gate", "low vault blockers"],
                 success_condition="Player reaches the second gate without losing the route.",
             ),
             LevelBeat(
                 name="Momentum Mix",
-                duration_minutes=max(2, target_minutes - 5),
+                duration_minutes=mid_minutes,
                 gameplay_focus="Chain vaults, wall-runs, slides, and one boost shortcut.",
                 required_assets=["wall-run panels", "slide barriers", "boost pad", "fall hazard markers"],
                 success_condition="Player keeps enough momentum to open the final rooftop line.",
             ),
             LevelBeat(
                 name="Extraction Sprint",
-                duration_minutes=3,
+                duration_minutes=final_minutes,
                 gameplay_focus="Run the full chain under pressure and choose speed versus recovery.",
                 required_assets=["final gap ramp", "pressure timer UI", "extraction gate"],
                 success_condition="Player exits before the timer expires and receives a route grade.",
@@ -345,21 +355,21 @@ def _level_beats_for_axis(axis: str, target_minutes: int) -> list[LevelBeat]:
         return [
             LevelBeat(
                 name="Fog of Evaluation",
-                duration_minutes=2,
+                duration_minutes=teaching_minutes,
                 gameplay_focus="Teach the player to read judgment noise, self-route markers, and recoverable wrong turns.",
                 required_assets=["fog corridor", "judgment marker", "self-route marker", "confidence UI"],
                 success_condition="Player reaches the first clear route marker without losing all confidence.",
             ),
             LevelBeat(
                 name="Borrowed Plan Crossroads",
-                duration_minutes=max(2, target_minutes - 5),
+                duration_minutes=mid_minutes,
                 gameplay_focus="Choose, reject, or revise plan cards while collecting experience fragments for the design board.",
                 required_assets=["plan card kiosks", "memory fragment props", "design board", "timer UI"],
                 success_condition="Player fills the board with fragments that change mechanics instead of decoration.",
             ),
             LevelBeat(
                 name="Interview Gate Triage",
-                duration_minutes=3,
+                duration_minutes=final_minutes,
                 gameplay_focus="Use the completed design board to support the team need that matters most under time pressure.",
                 required_assets=["team crisis stations", "support action prompt", "interview gate", "fit score UI"],
                 success_condition="Player resolves one critical team need and opens the interview gate with a readable score.",
@@ -368,21 +378,21 @@ def _level_beats_for_axis(axis: str, target_minutes: int) -> list[LevelBeat]:
     return [
         LevelBeat(
             name="Onboarding Pocket",
-            duration_minutes=2,
+            duration_minutes=teaching_minutes,
             gameplay_focus="Learn controls and identify the objective language.",
             required_assets=["start marker", "objective prop", "interaction prompt"],
             success_condition="Player completes the first low-risk interaction.",
         ),
         LevelBeat(
             name="System Mix",
-            duration_minutes=max(2, target_minutes - 5),
+            duration_minutes=mid_minutes,
             gameplay_focus="Use the core verbs while pressure changes the route.",
             required_assets=["arena blockers", "hazard markers", "feedback props"],
             success_condition="Player completes the central objective chain.",
         ),
         LevelBeat(
             name="Final Push",
-            duration_minutes=3,
+            duration_minutes=final_minutes,
             gameplay_focus="Resolve the complete loop with win/fail stakes.",
             required_assets=["exit gate", "final hazard", "score trigger"],
             success_condition="Player reaches the exit and receives performance feedback.",

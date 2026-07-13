@@ -634,12 +634,40 @@ def test_unreal_executes_stage_order(tmp_path: Path):
     assert result.ok
     assert [s.name for s in result.stages] == [
         "create",
+        "spec_compile",
+        "spec_qa",
         "prepare_ingest",
         "prepare_level",
         "validate",
     ]
     assert list((tmp_path / result.project_dir).glob("*.uproject"))
     assert result.project_dir.startswith("generated/unreal/sessions/u2/")
+
+
+def test_unreal_execution_writes_compiled_specs_and_executable_qa(tmp_path: Path):
+    from fantasy_agent.executor import execute_unreal_demo
+
+    result = execute_unreal_demo(
+        _unreal_plan(),
+        session_id="u-specs",
+        confirmed=True,
+        workspace_root=tmp_path,
+        run_validation=False,
+        bridge=_unreal_bridge(tmp_path),
+    )
+
+    assert result.ok
+    project = tmp_path / result.project_dir
+    assert (project / "Content/FantasyAgent/Data/DT_Enemies.json").exists()
+    assert (project / "Content/FantasyAgent/Data/DT_Encounters.json").exists()
+    assert (project / "Content/FantasyAgent/Data/DA_ProductionSpec.json").exists()
+    assert (project / "Content/FantasyAgent/Data/SpecTrace.json").exists()
+    assert (project / "Content/FantasyAgent/Data/QA_Executable.json").exists()
+    stages = {stage.name: stage for stage in result.stages}
+    assert stages["spec_compile"].status == "done"
+    assert stages["spec_qa"].status in {"done", "degraded"}
+    assert stages["spec_compile"].artifacts
+    assert stages["spec_qa"].metadata["status"] in {"passed", "warning"}
 
 
 def test_unreal_no_validation_stops_after_prepare_level(tmp_path: Path):
@@ -727,9 +755,10 @@ def test_with_gameplay_degrades_to_deterministic_when_llm_unavailable(tmp_path: 
     import fantasy_agent.llm as llm
 
     bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    legacy_plan = _plan().model_copy(update={"production_spec_bundle": None})
     with mock.patch("fantasy_agent.llm.complete_json", side_effect=llm.LLMError("no key")):
         result = execute_godot_demo(
-            _plan(), session_id="g2", confirmed=True, godot_exe="godot",
+            legacy_plan, session_id="g2", confirmed=True, godot_exe="godot",
             with_gameplay=True, workspace_root=tmp_path, bridge=bridge,
         )
 
@@ -814,3 +843,76 @@ def test_godot_execution_exports_production_specs(tmp_path: Path):
     assert '"production_specs"' in main
     assert '"level_objective_gates"' in main
     assert '"config_tables"' in main
+
+
+def test_invalid_production_spec_blocks_before_godot_create(tmp_path: Path):
+    plan = _plan()
+    assert plan.production_spec_bundle is not None
+    plan = plan.model_copy(
+        update={
+            "production_spec_bundle": plan.production_spec_bundle.model_copy(
+                update={
+                    "level": plan.production_spec_bundle.level.model_copy(
+                        update={"objective_gates": []}
+                    )
+                }
+            )
+        }
+    )
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+
+    result = execute_godot_demo(
+        plan,
+        session_id="invalid-spec",
+        confirmed=True,
+        workspace_root=tmp_path,
+        bridge=bridge,
+    )
+
+    assert result.status == "failed"
+    assert result.stages[0].name == "spec_validation"
+    assert result.stages[0].status == "failed"
+    assert not (tmp_path / "generated").exists()
+
+def test_godot_execution_uses_config_compiler_and_writes_trace(tmp_path: Path):
+    plan = _plan("combat arena with guards and ranged turrets")
+    assert plan.production_spec_bundle is not None
+    tables = [
+        table.model_copy(
+            update={
+                "format": "csv-ready",
+                "export_path": "generated/config/enemies.csv",
+            }
+        )
+        if table.table_id == "enemies"
+        else table
+        for table in plan.production_spec_bundle.config_tables.tables
+    ]
+    plan = plan.model_copy(
+        update={
+            "production_spec_bundle": plan.production_spec_bundle.model_copy(
+                update={
+                    "config_tables": plan.production_spec_bundle.config_tables.model_copy(
+                        update={"tables": tables}
+                    )
+                }
+            )
+        }
+    )
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+
+    result = execute_godot_demo(
+        plan,
+        session_id="config-compiler",
+        confirmed=True,
+        workspace_root=tmp_path,
+        bridge=bridge,
+        run_import=False,
+    )
+
+    assert result.ok
+    project = tmp_path / result.project_dir
+    assert (project / "data" / "config" / "enemies.csv").exists()
+    trace = project / "data" / "spec-trace.json"
+    assert trace.exists()
+    assert "config_tables.tables.enemies" in trace.read_text(encoding="utf-8")

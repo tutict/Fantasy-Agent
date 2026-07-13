@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 
-from fantasy_agent.contracts import GameplaySpec
+from fantasy_agent.contracts import GameplaySpec, ProductionSpecBundle
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,10 @@ ENEMY_SCRIPT = "scripts/enemy_controller.gd"
 
 
 def generate_gameplay_scripts(
-    spec: GameplaySpec, *, use_llm: bool | None = None
+    spec: GameplaySpec,
+    *,
+    use_llm: bool | None = None,
+    production_spec_bundle: ProductionSpecBundle | None = None,
 ) -> dict[str, str]:
     """Return {filename: gdscript} implementing the spec's mechanics + win/fail.
 
@@ -47,6 +50,11 @@ def generate_gameplay_scripts(
             "yes",
             "on",
         }
+
+    if production_spec_bundle is not None:
+        return deterministic_gameplay_scripts(
+            spec, production_spec_bundle=production_spec_bundle
+        )
 
     if use_llm:
         try:
@@ -73,17 +81,31 @@ def _axis_from_verbs(spec: GameplaySpec) -> str:
     return "generic"
 
 
-def deterministic_gameplay_scripts(spec: GameplaySpec) -> dict[str, str]:
-    """Axis-aware player controller + game manager. Always valid GDScript."""
+def deterministic_gameplay_scripts(
+    spec: GameplaySpec,
+    *,
+    production_spec_bundle: ProductionSpecBundle | None = None,
+) -> dict[str, str]:
+    """Axis-aware scripts, preferring compiled production-spec values."""
     axis = _axis_from_verbs(spec)
+    move_speed = (
+        production_spec_bundle.numeric.player_move_speed
+        if production_spec_bundle is not None
+        else 8.0
+    )
+    player_hp = (
+        production_spec_bundle.numeric.player_hp
+        if production_spec_bundle is not None
+        else 5
+    )
     return {
-        PLAYER_SCRIPT: _player_controller(axis),
-        GAME_MANAGER_SCRIPT: _game_manager(spec),
+        PLAYER_SCRIPT: _player_controller(axis, move_speed=move_speed, player_hp=player_hp),
+        GAME_MANAGER_SCRIPT: _game_manager(spec, production_spec_bundle=production_spec_bundle),
         ENEMY_SCRIPT: _enemy_controller(),
     }
 
 
-def _player_controller(axis: str) -> str:
+def _player_controller(axis: str, *, move_speed: float = 8.0, player_hp: int = 5) -> str:
     # Parkour adds sprint + wall-run + slide on top of the base WASD+jump.
     parkour_extras = ""
     if axis == "parkour":
@@ -118,7 +140,8 @@ def _player_controller(axis: str) -> str:
         extra_state = "var _wall_running := false\n"
     return f'''extends CharacterBody3D
 
-@export var move_speed := 8.0        # [MOVE_SPEED]
+@export var move_speed := {move_speed}        # [MOVE_SPEED]
+@export var max_hp := {player_hp}              # [PLAYER_HP]
 @export var jump_velocity := 6.0     # [JUMP_VELOCITY]
 @export var gravity := 18.0          # [GRAVITY]
 {extra_exports}{extra_state}
@@ -139,15 +162,27 @@ func _physics_process(delta: float) -> void:
 '''
 
 
-def _game_manager(spec: GameplaySpec) -> str:
-    win = spec.win_state.replace('"', "'")
-    fails = spec.failure_states or ["Pressure reached maximum"]
+def _game_manager(
+    spec: GameplaySpec,
+    *,
+    production_spec_bundle: ProductionSpecBundle | None = None,
+) -> str:
+    if production_spec_bundle is not None:
+        narrative = production_spec_bundle.narrative
+        win = (narrative.hud_text.get("objective") or narrative.objective_copy[-1]).replace('"', "'")
+        fails = narrative.failure_feedback or ["Pressure reached maximum"]
+        title = production_spec_bundle.gameplay_spec_title.replace('"', "'")
+        pressure_limit = float(production_spec_bundle.numeric.pressure_clock_seconds)
+    else:
+        win = spec.win_state.replace('"', "'")
+        fails = spec.failure_states or ["Pressure reached maximum"]
+        title = spec.title.replace('"', "'")
+        pressure_limit = 60.0
     fail0 = fails[0].replace('"', "'")
-    title = spec.title.replace('"', "'")
     return f'''extends Node
 
 # Real win/fail判定 + HUD, derived from the GameplaySpec (M6a).
-@export var pressure_limit := 60.0   # [PRESSURE_LIMIT] seconds before failure
+@export var pressure_limit := {pressure_limit}   # [PRESSURE_LIMIT] seconds before failure
 @export var auto_return := 3.0       # [AUTO_RETURN] seconds on end screen
 
 var _elapsed := 0.0

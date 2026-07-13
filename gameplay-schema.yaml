@@ -1119,6 +1119,139 @@ $defs:
         type: object
         additionalProperties:
           type: boolean
+  compiled_spec_artifact:
+    type: object
+    additionalProperties: false
+    required:
+      - path
+      - media_type
+      - content
+    properties:
+      path:
+        type: string
+        minLength: 1
+      media_type:
+        type: string
+        minLength: 1
+      content:
+        type: string
+  spec_trace_record:
+    type: object
+    additionalProperties: false
+    required:
+      - spec_field
+      - artifact_path
+      - consumer
+    properties:
+      spec_field:
+        type: string
+        minLength: 1
+      artifact_path:
+        type: string
+        minLength: 1
+      consumer:
+        type: string
+        minLength: 1
+  spec_compile_result:
+    type: object
+    additionalProperties: false
+    required:
+      - target
+      - artifacts
+      - traces
+    properties:
+      target:
+        enum:
+          - godot
+          - unreal
+      artifacts:
+        type: array
+        items:
+          $ref: "#/$defs/compiled_spec_artifact"
+      traces:
+        type: array
+        items:
+          $ref: "#/$defs/spec_trace_record"
+  executable_qa_assertion:
+    type: object
+    additionalProperties: false
+    required:
+      - assertion_id
+      - metric_key
+      - operator
+      - severity
+    properties:
+      assertion_id:
+        type: string
+        minLength: 1
+      metric_key:
+        type: string
+        minLength: 1
+      operator:
+        enum:
+          - eq
+          - gte
+          - lte
+          - between
+          - non_empty
+          - all_approved
+      expected: {}
+      severity:
+        enum:
+          - error
+          - warning
+  executable_qa_result:
+    type: object
+    additionalProperties: false
+    required:
+      - assertion_id
+      - metric_key
+      - passed
+      - actual
+      - severity
+      - message
+    properties:
+      assertion_id:
+        type: string
+      metric_key:
+        type: string
+      passed:
+        type: boolean
+      actual: {}
+      expected: {}
+      severity:
+        enum:
+          - error
+          - warning
+      message:
+        type: string
+  executable_qa_report:
+    type: object
+    additionalProperties: false
+    required:
+      - source
+      - schema_version
+      - status
+      - assertions
+      - results
+    properties:
+      source:
+        type: string
+      schema_version:
+        type: string
+      status:
+        enum:
+          - passed
+          - warning
+          - failed
+      assertions:
+        type: array
+        items:
+          $ref: "#/$defs/executable_qa_assertion"
+      results:
+        type: array
+        items:
+          $ref: "#/$defs/executable_qa_result"
   i18n_bundle:
     type: object
     additionalProperties: false

@@ -315,12 +315,15 @@ def _write_production_spec_exports(
     project_dir: str,
     workspace_root: Path | str,
 ) -> list[str]:
-    """Write M7 production spec bundle and config tables into the Godot project."""
+    """Compile and write the authoritative bundle, target config, runtime data, and trace."""
 
     if plan.production_spec_bundle is None:
         return []
 
     import yaml
+
+    from fantasy_agent.config_table_compiler import compile_config_tables
+    from fantasy_agent.godot_spec_adapter import compile_godot_spec_bundle
 
     bundle = plan.production_spec_bundle
     written: list[str] = []
@@ -338,23 +341,119 @@ def _write_production_spec_exports(
     )
     written.append(bundle_rel)
 
-    config_dir = data_dir / "config"
-    for table in bundle.config_tables.tables:
-        table_rel = (config_dir / f"{table.table_id}.yaml").as_posix()
-        table_path = resolve_workspace_path(
-            table_rel,
+    config_result = compile_config_tables(
+        bundle.config_tables,
+        output_prefix=(data_dir / "config").as_posix(),
+    )
+    godot_result = compile_godot_spec_bundle(bundle)
+    for artifact in config_result.artifacts:
+        artifact_path = resolve_workspace_path(
+            artifact.path,
             workspace_root=workspace_root,
             required_prefix="generated/godot",
         )
-        table_path.parent.mkdir(parents=True, exist_ok=True)
-        table_path.write_text(
-            yaml.safe_dump(table.model_dump(mode="json"), sort_keys=False, allow_unicode=True),
-            encoding="utf-8",
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_text(artifact.content, encoding="utf-8")
+        written.append(artifact.path)
+    for artifact in godot_result.artifacts:
+        artifact_rel = (Path(project_dir) / artifact.path).as_posix()
+        artifact_path = resolve_workspace_path(
+            artifact_rel,
+            workspace_root=workspace_root,
+            required_prefix="generated/godot",
         )
-        written.append(table_rel)
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_text(artifact.content, encoding="utf-8")
+        written.append(artifact_rel)
 
+    trace_rel = (data_dir / "spec-trace.json").as_posix()
+    trace_path = resolve_workspace_path(
+        trace_rel,
+        workspace_root=workspace_root,
+        required_prefix="generated/godot",
+    )
+    trace_payload = {
+        "source": "fantasy-agent.spec-trace",
+        "schema_version": bundle.schema_version,
+        "target": "godot",
+        "traces": [
+            trace.model_dump(mode="json")
+            for trace in [*config_result.traces, *godot_result.traces]
+        ],
+    }
+    trace_path.write_text(
+        json.dumps(trace_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    written.append(trace_rel)
     return written
 
+
+
+def _write_unreal_spec_artifacts(
+    plan: DirectorBuildPlan,
+    project_dir: str,
+    workspace_root: Path | str,
+) -> tuple[list[str], list[str], dict[str, Any]]:
+    """Write Unreal adapter outputs, trace records, and executable QA results."""
+
+    if plan.production_spec_bundle is None:
+        return [], [], {}
+
+    from fantasy_agent.unreal_spec_adapter import (
+        compile_unreal_spec_bundle,
+        evaluate_executable_qa,
+    )
+
+    bundle = plan.production_spec_bundle
+    compiled = compile_unreal_spec_bundle(bundle)
+    compiled_paths: list[str] = []
+    for artifact in compiled.artifacts:
+        artifact_rel = (Path(project_dir) / artifact.path).as_posix()
+        artifact_path = resolve_workspace_path(
+            artifact_rel,
+            workspace_root=workspace_root,
+            required_prefix="generated/unreal",
+        )
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_text(artifact.content, encoding="utf-8")
+        compiled_paths.append(artifact_rel)
+
+    trace_rel = (
+        Path(project_dir) / "Content/FantasyAgent/Data/SpecTrace.json"
+    ).as_posix()
+    trace_path = resolve_workspace_path(
+        trace_rel,
+        workspace_root=workspace_root,
+        required_prefix="generated/unreal",
+    )
+    trace_payload = {
+        "source": "fantasy-agent.spec-trace",
+        "schema_version": bundle.schema_version,
+        "target": "unreal",
+        "traces": [trace.model_dump(mode="json") for trace in compiled.traces],
+    }
+    trace_path.parent.mkdir(parents=True, exist_ok=True)
+    trace_path.write_text(
+        json.dumps(trace_payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    compiled_paths.append(trace_rel)
+
+    qa_report = evaluate_executable_qa(bundle)
+    qa_rel = (
+        Path(project_dir) / "Content/FantasyAgent/Data/QA_Executable.json"
+    ).as_posix()
+    qa_path = resolve_workspace_path(
+        qa_rel,
+        workspace_root=workspace_root,
+        required_prefix="generated/unreal",
+    )
+    qa_path.write_text(
+        json.dumps(qa_report.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return compiled_paths, [qa_rel], qa_report.model_dump(mode="json")
 
 def _run_gameplay_codegen(
     plan: DirectorBuildPlan, stages: list[StageResult]
@@ -367,6 +466,20 @@ def _run_gameplay_codegen(
     """
     from fantasy_agent import gameplay_codegen
 
+    if plan.production_spec_bundle is not None:
+        scripts = gameplay_codegen.deterministic_gameplay_scripts(
+            plan.gameplay_spec,
+            production_spec_bundle=plan.production_spec_bundle,
+        )
+        stages.append(
+            StageResult(
+                "gameplay",
+                "done",
+                detail=f"compiled {len(scripts)} scripts from ProductionSpecBundle",
+            )
+        )
+        return scripts, False
+
     try:
         scripts = gameplay_codegen._generate_with_llm(plan.gameplay_spec)
         stages.append(
@@ -374,7 +487,10 @@ def _run_gameplay_codegen(
         )
         return scripts, True
     except Exception as exc:  # noqa: BLE001 - degrade to deterministic
-        scripts = gameplay_codegen.deterministic_gameplay_scripts(plan.gameplay_spec)
+        scripts = gameplay_codegen.deterministic_gameplay_scripts(
+            plan.gameplay_spec,
+            production_spec_bundle=plan.production_spec_bundle,
+        )
         stages.append(
             StageResult(
                 "gameplay",
@@ -650,7 +766,11 @@ def execute_godot_demo(
         ExecutionResult with per-stage status, artifacts, and logs.
     """
 
-    enemy_tuning = enemy_tuning or EnemyPressureTuning()
+    enemy_tuning = enemy_tuning or (
+        plan.production_spec_bundle.numeric.enemy_pressure
+        if plan.production_spec_bundle is not None
+        else EnemyPressureTuning()
+    )
     if with_assets and not approval_manifest_path:
         approval_manifest_path = DEFAULT_APPROVAL_MANIFEST_PATH
     project_dir = _session_project_dir(session_id, plan.godot_plan.project_name)
@@ -675,6 +795,49 @@ def execute_godot_demo(
 
     bridge = bridge or GodotMCPBridge(workspace_root=workspace_root)
     stages: list[StageResult] = []
+    if plan.production_spec_bundle is not None:
+        from fantasy_agent.spec_validation import validate_production_spec_bundle
+
+        spec_report = validate_production_spec_bundle(plan.production_spec_bundle)
+        if spec_report.status == "failed":
+            stages.append(
+                StageResult(
+                    "spec_validation",
+                    "failed",
+                    detail="; ".join(issue.message for issue in spec_report.issues),
+                    metadata=spec_report.model_dump(mode="json"),
+                )
+            )
+            return ExecutionResult("failed", session_id, project_dir, stages, planned)
+        plan = plan.model_copy(
+            update={
+                "production_spec_bundle": plan.production_spec_bundle.model_copy(
+                    update={"validation": spec_report}
+                )
+            }
+        )
+    if approval_manifest_path and plan.production_spec_bundle is not None:
+        try:
+            from fantasy_agent.production_spec_runtime import (
+                sync_bundle_with_approval_manifest,
+            )
+
+            approval_manifest = load_asset_approval_manifest(
+                approval_manifest_path,
+                workspace_root=workspace_root,
+            )
+            plan = plan.model_copy(
+                update={
+                    "production_spec_bundle": sync_bundle_with_approval_manifest(
+                        plan.production_spec_bundle,
+                        approval_manifest,
+                    )
+                }
+            )
+        except Exception:
+            # The approval_gate stage reports invalid manifests. Keep greybox
+            # execution available when no approved assets can be ingested.
+            pass
     approval_result: Any | None = None
 
     # Stage A (optional): ComfyUI visual references. Degrades on failure.
@@ -816,7 +979,10 @@ def execute_godot_demo(
         if gameplay_was_llm:
             from fantasy_agent.gameplay_codegen import deterministic_gameplay_scripts
 
-            fallback = deterministic_gameplay_scripts(plan.gameplay_spec)
+            fallback = deterministic_gameplay_scripts(
+                plan.gameplay_spec,
+                production_spec_bundle=plan.production_spec_bundle,
+            )
             bridge.create_godot_project_structure(
                 GodotMCPCreateProjectRequest(
                     plan=plan.godot_plan,
@@ -897,6 +1063,8 @@ def _unreal_session_project_dir(session_id: str, project_name: str) -> str:
 def _unreal_planned_side_effects(project_dir: str, unreal_cmd: str, run_validation: bool) -> list[str]:
     effects = [
         f"Write Unreal project files under {project_dir}/ (.uproject, Config, Content, scripts)",
+        "Compile ProductionSpecBundle into Unreal DataTable/DataAsset adapter sources",
+        "Run machine-executable QA and write its report",
         "Prepare asset ingest manifest + Python script",
         "Prepare level assembly manifest + Python script",
     ]
@@ -948,11 +1116,32 @@ def execute_unreal_demo(
             planned_side_effects=planned,
         )
 
+    stages: list[StageResult] = []
+    if plan.production_spec_bundle is not None:
+        from fantasy_agent.spec_validation import validate_production_spec_bundle
+
+        spec_report = validate_production_spec_bundle(plan.production_spec_bundle)
+        if spec_report.status == "failed":
+            stages.append(
+                StageResult(
+                    "spec_validation",
+                    "failed",
+                    detail="; ".join(issue.message for issue in spec_report.issues),
+                    metadata=spec_report.model_dump(mode="json"),
+                )
+            )
+            return ExecutionResult("failed", session_id, project_dir, stages, planned)
+        plan = plan.model_copy(
+            update={
+                "production_spec_bundle": plan.production_spec_bundle.model_copy(
+                    update={"validation": spec_report}
+                )
+            }
+        )
     if bridge is None:
         from fantasy_agent.unreal_mcp import UnrealMCPBridge
 
         bridge = UnrealMCPBridge(workspace_root=workspace_root)
-    stages: list[StageResult] = []
 
     # Write the Blender->Unreal import manifest so prepare_asset_ingest can read
     # it. Source fbx files need not exist yet (require_existing_sources=False).
@@ -978,6 +1167,43 @@ def execute_unreal_demo(
             artifacts=create.written_files,
         )
     )
+    if plan.production_spec_bundle is not None:
+        try:
+            compiled_paths, qa_paths, qa_metadata = _write_unreal_spec_artifacts(
+                plan,
+                project_dir,
+                workspace_root,
+            )
+        except Exception as exc:  # noqa: BLE001 - expose adapter failures as stage results
+            stages.append(StageResult("spec_compile", "failed", detail=str(exc)))
+            return ExecutionResult("failed", session_id, project_dir, stages, planned)
+        stages.append(
+            StageResult(
+                "spec_compile",
+                "done",
+                detail=f"wrote {len(compiled_paths)} Unreal spec adapter artifacts",
+                artifacts=compiled_paths,
+            )
+        )
+        qa_status = qa_metadata.get("status", "failed")
+        stage_status = (
+            "done"
+            if qa_status == "passed"
+            else "degraded"
+            if qa_status == "warning"
+            else "failed"
+        )
+        stages.append(
+            StageResult(
+                "spec_qa",
+                stage_status,
+                detail=f"executable QA {qa_status}",
+                artifacts=qa_paths,
+                metadata=qa_metadata,
+            )
+        )
+        if qa_status == "failed":
+            return ExecutionResult("failed", session_id, project_dir, stages, planned)
 
     # Stage 2: prepare asset ingest.
     ingest = bridge.prepare_asset_ingest(

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import os
@@ -27,11 +27,16 @@ from fantasy_agent.chatgpt_app import (
 )
 from fantasy_agent.contracts import (
     AssetApprovalManifest,
+    CompiledSpecArtifact,
     CreativeReviewReport,
     DirectorBuildPlan,
     DirectorTaskBreakdown,
     EnemyPressureTuning,
+    ExecutableQAReport,
     PromptRequest,
+    ProductionSpecBundle,
+    SpecTraceRecord,
+    SpecValidationReport,
     default_comfyui_endpoint_candidates,
 )
 from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
@@ -79,12 +84,26 @@ class ManualCorrectionOpenRequest(BaseModel):
 class ApprovalManifestRequest(BaseModel):
     review: CreativeReviewReport
     decisions: dict[str, str] = Field(default_factory=dict)
+    production_spec_bundle: ProductionSpecBundle | None = None
 
 
 class ApprovalManifestResponse(BaseModel):
     status: str
     manifest_path: str
     manifest: AssetApprovalManifest
+    production_spec_bundle: ProductionSpecBundle | None = None
+
+
+class SpecBundlePreviewRequest(BaseModel):
+    production_spec_bundle: ProductionSpecBundle
+    target: str = "godot"
+
+
+class SpecBundlePreviewResponse(BaseModel):
+    validation: SpecValidationReport
+    artifacts: list[CompiledSpecArtifact] = Field(default_factory=list)
+    traces: list[SpecTraceRecord] = Field(default_factory=list)
+    executable_qa: ExecutableQAReport
 
 
 class AssetExecutionRequest(BaseModel):
@@ -109,6 +128,8 @@ class ExecuteDemoRequest(BaseModel):
 # reference is resolved so this model is fully defined.
 ApprovalManifestRequest.model_rebuild()
 ApprovalManifestResponse.model_rebuild()
+SpecBundlePreviewRequest.model_rebuild()
+SpecBundlePreviewResponse.model_rebuild()
 AssetExecutionRequest.model_rebuild()
 ExecuteDemoRequest.model_rebuild()
 
@@ -661,6 +682,28 @@ def _approval_manifest_path() -> Path:
     return resolved
 
 
+@app.post("/api/specs/preview", response_model=SpecBundlePreviewResponse)
+def preview_spec_bundle(req: SpecBundlePreviewRequest) -> SpecBundlePreviewResponse:
+    from fantasy_agent.production_spec_runtime import compile_production_spec_bundle
+    from fantasy_agent.spec_validation import validate_production_spec_bundle
+    from fantasy_agent.unreal_spec_adapter import evaluate_executable_qa
+
+    validation = validate_production_spec_bundle(req.production_spec_bundle)
+    bundle = req.production_spec_bundle.model_copy(update={"validation": validation})
+    artifacts: list[CompiledSpecArtifact] = []
+    traces: list[SpecTraceRecord] = []
+    if validation.status != "failed":
+        compiled = compile_production_spec_bundle(bundle, target=req.target)
+        artifacts = compiled.artifacts
+        traces = compiled.traces
+    return SpecBundlePreviewResponse(
+        validation=validation,
+        artifacts=artifacts,
+        traces=traces,
+        executable_qa=evaluate_executable_qa(bundle),
+    )
+
+
 @app.post("/api/creative-review/approval-manifest", response_model=ApprovalManifestResponse)
 def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestResponse:
     import yaml
@@ -673,7 +716,30 @@ def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestRes
         encoding="utf-8",
     )
     rel = path.relative_to(REPO_ROOT).as_posix()
-    return ApprovalManifestResponse(status="written", manifest_path=rel, manifest=manifest)
+    synced_bundle = None
+    if req.production_spec_bundle is not None:
+        from fantasy_agent.production_spec_runtime import sync_bundle_with_approval_manifest
+
+        synced_bundle = sync_bundle_with_approval_manifest(
+            req.production_spec_bundle,
+            manifest,
+        )
+        bundle_path = REPO_ROOT / "generated" / "specs" / "production-spec-bundle.yaml"
+        bundle_path.parent.mkdir(parents=True, exist_ok=True)
+        bundle_path.write_text(
+            yaml.safe_dump(
+                synced_bundle.model_dump(mode="json"),
+                sort_keys=False,
+                allow_unicode=True,
+            ),
+            encoding="utf-8",
+        )
+    return ApprovalManifestResponse(
+        status="written",
+        manifest_path=rel,
+        manifest=manifest,
+        production_spec_bundle=synced_bundle,
+    )
 
 
 def _build_asset_execution_result(req: AssetExecutionRequest, *, confirmed: bool):

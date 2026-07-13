@@ -101,6 +101,7 @@ export interface CreativeReview {
 export interface ApprovalManifestResponse {
   status?: string;
   manifest_path?: string;
+  production_spec_bundle?: ProductionSpecBundle;
   manifest?: {
     approved_asset_ids?: string[];
     revision_asset_ids?: string[];
@@ -145,8 +146,92 @@ export interface GddDocument {
   markdown?: string;
 }
 
+export interface SpecValidationIssue {
+  severity?: "error" | "warning";
+  spec?: string;
+  field?: string;
+  message?: string;
+}
+
+export interface SpecValidationReport {
+  status?: "passed" | "warning" | "failed";
+  issues?: SpecValidationIssue[];
+  coverage?: Record<string, boolean>;
+}
+
+export interface ProductionSpecBundle {
+  schema_version?: string;
+  gameplay_spec_title?: string;
+  combat?: {
+    encounters?: Array<{ encounter_id?: string; beat?: string; enemy_roles?: string[] }>;
+    enemy_roles?: string[];
+    damage_model?: Record<string, number>;
+  } | null;
+  level?: {
+    teaching_segment?: { name?: string; duration_minutes?: number };
+    mid_segments?: Array<{ name?: string; duration_minutes?: number }>;
+    final_test?: { name?: string; duration_minutes?: number };
+    objective_gates?: string[];
+  };
+  numeric?: {
+    player_move_speed?: number;
+    player_hp?: number;
+    target_session_minutes?: number;
+    pressure_clock_seconds?: number;
+    qa_risks?: string[];
+  };
+  narrative?: {
+    premise?: string;
+    beats?: Array<{ beat_id?: string; level_beat?: string; objective_copy?: string }>;
+    hud_text?: Record<string, string>;
+  };
+  config_tables?: {
+    tables?: Array<{ table_id?: string; format?: string; primary_key?: string; export_path?: string; rows?: Array<Record<string, unknown>> }>;
+  };
+  resource_pipeline?: {
+    assets?: Array<{ asset_id?: string; approval_status?: string; engine_destination?: string; blocked_reason?: string | null }>;
+    blocked_assets?: string[];
+    approval_manifest_path?: string;
+  };
+  validation?: SpecValidationReport | null;
+  handoff_artifacts?: string[];
+}
+
+export interface CompiledSpecArtifact {
+  path?: string;
+  media_type?: string;
+  content?: string;
+}
+
+export interface SpecTraceRecord {
+  spec_field?: string;
+  artifact_path?: string;
+  consumer?: string;
+}
+
+export interface ExecutableQAResult {
+  assertion_id?: string;
+  metric_key?: string;
+  passed?: boolean;
+  actual?: unknown;
+  expected?: unknown;
+  severity?: "error" | "warning";
+  message?: string;
+}
+
+export interface SpecBundlePreviewResponse {
+  validation?: SpecValidationReport;
+  artifacts?: CompiledSpecArtifact[];
+  traces?: SpecTraceRecord[];
+  executable_qa?: {
+    status?: "passed" | "warning" | "failed";
+    results?: ExecutableQAResult[];
+  };
+}
+
 export interface DirectorBuildPlan {
   gameplay_spec?: GameplaySpec;
+  production_spec_bundle?: ProductionSpecBundle;
   production_pipeline?: ProductionPipeline;
   task_breakdown?: TaskBreakdown;
   creative_review?: CreativeReview;

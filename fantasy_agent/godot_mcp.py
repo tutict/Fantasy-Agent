@@ -579,6 +579,38 @@ def _route_body_from_spec(gameplay_spec: GameplaySpec | None) -> str:
     return "\n".join(lines)
 
 
+def _route_body_from_production_specs(bundle: ProductionSpecBundle) -> str:
+    """Generate the greybox route directly from LevelSpec segments."""
+
+    segments = [
+        bundle.level.teaching_segment,
+        *bundle.level.mid_segments,
+        bundle.level.final_test,
+    ]
+    lines: list[str] = []
+    spacing = 6.0
+    start_x = -spacing * (len(segments) - 1) / 2.0
+    for index, segment in enumerate(segments):
+        x = start_x + index * spacing
+        safe_name = _slug(segment.name) or f"segment_{index}"
+        lines.append(
+            f'    _box("FA_RouteFloor_{index}_{safe_name}", Vector3({x:.1f}, 0.0, 0.0), '
+            "Vector3(5.0, 0.25, 3.0), MAT_SAFE)"
+        )
+        marker_name = f"FA_SpecGate_{index}_{_slug(segment.objective_gate)}"
+        material = "MAT_OBJECTIVE" if index < len(segments) - 1 else "MAT_EXIT"
+        lines.append(
+            f'    _spawn_marker("{marker_name}", Vector3({x:.1f}, 0.9, 0.0), '
+            f'Vector3(0.8, 1.4, 0.8), {material}, "")'
+        )
+    exit_x = start_x + len(segments) * spacing
+    lines.append(
+        f'    _box("FA_Exit_Gate", Vector3({exit_x:.1f}, 1.2, 0.0), '
+        "Vector3(0.45, 2.4, 3.2), MAT_EXIT)"
+    )
+    return "\n".join(lines)
+
+
 _GAMEPLAY_SPAWN_GD = '''
 func _spawn_gameplay() -> void:
     var player_script := load("res://scripts/player_controller.gd")
@@ -725,23 +757,43 @@ def _main_gd(
             "enemy_tuning": enemy_tuning.model_dump(mode="json"),
         }
     if production_spec_bundle is not None:
-        handoff["production_specs"] = {
-            "schema_version": production_spec_bundle.schema_version,
-            "combat_enabled": production_spec_bundle.combat is not None,
-            "level_objective_gates": production_spec_bundle.level.objective_gates,
-            "numeric": production_spec_bundle.numeric.model_dump(mode="json"),
-            "config_tables": [table.table_id for table in production_spec_bundle.config_tables.tables],
-            "resource_pipeline": {
-                "asset_count": len(production_spec_bundle.resource_pipeline.assets),
-                "blocked_assets": production_spec_bundle.resource_pipeline.blocked_assets,
-                "approval_manifest_path": production_spec_bundle.resource_pipeline.approval_manifest_path,
-            },
-            "validation": production_spec_bundle.validation.model_dump(mode="json") if production_spec_bundle.validation else None,
+        from fantasy_agent.godot_spec_adapter import compile_godot_spec_bundle
+
+        compiled = compile_godot_spec_bundle(production_spec_bundle)
+        effective_tuning = enemy_tuning or production_spec_bundle.numeric.enemy_pressure
+        handoff["production_specs"] = compiled.runtime_handoff
+        handoff["level_objective_gates"] = production_spec_bundle.level.objective_gates
+        handoff["config_tables"] = {
+            table.table_id: table.export_path
+            for table in production_spec_bundle.config_tables.tables
+        }
+        handoff["gameplay"] = {
+            "title": production_spec_bundle.gameplay_spec_title,
+            "core_loop_steps": len(production_spec_bundle.narrative.beats),
+            "win_state": production_spec_bundle.narrative.objective_copy[-1],
+            "failure_states": production_spec_bundle.narrative.failure_feedback,
+            "level_beats": [
+                segment["name"] for segment in compiled.runtime_handoff["level"]["segments"]
+            ],
+            "enemies": compiled.runtime_handoff["enemies"],
+            "enemy_tuning": effective_tuning.model_dump(mode="json"),
+            "damage_model": (
+                production_spec_bundle.combat.damage_model.model_dump(mode="json")
+                if production_spec_bundle.combat
+                else None
+            ),
         }
     payload = json.dumps(handoff, ensure_ascii=False, indent=2)
-    route_body = _route_body_from_spec(gameplay_spec)
+    route_body = (
+        _route_body_from_production_specs(production_spec_bundle)
+        if production_spec_bundle is not None
+        else _route_body_from_spec(gameplay_spec)
+    )
     objective_text = (
-        gameplay_spec.win_state if gameplay_spec is not None else "Reach exit"
+        production_spec_bundle.narrative.hud_text.get("objective")
+        or production_spec_bundle.narrative.objective_copy[-1]
+        if production_spec_bundle is not None
+        else gameplay_spec.win_state if gameplay_spec is not None else "Reach exit"
     )
     objective_literal = json.dumps(objective_text, ensure_ascii=False)
     # When real gameplay scripts are present, spawn a controllable player and a

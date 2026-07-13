@@ -145,6 +145,31 @@ def test_director_workflow_specializes_chinese_portfolio_godot_story():
 
 
 
+def test_level_beats_cover_every_valid_target_minutes():
+    # PromptRequest allows 5-15 minutes. The deterministic beats must sum to
+    # that target for every value, otherwise the production spec bundle fails
+    # deep validation and blocks its own execution.
+    axis_prompts = [
+        "a rooftop parkour demo",
+        "a portfolio story about choosing your own road",
+        "a stealth courier escapes a haunted train station",
+    ]
+    for prompt in axis_prompts:
+        for target in range(5, 16):
+            plan = run_director_workflow(PromptRequest(prompt=prompt, target_minutes=target))
+            beats = plan.gameplay_spec.level_beats
+            assert sum(beat.duration_minutes for beat in beats) == target, (prompt, target)
+
+            bundle = plan.production_spec_bundle
+            assert bundle is not None
+            errors = [
+                issue.message
+                for issue in bundle.validation.issues
+                if issue.severity == "error"
+            ]
+            assert bundle.validation.status != "failed", (prompt, target, errors)
+
+
 def test_enemy_rosters_follow_axis_and_explicit_prompt():
     stealth = run_director_workflow(
         PromptRequest(prompt="a stealth courier escapes a haunted train station")

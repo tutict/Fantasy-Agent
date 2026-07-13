@@ -75,6 +75,17 @@
 - 打开包含生成 spec、manifest 和自动化日志的 GitHub PR。
 - 跟踪不同原型迭代的指标。
 
+## M7：Agent 可执行生产 Spec
+
+状态：M7.1-M7.5 已完成第一轮垂直切片。
+
+- [x] M7.1：Bundle loader、深度校验、`--spec-file` 与执行阻断。
+- [x] M7.2：Godot 以 Combat/Level/Numeric/Narrative Spec 为主驱动，保留旧 payload 回退。
+- [x] M7.3：ConfigTableCompiler 支持 YAML/JSON/CSV-ready，并同步 approval manifest 状态。
+- [x] M7.4：Studio / Flow Console 展示 Spec Bundle、校验、产物、字段追踪与 QA。
+- [x] M7.5：Unreal DataTable/DataAsset adapter 与机器可执行 QA 接入执行链。
+
+后续验证重点：真实 Unreal Editor 导入 adapter 源、PIE 指标采集、Godot packaged playtest 和跨版本 schema migration。
 ## 第八阶段：ChatGPT 生产工作台
 
 - 增加 ChatGPT 托管生产计划的认证项目会话。

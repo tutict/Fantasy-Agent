@@ -7,7 +7,9 @@ import type {
   DirectorBuildPlan,
   GodotPlan,
   Locale,
+  ProductionSpecBundle,
   QaPlan,
+  SpecBundlePreviewResponse,
   TaskBreakdown,
   TaskItem,
   UnrealPlan
@@ -428,6 +430,68 @@ export function QaPanel({ qa, t }: { qa?: QaPlan; t: Translator }) {
           <SummaryBlock title={t("packaging")}>{list(qa.packaging_checks, t)}</SummaryBlock>
         </>
       ) : null}
+    </div>
+  );
+}
+
+
+export function SpecBundlePanel({
+  bundle,
+  preview,
+  error,
+  t
+}: {
+  bundle?: ProductionSpecBundle;
+  preview?: SpecBundlePreviewResponse | null;
+  error?: string | null;
+  t: Translator;
+}) {
+  if (!bundle) {
+    return <div className="spec-bundle-layout"><p>{t("specBundleEmpty")}</p></div>;
+  }
+  const segments = [
+    bundle.level?.teaching_segment,
+    ...(bundle.level?.mid_segments || []),
+    bundle.level?.final_test
+  ].filter(Boolean);
+  const validation = preview?.validation || bundle.validation || undefined;
+  const qaResults = preview?.executable_qa?.results || [];
+  return (
+    <div className="spec-bundle-layout">
+      <header className="spec-bundle-header">
+        <div>
+          <p className="eyebrow">{t("specBundleSource")}</p>
+          <h3>{bundle.gameplay_spec_title || t("specBundleTitle")}</h3>
+        </div>
+        <span className={`status-chip spec-status ${validation?.status || "idle"}`}>
+          {validation?.status || t("specPreviewLoading")}
+        </span>
+      </header>
+      {error ? <p className="handoff-note">{t("specPreviewFailed")}: {error}</p> : null}
+      <div className="spec-domain-grid">
+        <section className="spec-domain"><h3>{t("specCombat")}</h3><strong>{bundle.combat?.encounters?.length || 0}</strong><p>{t("specEncounters")}</p></section>
+        <section className="spec-domain"><h3>{t("specLevel")}</h3><strong>{segments.length}</strong><p>{(bundle.level?.objective_gates || []).join(", ") || "-"}</p></section>
+        <section className="spec-domain"><h3>{t("specNumeric")}</h3><strong>{bundle.numeric?.target_session_minutes || "-"} min</strong><p>{t("specMoveSpeed")}: {bundle.numeric?.player_move_speed || "-"}</p></section>
+        <section className="spec-domain"><h3>{t("specNarrative")}</h3><strong>{bundle.narrative?.beats?.length || 0}</strong><p>{bundle.narrative?.hud_text?.objective || bundle.narrative?.premise || "-"}</p></section>
+        <section className="spec-domain"><h3>{t("specConfig")}</h3><strong>{bundle.config_tables?.tables?.length || 0}</strong><p>{(bundle.config_tables?.tables || []).map((table) => table.table_id).join(", ")}</p></section>
+        <section className="spec-domain"><h3>{t("specResources")}</h3><strong>{bundle.resource_pipeline?.assets?.length || 0}</strong><p>{t("specBlocked")}: {bundle.resource_pipeline?.blocked_assets?.length || 0}</p></section>
+      </div>
+      <section className="spec-section">
+        <h3>{t("specValidation")}</h3>
+        {validation?.issues?.length ? <ul>{validation.issues.map((issue, index) => <li key={`${issue.field || "issue"}-${index}`}><strong>{issue.severity}</strong> <code>{issue.field}</code> {issue.message}</li>)}</ul> : <p>{t("specValidationClean")}</p>}
+      </section>
+      <section className="spec-section"><h3>{t("specArtifacts")}</h3>{list((preview?.artifacts || []).map((artifact) => artifact.path || "-"), t)}</section>
+      <section className="spec-section">
+        <h3>{t("specTrace")}</h3>
+        <div className="spec-trace-list">
+          {(preview?.traces || []).map((trace, index) => <div className="spec-trace-row" key={`${trace.spec_field || "trace"}-${index}`}><code>{trace.spec_field}</code><span>→</span><code>{trace.artifact_path}</code><span>{trace.consumer}</span></div>)}
+          {!preview?.traces?.length ? <p>{t("specPreviewLoading")}</p> : null}
+        </div>
+      </section>
+      <section className="spec-section">
+        <h3>{t("specExecutableQa")}</h3>
+        <div className="spec-qa-list">{qaResults.map((result) => <div className="spec-qa-row" data-state={result.passed ? "passed" : result.severity} key={result.assertion_id}><strong>{result.assertion_id}</strong><span>{result.passed ? t("specQaPassed") : result.message}</span></div>)}</div>
+      </section>
     </div>
   );
 }
