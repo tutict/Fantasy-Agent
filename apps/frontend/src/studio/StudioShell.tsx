@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { getMcpStatus } from "../shared/api";
 import { makeTranslator, studioI18n } from "../shared/i18n";
@@ -77,7 +77,9 @@ export function StudioShell() {
   const localizedHref = (href: string, params: Record<string, string> = {}) => {
     if (href === "/mcp") return href;
     const search = new URLSearchParams({ locale, theme, ...params });
-    return `${href}?${search.toString()}`;
+    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
+    const frontendRoute = href === "/web-console" && import.meta.env.DEV && base ? `${base}${href}` : href;
+    return `${frontendRoute}?${search.toString()}`;
   };
 
   return (
@@ -110,7 +112,8 @@ export function StudioShell() {
             EN
           </button>
           <button className={`locale-option ${locale === "zh-CN" ? "active" : ""}`} type="button" data-locale="zh-CN" onClick={() => setLocale("zh-CN")}>
-            濞戞搩鍘介弸?          </button>
+            中文
+          </button>
         </div>
 
         <div className="theme-switch" aria-label="Theme">
@@ -195,7 +198,7 @@ export function StudioShell() {
               {checkingMcp
                 ? t("mcpChecking")
                 : mcpStatus
-                  ? `${t("mcpSelectedEngine")}: ${mcpStatus.engine || selectedEngineVersion()} 鐠?${mcpStatus.required_ready ?? 0}/${mcpStatus.required_total ?? 0} ${t("mcpStatusSummary")}`
+                  ? `${t("mcpSelectedEngine")}: ${mcpStatus.engine || selectedEngineVersion()} - ${mcpStatus.required_ready ?? 0}/${mcpStatus.required_total ?? 0} ${t("mcpStatusSummary")}`
                   : t("mcpChecking")}
             </p>
             <div className="mcp-status-grid" id="mcp-status-grid">
@@ -236,8 +239,10 @@ function selectedEngineVersion() {
   return "UE5";
 }
 
-function McpCard({ service, t }: { service: McpService; t: (key: string) => string }) {
+function McpCard({ service, t }: { service: McpService; t: (key: string, args?: Record<string, unknown>) => string }) {
   const state = service.status === "ready" || service.status === "degraded" ? service.status : "unavailable";
+  const detail = service.detail_key ? t(service.detail_key, service.detail_args) : service.detail;
+  const nextAction = service.next_action_key ? t(service.next_action_key, service.next_action_args) : service.next_action;
   return (
     <article className="mcp-status-card" data-state={state}>
       <div className="mcp-status-top">
@@ -251,9 +256,9 @@ function McpCard({ service, t }: { service: McpService; t: (key: string) => stri
         <span>{t("mcpTarget")}</span>
         <code>{service.target || "-"}</code>
       </div>
-      <p>{service.detail_key ? t(service.detail_key) : service.detail}</p>
+      <p>{detail === service.detail_key ? service.detail : detail}</p>
       <p>
-        <strong>{t("mcpNextAction")}:</strong> {service.next_action_key ? t(service.next_action_key) : service.next_action}
+        <strong>{t("mcpNextAction")}:</strong> {nextAction === service.next_action_key ? service.next_action : nextAction}
       </p>
     </article>
   );

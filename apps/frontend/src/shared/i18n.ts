@@ -355,6 +355,24 @@ export const studioI18n: Record<Locale, Dictionary> = {
     mcpUnavailable: "Unavailable",
     mcpTarget: "Target",
     mcpNextAction: "Next action",
+    mcpDetailStudioReady: "JSON-RPC endpoint is mounted with {tool_count} planning tools.",
+    mcpNextStudioReady: "Use an HTTPS tunnel when connecting this endpoint to ChatGPT Apps.",
+    mcpDetailComfyReady: "Connected to ComfyUI ({version}).",
+    mcpNextComfyReady: "Run capability probe before submitting visual reference jobs.",
+    mcpDetailComfyMissing: "No local ComfyUI endpoint responded.",
+    mcpNextComfyMissing: "Start ComfyUI and confirm it is listening on 127.0.0.1:8188.",
+    mcpDetailExecutableReady: "Executable found. MCP execution still requires explicit confirmation.",
+    mcpDetailExecutableMissing: "No executable was found on PATH, configured environment variables, or common install folders.",
+    mcpNextBlenderReady: "Generate Blender Python first, then execute only after confirmation.",
+    mcpNextBlenderMissing: "Install Blender or set BLENDER_EXECUTABLE to blender.exe.",
+    mcpNextUnrealReady: "Use Unreal MCP validation before editor commandlets or PIE/package tests.",
+    mcpNextUnrealMissing: "Install UE5 or set UNREAL_EDITOR to UnrealEditor-Cmd.exe.",
+    mcpNextGodotReady: "Use Godot MCP validation for Godot-selected quick-play projects.",
+    mcpNextGodotMissing: "Install Godot 4 or set GODOT_EXECUTABLE to the Godot executable.",
+    mcpDetailGithubReady: "git and gh are available for future GitHub MCP handoffs.",
+    mcpNextGithubReady: "Run gh auth status before creating PRs or issue automation.",
+    mcpDetailGithubOptional: "GitHub MCP is optional; gh is not required for local prototype generation.",
+    mcpNextGithubOptional: "Install GitHub CLI only for PR, issue, or repository automation.",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
     themeDark: "Dark",
@@ -383,6 +401,24 @@ export const studioI18n: Record<Locale, Dictionary> = {
     mcpUnavailable: "不可用",
     mcpTarget: "目标",
     mcpNextAction: "下一步",
+    mcpDetailStudioReady: "JSON-RPC 端点已挂载，包含 {tool_count} 个策划工具。",
+    mcpNextStudioReady: "连接到 ChatGPT Apps 时，请通过 HTTPS 隧道暴露此端点。",
+    mcpDetailComfyReady: "已连接 ComfyUI（{version}）。",
+    mcpNextComfyReady: "提交视觉参考任务前，先运行能力探测。",
+    mcpDetailComfyMissing: "没有本地 ComfyUI 端点响应。",
+    mcpNextComfyMissing: "启动 ComfyUI，并确认它监听在 127.0.0.1:8188。",
+    mcpDetailExecutableReady: "已找到可执行文件。MCP 执行仍需明确确认。",
+    mcpDetailExecutableMissing: "未在 PATH、环境变量或常见安装目录中找到可执行文件。",
+    mcpNextBlenderReady: "先生成 Blender Python，确认后再执行。",
+    mcpNextBlenderMissing: "安装 Blender，或将 BLENDER_EXECUTABLE 指向 blender.exe。",
+    mcpNextUnrealReady: "执行编辑器命令或 PIE/打包测试前，先运行 Unreal MCP 校验。",
+    mcpNextUnrealMissing: "安装 UE5，或将 UNREAL_EDITOR 指向 UnrealEditor-Cmd.exe。",
+    mcpNextGodotReady: "针对已选择 Godot 的快速可玩项目，运行 Godot MCP 校验。",
+    mcpNextGodotMissing: "安装 Godot 4，或将 GODOT_EXECUTABLE 指向 Godot 可执行文件。",
+    mcpDetailGithubReady: "git 和 gh 可用于后续 GitHub MCP 交接。",
+    mcpNextGithubReady: "创建 PR 或 issue 自动化前，先运行 gh auth status。",
+    mcpDetailGithubOptional: "GitHub MCP 是可选项；本地原型生成不依赖 gh。",
+    mcpNextGithubOptional: "只有需要 PR、issue 或仓库自动化时才需要安装 GitHub CLI。",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
     themeDark: "深色",
@@ -393,5 +429,8 @@ export const studioI18n: Record<Locale, Dictionary> = {
 };
 
 export function makeTranslator(locale: Locale, dictionary: Record<Locale, Dictionary>) {
-  return (key: string) => dictionary[locale]?.[key] || dictionary.en[key] || key;
+  return (key: string, args: Record<string, unknown> = {}) => {
+    const template = dictionary[locale]?.[key] || dictionary.en[key] || key;
+    return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in args ? String(args[name]) : match));
+  };
 }
