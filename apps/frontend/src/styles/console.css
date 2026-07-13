@@ -108,64 +108,58 @@ input:focus-visible {
   outline-offset: 3px;
 }
 
+/* ---------------------------------------------------------------------------
+   Shell anatomy: full-width top bar, then a three-zone cockpit —
+   plan rail (intake + corrections) | center pane (inspection) | run rail
+   (execution + activity). Rails scroll independently at desktop widths.
+--------------------------------------------------------------------------- */
+
 .shell {
-  height: 100vh;
-  overflow: hidden;
-  padding: 14px;
-}
-
-.workspace {
-  display: grid;
-  grid-template-columns: minmax(330px, 410px) minmax(0, 1fr);
-  gap: 12px;
-  max-width: 1720px;
-  height: 100%;
-  min-height: 0;
-  margin: 0 auto;
-}
-
-.input-pane,
-.output-pane {
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--chrome);
-  box-shadow: var(--shadow);
-}
-
-.input-pane {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  overflow: auto;
-  padding: 16px;
-}
-
-.output-pane {
-  display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
-  min-height: 0;
+  gap: 12px;
+  height: 100vh;
+  max-width: 1880px;
+  margin: 0 auto;
   overflow: hidden;
+  padding: 12px 14px;
 }
 
-.brand-block,
-.status-bar,
-.status-actions,
-.drawer-header {
+.top-bar {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--chrome);
+  box-shadow: var(--shadow);
+  padding: 10px 16px;
 }
 
 .brand-block {
-  align-items: flex-start;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 900;
 }
 
 .eyebrow {
-  margin: 0 0 5px;
+  margin: 0 0 3px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 850;
@@ -182,8 +176,9 @@ p {
 h1 {
   margin: 0;
   color: var(--text);
-  font-size: 30px;
-  line-height: 1;
+  font-size: 19px;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 h2 {
@@ -203,9 +198,107 @@ p {
   color: var(--muted-strong);
 }
 
+.plan-headline {
+  display: flex;
+  flex: 1 1 320px;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  padding: 0 16px;
+}
+
+.plan-headline-text {
+  min-width: 0;
+  text-align: center;
+}
+
+.plan-headline h2 {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.top-controls {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.workspace {
+  display: grid;
+  flex: 1 1 auto;
+  grid-template-areas: "plan center run";
+  grid-template-columns: minmax(288px, 332px) minmax(0, 1fr) minmax(312px, 368px);
+  gap: 12px;
+  min-height: 0;
+}
+
+.side-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 1px;
+}
+
+.plan-rail {
+  grid-area: plan;
+}
+
+.run-rail {
+  grid-area: run;
+}
+
+.rail-title {
+  flex: 0 0 auto;
+  margin: 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.rail-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--chrome);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+
+.center-pane {
+  grid-area: center;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--chrome);
+  box-shadow: var(--shadow);
+}
+
+/* --------------------------------------------------------------------------
+   Shared controls
+-------------------------------------------------------------------------- */
+
 .locale-switch,
 .theme-switch,
-.tabs,
 .gdd-toolbar,
 .review-actions,
 .handoff-actions,
@@ -264,14 +357,10 @@ p {
   transform: scale(0.98);
 }
 
-.handoff-panel,
-.correction-panel,
-.manual-correction-panel,
-.generate-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-  padding-top: 14px;
+.locale-option,
+.theme-option {
+  min-height: 34px;
+  padding: 0 10px;
 }
 
 .pane-section-header {
@@ -352,104 +441,74 @@ p {
   min-height: 40px;
 }
 
-.manual-tool-grid {
+/* Manual correction targets render as compact rows: name + status + open,
+   with the detail clamped so the rail stays scannable. */
+.manual-tool-list {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
-.manual-tool-card {
+.manual-tool-row {
   display: grid;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 10px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 10px;
   background: var(--surface-muted);
-  padding: 11px;
+  padding: 9px 10px;
   transition:
     background 160ms ease,
     border-color 160ms ease;
 }
 
-.manual-tool-card[data-recommended="true"] {
+.manual-tool-row[data-recommended="true"] {
   border-color: var(--line-strong);
   background: var(--accent-soft);
 }
 
-.manual-tool-card[data-state="degraded"] {
+.manual-tool-row[data-state="degraded"] {
   border-color: rgba(232, 163, 86, 0.34);
-  background: var(--amber-soft);
 }
 
-.manual-tool-card[data-state="unavailable"] {
+.manual-tool-row[data-state="unavailable"] {
   border-color: rgba(255, 107, 107, 0.34);
-  background: var(--danger-soft);
 }
 
-.manual-tool-top {
+.manual-tool-name {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
-.manual-tool-top h3 {
-  margin: 0 0 2px;
-  font-size: 14px;
+.manual-tool-name h3 {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.manual-tool-top span,
-.manual-tool-top strong {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
+.manual-tool-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-.manual-tool-top strong {
-  flex: 0 0 auto;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  padding: 3px 7px;
+.manual-tool-side .mini-action {
+  min-height: 32px;
+  padding: 0 10px;
 }
 
-.manual-tool-card p {
+.manual-tool-row p {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  grid-column: 1 / -1;
+  overflow: hidden;
   margin: 0;
-  color: var(--muted-strong);
+  color: var(--muted);
   font-size: 12px;
-}
-
-.manual-tool-card code {
-  display: block;
-  overflow-wrap: anywhere;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--code-bg);
-  color: var(--accent);
-  padding: 7px 8px;
-  font: 11px/1.45 "Cascadia Code", Consolas, monospace;
-}
-
-.manual-card-action {
-  min-height: 38px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--muted-strong);
-  font-size: 12px;
-  font-weight: 900;
-  transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
-}
-
-.manual-card-action:hover:not(:disabled) {
-  border-color: var(--line-strong);
-  background: var(--accent-soft);
-  color: var(--text);
-  transform: translateY(-1px);
 }
 
 .mode-grid {
@@ -542,16 +601,6 @@ input[type="text"]:focus {
   transform: translateY(-1px);
 }
 
-.operator-strip {
-  margin-top: auto;
-  padding-top: 14px;
-}
-
-.operator-strip h2 {
-  margin-bottom: 10px;
-  font-size: 14px;
-}
-
 .gate-stack {
   display: grid;
   gap: 8px;
@@ -576,12 +625,6 @@ input[type="text"]:focus {
   font-size: 12px;
 }
 
-.status-bar {
-  align-items: flex-start;
-  padding: 16px 18px 12px;
-  border-bottom: 1px solid var(--line);
-}
-
 .status-chip {
   flex: 0 0 auto;
   min-height: 34px;
@@ -594,7 +637,8 @@ input[type="text"]:focus {
   font-weight: 900;
 }
 
-.status-chip[data-state="ready"] {
+.status-chip[data-state="ready"],
+.status-chip.passed {
   border-color: var(--line-strong);
   background: var(--accent-soft);
   color: var(--accent);
@@ -606,11 +650,22 @@ input[type="text"]:focus {
   color: var(--blue);
 }
 
-.status-chip[data-state="error"] {
+.status-chip.warning {
+  border-color: rgba(232, 163, 86, 0.38);
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.status-chip[data-state="error"],
+.status-chip.failed {
   border-color: rgba(255, 107, 107, 0.38);
   background: var(--danger-soft);
   color: var(--danger);
 }
+
+/* --------------------------------------------------------------------------
+   Center pane: stage strip, metrics, grouped tabs, panel content
+-------------------------------------------------------------------------- */
 
 .stage-strip {
   display: grid;
@@ -625,7 +680,7 @@ input[type="text"]:focus {
   min-height: 60px;
   align-content: center;
   gap: 4px;
-  background: rgba(255, 255, 255, 0.028);
+  background: var(--chrome);
   padding: 10px 12px;
   transition:
     background 160ms ease,
@@ -695,9 +750,43 @@ input[type="text"]:focus {
 }
 
 .tabs {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
   border-bottom: 1px solid var(--line);
   background: var(--tab-bg);
-  padding: 10px 12px;
+  padding: 8px 14px 10px;
+}
+
+.tab-group {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 5px;
+}
+
+.tab-group + .tab-group {
+  border-left: 1px solid var(--line);
+  padding-left: 14px;
+}
+
+.tab-group-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tab-group-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.tab {
+  min-height: 34px;
+  white-space: nowrap;
 }
 
 .content-frame {
@@ -824,18 +913,10 @@ input[type="text"]:focus {
 .task-row,
 .stage-row,
 .review-item,
-.review-inspector,
-.activity-drawer {
+.review-inspector {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
-}
-
-.summary-block,
-.task-row,
-.stage-row,
-.review-item,
-.review-inspector {
   padding: 13px;
 }
 
@@ -1007,27 +1088,30 @@ input[type="text"]:focus {
   margin-bottom: 10px;
 }
 
-.activity-drawer {
-  max-height: 160px;
+/* --------------------------------------------------------------------------
+   Run rail: activity feed
+-------------------------------------------------------------------------- */
+
+.activity-card {
+  flex: 1 1 220px;
+  min-height: 200px;
   overflow: hidden;
-  border-right: 0;
-  border-bottom: 0;
-  border-left: 0;
-  border-radius: 0;
-  transition: max-height 180ms ease;
+  gap: 0;
+  padding: 0;
 }
 
-.activity-drawer:not(.is-open) {
-  max-height: 44px;
-}
-
-.drawer-header {
+.activity-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
   min-height: 44px;
   border-bottom: 1px solid var(--line);
   padding: 0 14px;
 }
 
-.drawer-header span {
+.activity-head span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 850;
@@ -1036,7 +1120,8 @@ input[type="text"]:focus {
 .activity-log {
   display: grid;
   gap: 1px;
-  max-height: 116px;
+  align-content: start;
+  flex: 1 1 auto;
   overflow: auto;
   margin: 0;
   padding: 0;
@@ -1046,7 +1131,7 @@ input[type="text"]:focus {
 
 .activity-log li {
   display: grid;
-  grid-template-columns: 86px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr);
   gap: 10px;
   background: var(--chrome-strong);
   padding: 8px 14px;
@@ -1069,89 +1154,6 @@ input[type="text"]:focus {
   }
 }
 
-@media (max-width: 1180px) {
-  /* Stacked single-column: let the page scroll instead of viewport-locking,
-     so the (tall) sidebar content isn't clipped inside a fixed-height shell. */
-  .shell {
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
-  }
-
-  .workspace {
-    grid-template-columns: 1fr;
-    height: auto;
-  }
-
-  .input-pane,
-  .output-pane {
-    overflow: visible;
-    min-height: auto;
-  }
-
-  .operator-strip {
-    margin-top: 0;
-  }
-}
-
-@media (max-width: 860px) {
-  .shell {
-    padding: 8px;
-  }
-
-  .status-bar,
-  .brand-block {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .stage-strip,
-  .insight-row,
-  .overview-grid,
-  .split-output,
-  .task-board,
-  .pipeline-board,
-  .review-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .stage-node {
-    grid-template-columns: 38px minmax(0, 1fr);
-    align-items: center;
-    min-height: 46px;
-  }
-
-  .metric {
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-
-  .metric:last-child {
-    border-bottom: 0;
-  }
-
-  .panel {
-    padding: 10px;
-  }
-
-  .review-item {
-    grid-template-columns: 1fr;
-  }
-
-  .review-actions {
-    max-width: none;
-    justify-content: stretch;
-  }
-
-  .review-action {
-    flex: 1 1 120px;
-  }
-
-  .activity-log li {
-    grid-template-columns: 1fr;
-  }
-}
-
 /* Generate playable demo panel (M5a) */
 .generate-options {
   display: flex;
@@ -1167,7 +1169,6 @@ input[type="text"]:focus {
   gap: 8px;
   cursor: pointer;
 }
-
 
 .enemy-tuning-panel {
   display: flex;
@@ -1218,7 +1219,7 @@ input[type="text"]:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 8px;
-  background: var(--surface-raised);
+  background: var(--field);
   color: var(--text);
 }
 
@@ -1244,6 +1245,10 @@ input[type="text"]:focus {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.generate-stages:empty {
+  display: none;
 }
 
 .generate-stages .mcp-status-card {
@@ -1293,7 +1298,6 @@ input[type="text"]:focus {
   margin: 0;
   color: var(--text-soft);
 }
-
 
 .approval-preview {
   display: flex;
@@ -1440,6 +1444,51 @@ input[type="text"]:focus {
   border-left-color: var(--accent);
 }
 
+/* --------------------------------------------------------------------------
+   Responsive: 3 columns -> rails share the left column -> single column
+-------------------------------------------------------------------------- */
+
+@media (max-width: 1360px) {
+  .workspace {
+    grid-template-areas:
+      "plan center"
+      "run center";
+    grid-template-columns: minmax(284px, 324px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1180px) {
+  /* Stacked single-column: let the page scroll instead of viewport-locking,
+     so the rail content isn't clipped inside a fixed-height shell. */
+  .shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .workspace {
+    grid-template-areas:
+      "plan"
+      "run"
+      "center";
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+
+  .side-rail {
+    overflow: visible;
+  }
+
+  .center-pane {
+    min-height: 72vh;
+  }
+
+  .activity-log {
+    max-height: 260px;
+  }
+}
+
 @media (max-width: 900px) {
   .spec-domain-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1467,6 +1516,78 @@ input[type="text"]:focus {
 
   .spec-trace-row > span:first-of-type {
     display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .shell {
+    padding: 8px;
+  }
+
+  .top-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .plan-headline {
+    justify-content: space-between;
+    border-left: 0;
+    border-right: 0;
+    padding: 0;
+  }
+
+  .plan-headline-text {
+    text-align: left;
+  }
+
+  .top-controls {
+    margin-left: 0;
+  }
+
+  .stage-strip,
+  .insight-row,
+  .overview-grid,
+  .split-output,
+  .task-board,
+  .pipeline-board,
+  .review-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-node {
+    grid-template-columns: 38px minmax(0, 1fr);
+    align-items: center;
+    min-height: 46px;
+  }
+
+  .metric {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .metric:last-child {
+    border-bottom: 0;
+  }
+
+  .panel {
+    padding: 10px;
+  }
+
+  .review-item {
+    grid-template-columns: 1fr;
+  }
+
+  .review-actions {
+    max-width: none;
+    justify-content: stretch;
+  }
+
+  .review-action {
+    flex: 1 1 120px;
+  }
+
+  .activity-log li {
+    grid-template-columns: 1fr;
   }
 }
 

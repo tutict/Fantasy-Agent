@@ -72,6 +72,39 @@ const manualTargetKeys: Record<string, { label: string; detail: string }> = {
 
 type TabKey = "overview" | "pipeline" | "tasks" | "review" | "build" | "visuals" | "specs" | "qa" | "gdd" | "dsl";
 
+const tabGroups: Array<{ labelKey: string; tabs: Array<[TabKey, string]> }> = [
+  {
+    labelKey: "tabGroupPlan",
+    tabs: [
+      ["overview", "tabOverview"],
+      ["pipeline", "tabPipeline"],
+      ["tasks", "tabTasks"]
+    ]
+  },
+  {
+    labelKey: "tabGroupAssets",
+    tabs: [
+      ["review", "tabReview"],
+      ["visuals", "tabVisuals"]
+    ]
+  },
+  {
+    labelKey: "tabGroupDelivery",
+    tabs: [
+      ["build", "tabBuild"],
+      ["specs", "tabSpecs"],
+      ["qa", "tabQa"]
+    ]
+  },
+  {
+    labelKey: "tabGroupDocs",
+    tabs: [
+      ["gdd", "tabGdd"],
+      ["dsl", "tabDsl"]
+    ]
+  }
+];
+
 export function FlowConsole() {
   const [locale, setLocale] = useState<Locale>(() => initialLocale(CONSOLE_LOCALE_KEY));
   const [theme, setTheme] = useState<Theme>(() => initialTheme());
@@ -81,7 +114,6 @@ export function FlowConsole() {
   const [correctionEntries, setCorrectionEntries] = useState<Array<{ mode: CorrectionMode; notes: string; createdAt: string }>>([]);
   const [correctionNotes, setCorrectionNotes] = useState("");
   const [activeTab, setActiveTab] = useState<TabKey>("overview");
-  const [logOpen, setLogOpen] = useState(true);
   const [withAssets, setWithAssets] = useState(false);
   const [withVisuals, setWithVisuals] = useState(false);
   const [withGameplay, setWithGameplay] = useState(false);
@@ -310,39 +342,55 @@ export function FlowConsole() {
 
   return (
     <main className="shell">
-      <section className="workspace" aria-label="Fantasy Agent production cockpit">
-        <aside className="input-pane">
-          <header className="brand-block">
-            <div>
-              <p className="eyebrow">{t("productLabel")}</p>
-              <h1>Fantasy Agent</h1>
-            </div>
-            <SegmentedControl
-              label="Interface language"
-              value={locale}
-              options={[
-                ["en", "EN"],
-                ["zh-CN", "\u4e2d\u6587"]
-              ]}
-              onChange={(value) => {
-                setLocale(value as Locale);
-                addActivity(t("switchedLocale"), value);
-              }}
-            />
-            <SegmentedControl
-              label="Theme"
-              value={theme}
-              options={[
-                ["dark", t("themeDark")],
-                ["light", t("themeLight")]
-              ]}
-              onChange={(value) => setTheme(value as Theme)}
-              className="theme-switch"
-              buttonClassName="theme-option"
-            />
-          </header>
+      <header className="top-bar">
+        <div className="brand-block">
+          <span className="brand-mark" aria-hidden="true">FA</span>
+          <div>
+            <p className="eyebrow">{t("productLabel")}</p>
+            <h1>Fantasy Agent</h1>
+          </div>
+        </div>
+        <div className="plan-headline">
+          <div className="plan-headline-text">
+            <p className="eyebrow">{t("statusLabel")}</p>
+            <h2 id="plan-title">{currentPlan ? titleForPlan(currentPlan) : t("emptyTitle")}</h2>
+          </div>
+          <div className="status-chip" id="status-chip" data-state={status}>
+            {t(status)}
+          </div>
+        </div>
+        <div className="top-controls">
+          <SegmentedControl
+            label="Interface language"
+            value={locale}
+            options={[
+              ["en", "EN"],
+              ["zh-CN", "\u4e2d\u6587"]
+            ]}
+            onChange={(value) => {
+              setLocale(value as Locale);
+              addActivity(t("switchedLocale"), value);
+            }}
+          />
+          <SegmentedControl
+            label="Theme"
+            value={theme}
+            options={[
+              ["dark", t("themeDark")],
+              ["light", t("themeLight")]
+            ]}
+            onChange={(value) => setTheme(value as Theme)}
+            className="theme-switch"
+            buttonClassName="theme-option"
+          />
+        </div>
+      </header>
 
-          <section className="handoff-panel" aria-label="Planning handoff">
+      <section className="workspace" aria-label="Fantasy Agent production cockpit">
+        <aside className="side-rail plan-rail" aria-label="Plan intake and corrections">
+          <p className="rail-title">{t("railPlanTitle")}</p>
+
+          <section className="rail-card handoff-panel" aria-label="Planning handoff">
             <div className="pane-section-header">
               <h2>{t("handoffTitle")}</h2>
               <span className="handoff-chip" id="handoff-state">
@@ -382,7 +430,7 @@ export function FlowConsole() {
             <p className="handoff-note">{t("handoffHint")}</p>
           </section>
 
-          <section className="correction-panel" aria-label="Correction queue">
+          <section className="rail-card correction-panel" aria-label="Correction queue">
             <div className="pane-section-header">
               <h2>{t("correctionTitle")}</h2>
             </div>
@@ -414,7 +462,7 @@ export function FlowConsole() {
             </button>
           </section>
 
-          <section className="manual-correction-panel" aria-label="Manual correction tools">
+          <section className="rail-card manual-correction-panel" aria-label="Manual correction tools">
             <div className="pane-section-header">
               <h2>{t("manualCorrectionTitle")}</h2>
             </div>
@@ -433,32 +481,39 @@ export function FlowConsole() {
                 {t("manualOpenRecommended")}
               </button>
             </div>
-            <div id="manual-tool-grid" className="manual-tool-grid">
+            <div id="manual-tool-grid" className="manual-tool-list">
               {targets.map((target) => (
-                <article className="manual-tool-card" data-state={target.status || "unavailable"} key={target.id}>
-                  <div className="manual-tool-top">
+                <article
+                  className="manual-tool-row"
+                  data-state={target.status || "unavailable"}
+                  data-recommended={target.id === recommendedManualTargetId() ? "true" : undefined}
+                  key={target.id}
+                >
+                  <div className="manual-tool-name">
                     <h3>{manualTargetLabel(target)}</h3>
                     {target.id === recommendedManualTargetId() ? <span className="task-pill ready">{t("manualRecommended")}</span> : null}
                   </div>
-                  <p>{manualTargetDetail(target)}</p>
-                  <div className="manual-tool-footer">
+                  <div className="manual-tool-side">
                     <span className="task-pill">{manualStatusLabel(target.status, t)}</span>
                     <button className="mini-action" type="button" data-manual-target={target.id} disabled={!target.openable} onClick={() => void openManualTarget(target.id)}>
                       {t("manualOpen")}
                     </button>
                   </div>
+                  <p>{manualTargetDetail(target)}</p>
                 </article>
               ))}
             </div>
           </section>
 
-          <section className="operator-strip" aria-label="Execution confirmations">
-            <h2>{t("gatesTitle")}</h2>
+          <section className="rail-card operator-strip" aria-label="Execution confirmations">
+            <div className="pane-section-header">
+              <h2>{t("gatesTitle")}</h2>
+            </div>
             <div id="gate-summary" className="gate-stack">
               {currentPlan ? (
                 <>
                   {correctionEntries.slice(0, 3).map((entry) => (
-                    <GateItem key={entry.createdAt} title={`${t("correctionPending")} 鐠?${modeLabel(entry.mode)}`} detail={entry.notes} />
+                    <GateItem key={entry.createdAt} title={`${t("correctionPending")} · ${modeLabel(entry.mode)}`} detail={entry.notes} />
                   ))}
                   {(currentPlan.task_breakdown?.tasks || []).filter((task) => task.requires_confirmation).slice(0, 6).map((task) => (
                     <GateItem key={task.id} title={task.title || task.id || t("confirmation")} detail={task.side_effects?.join(", ") || task.status || ""} />
@@ -474,7 +529,112 @@ export function FlowConsole() {
             </div>
           </section>
 
-          <section className="generate-panel" aria-label="Run approved asset workers">
+        </aside>
+
+        <section className="center-pane" aria-label="Plan inspection">
+          <section className="stage-strip" aria-label="Production pipeline" id="stage-strip">
+            {currentPlan?.production_pipeline?.stages?.length
+              ? currentPlan.production_pipeline.stages.map((stage) => (
+                  <div className={`stage-node ${stage.status || ""} ${stage.id === currentPlan.production_pipeline?.current_stage ? "is-active" : ""}`} key={stage.id || stage.order}>
+                    <span>{String(stage.order ?? "").padStart(2, "0")}</span>
+                    <strong>{localizedStageTitle(stage, locale)}</strong>
+                  </div>
+                ))
+              : ["Gameplay", "ComfyUI", "Blender", "Review", "UE", "QA"].map((label, index) => (
+                  <div className={`stage-node ${index === 0 ? "is-active" : ""}`} key={label}>
+                    <span>{String(index + 1).padStart(2, "0")}</span>
+                    <strong>{label}</strong>
+                  </div>
+                ))}
+          </section>
+
+          <section className="insight-row" aria-label="Plan metrics">
+            <Metric label={t("currentStage")} value={metrics.currentStage} id="metric-current-stage" />
+            <Metric label={t("nextStage")} value={metrics.nextStage} id="metric-next-stage" />
+            <Metric label={t("reviewItems")} value={metrics.reviewItems} id="metric-review-items" />
+            <Metric label={t("blockedTasks")} value={metrics.blockedTasks} id="metric-blocked-tasks" />
+          </section>
+
+          <nav className="tabs" aria-label="Plan views">
+            {tabGroups.map((group) => (
+              <div className="tab-group" key={group.labelKey}>
+                <span className="tab-group-label">{t(group.labelKey)}</span>
+                <div className="tab-group-buttons">
+                  {group.tabs.map(([tab, label]) => (
+                    <button className={`tab ${activeTab === tab ? "active" : ""}`} type="button" data-tab={tab} key={tab} onClick={() => setActiveTab(tab)}>
+                      {t(label)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </nav>
+
+          <section className="content-frame">
+            <Panel tab="overview" activeTab={activeTab}>
+              {!currentPlan ? <EmptyState t={t} /> : <OverviewPanel plan={currentPlan} locale={locale} t={t} />}
+            </Panel>
+            <Panel tab="pipeline" activeTab={activeTab}>
+              {currentPlan ? <PipelinePanel plan={currentPlan} locale={locale} t={t} /> : null}
+            </Panel>
+            <Panel tab="tasks" activeTab={activeTab}>
+              {currentPlan ? <TasksPanel breakdown={currentPlan.task_breakdown} locale={locale} t={t} /> : null}
+            </Panel>
+            <Panel tab="review" activeTab={activeTab}>
+              <ReviewPanel
+                review={currentPlan?.creative_review}
+                decisions={reviewDecisions}
+                setDecision={(assetId, decision) => {
+                  setReviewDecisions((decisions) => ({ ...decisions, [assetId]: decision }));
+                  addActivity(t("reviewDecision"), `${assetId}: ${statusLabel(decision, t)}`);
+                }}
+                manifestPath={approvalManifestPath}
+                onWriteManifest={() => void onWriteApprovalManifest()}
+                t={t}
+              />
+            </Panel>
+            <Panel tab="build" activeTab={activeTab}>
+              {currentPlan ? <BuildPanel plan={currentPlan} t={t} /> : null}
+            </Panel>
+            <Panel tab="visuals" activeTab={activeTab}>
+              {currentPlan ? <VisualsPanel comfy={currentPlan.comfyui_plan} review={currentPlan.creative_review} t={t} /> : null}
+            </Panel>
+            <Panel tab="specs" activeTab={activeTab}>
+              <SpecBundlePanel
+                bundle={currentPlan?.production_spec_bundle}
+                preview={specPreview}
+                error={specPreviewError}
+                t={t}
+              />
+            </Panel>
+            <Panel tab="qa" activeTab={activeTab}>
+              {currentPlan ? <QaPanel qa={currentPlan.qa_plan} t={t} /> : null}
+            </Panel>
+            <Panel tab="gdd" activeTab={activeTab}>
+              <div className="gdd-toolbar">
+                {(["en", "zh-CN"] as Locale[]).map((item) => (
+                  <button className={`mini-action ${gddLocale === item ? "active" : ""}`} type="button" data-gdd-locale={item} key={item} onClick={() => setGddLocale(item)}>
+                    {item === "en" ? "English" : "\u4e2d\u6587"}
+                  </button>
+                ))}
+              </div>
+              <pre id="gdd-output" className="code-output">
+                {gddText}
+              </pre>
+            </Panel>
+            <Panel tab="dsl" activeTab={activeTab}>
+              <pre id="dsl-output" className="code-output">
+                {currentPlan?.gameplay_spec ? JSON.stringify(currentPlan.gameplay_spec, null, 2) : ""}
+              </pre>
+            </Panel>
+          </section>
+
+        </section>
+
+        <aside className="side-rail run-rail" aria-label="Execution center">
+          <p className="rail-title">{t("railRunTitle")}</p>
+
+          <section className="rail-card generate-panel" aria-label="Run approved asset workers">
             <div className="pane-section-header">
               <h2>{t("assetExecutionTitle")}</h2>
             </div>
@@ -510,7 +670,7 @@ export function FlowConsole() {
             </div>
           </section>
 
-          <section className="generate-panel" aria-label="Generate playable demo">
+          <section className="rail-card generate-panel" aria-label="Generate playable demo">
             <div className="pane-section-header">
               <h2>{t("generateTitle")}</h2>
             </div>
@@ -591,127 +751,9 @@ export function FlowConsole() {
               ) : null}
             </div>
           </section>
-        </aside>
 
-        <section className="output-pane">
-          <header className="status-bar">
-            <div>
-              <p className="eyebrow">{t("statusLabel")}</p>
-              <h2 id="plan-title">{currentPlan ? titleForPlan(currentPlan) : t("emptyTitle")}</h2>
-            </div>
-            <div className="status-actions">
-              <div className="status-chip" id="status-chip" data-state={status}>
-                {t(status)}
-              </div>
-              <button className="ghost-action" id="log-toggle" type="button" onClick={() => setLogOpen((open) => !open)}>
-                {t("toggleLog")}
-              </button>
-            </div>
-          </header>
-
-          <section className="stage-strip" aria-label="Production pipeline" id="stage-strip">
-            {currentPlan?.production_pipeline?.stages?.length
-              ? currentPlan.production_pipeline.stages.map((stage) => (
-                  <div className={`stage-node ${stage.status || ""} ${stage.id === currentPlan.production_pipeline?.current_stage ? "is-active" : ""}`} key={stage.id || stage.order}>
-                    <span>{String(stage.order ?? "").padStart(2, "0")}</span>
-                    <strong>{localizedStageTitle(stage, locale)}</strong>
-                  </div>
-                ))
-              : ["Gameplay", "ComfyUI", "Blender", "Review", "UE", "QA"].map((label, index) => (
-                  <div className={`stage-node ${index === 0 ? "is-active" : ""}`} key={label}>
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    <strong>{label}</strong>
-                  </div>
-                ))}
-          </section>
-
-          <section className="insight-row" aria-label="Plan metrics">
-            <Metric label={t("currentStage")} value={metrics.currentStage} id="metric-current-stage" />
-            <Metric label={t("nextStage")} value={metrics.nextStage} id="metric-next-stage" />
-            <Metric label={t("reviewItems")} value={metrics.reviewItems} id="metric-review-items" />
-            <Metric label={t("blockedTasks")} value={metrics.blockedTasks} id="metric-blocked-tasks" />
-          </section>
-
-          <nav className="tabs" aria-label="Plan views">
-            {[
-              ["overview", "tabOverview"],
-              ["pipeline", "tabPipeline"],
-              ["tasks", "tabTasks"],
-              ["review", "tabReview"],
-              ["build", "tabBuild"],
-              ["visuals", "tabVisuals"],
-              ["specs", "tabSpecs"],
-              ["qa", "tabQa"],
-              ["gdd", "tabGdd"],
-              ["dsl", "tabDsl"]
-            ].map(([tab, label]) => (
-              <button className={`tab ${activeTab === tab ? "active" : ""}`} type="button" data-tab={tab} key={tab} onClick={() => setActiveTab(tab as TabKey)}>
-                {t(label)}
-              </button>
-            ))}
-          </nav>
-
-          <section className="content-frame">
-            <Panel tab="overview" activeTab={activeTab}>
-              {!currentPlan ? <EmptyState t={t} /> : <OverviewPanel plan={currentPlan} locale={locale} t={t} />}
-            </Panel>
-            <Panel tab="pipeline" activeTab={activeTab}>
-              {currentPlan ? <PipelinePanel plan={currentPlan} locale={locale} t={t} /> : null}
-            </Panel>
-            <Panel tab="tasks" activeTab={activeTab}>
-              {currentPlan ? <TasksPanel breakdown={currentPlan.task_breakdown} locale={locale} t={t} /> : null}
-            </Panel>
-            <Panel tab="review" activeTab={activeTab}>
-              <ReviewPanel
-                review={currentPlan?.creative_review}
-                decisions={reviewDecisions}
-                setDecision={(assetId, decision) => {
-                  setReviewDecisions((decisions) => ({ ...decisions, [assetId]: decision }));
-                  addActivity(t("reviewDecision"), `${assetId}: ${statusLabel(decision, t)}`);
-                }}
-                manifestPath={approvalManifestPath}
-                onWriteManifest={() => void onWriteApprovalManifest()}
-                t={t}
-              />
-            </Panel>
-            <Panel tab="build" activeTab={activeTab}>
-              {currentPlan ? <BuildPanel plan={currentPlan} t={t} /> : null}
-            </Panel>
-            <Panel tab="visuals" activeTab={activeTab}>
-              {currentPlan ? <VisualsPanel comfy={currentPlan.comfyui_plan} review={currentPlan.creative_review} t={t} /> : null}
-            </Panel>
-            <Panel tab="specs" activeTab={activeTab}>
-              <SpecBundlePanel
-                bundle={currentPlan?.production_spec_bundle}
-                preview={specPreview}
-                error={specPreviewError}
-                t={t}
-              />
-            </Panel>
-            <Panel tab="qa" activeTab={activeTab}>
-              {currentPlan ? <QaPanel qa={currentPlan.qa_plan} t={t} /> : null}
-            </Panel>
-            <Panel tab="gdd" activeTab={activeTab}>
-              <div className="gdd-toolbar">
-                {(["en", "zh-CN"] as Locale[]).map((item) => (
-                  <button className={`mini-action ${gddLocale === item ? "active" : ""}`} type="button" data-gdd-locale={item} key={item} onClick={() => setGddLocale(item)}>
-                    {item === "en" ? "English" : "\u4e2d\u6587"}
-                  </button>
-                ))}
-              </div>
-              <pre id="gdd-output" className="code-output">
-                {gddText}
-              </pre>
-            </Panel>
-            <Panel tab="dsl" activeTab={activeTab}>
-              <pre id="dsl-output" className="code-output">
-                {currentPlan?.gameplay_spec ? JSON.stringify(currentPlan.gameplay_spec, null, 2) : ""}
-              </pre>
-            </Panel>
-          </section>
-
-          <aside className={`activity-drawer ${logOpen ? "is-open" : ""}`} id="activity-drawer" aria-label="Activity log">
-            <div className="drawer-header">
+          <section className="rail-card activity-card" id="activity-drawer" aria-label="Activity log">
+            <div className="activity-head">
               <strong>{t("activityTitle")}</strong>
               <span id="activity-count">{activityEntries.length}</span>
             </div>
@@ -727,8 +769,8 @@ export function FlowConsole() {
                 </li>
               ))}
             </ol>
-          </aside>
-        </section>
+          </section>
+        </aside>
       </section>
     </main>
   );

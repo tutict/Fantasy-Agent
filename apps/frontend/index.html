@@ -5,6 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Fantasy Agent Studio</title>
     <link rel="icon" href="data:," />
+    <script>
+      // Apply the theme before first paint so the console never flashes the
+      // opposite palette while React mounts. Mirrors initialTheme().
+      (function () {
+        try {
+          var requested =
+            new URLSearchParams(window.location.search).get("theme") ||
+            localStorage.getItem("fantasy-agent-theme");
+          if (requested !== "light" && requested !== "dark") {
+            requested = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          document.documentElement.dataset.theme = requested;
+        } catch (error) {
+          /* default light tokens still apply */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
