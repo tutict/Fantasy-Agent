@@ -225,11 +225,24 @@ export function usePlanningHandoff({
     };
   }, [acceptHandoff, loadPlanningHandoff, locale, t]);
 
-  const updateProductionSpecBundle = useCallback((bundle: ProductionSpecBundle) => {
-    setCurrentPlan((current) =>
-      current ? { ...current, production_spec_bundle: bundle } : current
-    );
-  }, []);
+  const updateProductionSpecBundle = useCallback(
+    (bundle: ProductionSpecBundle) => {
+      if (!currentPlan) return;
+      const nextPlan = { ...currentPlan, production_spec_bundle: bundle };
+      // Persist the synced plan so a reload (or another tab) keeps the
+      // approval state the backend already wrote to
+      // generated/specs/production-spec-bundle.yaml instead of reverting
+      // to the pre-sync handoff.
+      const handoff = savePlanningHandoff(
+        nextPlan,
+        currentHandoff?.title || titleForPlan(nextPlan),
+        currentHandoff?.source || "flow-console"
+      );
+      setCurrentHandoff(handoff);
+      setCurrentPlan(nextPlan);
+    },
+    [currentHandoff, currentPlan, titleForPlan]
+  );
 
   return {
     currentPlan,

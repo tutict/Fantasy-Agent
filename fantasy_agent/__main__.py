@@ -96,8 +96,10 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--with-gameplay",
         action="store_true",
-        help="With --execute, generate real playable GDScript (mechanics + win/fail) via LLM, "
-        "falling back to deterministic templates if the Godot import fails.",
+        help="With --execute, generate real playable GDScript (mechanics + win/fail). "
+        "Plans with a production spec bundle compile scripts deterministically from it; "
+        "legacy bundle-less plans try the LLM first and fall back to deterministic "
+        "templates if the Godot import fails.",
     )
     parser.add_argument(
         "--comfyui-endpoint",
@@ -141,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
             director_plan_from_production_spec_bundle,
             load_production_spec_bundle,
         )
+        from fantasy_agent.spec_validation import validate_production_spec_bundle
 
         try:
             bundle = load_production_spec_bundle(args.spec_file, workspace_root=Path.cwd())
@@ -150,10 +153,22 @@ def main(argv: list[str] | None = None) -> int:
         if not args.execute and args.format == "specs":
             print(bundle.model_dump_json(indent=2))
             return 0
-        plan = director_plan_from_production_spec_bundle(
-            bundle,
-            engine_version=args.engine,
-        )
+        report = validate_production_spec_bundle(bundle)
+        if report.status == "failed":
+            print("Invalid production spec bundle:", file=sys.stderr)
+            for issue in report.issues:
+                if issue.severity == "error":
+                    print(f"  - [{issue.spec}] {issue.field}: {issue.message}", file=sys.stderr)
+            return 2
+        bundle = bundle.model_copy(update={"validation": report})
+        try:
+            plan = director_plan_from_production_spec_bundle(
+                bundle,
+                engine_version=args.engine,
+            )
+        except Exception as exc:  # noqa: BLE001 - surface validation errors cleanly
+            print(f"Invalid production spec bundle: {exc}", file=sys.stderr)
+            return 2
         if args.execute:
             return _run_executor(plan, args)
         if args.format == "json":

@@ -145,6 +145,53 @@ def test_director_workflow_specializes_chinese_portfolio_godot_story():
 
 
 
+def test_fit_level_beats_to_target_repairs_arbitrary_sums():
+    from fantasy_agent.contracts import LevelBeat
+    from fantasy_agent.generation import _fit_level_beats_to_target
+
+    def beats(*durations: int) -> list[LevelBeat]:
+        return [
+            LevelBeat(
+                name=f"Beat {index}",
+                duration_minutes=duration,
+                gameplay_focus="focus",
+                required_assets=["marker"],
+                success_condition="done",
+            )
+            for index, duration in enumerate(durations)
+        ]
+
+    for durations, target in [((3, 4, 2), 10), ((5, 5, 5), 7), ((1, 1, 1), 15), ((2, 2), 5)]:
+        fitted = _fit_level_beats_to_target(beats(*durations), target)
+        assert sum(beat.duration_minutes for beat in fitted) == target, (durations, target)
+        assert all(1 <= beat.duration_minutes <= 15 for beat in fitted)
+
+    exact = beats(2, 5, 3)
+    assert _fit_level_beats_to_target(exact, 10) == exact
+
+    trimmed = _fit_level_beats_to_target(beats(*([1] * 8)), 5)
+    assert len(trimmed) == 5
+    assert sum(beat.duration_minutes for beat in trimmed) == 5
+
+
+def test_llm_design_repairs_duration_sum(monkeypatch):
+    from fantasy_agent import generation
+
+    request = PromptRequest(
+        prompt="a stealth courier escapes a haunted train station",
+        target_minutes=10,
+    )
+    base = generation.design_from_prompt_deterministic(request)
+    data = base.model_dump(mode="json")
+    data["level_beats"][0]["duration_minutes"] = data["level_beats"][0]["duration_minutes"] + 2
+
+    monkeypatch.setattr("fantasy_agent.llm.complete_json", lambda **kwargs: data)
+
+    spec = generation.design_from_prompt(request, use_llm=True)
+
+    assert sum(beat.duration_minutes for beat in spec.level_beats) == spec.target_session_minutes
+
+
 def test_level_beats_cover_every_valid_target_minutes():
     # PromptRequest allows 5-15 minutes. The deterministic beats must sum to
     # that target for every value, otherwise the production spec bundle fails

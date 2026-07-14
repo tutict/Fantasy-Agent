@@ -15,7 +15,7 @@ from pathlib import Path
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.executor import execute_godot_demo, format_execution_report
 from fantasy_agent.generation import design_from_prompt_deterministic
-from fantasy_agent.godot_mcp import GodotMCPBridge, _main_gd
+from fantasy_agent.godot_mcp import GodotMCPBridge, _main_gd, _slug
 from fantasy_agent.contracts import GodotMCPResult
 from fantasy_agent.workflows import prepare_godot_project, run_director_workflow
 
@@ -843,6 +843,64 @@ def test_godot_execution_exports_production_specs(tmp_path: Path):
     assert '"production_specs"' in main
     assert '"level_objective_gates"' in main
     assert '"config_tables"' in main
+    # The handoff points at the paths the executor really writes, not the
+    # repo-level export_path declarations.
+    assert "data/config/enemies.yaml" in main
+    assert "generated/config/enemies.yaml" not in main
+
+
+def test_main_gd_bundle_route_places_beat_assets():
+    plan = _plan()
+    assert plan.production_spec_bundle is not None
+
+    main = _main_gd(
+        plan.godot_plan,
+        plan.gameplay_spec,
+        production_spec_bundle=plan.production_spec_bundle,
+    )
+
+    assert "FA_SpecGate_" in main
+    # Every level beat keeps its approved-asset glb wired into the spec route,
+    # so the ResourceLoader branch can instance it after the approval gate
+    # copies assets into res://assets/generated/.
+    for beat in plan.gameplay_spec.level_beats:
+        assert f"{_slug(beat.required_assets[0])}.glb" in main
+    # Beat materials survive too (parkour's hazard beat is not the flat
+    # OBJECTIVE/EXIT scheme the bundle route used to hardcode).
+    assert "MAT_HAZARD" in main.split("func _build_greybox_route")[1].split("func ")[0]
+
+
+def test_execute_uses_bundle_enemy_pressure_when_tuning_untouched(tmp_path: Path):
+    from fantasy_agent.contracts import EnemyPressureTuning
+
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    plan = _plan("a stealth courier escapes a guarded haunted station")
+    assert plan.production_spec_bundle is not None
+    tuned_bundle = plan.production_spec_bundle.model_copy(
+        update={
+            "numeric": plan.production_spec_bundle.numeric.model_copy(
+                update={"enemy_pressure": EnemyPressureTuning(enemy_count_multiplier=2.0)}
+            )
+        }
+    )
+    plan = plan.model_copy(update={"production_spec_bundle": tuned_bundle})
+
+    result = execute_godot_demo(
+        plan,
+        session_id="tuning_bundle",
+        confirmed=True,
+        godot_exe="godot",
+        with_gameplay=True,
+        enemy_tuning=EnemyPressureTuning(),
+        workspace_root=tmp_path,
+        bridge=bridge,
+    )
+
+    assert result.ok
+    main = (tmp_path / result.project_dir / "scripts" / "main.gd").read_text(encoding="utf-8")
+    # Identity tuning (Studio's untouched sliders) must not mask the bundle's
+    # declared enemy pressure.
+    assert '"enemy_count_multiplier": 2.0' in main
 
 
 def test_invalid_production_spec_blocks_before_godot_create(tmp_path: Path):

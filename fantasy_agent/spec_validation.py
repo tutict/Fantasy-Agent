@@ -2,11 +2,73 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import ValidationError
+
+from fantasy_agent.blender_codegen import slugify
+from fantasy_agent.config_table_compiler import config_table_artifact_name
 from fantasy_agent.contracts import (
+    EnemySpec,
     ProductionSpecBundle,
     SpecValidationIssue,
     SpecValidationReport,
 )
+
+
+def enemy_default_hp(bundle: ProductionSpecBundle) -> int:
+    """Default hp for enemy rows that omit the column."""
+    if bundle.combat is not None:
+        return bundle.combat.damage_model.enemy_hp_default
+    return EnemySpec(name="default").hp
+
+
+def enemy_spec_from_row(
+    row: dict[str, str | int | float | bool],
+    *,
+    default_hp: int,
+) -> EnemySpec:
+    """Build the EnemySpec a config row describes.
+
+    Raises ValidationError/ValueError/TypeError on values the contract rejects;
+    validate_production_spec_bundle reports those per row so loaders never crash.
+    """
+    return EnemySpec(
+        name=str(row.get("name", row.get("enemy_id", "Enemy"))),
+        behavior=str(row.get("behavior", "patrol")),
+        hp=int(row.get("hp", default_hp)),
+        count=int(row.get("count", 1)),
+    )
+
+
+def enemy_rows_from_bundle(
+    bundle: ProductionSpecBundle,
+) -> list[dict[str, str | int | float | bool]]:
+    """Enemy rows the runtime should execute.
+
+    The 'enemies' config table is authoritative when present — empty rows mean
+    the design declares zero enemies. Only when a bundle omits the table
+    entirely (legal for hand-authored --spec-file bundles) are placeholder rows
+    derived from combat.enemy_roles, so declared combat never silently spawns
+    zero enemies.
+    """
+    table = next(
+        (table for table in bundle.config_tables.tables if table.table_id == "enemies"),
+        None,
+    )
+    if table is not None:
+        return table.rows
+    if bundle.combat is None:
+        return []
+    default_hp = enemy_default_hp(bundle)
+    return [
+        {
+            "enemy_id": slugify(role),
+            "name": role,
+            "behavior": "patrol",
+            "hp": default_hp,
+            "count": 1,
+        }
+        for role in bundle.combat.enemy_roles
+    ]
 
 
 def validate_production_spec_bundle(bundle: ProductionSpecBundle) -> SpecValidationReport:
@@ -134,6 +196,7 @@ def validate_production_spec_bundle(bundle: ProductionSpecBundle) -> SpecValidat
             )
 
     table_ids: set[str] = set()
+    artifact_name_owners: dict[str, str] = {}
     for table in bundle.config_tables.tables:
         if table.table_id in table_ids:
             _issue(
@@ -157,6 +220,34 @@ def validate_production_spec_bundle(bundle: ProductionSpecBundle) -> SpecValidat
                 f"tables.{table.table_id}.export_path",
                 "Config table export_path must stay under generated/config.",
             )
+        else:
+            artifact_name = config_table_artifact_name(table)
+            owner = artifact_name_owners.get(artifact_name)
+            if owner is not None and owner != table.table_id:
+                _issue(
+                    issues,
+                    "error",
+                    "ConfigTableSpec",
+                    f"tables.{table.table_id}.export_path",
+                    (
+                        f"Compiled file name {artifact_name} collides with table "
+                        f"{owner}; the later export would overwrite the earlier one."
+                    ),
+                )
+            artifact_name_owners.setdefault(artifact_name, table.table_id)
+        if table.table_id == "enemies":
+            default_hp = enemy_default_hp(bundle)
+            for row_index, row in enumerate(table.rows):
+                try:
+                    enemy_spec_from_row(row, default_hp=default_hp)
+                except (ValidationError, TypeError, ValueError) as exc:
+                    _issue(
+                        issues,
+                        "error",
+                        "ConfigTableSpec",
+                        f"tables.enemies.rows.{row_index}",
+                        f"Enemy row does not satisfy the EnemySpec contract: {exc}",
+                    )
         seen_keys: set[str] = set()
         for row_index, row in enumerate(table.rows):
             primary_value = str(row.get(table.primary_key, ""))
@@ -177,6 +268,20 @@ def validate_production_spec_bundle(bundle: ProductionSpecBundle) -> SpecValidat
                     f"Duplicate primary key value: {primary_value}.",
                 )
             seen_keys.add(primary_value)
+
+    if bundle.combat is not None and not any(
+        table.table_id == "enemies" for table in bundle.config_tables.tables
+    ):
+        _issue(
+            issues,
+            "warning",
+            "ConfigTableSpec",
+            "tables.enemies",
+            (
+                "Combat is declared but the enemies config table is missing; "
+                "the runtime will derive placeholder enemies from combat.enemy_roles."
+            ),
+        )
 
     blocked_assets = set(bundle.resource_pipeline.blocked_assets)
     for asset in bundle.resource_pipeline.assets:

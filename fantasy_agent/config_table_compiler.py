@@ -16,6 +16,19 @@ from fantasy_agent.contracts import (
 )
 
 
+_FORMAT_SUFFIXES = {"yaml": ".yaml", "json": ".json", "csv-ready": ".csv"}
+
+
+def config_table_artifact_name(table: ConfigTable) -> str:
+    """Filename a table compiles to: declared export_path stem + format-derived suffix.
+
+    Shared with spec validation (duplicate-name detection) and the Godot runtime
+    handoff so every consumer agrees on where a table actually lands.
+    """
+    declared_name = Path(table.export_path.replace("\\", "/")).name
+    return f"{Path(declared_name).stem}{_FORMAT_SUFFIXES[table.format]}"
+
+
 def compile_config_tables(
     spec: ConfigTableSpec,
     *,
@@ -28,10 +41,7 @@ def compile_config_tables(
     for table in sorted(spec.tables, key=lambda item: item.table_id):
         _validate_table(table)
         rows = sorted(table.rows, key=lambda row: str(row.get(table.primary_key, "")))
-        suffix = {"yaml": ".yaml", "json": ".json", "csv-ready": ".csv"}[table.format]
-        declared_name = Path(table.export_path.replace("\\", "/")).name
-        filename = f"{Path(declared_name).stem}{suffix}"
-        path = (Path(output_prefix) / filename).as_posix()
+        path = (Path(output_prefix) / config_table_artifact_name(table)).as_posix()
         content, media_type = _render_table(table, rows)
         artifacts.append(CompiledSpecArtifact(path=path, media_type=media_type, content=content))
         traces.append(

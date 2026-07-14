@@ -325,6 +325,51 @@ def _beat_durations(target_minutes: int) -> tuple[int, int, int]:
     return teaching, target_minutes - teaching - final, final
 
 
+def _fit_level_beats_to_target(beats: list[LevelBeat], target_minutes: int) -> list[LevelBeat]:
+    """Rescale beat durations so they sum exactly to the target.
+
+    Spec validation treats a duration-sum mismatch as an error; the
+    deterministic generator guarantees the sum via _beat_durations, and this
+    repairs LLM output, which has no arithmetic guarantee. Proportions are
+    kept where possible and every duration stays inside the LevelBeat 1..15
+    contract.
+    """
+    if not beats:
+        return beats
+    if len(beats) > target_minutes:
+        # More beats than minutes cannot satisfy >=1 minute per beat.
+        beats = beats[:target_minutes]
+    durations = [beat.duration_minutes for beat in beats]
+    total = sum(durations)
+    if total == target_minutes:
+        return beats
+    scaled = [
+        min(15, max(1, round(duration * target_minutes / total)))
+        for duration in durations
+    ]
+    remainder = target_minutes - sum(scaled)
+    order = sorted(range(len(scaled)), key=lambda i: durations[i], reverse=remainder > 0)
+    while remainder != 0:
+        moved = False
+        for index in order:
+            if remainder > 0 and scaled[index] < 15:
+                scaled[index] += 1
+                remainder -= 1
+                moved = True
+            elif remainder < 0 and scaled[index] > 1:
+                scaled[index] -= 1
+                remainder += 1
+                moved = True
+            if remainder == 0:
+                break
+        if not moved:
+            break
+    return [
+        beat.model_copy(update={"duration_minutes": scaled[index]})
+        for index, beat in enumerate(beats)
+    ]
+
+
 def _level_beats_for_axis(axis: str, target_minutes: int) -> list[LevelBeat]:
     teaching_minutes, mid_minutes, final_minutes = _beat_durations(target_minutes)
     if axis == "parkour":
@@ -613,7 +658,7 @@ def _build_llm_system_prompt() -> str:
             "level_beats": [
                 {
                     "name": "str",
-                    "duration_minutes": "int",
+                    "duration_minutes": "int 1-15 (must sum to target_session_minutes)",
                     "gameplay_focus": "str",
                     "required_assets": ["str"],
                     "success_condition": "str",
@@ -645,6 +690,7 @@ def _build_llm_system_prompt() -> str:
         "- design_pillars must have 3 to 5 entries.\n"
         "- Every mechanic must change a player decision and be testable in a greybox.\n"
         "- Enemy rosters should be empty when enemies do not serve the loop; when present, keep count small and behavior readable.\n"
+        "- level_beats duration_minutes values MUST sum exactly to target_session_minutes.\n"
         "- Keep scope to one cohesive loop sized for the target session minutes.\n\n"
         "JSON shape (types are hints, not literals):\n"
         f"{schema_hint}"
@@ -672,6 +718,12 @@ def _design_with_llm(request: PromptRequest) -> GameplaySpec:
     )
     # Pydantic enforces the contract (extra="forbid", min_length, etc.).
     spec = GameplaySpec.model_validate(data)
+    # LLMs miss exact-arithmetic constraints; production spec validation
+    # requires the beat durations to sum to the session target, so repair
+    # the durations before the spec feeds the bundle.
+    spec.level_beats = _fit_level_beats_to_target(
+        spec.level_beats, spec.target_session_minutes
+    )
 
     # Attach i18n using deterministic axis/verb detection, matching the
     # deterministic path so downstream localization stays consistent.

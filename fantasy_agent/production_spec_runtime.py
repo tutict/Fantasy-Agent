@@ -59,9 +59,20 @@ def compile_production_spec_bundle(
 ) -> SpecCompileResult:
     ensure_production_spec_executable(bundle)
     if target.casefold() == "godot":
+        from fantasy_agent.config_table_compiler import compile_config_tables
         from fantasy_agent.godot_spec_adapter import compile_godot_spec_bundle
 
-        return compile_godot_spec_bundle(bundle)
+        # Godot execution writes the adapter runtime plus per-table config
+        # exports (executor._write_production_spec_exports); the compile result
+        # must report the same artifact set so previews match real runs.
+        godot_result = compile_godot_spec_bundle(bundle)
+        config_result = compile_config_tables(bundle.config_tables, output_prefix="data/config")
+        return SpecCompileResult(
+            target="godot",
+            artifacts=[*godot_result.artifacts, *config_result.artifacts],
+            traces=[*godot_result.traces, *config_result.traces],
+            runtime_handoff=godot_result.runtime_handoff,
+        )
     if target.casefold() in {"unreal", "ue", "ue5"}:
         from fantasy_agent.unreal_spec_adapter import compile_unreal_spec_bundle
 
@@ -74,16 +85,23 @@ def sync_bundle_with_approval_manifest(
     manifest: AssetApprovalManifest,
 ) -> ProductionSpecBundle:
     decisions = {decision.asset_id: decision.decision for decision in manifest.decisions}
+    reasons = {
+        "approved": None,
+        "needs_revision": "Creative Review requested revision.",
+        "rejected": "Creative Review rejected asset.",
+        "pending_user_review": "Awaiting Creative Review approval.",
+    }
     assets: list[ResourcePipelineAsset] = []
     for asset in bundle.resource_pipeline.assets:
-        status = decisions.get(asset.asset_id, "pending_user_review")
-        reason = {
-            "approved": None,
-            "needs_revision": "Creative Review requested revision.",
-            "rejected": "Creative Review rejected asset.",
-            "pending_user_review": "Awaiting Creative Review approval.",
-        }[status]
-        assets.append(asset.model_copy(update={"approval_status": status, "blocked_reason": reason}))
+        status = decisions.get(asset.asset_id)
+        if status is None:
+            # No decision recorded for this asset: keep its current state
+            # instead of demoting already-approved assets to pending.
+            assets.append(asset)
+            continue
+        assets.append(
+            asset.model_copy(update={"approval_status": status, "blocked_reason": reasons[status]})
+        )
     resource_pipeline = bundle.resource_pipeline.model_copy(
         update={
             "assets": assets,
@@ -104,7 +122,6 @@ def director_plan_from_production_spec_bundle(
 
     from fantasy_agent.contracts import (
         DirectorBuildPlan,
-        EnemySpec,
         GameplaySpec,
         LevelBeat,
         LoopStep,
@@ -121,23 +138,21 @@ def director_plan_from_production_spec_bundle(
         prepare_unreal_project,
     )
 
+    from fantasy_agent.spec_validation import (
+        enemy_default_hp,
+        enemy_rows_from_bundle,
+        enemy_spec_from_row,
+    )
+
     segments = [
         bundle.level.teaching_segment,
         *bundle.level.mid_segments,
         bundle.level.final_test,
     ]
-    enemy_table = next(
-        (table for table in bundle.config_tables.tables if table.table_id == "enemies"),
-        None,
-    )
+    default_hp = enemy_default_hp(bundle)
     enemies = [
-        EnemySpec(
-            name=str(row.get("name", row.get("enemy_id", "Enemy"))),
-            behavior=str(row.get("behavior", "patrol")),
-            hp=int(row.get("hp", bundle.numeric.player_hp)),
-            count=int(row.get("count", 1)),
-        )
-        for row in (enemy_table.rows if enemy_table else [])
+        enemy_spec_from_row(row, default_hp=default_hp)
+        for row in enemy_rows_from_bundle(bundle)
     ]
     win_state = bundle.narrative.objective_copy[-1]
     failure_states = bundle.narrative.failure_feedback
@@ -223,7 +238,18 @@ def director_plan_from_production_spec_bundle(
             )
             for segment in segments
         ],
-        asset_needs=[asset.role for asset in bundle.resource_pipeline.assets] or ["spec marker"],
+        # asset_needs must slugify back to the bundle's blender asset ids:
+        # regenerated Blender jobs, Creative Review items, and approval-manifest
+        # decisions all derive their ids from these strings, and
+        # sync_bundle_with_approval_manifest matches decisions by asset_id.
+        # ComfyUI review items regenerate with fixed job ids, so only blender
+        # assets belong here.
+        asset_needs=[
+            asset.asset_id
+            for asset in bundle.resource_pipeline.assets
+            if asset.source == "blender"
+        ]
+        or ["spec marker"],
         qa_focus=bundle.numeric.qa_risks or ["Validate compiled spec execution."],
         notes_for_unreal=["Use ProductionSpecBundle compiled DataTables and DataAssets."],
         notes_for_blender=["Only produce assets declared by ResourcePipelineSpec."],

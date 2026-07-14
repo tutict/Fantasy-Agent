@@ -32,6 +32,31 @@ def test_godot_adapter_compiles_combat_level_numeric_and_narrative():
     assert "narrative.hud_text.objective" in fields
 
 
+def test_godot_adapter_derives_enemies_when_table_missing():
+    bundle = _bundle()
+    assert bundle.combat is not None
+    stripped = bundle.model_copy(
+        update={
+            "config_tables": bundle.config_tables.model_copy(
+                update={
+                    "tables": [
+                        table
+                        for table in bundle.config_tables.tables
+                        if table.table_id != "enemies"
+                    ]
+                }
+            )
+        }
+    )
+
+    result = compile_godot_spec_bundle(stripped)
+
+    enemies = result.runtime_handoff["enemies"]
+    assert enemies
+    assert {row["name"] for row in enemies} == set(stripped.combat.enemy_roles)
+    assert all(row["behavior"] == "patrol" for row in enemies)
+
+
 
 def test_godot_main_and_gameplay_scripts_prefer_bundle_values():
     from fantasy_agent.gameplay_codegen import deterministic_gameplay_scripts

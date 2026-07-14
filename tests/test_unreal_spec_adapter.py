@@ -28,3 +28,30 @@ def test_machine_executable_qa_reports_static_spec_results():
     assert report.assertions
     assert all(result.assertion_id for result in report.results)
     assert any(result.metric_key == "target_session_minutes" for result in report.results)
+
+
+def test_executable_qa_degrades_on_warning_validation_and_fails_on_failed():
+    from fantasy_agent.contracts import SpecValidationReport
+
+    bundle = _bundle()
+    warned = bundle.model_copy(
+        update={"validation": SpecValidationReport(status="warning", issues=[], coverage={})}
+    )
+    failed = bundle.model_copy(
+        update={"validation": SpecValidationReport(status="failed", issues=[], coverage={})}
+    )
+
+    warned_report = evaluate_executable_qa(warned)
+    failed_report = evaluate_executable_qa(failed)
+
+    # Warning-level validation degrades QA but must not block execution
+    # (executor aborts only on QA status "failed").
+    assert warned_report.status == "warning"
+    assert failed_report.status == "failed"
+    not_failed = next(
+        result
+        for result in warned_report.results
+        if result.assertion_id == "spec_validation_not_failed"
+    )
+    assert not_failed.passed
+    assert not_failed.severity == "error"

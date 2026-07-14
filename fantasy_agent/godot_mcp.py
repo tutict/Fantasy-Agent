@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from fantasy_agent.config_table_compiler import config_table_artifact_name
 from fantasy_agent.path_safety import (
     WorkspacePathError,
     display_workspace_path,
@@ -303,7 +304,6 @@ class GodotMCPBridge:
         production_spec_bundle: ProductionSpecBundle | None = None,
     ) -> list[str]:
         gameplay_scripts = gameplay_scripts or {}
-        enemy_tuning = enemy_tuning or EnemyPressureTuning()
         project_dir = self._resolve_workspace_path(artifact.project_dir)
         project_dir.mkdir(parents=True, exist_ok=True)
         for folder in plan.folders:
@@ -539,6 +539,33 @@ def _beat_asset_glb(required_assets: list[str]) -> str:
     return f"{_slug(required_assets[0])}.glb"
 
 
+def _route_body_lines(markers: list[tuple[str, str, str, str]]) -> str:
+    """Shared greybox route emission: one floor+marker per entry, then the exit gate.
+
+    Each entry is (floor_name, marker_name, material_constant, asset_glb).
+    """
+    lines: list[str] = []
+    spacing = 6.0
+    start_x = -spacing * (len(markers) - 1) / 2.0
+    for index, (floor_name, marker_name, material, asset_glb) in enumerate(markers):
+        x = start_x + index * spacing
+        lines.append(
+            f'    _box("{floor_name}", Vector3({x:.1f}, 0.0, 0.0), '
+            "Vector3(5.0, 0.25, 3.0), MAT_SAFE)"
+        )
+        asset_literal = json.dumps(asset_glb, ensure_ascii=False)
+        lines.append(
+            f'    _spawn_marker("{marker_name}", Vector3({x:.1f}, 0.9, 0.0), '
+            f"Vector3(0.8, 1.4, 0.8), {material}, {asset_literal})"
+        )
+    exit_x = start_x + len(markers) * spacing
+    lines.append(
+        f'    _box("FA_Exit_Gate", Vector3({exit_x:.1f}, 1.2, 0.0), '
+        "Vector3(0.45, 2.4, 3.2), MAT_EXIT)"
+    )
+    return "\n".join(lines)
+
+
 def _route_body_from_spec(gameplay_spec: GameplaySpec | None) -> str:
     """Generate the _build_greybox_route body, one segment per level beat.
 
@@ -548,67 +575,82 @@ def _route_body_from_spec(gameplay_spec: GameplaySpec | None) -> str:
     if gameplay_spec is None or not gameplay_spec.level_beats:
         return _default_route_body()
 
-    lines: list[str] = []
-    spacing = 6.0
-    start_x = -spacing * (len(gameplay_spec.level_beats) - 1) / 2.0
+    markers: list[tuple[str, str, str, str]] = []
     for index, beat in enumerate(gameplay_spec.level_beats):
-        x = start_x + index * spacing
         safe_name = _slug(beat.name) or f"beat_{index}"
-        floor_name = f"FA_RouteFloor_{index}_{safe_name}"
-        lines.append(
-            f'    _box("{floor_name}", Vector3({x:.1f}, 0.0, 0.0), '
-            "Vector3(5.0, 0.25, 3.0), MAT_SAFE)"
-        )
-        material = _beat_material(beat.required_assets)
-        marker_name = f"FA_Beat_{index}_{safe_name}_Marker"
         # Prefer an imported glb for this beat's first required asset; the GDScript
         # helper falls back to a greybox box when the asset is absent, so the
         # no-asset path stays identical to M1.
-        asset_glb = _beat_asset_glb(beat.required_assets)
-        asset_literal = json.dumps(asset_glb, ensure_ascii=False)
-        lines.append(
-            f'    _spawn_marker("{marker_name}", Vector3({x:.1f}, 0.9, 0.0), '
-            f"Vector3(0.8, 1.4, 0.8), {material}, {asset_literal})"
+        markers.append(
+            (
+                f"FA_RouteFloor_{index}_{safe_name}",
+                f"FA_Beat_{index}_{safe_name}_Marker",
+                _beat_material(beat.required_assets),
+                _beat_asset_glb(beat.required_assets),
+            )
         )
-    # Final exit gate beyond the last beat.
-    exit_x = start_x + len(gameplay_spec.level_beats) * spacing
-    lines.append(
-        f'    _box("FA_Exit_Gate", Vector3({exit_x:.1f}, 1.2, 0.0), '
-        "Vector3(0.45, 2.4, 3.2), MAT_EXIT)"
-    )
-    return "\n".join(lines)
+    return _route_body_lines(markers)
 
 
-def _route_body_from_production_specs(bundle: ProductionSpecBundle) -> str:
-    """Generate the greybox route directly from LevelSpec segments."""
+def _route_body_from_production_specs(
+    bundle: ProductionSpecBundle,
+    gameplay_spec: GameplaySpec | None = None,
+) -> str:
+    """Generate the greybox route directly from LevelSpec segments.
+
+    Segment names mirror the GameplaySpec level beats (both directions of the
+    bundle round-trip preserve them), so each segment reuses its beat's
+    required-asset glb and material; approved Blender assets keep landing in
+    bundle-driven projects exactly as they did on the spec route.
+    """
 
     segments = [
         bundle.level.teaching_segment,
         *bundle.level.mid_segments,
         bundle.level.final_test,
     ]
-    lines: list[str] = []
-    spacing = 6.0
-    start_x = -spacing * (len(segments) - 1) / 2.0
-    for index, segment in enumerate(segments):
-        x = start_x + index * spacing
-        safe_name = _slug(segment.name) or f"segment_{index}"
-        lines.append(
-            f'    _box("FA_RouteFloor_{index}_{safe_name}", Vector3({x:.1f}, 0.0, 0.0), '
-            "Vector3(5.0, 0.25, 3.0), MAT_SAFE)"
-        )
-        marker_name = f"FA_SpecGate_{index}_{_slug(segment.objective_gate)}"
-        material = "MAT_OBJECTIVE" if index < len(segments) - 1 else "MAT_EXIT"
-        lines.append(
-            f'    _spawn_marker("{marker_name}", Vector3({x:.1f}, 0.9, 0.0), '
-            f'Vector3(0.8, 1.4, 0.8), {material}, "")'
-        )
-    exit_x = start_x + len(segments) * spacing
-    lines.append(
-        f'    _box("FA_Exit_Gate", Vector3({exit_x:.1f}, 1.2, 0.0), '
-        "Vector3(0.45, 2.4, 3.2), MAT_EXIT)"
+    beats_by_name = (
+        {beat.name: beat for beat in gameplay_spec.level_beats}
+        if gameplay_spec is not None
+        else {}
     )
-    return "\n".join(lines)
+    markers: list[tuple[str, str, str, str]] = []
+    for index, segment in enumerate(segments):
+        safe_name = _slug(segment.name) or f"segment_{index}"
+        beat = beats_by_name.get(segment.name)
+        if beat is not None and beat.required_assets:
+            material = _beat_material(beat.required_assets)
+            asset_glb = _beat_asset_glb(beat.required_assets)
+        else:
+            material = "MAT_OBJECTIVE" if index < len(segments) - 1 else "MAT_EXIT"
+            asset_glb = ""
+        markers.append(
+            (
+                f"FA_RouteFloor_{index}_{safe_name}",
+                f"FA_SpecGate_{index}_{_slug(segment.objective_gate)}",
+                material,
+                asset_glb,
+            )
+        )
+    return _route_body_lines(markers)
+
+
+def resolve_enemy_pressure_tuning(
+    explicit: EnemyPressureTuning | None,
+    bundle: ProductionSpecBundle | None,
+) -> EnemyPressureTuning:
+    """Resolve the tuning main.gd should apply.
+
+    The bundle's NumericTuningSpec is the execution authority; an explicit
+    tuning only overrides it when the caller actually adjusted a multiplier.
+    Studio and MCP requests default to an all-1.0 instance (the identity), so
+    treating identity as "unspecified" is what lets bundle values through.
+    """
+    if explicit is not None and explicit != EnemyPressureTuning():
+        return explicit
+    if bundle is not None:
+        return bundle.numeric.enemy_pressure
+    return explicit or EnemyPressureTuning()
 
 
 _GAMEPLAY_SPAWN_GD = '''
@@ -745,8 +787,8 @@ def _main_gd(
         "automation_steps": plan.automation_steps,
         "input_actions": plan.input_actions,
     }
+    enemy_tuning = resolve_enemy_pressure_tuning(enemy_tuning, production_spec_bundle)
     if gameplay_spec is not None:
-        enemy_tuning = enemy_tuning or EnemyPressureTuning()
         handoff["gameplay"] = {
             "title": gameplay_spec.title,
             "core_loop_steps": len(gameplay_spec.core_loop),
@@ -760,11 +802,13 @@ def _main_gd(
         from fantasy_agent.godot_spec_adapter import compile_godot_spec_bundle
 
         compiled = compile_godot_spec_bundle(production_spec_bundle)
-        effective_tuning = enemy_tuning or production_spec_bundle.numeric.enemy_pressure
         handoff["production_specs"] = compiled.runtime_handoff
         handoff["level_objective_gates"] = production_spec_bundle.level.objective_gates
+        # Point at where the executor really writes each table
+        # (data/config/<stem><format-suffix> inside the project), not the
+        # repo-level declared export_path.
         handoff["config_tables"] = {
-            table.table_id: table.export_path
+            table.table_id: f"data/config/{config_table_artifact_name(table)}"
             for table in production_spec_bundle.config_tables.tables
         }
         handoff["gameplay"] = {
@@ -776,7 +820,7 @@ def _main_gd(
                 segment["name"] for segment in compiled.runtime_handoff["level"]["segments"]
             ],
             "enemies": compiled.runtime_handoff["enemies"],
-            "enemy_tuning": effective_tuning.model_dump(mode="json"),
+            "enemy_tuning": enemy_tuning.model_dump(mode="json"),
             "damage_model": (
                 production_spec_bundle.combat.damage_model.model_dump(mode="json")
                 if production_spec_bundle.combat
@@ -785,7 +829,7 @@ def _main_gd(
         }
     payload = json.dumps(handoff, ensure_ascii=False, indent=2)
     route_body = (
-        _route_body_from_production_specs(production_spec_bundle)
+        _route_body_from_production_specs(production_spec_bundle, gameplay_spec)
         if production_spec_bundle is not None
         else _route_body_from_spec(gameplay_spec)
     )

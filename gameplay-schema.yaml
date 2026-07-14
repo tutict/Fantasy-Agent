@@ -1162,6 +1162,7 @@ $defs:
     properties:
       target:
         enum:
+          - config
           - godot
           - unreal
       artifacts:
@@ -1172,6 +1173,8 @@ $defs:
         type: array
         items:
           $ref: "#/$defs/spec_trace_record"
+      runtime_handoff:
+        type: object
   executable_qa_assertion:
     type: object
     additionalProperties: false
@@ -1190,6 +1193,7 @@ $defs:
       operator:
         enum:
           - eq
+          - neq
           - gte
           - lte
           - between

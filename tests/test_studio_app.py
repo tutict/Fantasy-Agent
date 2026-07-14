@@ -377,6 +377,11 @@ def test_spec_bundle_preview_api_returns_validation_artifacts_and_traces():
     assert response.validation.status in {"passed", "warning"}
     assert response.artifacts
     assert response.traces
+    # The godot preview must report the same artifact set execution writes:
+    # the adapter runtime plus the per-table config exports.
+    assert any(artifact.path == "data/production-spec-runtime.json" for artifact in response.artifacts)
+    assert any(artifact.path.startswith("data/config/") for artifact in response.artifacts)
+    assert any(trace.spec_field.startswith("config_tables.tables.") for trace in response.traces)
     assert response.executable_qa.results
     assert "/api/specs/preview" in {route.path for route in module.app.routes}
 

@@ -39,7 +39,11 @@ from fantasy_agent.approval_manifest import (
     filter_approved_blender_assets,
     load_asset_approval_manifest,
 )
-from fantasy_agent.godot_mcp import DEFAULT_WORKSPACE_ROOT, GodotMCPBridge
+from fantasy_agent.godot_mcp import (
+    DEFAULT_WORKSPACE_ROOT,
+    GodotMCPBridge,
+    resolve_enemy_pressure_tuning,
+)
 from fantasy_agent.path_safety import resolve_workspace_path
 
 
@@ -460,9 +464,12 @@ def _run_gameplay_codegen(
 ) -> tuple[dict[str, str], bool]:
     """Generate gameplay GDScript. Returns (scripts, was_llm_generated).
 
-    Tries the LLM first; on failure returns deterministic scripts. The
-    was_llm flag tells the caller whether to attempt a deterministic fallback
-    if the LLM scripts later fail the Godot import.
+    Plans that carry a ProductionSpecBundle (every director-workflow plan since
+    M7) compile deterministic scripts straight from the bundle. Only legacy
+    bundle-less plans try the LLM first; on failure they degrade to the
+    deterministic templates. The was_llm flag tells the caller whether to
+    attempt a deterministic fallback if the LLM scripts later fail the Godot
+    import.
     """
     from fantasy_agent import gameplay_codegen
 
@@ -766,11 +773,9 @@ def execute_godot_demo(
         ExecutionResult with per-stage status, artifacts, and logs.
     """
 
-    enemy_tuning = enemy_tuning or (
-        plan.production_spec_bundle.numeric.enemy_pressure
-        if plan.production_spec_bundle is not None
-        else EnemyPressureTuning()
-    )
+    # Identity (all-1.0) tuning means the caller made no manual adjustment,
+    # so the bundle's NumericTuningSpec stays the execution authority.
+    enemy_tuning = resolve_enemy_pressure_tuning(enemy_tuning, plan.production_spec_bundle)
     if with_assets and not approval_manifest_path:
         approval_manifest_path = DEFAULT_APPROVAL_MANIFEST_PATH
     project_dir = _session_project_dir(session_id, plan.godot_plan.project_name)

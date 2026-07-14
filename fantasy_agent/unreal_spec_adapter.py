@@ -69,11 +69,21 @@ def evaluate_executable_qa(bundle: ProductionSpecBundle) -> ExecutableQAReport:
             metric_key="objective_gates",
             operator="non_empty",
         ),
+        # Only a failed validation blocks execution (error severity); a
+        # warning-status report degrades the QA verdict but keeps the run
+        # alive, matching the spec_validation gate and the Godot path.
+        ExecutableQAAssertion(
+            assertion_id="spec_validation_not_failed",
+            metric_key="validation_status",
+            operator="neq",
+            expected="failed",
+        ),
         ExecutableQAAssertion(
             assertion_id="spec_validation_passed",
             metric_key="validation_status",
             operator="eq",
             expected="passed",
+            severity="warning",
         ),
         ExecutableQAAssertion(
             assertion_id="approved_assets_only",
@@ -126,6 +136,8 @@ def _evaluate(assertion: ExecutableQAAssertion, actual) -> ExecutableQAResult:
         passed = actual >= expected
     elif assertion.operator == "lte":
         passed = actual <= expected
+    elif assertion.operator == "neq":
+        passed = actual != expected
     else:
         passed = actual == expected
     return ExecutableQAResult(

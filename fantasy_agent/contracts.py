@@ -386,7 +386,7 @@ class SpecCompileResult(StrictModel):
 class ExecutableQAAssertion(StrictModel):
     assertion_id: str = Field(min_length=1)
     metric_key: str = Field(min_length=1)
-    operator: Literal["eq", "gte", "lte", "between", "non_empty", "all_approved"]
+    operator: Literal["eq", "neq", "gte", "lte", "between", "non_empty", "all_approved"]
     expected: bool | int | float | str | list[int | float] | None = None
     severity: Literal["error", "warning"] = "error"
 

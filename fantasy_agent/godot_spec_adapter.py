@@ -8,6 +8,7 @@ from fantasy_agent.contracts import (
     SpecCompileResult,
     SpecTraceRecord,
 )
+from fantasy_agent.spec_validation import enemy_rows_from_bundle
 
 
 def compile_godot_spec_bundle(bundle: ProductionSpecBundle) -> SpecCompileResult:
@@ -33,7 +34,7 @@ def compile_godot_spec_bundle(bundle: ProductionSpecBundle) -> SpecCompileResult
         },
         "numeric": bundle.numeric.model_dump(mode="json"),
         "narrative": bundle.narrative.model_dump(mode="json"),
-        "enemies": enemy_table.rows if enemy_table else [],
+        "enemies": enemy_rows_from_bundle(bundle) if enemy_table is None else enemy_table.rows,
         "resource_pipeline": bundle.resource_pipeline.model_dump(mode="json"),
     }
     path = "data/production-spec-runtime.json"
