@@ -186,6 +186,29 @@ def test_probe_comfyui_capabilities_reports_checkpoint(tmp_path: Path):
     assert result.selected_checkpoint == "fake-model.safetensors"
 
 
+def test_probe_rejects_endpoint_credentials_before_client_creation(tmp_path: Path):
+    client_endpoints: list[str] = []
+
+    def recording_client_factory(endpoint: str):
+        client_endpoints.append(endpoint)
+        raise AssertionError("credential-bearing endpoint reached the client factory")
+
+    secret = "exp007-probe-secret"
+    bridge = ComfyUIMCPBridge(tmp_path, client_factory=recording_client_factory)
+    result = bridge.probe_comfyui_capabilities(
+        ComfyUICapabilityProbeRequest(
+            endpoint=f"http://worker:{secret}@localhost:8188",
+            auto_discover_endpoint=False,
+        )
+    )
+
+    diagnostics = " ".join([*result.blockers, *result.warnings])
+    assert result.status == "unavailable"
+    assert client_endpoints == []
+    assert "credentials" in diagnostics
+    assert secret not in diagnostics
+
+
 class NoCheckpointComfyUIClient(FakeComfyUIClient):
     def object_info(self) -> dict:
         info = super().object_info()
@@ -218,6 +241,27 @@ def test_comfyui_mcp_rejects_remote_endpoint_by_default(tmp_path: Path):
 
     assert result["isError"] is True
     assert "endpoint must be local" in result["content"][0]["text"]
+
+
+def test_comfyui_mcp_rejects_endpoint_credentials_without_echo(tmp_path: Path):
+    _template(tmp_path)
+    secret = "exp007-secret"
+    result = call_comfyui_mcp_tool(
+        "prepare_visual_reference_workflows",
+        {
+            "plan": _plan(
+                endpoint=f"http://worker:{secret}@localhost:8188"
+            ).model_dump(mode="json"),
+            "write_files": True,
+        },
+        workspace_root=tmp_path,
+    )
+
+    message = result["content"][0]["text"]
+    assert result["isError"] is True
+    assert "credentials" in message
+    assert secret not in message
+    assert not (tmp_path / "generated").exists()
 
 
 def test_comfyui_mcp_rejects_templates_outside_allowlist(tmp_path: Path):

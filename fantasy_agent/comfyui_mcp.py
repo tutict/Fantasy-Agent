@@ -347,6 +347,10 @@ class ComfyUIMCPBridge:
         manifest: ComfyUIRunManifest,
         allow_remote_endpoint: bool,
     ) -> list[str]:
+        if _has_url_credentials(manifest.endpoint):
+            raise ComfyUIMCPSafetyError(
+                "ComfyUI endpoint must not include URL credentials."
+            )
         if not allow_remote_endpoint and not _is_local_endpoint(manifest.endpoint):
             raise ComfyUIMCPSafetyError(
                 f"ComfyUI endpoint must be local unless allow_remote_endpoint=true: {manifest.endpoint}"
@@ -376,6 +380,9 @@ class ComfyUIMCPBridge:
             candidates = _dedupe([request.endpoint, *request.endpoint_candidates])
         warnings: list[str] = []
         for endpoint in candidates:
+            if _has_url_credentials(endpoint):
+                warnings.append("Skipped ComfyUI endpoint containing URL credentials.")
+                continue
             if not request.allow_remote_endpoint and not _is_local_endpoint(endpoint):
                 warnings.append(f"Skipped non-local ComfyUI endpoint: {endpoint}")
                 continue
@@ -635,6 +642,11 @@ def _slug(value: str) -> str:
     while "__" in slug:
         slug = slug.replace("__", "_")
     return slug or "comfyui"
+
+
+def _has_url_credentials(endpoint: str) -> bool:
+    parsed = parse.urlparse(endpoint)
+    return parsed.username is not None or parsed.password is not None
 
 
 def _is_local_endpoint(endpoint: str) -> bool:
