@@ -931,11 +931,17 @@ class CreativeReviewReport(StrictModel):
     handoff_artifacts: list[str] = Field(default_factory=list)
 
 
+class ArtifactIdentity(StrictModel):
+    algorithm: Literal['sha256'] = 'sha256'
+    digest: str = Field(pattern=r'^[0-9a-f]{64}$')
+
+
 class AssetApprovalDecision(StrictModel):
     asset_id: str
     source: CreativeReviewSource
     asset_path: str
     gameplay_role: str
+    artifact_identity: ArtifactIdentity | None = None
     decision: Literal["approved", "needs_revision", "rejected", "pending_user_review"]
     revision_prompt: str | None = None
     risks: list[str] = Field(default_factory=list)

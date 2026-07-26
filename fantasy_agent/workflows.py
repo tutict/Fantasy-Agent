@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+from fantasy_agent.artifact_identity import compute_artifact_identity
 from fantasy_agent.contracts import (
     AssetApprovalDecision,
     AssetApprovalManifest,
@@ -26,6 +29,7 @@ from fantasy_agent.blender_codegen import enrich_blender_plan, slugify
 from fantasy_agent.gdd import render_gdd
 from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.production_specs import build_production_spec_bundle
+from fantasy_agent.path_safety import resolve_workspace_path
 
 
 BLENDER_KIT_JOBS: tuple[tuple[str, str, BlenderAssetKind], ...] = (
@@ -439,6 +443,8 @@ def prepare_creative_review(
 def build_asset_approval_manifest(
     review: CreativeReviewReport,
     decisions: dict[str, str] | None = None,
+    *,
+    workspace_root: Path | str,
 ) -> AssetApprovalManifest:
     decisions = decisions or {}
     allowed = {"approved", "needs_revision", "rejected", "pending_user_review"}
@@ -449,6 +455,11 @@ def build_asset_approval_manifest(
     pending: list[str] = []
 
     for item in review.items:
+        artifact_path = resolve_workspace_path(
+            item.asset_path,
+            workspace_root=workspace_root,
+            allow_absolute=True,
+        )
         raw_decision = decisions.get(item.asset_id) or item.approval_status
         decision = raw_decision if raw_decision in allowed else "pending_user_review"
         manifest_decisions.append(
@@ -457,6 +468,7 @@ def build_asset_approval_manifest(
                 source=item.source,
                 asset_path=item.asset_path,
                 gameplay_role=item.gameplay_role,
+                artifact_identity=compute_artifact_identity(artifact_path),
                 decision=decision,
                 revision_prompt=item.revision_prompt if decision == "needs_revision" else None,
                 risks=item.risks,

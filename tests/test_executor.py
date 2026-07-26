@@ -12,6 +12,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from fantasy_agent.artifact_identity import compute_artifact_identity
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.executor import execute_godot_demo, format_execution_report
 from fantasy_agent.generation import design_from_prompt_deterministic
@@ -157,6 +158,53 @@ class _FakeBlenderBridge:
         return _FakeBlenderResult(self._status, self._exported)
 
 
+def _fake_export_identity(root: Path, rel: str) -> dict[str, str]:
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b'glTF-stub')
+    return compute_artifact_identity(path).model_dump(mode='json')
+
+
+_IDENTITY_OMITTED = object()
+
+
+def _write_single_approval_manifest(
+    root: Path,
+    *,
+    artifact_identity: object = _IDENTITY_OMITTED,
+) -> None:
+    import yaml
+
+    decision = {
+        "asset_id": "start_marker",
+        "source": "blender",
+        "asset_path": "generated/assets/start_marker.fbx",
+        "gameplay_role": "objective_prop",
+        "decision": "approved",
+        "risks": [],
+    }
+    if artifact_identity is not _IDENTITY_OMITTED:
+        decision["artifact_identity"] = artifact_identity
+    manifest_path = root / "generated" / "asset-approval-manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(
+        yaml.safe_dump(
+            {
+                "source": "studio.approval-manifest",
+                "schema_version": "0.1",
+                "approval_gate": "blocks_unreal_ingest",
+                "decisions": [decision],
+                "approved_asset_ids": ["start_marker"],
+                "revision_asset_ids": [],
+                "rejected_asset_ids": [],
+                "pending_asset_ids": [],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_with_assets_defaults_to_approval_manifest_and_blocks_copy(tmp_path: Path):
     exported = ["generated/assets/start_marker.glb", "generated/assets/objective_prop.glb"]
     bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
@@ -205,6 +253,7 @@ def test_with_assets_approval_manifest_copies_only_approved(tmp_path: Path):
                         "source": "blender",
                         "asset_path": "generated/assets/start_marker.fbx",
                         "gameplay_role": "objective_prop",
+                        "artifact_identity": _fake_export_identity(tmp_path, exported[0]),
                         "decision": "approved",
                         "risks": [],
                     },
@@ -302,6 +351,92 @@ def test_with_assets_missing_approval_manifest_blocks_asset_copy(tmp_path: Path)
     assert not (tmp_path / result.project_dir / "assets" / "generated" / "start_marker.glb").exists()
 
 
+def test_with_assets_identityless_manifest_rejects_before_copy(tmp_path: Path):
+    exported = ["generated/assets/start_marker.glb"]
+    _write_single_approval_manifest(tmp_path)
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m2identityless",
+        confirmed=True,
+        godot_exe="godot",
+        with_assets=True,
+        workspace_root=tmp_path,
+        bridge=GodotMCPBridge(tmp_path, runner=_ok_runner),
+        blender_bridge=_FakeBlenderBridge(
+            status="executed",
+            exported=exported,
+            root=tmp_path,
+        ),
+    )
+
+    gate = next(stage for stage in result.stages if stage.name == "approval_gate")
+    assert gate.status == "done"
+    assert gate.metadata["approved_assets"] == []
+    assert gate.metadata["skipped_assets"] == exported
+    assert "copy_assets" not in [stage.name for stage in result.stages]
+
+
+def test_with_assets_malformed_identity_blocks_before_copy(tmp_path: Path):
+    exported = ["generated/assets/start_marker.glb"]
+    _write_single_approval_manifest(
+        tmp_path,
+        artifact_identity={"algorithm": "sha256", "digest": "not-a-sha256-digest"},
+    )
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m2malformedidentity",
+        confirmed=True,
+        godot_exe="godot",
+        with_assets=True,
+        workspace_root=tmp_path,
+        bridge=GodotMCPBridge(tmp_path, runner=_ok_runner),
+        blender_bridge=_FakeBlenderBridge(
+            status="executed",
+            exported=exported,
+            root=tmp_path,
+        ),
+    )
+
+    gate = next(stage for stage in result.stages if stage.name == "approval_gate")
+    assert gate.status == "blocked"
+    assert gate.metadata["approved_assets"] == []
+    assert "copy_assets" not in [stage.name for stage in result.stages]
+
+
+def test_with_assets_missing_export_rejects_before_copy(tmp_path: Path):
+    exported = ["generated/assets/start_marker.glb"]
+    reviewed_identity = _fake_export_identity(
+        tmp_path,
+        "generated/reviewed/start_marker.glb",
+    )
+    _write_single_approval_manifest(
+        tmp_path,
+        artifact_identity=reviewed_identity,
+    )
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m2missingexport",
+        confirmed=True,
+        godot_exe="godot",
+        with_assets=True,
+        workspace_root=tmp_path,
+        bridge=GodotMCPBridge(tmp_path, runner=_ok_runner),
+        blender_bridge=_FakeBlenderBridge(
+            status="executed",
+            exported=exported,
+        ),
+    )
+
+    gate = next(stage for stage in result.stages if stage.name == "approval_gate")
+    assert gate.status == "done"
+    assert gate.metadata["approved_assets"] == []
+    assert gate.metadata["skipped_assets"] == exported
+    assert "copy_assets" not in [stage.name for stage in result.stages]
+
+
 class _CreateFailedBridge(GodotMCPBridge):
     def create_godot_project_structure(self, request):
         return GodotMCPResult(status="failed", risks=["create boom"])
@@ -325,6 +460,7 @@ def test_approval_gate_report_waits_until_project_create_succeeds(tmp_path: Path
                         "source": "blender",
                         "asset_path": "generated/assets/start_marker.fbx",
                         "gameplay_role": "objective_prop",
+                        "artifact_identity": _fake_export_identity(tmp_path, exported[0]),
                         "decision": "approved",
                         "risks": [],
                     }
@@ -539,6 +675,7 @@ def test_visuals_and_assets_compose(tmp_path: Path):
                         "source": "blender",
                         "asset_path": "generated/assets/start_marker.fbx",
                         "gameplay_role": "objective_prop",
+                        "artifact_identity": _fake_export_identity(tmp_path, glb[0]),
                         "decision": "approved",
                         "risks": [],
                     }

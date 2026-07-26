@@ -614,7 +614,10 @@ def _run_approval_gate(
             approval_manifest_path, workspace_root=workspace_root
         )
         approval = filter_approved_blender_assets(
-            exported_glb, manifest, manifest_path=approval_manifest_path
+            exported_glb,
+            manifest,
+            manifest_path=approval_manifest_path,
+            workspace_root=workspace_root,
         )
         return approval.approved, approval, _approval_gate_stage(approval, approval_manifest_path)
     except Exception as exc:  # noqa: BLE001 - gate assets, keep greybox running
