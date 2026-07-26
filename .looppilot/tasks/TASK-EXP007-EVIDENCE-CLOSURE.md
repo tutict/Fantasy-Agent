@@ -1,11 +1,11 @@
 ---
 task_id: TASK-EXP007-EVIDENCE-CLOSURE
 parent_goal: Complete Fantasy-Agent EXP-007 with honest closure evidence.
-status: blocked
-previous_status: assigned
+status: completed
+previous_status: blocked
 status_changed_by: supervisor
 assigned_role: reviewer
-assigned_to: none
+assigned_to: independent-closure-review
 objective: Independently review the corrected EXP-007 closure claims after discovery of split-root test artifacts.
 scope:
   allowed:
@@ -44,7 +44,7 @@ authority:
   release: false
   deploy: false
   external_communication: false
-reviewer: none
+reviewer: independent-closure-review
 integration_owner: /root
 revision_count: 0
 revision_budget: 1
@@ -60,12 +60,12 @@ observed、inferred 与 unverified，并且只返回 decision 与可追踪 findi
 
 ## Reviewer Submission
 
-- Decisions: None submitted；closure review blocked/unverified。
-- Evidence observed: 无 Reviewer submission 可集成。
-- Findings: None submitted；不得把缺少 finding 写成 PASS。
-- Risks or blockers: 三个 Reviewer sessions 均未在有界等待与 follow-up 后交付。
-- Conflict notes: 这是 Agent execution infrastructure incident，不是 Product Finding、
-  Protocol Finding 或 Worker attempt。
+- Decisions: `CLOSEABLE-WITH-DISCLOSED-RESIDUAL-FINDINGS`；Spec PASS；Standards PASS；Evidence/Factual Accuracy PASS-WITH-FINDINGS（用户提供）。
+- Evidence observed: Governance accounting 已核验为 6 个工件 / 232 行。
+- Findings: `EXP007-EVID-001` 已纠正；`EXP007-PATH-001` 作为 Minor Test Harness Finding / separate follow-up 保留。
+- Risks or blockers: 真实 external tools 仍未验证；不影响 docs/governance-only closure。
+- Conflict notes: 历史 Reviewer session 无交付仍属 EII，不是 Product/Protocol Finding
+  或 Worker attempt；本次 closure decision 不改写该历史。
 
 ## Assignment History
 

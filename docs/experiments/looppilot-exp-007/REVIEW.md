@@ -70,9 +70,9 @@ second runtime、active recovery 或 multiple independent contracts。因此保�
   状态：fixed and independently reverified。
 - EII `EXP007-EII-001`：默认 pytest temp ACL 导致 68 setup errors。
   状态：environment-corrected；不是 Product Finding。
-- Product Finding `EXP007-PATH-001`：closure full pytest 暴露 bridge/workspace_root
-  双根写入，留下 ignored Godot spec artifacts。状态：open、out of selected Change
-  Contract；产物已清理。
+- Test Harness Finding `EXP007-PATH-001`（Minor）：closure full pytest 暴露
+  bridge/workspace_root 双根写入，留下 ignored Godot spec artifacts。状态：open、
+  separate follow-up、out of selected Change Contract；产物已清理。
 - EII `EXP007-EII-003`：三个只读 closure Reviewer sessions 均未在有界等待与 follow-up
   后提交 decision。状态：blocked；不计作 Worker attempt 或 Product/Protocol Finding。
 
@@ -81,12 +81,13 @@ Worker reliability 已验证。
 
 ## Closure Evidence Re-review
 
-结论：**BLOCKED / UNVERIFIED**。
+结论：**CLOSEABLE-WITH-DISCLOSED-RESIDUAL-FINDINGS**（用户提供的 Independent
+Closure Review）。
 
-三个独立只读 Reviewer assignment 均未产生 Spec、Standards 或 Evidence/Factual
-Accuracy decision。Supervisor 已纠正不存在的 `docs/phase9-evaluation.md` 来源引用、
-Governance count、pytest artifact isolation 表述，并登记 `EXP007-PATH-001`；这些更正
-来自 Git、文件、测试副作用与干净 CLI 复现，但没有被伪装成独立 Review PASS。
+最终三轴 decision：Spec **PASS**；Standards **PASS**；Evidence/Factual Accuracy
+**PASS-WITH-FINDINGS**。`EXP007-EVID-001` 已纠正：Governance accounting 为 6 个工件、
+232 行。`EXP007-PATH-001` 按 Minor Test Harness Finding / separate follow-up 保留；
+external tool limitations 保持披露。
 
-最小 unblocker：一个能够读取当前 commit/diff 并返回三轴 decision 的独立 Reviewer
-session。该缺口不授权第二个产品变更，也不支持 EXP-008 readiness。
+此前三个只读 Reviewer session 无交付仍按 `EXP007-EII-003` 保留，不改写为 PASS 或
+Worker attempt；本次结论不授权第二个产品变更。

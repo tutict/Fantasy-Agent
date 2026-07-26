@@ -96,7 +96,7 @@ Spec/Security 审查发现 public-result 泄露面；`tmp_path`、fake factory �
 | 低风险、高协调 | 需跨 owner 的接口或文档契约调整 | 未选。 |
 | 已受保护 | Candidate B 顶层 confirmation gate | 未选；观察到保护存在。 |
 | 无可复现 gap | Candidate A sampled validation paths | 未选；采样未见 validation bypass。 |
-| 测试隔离反例 | Candidate D split-root writes | full pytest 留下 ignored Godot spec artifacts；已清理并作为 residual finding 披露。 |
+| 测试隔离反例 | Candidate D split-root writes | full pytest 留下 ignored Godot spec artifacts；已清理并作为 Minor Test Harness Finding 披露。 |
 | 验证表面不足 | 真实外部引擎/网络 | 标记 unverified，不以 fake 代替。 |
 | 协调升级事件 | Major 后的 scoped rework | 重评后无 Full Loop 触发事实。 |
 
@@ -117,14 +117,13 @@ Full Loop recovery 或委派失败预算耗尽样本。未来实验应先取得�
 
 ## Closure 状态
 
-状态为 **blocked with verified product change**。缓存、pytest basetemp、frontend
-`dist` 与临时 `node_modules` junction 已清理；完整 pytest、聚焦测试、ruff、
-planning-only CLI、frontend typecheck/build 均通过。pre-closure 的独立 Evidence Review
-曾 PASS，但它早于 `EXP007-PATH-001` 的发现，不能覆盖新证据。三个只读 closure
-Reviewer sessions 在有界等待和 follow-up 后均未提交 decision，归为
-`EXP007-EII-003`；因此 corrected closure claims 未获得独立复核，不能标为最终 PASS。
+状态为 **closed with disclosed residual findings**。用户提供的 Independent Closure
+Review 结论为 `CLOSEABLE-WITH-DISCLOSED-RESIDUAL-FINDINGS`：Spec PASS、Standards
+PASS、Evidence/Factual Accuracy PASS-WITH-FINDINGS。`EXP007-EVID-001` 已纠正为 6 个
+Governance 工件 / 232 行；`EXP007-PATH-001` 按 Minor Test Harness Finding / separate
+follow-up 保留。缓存、pytest basetemp、frontend `dist` 与临时 `node_modules` junction
+已清理；external tool limitations 仍明确为 unverified。
 
-H1-H8 分类是 Supervisor 基于已观测 evidence 的当前结论，其中 H7 仍为 not exercised；
-独立 closure confirmation 保持 unverified。按附件授权，最终 Git 检查、commit 与实验
-分支 push 用于保存这一诚实的 blocked experiment outcome，不代表 merge、release、
-deploy 或 EXP-008 readiness。
+三个历史 closure Reviewer sessions 无交付仍按 `EXP007-EII-003` 保存，不改写为 Worker
+attempt。H1-H8 中 H7 仍为 not exercised。按附件授权，本次仅进行 docs/governance-only
+closure commit 与实验分支 push，不代表 merge、release、deploy 或修复残余 finding。

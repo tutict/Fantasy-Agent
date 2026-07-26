@@ -29,7 +29,7 @@
 12. closure 完整 pytest 在 worktree 留下 `generated/godot/sessions/s2-s4`。清理后单独
     重跑 planning-only CLI 不写盘；代码追踪显示 fake tests 注入的 bridge 使用
     `tmp_path`，而 production-spec export 仍使用 `execute_godot_demo` 的默认仓库根。
-    该事实登记为未修复 `EXP007-PATH-001`，并纠正了先前“pytest 只写 temporary
+    该事实登记为 Minor Test Harness Finding `EXP007-PATH-001`，并纠正了先前“pytest 只写 temporary
     artifacts”的过强表述。
 
 ## Worker Claims
@@ -45,7 +45,7 @@ Worker claim 可进入 authoritative state。实现者的自然语言摘要不�
 - `EXP007-EII-002`：早期 sandbox ruff cache 初始化失败；宿主范围 ruff 成功。
 - `EXP007-EII-003`：三个独立只读 closure Reviewer sessions 在有界等待与 follow-up
   后均未提交 decision；停止继续重试。pre-closure Evidence PASS 不覆盖后发现的
-  `EXP007-PATH-001`，所以最终 closure Evidence Review 为 blocked/unverified。
+  `EXP007-PATH-001`；用户提供的最终 closure review 后续给出三轴 decision。
 
 这些 EII 不是 Product Finding、Protocol Finding 或 Mode escalation 依据。
 
@@ -54,7 +54,7 @@ Worker claim 可进入 authoritative state。实现者的自然语言摘要不�
 - real Blender、real ComfyUI HTTP generation、real Unreal import/PIE/DataValidation、
   real Godot editor/import、GPU generation、remote MCP 均未授权，保持 unverified。
 - Candidate C 的 same-path asset replacement/content digest contract 没有修复。
-- `EXP007-PATH-001`：`execute_godot_demo` 同时接受 bridge 与独立 `workspace_root`；两者
+- `EXP007-PATH-001`（Minor Test Harness Finding）：`execute_godot_demo` 同时接受 bridge 与独立 `workspace_root`；两者
   不一致时可把 project 与 spec exports 写到不同根。当前完整 tests 会在 worktree 留下
   ignored artifacts；本轮已清理但未追加第二个产品修复。
 - URL query-string tokens、headers、malformed/nonstandard URL canonicalization、

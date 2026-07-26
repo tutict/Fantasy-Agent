@@ -1,6 +1,6 @@
 # EXP-007 Delegation State
 
-Status: blocked
+Status: complete
 Updated: 2026-07-26
 Supervisor: `/root`
 Integrator: `/root`
@@ -12,15 +12,15 @@ evidence。
 
 ## Active Assignments
 
-- None；三次 Reviewer assignment 均已中断且无 decision。
+- None；用户提供的最终独立 Closure Review decision 已集成。
 
 ## Review Queue
 
-- 复核 `EXP007-PATH-001`、H1-H8、Artifact Accounting、外部工具边界与 closure claims。
+- None；最终 review 复核范围已覆盖 closure claims 与残余项。
 
 ## Revision Queue
 
-- None；由 Supervisor/Integrator 根据 reviewer finding 决定是否最小修正文档。
+- None；仅执行本次 docs/governance-only closure 修正。
 
 ## Blocked Tasks
 
@@ -29,7 +29,7 @@ evidence。
 - 第二个 reviewer session 在收窄范围与一次 follow-up 后仍未提交 decision，已中断并
   归入同一 Agent execution infrastructure incident；fallback Reviewer 不继承其主张。
 - 第三个 fallback reviewer session 同样未在最后一个有界窗口内提交 decision，已中断。
-  `TASK-EXP007-EVIDENCE-CLOSURE` 状态为 blocked。
+  该历史 EII 未被改写；本次独立 Closure Review 已解除 closure blocker。
 
 ## Conflicts
 
@@ -37,7 +37,7 @@ evidence。
 
 ## Integration Status
 
-- 未集成任何 closure Reviewer decision；产品实现不再变更。
+- 已集成用户提供的三轴 closure decision；产品实现未变更。
 
 ## Research Status
 
@@ -49,7 +49,7 @@ evidence。
 
 ## Checklist Status
 
-- closure Evidence Review 未集成。
+- closure Evidence Review 已集成；`EXP007-EVID-001` 已纠正。
 
 ## Budget Status
 
@@ -57,4 +57,4 @@ evidence。
 
 ## Next Coordination Action
 
-- 在新的独立 Reviewer session 可用时，从当前实验 commit 只读复核，不重试旧 session。
+- 完成 docs/governance-only closure commit，并只 push EXP-007 实验分支。

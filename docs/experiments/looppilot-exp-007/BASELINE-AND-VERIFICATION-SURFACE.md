@@ -72,7 +72,7 @@ selection、dependency 或 product file。
 - generated artifacts：大多数 fake tests 使用 temporary artifacts，但 closure full pytest
   观测到 `tests/test_executor.py` 的 s2-s4 cases 在 worktree 留下 ignored
   `generated/godot/sessions/`。根因是 bridge 使用 `tmp_path`、spec export 仍使用默认
-  `workspace_root`；产物已清理，登记为 `EXP007-PATH-001`。frontend build 的 ignored
+  `workspace_root`；产物已清理，登记为 Minor Test Harness Finding `EXP007-PATH-001`。frontend build 的 ignored
   `dist` 也已清理；两者都不是 external-engine evidence。
 - focused validation：完整 `tests/test_comfyui_mcp.py`、reviewer rework tests、selected
   ruff scopes。

@@ -72,7 +72,7 @@
 - External side effects：不需要。
 - Scope：本地 executor/test seam 可 bounded；跨 adapter root authority 更广。
 - 决策：reject。该 finding 在唯一 Candidate E product change 锁定并完成后由 closure
-  verification 发现，记录为未修复 `EXP007-PATH-001`，不得追加第二个产品变更。
+  verification 发现，记录为 Minor Test Harness Finding `EXP007-PATH-001`，不得追加第二个产品变更。
 
 ## Candidate E - MCP/local-tool endpoint boundary（selected）
 
