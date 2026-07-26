@@ -1,7 +1,14 @@
 import json
 from pathlib import Path
 
-from fantasy_agent.comfyui_mcp import ComfyUIMCPBridge, call_comfyui_mcp_tool, tool_descriptors
+import pytest
+
+from fantasy_agent.comfyui_mcp import (
+    ComfyUIMCPBridge,
+    ComfyUIMCPSafetyError,
+    call_comfyui_mcp_tool,
+    tool_descriptors,
+)
 from fantasy_agent.contracts import (
     ComfyUICapabilityProbeRequest,
     ComfyUIMCPExecuteRequest,
@@ -162,6 +169,30 @@ def test_run_visual_reference_workflow_blocks_without_confirmation(tmp_path: Pat
     assert "confirmed_side_effects=true" in result.risks[-1]
 
 
+def test_run_rejects_endpoint_credentials_before_client_creation(tmp_path: Path):
+    _template(tmp_path)
+    client_endpoints: list[str] = []
+
+    def recording_client_factory(endpoint: str):
+        client_endpoints.append(endpoint)
+        raise AssertionError("credential-bearing endpoint reached the client factory")
+
+    secret = "exp007-run-secret"
+    bridge = ComfyUIMCPBridge(tmp_path, client_factory=recording_client_factory)
+
+    with pytest.raises(ComfyUIMCPSafetyError) as exc_info:
+        bridge.run_visual_reference_workflow(
+            ComfyUIMCPExecuteRequest(
+                plan=_plan(endpoint=f"http://worker:{secret}@localhost:8188"),
+                confirmed_side_effects=True,
+            )
+        )
+
+    assert client_endpoints == []
+    assert secret not in str(exc_info.value)
+    assert not (tmp_path / "generated").exists()
+
+
 def test_run_visual_reference_workflow_queues_with_fake_client(tmp_path: Path):
     _template(tmp_path)
     bridge = ComfyUIMCPBridge(tmp_path, client_factory=FakeComfyUIClient)
@@ -207,6 +238,18 @@ def test_probe_rejects_endpoint_credentials_before_client_creation(tmp_path: Pat
     assert client_endpoints == []
     assert "credentials" in diagnostics
     assert secret not in diagnostics
+
+    public_result = call_comfyui_mcp_tool(
+        "probe_comfyui_capabilities",
+        {
+            "endpoint": f"http://worker:{secret}@localhost:8188",
+            "auto_discover_endpoint": False,
+        },
+        workspace_root=tmp_path,
+    )
+    serialized_result = json.dumps(public_result, sort_keys=True)
+    assert public_result["structuredContent"]["status"] == "unavailable"
+    assert secret not in serialized_result
 
 
 class NoCheckpointComfyUIClient(FakeComfyUIClient):

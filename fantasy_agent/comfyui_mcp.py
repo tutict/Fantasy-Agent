@@ -228,9 +228,12 @@ class ComfyUIMCPBridge:
     ) -> ComfyUICapabilityProbeResult:
         endpoint, endpoint_warnings = self._resolve_endpoint(request)
         if endpoint is None:
+            reported_endpoint = request.endpoint
+            if _has_url_credentials(reported_endpoint):
+                reported_endpoint = "credential-bearing endpoint rejected"
             return ComfyUICapabilityProbeResult(
                 status="unavailable",
-                endpoint=request.endpoint,
+                endpoint=reported_endpoint,
                 blockers=["No reachable ComfyUI endpoint found."],
                 warnings=endpoint_warnings,
             )
