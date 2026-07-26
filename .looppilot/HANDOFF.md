@@ -21,6 +21,9 @@ axes 的 PASS。
 未解决风险：Candidate C 的 same-path asset replacement 仍不在本轮范围；真实外部
 工具被禁止并保持 unverified。
 
+Delivery evidence：结果提交 `375663116f401ec8de97108b896510d2232d14da` 已只推送到
+实验分支并观测到 `0/0` 同步；原 `main` 与 LoopPilot 未修改，未创建 PR/merge/release。
+
 准确 Resume Point：在新的独立 Reviewer session 可用时，复核当前实验分支 commit 的
 `EXP007-PATH-001`、H1-H8、工件分账和 final claims；返回 Spec、Standards、
 Evidence/Factual Accuracy 三轴 decision。不得重新实现产品或启动 EXP-008。

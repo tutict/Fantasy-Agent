@@ -22,3 +22,6 @@
 - 新 residual finding：`EXP007-PATH-001` open；因本轮只允许一个 product change，
   未扩 Scope 修复。
 - 新 EII：`EXP007-EII-003`，三个只读 Reviewer sessions 无交付；停止继续重试。
+- Delivery evidence：结果提交 `375663116f401ec8de97108b896510d2232d14da` 已只推送到
+  `origin/experiment/looppilot-fantasy-agent-exp-007`，首次 push 后 local/remote 为
+  `0/0`；未创建 PR、merge、tag、release 或 deploy。
