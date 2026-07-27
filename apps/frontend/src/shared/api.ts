@@ -106,14 +106,16 @@ export function getMcpStatus(engine: string): Promise<McpStatus> {
 export function writeApprovalManifest(
   review: CreativeReview,
   decisions: Record<string, string>,
-  productionSpecBundle?: ProductionSpecBundle
+  productionSpecBundle?: ProductionSpecBundle,
+  target: 'godot' | 'unreal' = 'unreal'
 ): Promise<ApprovalManifestResponse> {
   return jsonRequest<ApprovalManifestResponse>("/api/creative-review/approval-manifest", {
     method: "POST",
     body: JSON.stringify({
       review,
       decisions,
-      production_spec_bundle: productionSpecBundle
+      production_spec_bundle: productionSpecBundle,
+      target
     })
   });
 }

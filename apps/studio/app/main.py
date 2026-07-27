@@ -83,6 +83,7 @@ class ManualCorrectionOpenRequest(BaseModel):
 
 class ApprovalManifestRequest(BaseModel):
     review: CreativeReviewReport
+    target: str = 'unreal'
     decisions: dict[str, str] = Field(default_factory=dict)
     production_spec_bundle: ProductionSpecBundle | None = None
 
@@ -711,6 +712,7 @@ def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestRes
     manifest = build_asset_approval_manifest(
         req.review,
         req.decisions,
+        target=req.target,
         workspace_root=REPO_ROOT,
     )
     path = _approval_manifest_path()

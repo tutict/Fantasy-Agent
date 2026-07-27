@@ -340,7 +340,8 @@ export function useApprovalManifest({
       const response = await writeApprovalManifest(
         currentPlan.creative_review,
         reviewDecisions,
-        currentPlan.production_spec_bundle
+        currentPlan.production_spec_bundle,
+        usesGodotEngine(currentPlan) ? 'godot' : 'unreal'
       );
       if (response.production_spec_bundle) onBundleSynced(response.production_spec_bundle);
       setApprovalManifestPath(response.manifest_path || "");

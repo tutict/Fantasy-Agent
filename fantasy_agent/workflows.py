@@ -440,11 +440,23 @@ def prepare_creative_review(
     )
 
 
+def _concrete_review_artifact_path(item: CreativeReviewItem, *, target: str) -> str:
+    planned_path = Path(item.asset_path)
+    if (
+        _is_godot_engine(target)
+        and item.source == 'blender'
+        and planned_path.suffix.casefold() == '.fbx'
+    ):
+        return planned_path.with_suffix('.glb').as_posix()
+    return item.asset_path
+
+
 def build_asset_approval_manifest(
     review: CreativeReviewReport,
     decisions: dict[str, str] | None = None,
     *,
     workspace_root: Path | str,
+    target: str = 'unreal',
 ) -> AssetApprovalManifest:
     decisions = decisions or {}
     allowed = {"approved", "needs_revision", "rejected", "pending_user_review"}
@@ -455,8 +467,9 @@ def build_asset_approval_manifest(
     pending: list[str] = []
 
     for item in review.items:
+        manifest_asset_path = _concrete_review_artifact_path(item, target=target)
         artifact_path = resolve_workspace_path(
-            item.asset_path,
+            manifest_asset_path,
             workspace_root=workspace_root,
             allow_absolute=True,
         )
@@ -466,7 +479,7 @@ def build_asset_approval_manifest(
             AssetApprovalDecision(
                 asset_id=item.asset_id,
                 source=item.source,
-                asset_path=item.asset_path,
+                asset_path=manifest_asset_path,
                 gameplay_role=item.gameplay_role,
                 artifact_identity=compute_artifact_identity(artifact_path),
                 decision=decision,

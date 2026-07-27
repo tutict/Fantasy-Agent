@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import yaml
@@ -14,9 +15,6 @@ from fantasy_agent.workflows import (
 from tests.test_executor import _FakeBlenderBridge, _ok_runner
 
 
-_EXPORTED_REL = "generated/assets/reviewed_prop.glb"
-
-
 def _execute_with_producer_manifest(tmp_path: Path, reviewed_bytes: bytes):
     plan = run_director_workflow(
         PromptRequest(
@@ -25,23 +23,24 @@ def _execute_with_producer_manifest(tmp_path: Path, reviewed_bytes: bytes):
             engine_version="Godot 4",
         )
     )
-    reviewed_path = tmp_path / _EXPORTED_REL
+    blender_item = next(item for item in plan.creative_review.items if item.source == "blender")
+    exported_rel = Path(blender_item.asset_path).with_suffix(".glb").as_posix()
+    reviewed_path = tmp_path / exported_rel
     reviewed_path.parent.mkdir(parents=True, exist_ok=True)
     reviewed_path.write_bytes(reviewed_bytes)
 
-    blender_item = next(item for item in plan.creative_review.items if item.source == "blender")
-    reviewed_item = blender_item.model_copy(
-        update={
-            "asset_id": "reviewed_prop",
-            "asset_path": reviewed_path.as_posix(),
-        }
-    )
-    focused_review = plan.creative_review.model_copy(update={"items": [reviewed_item]})
+    focused_review = plan.creative_review.model_copy(update={"items": [blender_item]})
     manifest = build_asset_approval_manifest(
         focused_review,
-        {reviewed_item.asset_id: "approved"},
+        {blender_item.asset_id: "approved"},
         workspace_root=tmp_path,
+        target="godot",
     )
+    decision = manifest.decisions[0]
+    assert decision.asset_id == blender_item.asset_id
+    assert decision.asset_path == exported_rel
+    assert decision.artifact_identity is not None
+    assert decision.artifact_identity.digest == hashlib.sha256(reviewed_bytes).hexdigest()
     manifest_path = tmp_path / "generated" / "asset-approval-manifest.yaml"
     manifest_path.write_text(
         yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False),
@@ -58,35 +57,39 @@ def _execute_with_producer_manifest(tmp_path: Path, reviewed_bytes: bytes):
         bridge=GodotMCPBridge(tmp_path, runner=_ok_runner),
         blender_bridge=_FakeBlenderBridge(
             status="executed",
-            exported=[_EXPORTED_REL],
+            exported=[exported_rel],
             root=tmp_path,
         ),
     )
-    return result
+    return result, exported_rel
 
 
 def test_producer_manifest_allows_unchanged_approved_bytes(tmp_path: Path):
-    result = _execute_with_producer_manifest(tmp_path, b"glTF-stub")
+    result, exported_rel = _execute_with_producer_manifest(tmp_path, b"glTF-stub")
 
     gate = next(stage for stage in result.stages if stage.name == "approval_gate")
-    assert gate.metadata["approved_assets"] == [_EXPORTED_REL]
+    assert gate.metadata["approved_assets"] == [exported_rel]
     assert gate.metadata["skipped_assets"] == []
     assert "copy_assets" in [stage.name for stage in result.stages]
-    copied = (
-        tmp_path / result.project_dir / "assets" / "generated" / "reviewed_prop.glb"
-    )
+    copied = tmp_path / result.project_dir / "assets" / "generated" / Path(exported_rel).name
     assert copied.read_bytes() == b"glTF-stub"
 
 
 def test_producer_manifest_rejects_same_path_byte_replacement_before_copy(
     tmp_path: Path,
 ):
-    result = _execute_with_producer_manifest(tmp_path, b"reviewed-glb-bytes")
+    result, exported_rel = _execute_with_producer_manifest(
+        tmp_path, b"reviewed-glb-bytes"
+    )
 
     gate = next(stage for stage in result.stages if stage.name == "approval_gate")
     assert gate.metadata["approved_assets"] == []
-    assert gate.metadata["skipped_assets"] == [_EXPORTED_REL]
+    assert gate.metadata["skipped_assets"] == [exported_rel]
     assert "copy_assets" not in [stage.name for stage in result.stages]
     assert not (
-        tmp_path / result.project_dir / "assets" / "generated" / "reviewed_prop.glb"
+        tmp_path
+        / result.project_dir
+        / "assets"
+        / "generated"
+        / Path(exported_rel).name
     ).exists()

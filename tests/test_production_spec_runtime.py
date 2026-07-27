@@ -28,15 +28,14 @@ def _bundle():
 
 
 def _materialize_review_artifacts(review, root: Path):
-    materialized_items = []
-    for index, item in enumerate(review.items):
-        artifact_path = root / 'reviewed' / f'artifact-{index}.bin'
+    for item in review.items:
+        artifact_path = Path(item.asset_path)
+        if item.source == 'blender' and artifact_path.suffix.casefold() == '.fbx':
+            artifact_path = artifact_path.with_suffix('.glb')
+        artifact_path = root / artifact_path
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
         artifact_path.write_bytes(f'reviewed-{item.asset_id}'.encode())
-        materialized_items.append(
-            item.model_copy(update={'asset_path': artifact_path.as_posix()})
-        )
-    return review.model_copy(update={'items': materialized_items})
+    return review
 
 
 def test_load_production_spec_bundle_accepts_yaml_and_json(tmp_path: Path):
@@ -243,6 +242,7 @@ def test_full_approval_round_trip_does_not_demote_bundle_assets(tmp_path: Path):
     manifest = build_asset_approval_manifest(
         review,
         {item.asset_id: "approved" for item in rebuilt.creative_review.items},
+        target='godot',
         workspace_root=tmp_path,
     )
 
