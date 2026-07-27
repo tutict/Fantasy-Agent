@@ -1,6 +1,6 @@
-# EXP-009 Candidate Results
+# EXP-009 Final Results
 
-Status: `CANDIDATE-AWAITING-INDEPENDENT-REVIEW`
+Status: `RECOVERY-ACCEPTED-WITH-DISCLOSED-RESIDUALS`
 
 1. **EXP-008 Product HEAD:** `52173e08ae267700ef62e7e563ab6a50523981ad`.
 2. **EXP-008 R2 tree:** `4a874844744f92d60378d48aaa6787334942eb24`.
@@ -37,36 +37,36 @@ Status: `CANDIDATE-AWAITING-INDEPENDENT-REVIEW`
 33. **SHA:** PASS; 12 Integration hashes use blobs and 2 declared TypeScript hashes use CRLF checkout bytes.
 34. **Lines:** PASS from LF-byte physical-line calculation.
 35. **Bytes:** PASS from source blob byte-array length.
-36. **Stale-state scan:** historical stale projections remain archived; no new EXP-009 current-state repeat found.
+36. **Stale-state scan:** R1 found F-001; the strengthened scan and same-Reviewer correction recheck PASS.
 37. **Historical-claim scan:** EXP-008 blocked, R2 NOT-CLOSEABLE, and TASK-010 2/2 are preserved.
-38. **Reviewer identity:** pending independent dispatch.
-39. **Spec Review:** pending.
-40. **Standards Review:** pending.
-41. **Evidence Review:** pending.
-42. **Review Findings:** pending.
-43. **Correction count:** `0 / 1`.
-44. **Same-Reviewer reverification:** not required unless a correction is used.
-45. **EXP-009 EII:** 8 recovered groups; EXP-008 EII is historical only.
-46. **H1-H6:** provisionally supported; final classification awaits Review.
-47. **Scorecard:** candidate `66 / 72`.
-48. **Fixed inventory helped:** yes; exact members replaced ambiguous relevance prose.
+38. **Reviewer identity:** `/root/exp009_recovery_reviewer`.
+39. **Spec Review:** original `FAIL`; same-Reviewer reverification `PASS`.
+40. **Standards Review:** original `FAIL`; same-Reviewer reverification `PASS`.
+41. **Evidence Review:** original `FAIL`; same-Reviewer reverification `PASS`.
+42. **Review Findings:** F-001 Major `VERIFIED-CORRECTED`; no new Finding.
+43. **Correction count:** `1 / 1`; no further correction is permitted.
+44. **Same-Reviewer reverification:** PASS on tree `fda838393eaf7c3ff613ebbc17db14c0c33fa22e`.
+45. **EXP-009 EII:** 9 recovered groups; post-Review group 9 is reported/not independently reviewed; EXP-008 EII is historical only.
+46. **H1-H6:** H2/H3/H4 supported; H5 contradicted; H1/H6 inconclusive.
+47. **Scorecard:** original `66 / 72` and FAIL; final `72 / 72` after same-Reviewer PASS.
+48. **Fixed inventory helped:** yes for membership, but it did not cover lifecycle-value consistency.
 49. **Membership validation helped:** yes; it checks the set and totals together.
-50. **Lightweight sufficient:** sufficient for candidate production; final judgment awaits Review.
-51. **Stale projections reappeared:** no in the candidate; old projections remain historical evidence.
+50. **Lightweight sufficient:** yes for bounded recovery, with one correction and independent Review.
+51. **Stale projections reappeared:** yes, once as F-001; the only correction was reverified.
 52. **Artifact cost decreased:** governance is 5 files versus 71 archived EXP-008 files.
 53. **EXP-008 comparison:** product Full Loop and evidence recovery answer different questions.
-54. **Protocol tensions:** Reviewer independence and artifact accounting remain the historical tensions.
-55. **Supported Phase 9:** coordination gating, verifiable claims, role discipline, revision budget, recovery, honest block.
-56. **Contradicted mechanism:** totals alone do not establish artifact membership.
-57. **Inconclusive mechanisms:** Worker Failure Budget, Ownership Collapse, correction sufficiency, Reviewer usefulness.
-58. **EXP-009 final status:** pending independent Review; no acceptance claimed.
+54. **Protocol tensions:** lifecycle-value coverage remains outside inventory membership; historical tensions are preserved.
+55. **Supported Phase 9:** coordination gating, verifiable claims, role discipline, revision budget, recovery, honest block, independent Review.
+56. **Contradicted mechanisms:** totals alone are insufficient; initial fixed-inventory checks did not prevent F-001.
+57. **Inconclusive mechanisms:** H1/H6, Worker Failure Budget, and Ownership Collapse; correction sufficiency was supported.
+58. **EXP-009 final status:** `RECOVERY-ACCEPTED-WITH-DISCLOSED-RESIDUALS`.
 59. **Commits:** preregistration `5a0347a`; candidate reconciliation is the commit containing these Results with subject `docs: reconcile blocked Full Loop evidence inventory`.
-60. **Final HEAD:** pending final Review commit.
-61. **Push:** pending authorized experiment-branch push.
-62. **Remote sync:** pending.
-63. **Final Git status:** pending candidate/final commits.
-64. **Unverified:** historical residual real-tool/browser/TOCTOU risks and Reviewer-dependent closure fields.
-65. **Recommendation:** use fixed inventories for bounded recovery; do not generalize from one case before Review.
+60. **Final HEAD:** the commit containing these final Results; exact SHA is recorded by final delivery evidence.
+61. **Push:** authorized only for the EXP-009 branch after this commit.
+62. **Remote sync:** verified post-commit and reported by final delivery evidence.
+63. **Final Git status:** verified post-commit and reported by final delivery evidence.
+64. **Unverified:** historical real-tool/browser/TOCTOU risks; H1/H6 causal claims.
+65. **Recommendation:** pair fixed membership with lifecycle-value checks and independent Review; inventory alone is insufficient.
 
-EXP-009 recovery cannot close, accept, or deliver EXP-008. This candidate is intentionally
-non-terminal until a new independent Reviewer returns all three required judgments.
+EXP-009 recovery cannot close, accept, or deliver EXP-008. The accepted recovery result
+preserves EXP-008 as blocked and does not authorize release, deployment, merge, or main.

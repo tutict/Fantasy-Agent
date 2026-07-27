@@ -1,4 +1,4 @@
-# EXP-009 Candidate Evaluation Scorecard
+# EXP-009 Final Evaluation Scorecard
 
 Scale: 0 absent, 1 weak, 2 adequate with residual, 3 strong and reproducible.
 
@@ -13,21 +13,21 @@ Scale: 0 absent, 1 weak, 2 adequate with residual, 3 strong and reproducible.
 | 7 | Line accuracy | 3 | Physical lines derived from blob LF bytes. |
 | 8 | Byte accuracy | 3 | Byte-array lengths derived from Git blobs. |
 | 9 | Hash accuracy | 3 | Per-row SHA-256 plus EOL-domain reconciliation. |
-| 10 | State consistency | 3 | One current State; historical stale projections bounded. |
-| 11 | No stale present-tense claim | 3 | Candidate scan has no prohibited current-state phrase. |
+| 10 | State consistency | 3 | F-001 lifecycle fields reconciled and reverified. |
+| 11 | No stale present-tense claim | 3 | Strengthened scan and same-Reviewer recheck pass. |
 | 12 | Product boundary preservation | 3 | Product/test/frontend diff is empty. |
 | 13 | TASK-010 preservation | 3 | Same blob; blocked 2/2 remains historical authority. |
 | 14 | Lightweight proportionality | 3 | One owner and bounded read-only evidence work. |
 | 15 | Governance artifact discipline | 3 | Five governance files, no new Ledger. |
 | 16 | Evaluation artifact discipline | 3 | Six evaluation files including one validator. |
-| 17 | Reviewer independence | 1 | Contracted but not yet exercised. |
-| 18 | Review usefulness | 0 | Review pending. |
-| 19 | Correction-budget compliance | 3 | Zero of one correction used. |
-| 20 | EII honesty | 3 | Eight recovered groups recorded separately. |
+| 17 | Reviewer independence | 3 | New read-only Reviewer returned the original judgment. |
+| 18 | Review usefulness | 3 | R1 found the missed F-001 lifecycle contradiction. |
+| 19 | Correction-budget compliance | 3 | One of one correction used; no further correction. |
+| 20 | EII honesty | 3 | Nine recovered groups disclosed; post-Review group 9 is reported only. |
 | 21 | EXP-008 archival integrity | 3 | Archived paths and ancestry unchanged. |
 | 22 | Evidence reproducibility | 3 | One command revalidates members and measurements. |
 | 23 | Recovery clarity | 3 | Analysis separates archive, recovery, and hash domains. |
-| 24 | Closure honesty | 2 | Candidate explicitly awaits independent Review. |
+| 24 | Closure honesty | 3 | Original FAIL and corrected PASS are both preserved. |
 
-Candidate total: `66 / 72`. Reviewer-dependent dimensions remain deliberately below 3.
-The final score may change only from observed Review and correction evidence.
+Original candidate total: `66 / 72`, superseded by R1 F-001 and three-axis FAIL.
+Final score: `72 / 72`, supported by same-Reviewer three-axis PASS after the only correction.

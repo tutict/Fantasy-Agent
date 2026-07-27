@@ -1,6 +1,6 @@
 # EXP-009 Recovery Analysis
 
-Status: `CANDIDATE-AWAITING-INDEPENDENT-REVIEW`
+Status: `RECOVERY-ACCEPTED-WITH-DISCLOSED-RESIDUALS`
 
 ## Boundary Reconciliation
 
@@ -71,15 +71,16 @@ current EXP-009 state. STD-002 and EVID-002 remain R2 `VERIFIED-CORRECTED`.
 
 ## Research Questions
 
-1. Fixed inventory prevented silent omission: all 93 expected commit/path members are derived and compared.
+1. Fixed inventory prevented member omission but did not cover candidate lifecycle values; H1 is inconclusive.
 2. Membership validation prevented the EVID-001 error type by checking the set and totals together.
-3. Lightweight produced the candidate with one owner; final sufficiency awaits Review.
+3. Lightweight completed recovery with one owner, one correction, and same-Reviewer PASS.
 4. Full Loop would be disproportionate for this read-only, single-owner recovery.
 5. The 71-file surface was an important amplifier, but the Task Contract gap remained primary.
-6. No stale present-tense claim was found in the new EXP-009 artifacts before Review.
-7. The one-correction budget has not been exercised; sufficiency is therefore not yet tested.
-8. Independent Reviewer delivery is pending.
-9. Eight EXP-009 EII groups occurred and all recovered without product/history mutation.
+6. R1 found one new stale lifecycle projection, F-001; the scoped correction reconciles it and strengthens the scan.
+7. The only correction was sufficient; no second correction was used or available.
+8. The independent Reviewer delivered an actionable FAIL and then reverified all axes PASS.
+9. Nine EXP-009 EII groups occurred and all recovered without product/history mutation;
+   post-Review group 9 is reported and not independently reviewed.
 10. EXP-008 remains `BLOCKED-WITH-VERIFIED-PARTIAL-DELIVERY`.
 
 ## Phase 9 Mechanisms
@@ -88,12 +89,26 @@ current EXP-009 state. STD-002 and EVID-002 remain R2 `VERIFIED-CORRECTED`.
   Integrator role discipline, revision budget, Checkpoint recovery, honest blocked closure.
 - Tension: Reviewer independence and artifact accounting.
 - Not exercised: Worker Failure Budget and Ownership Collapse.
-- Supported by the recovery candidate: fixed membership, executable accounting, one
-  canonical evidence source, and Lightweight proportionality.
-- Contradicted: totals-alone accounting as sufficient evidence.
-- Inconclusive before Review: Reviewer usefulness and correction sufficiency.
+- Supported by the recovery evidence: fixed membership, numeric-plus-set accounting,
+  one canonical evidence source, Reviewer usefulness, and Reviewer independence.
+- Contradicted: totals-alone accounting and H5's claim that the initial consistency
+  checks would avoid the TASK-010 omission type.
+- Inconclusive after closure: H1 and H6; one case cannot prove causal risk reduction.
 
-## Provisional Conclusion
+## Final Hypothesis Classification
 
-The evidence supports recovery without changing historical failure. Final status remains
-pending the required independent Review; the candidate does not claim acceptance.
+| Hypothesis | Result | Reason |
+|---|---|---|
+| H1 | inconclusive | Fixed membership did not cover the initial stale lifecycle values. |
+| H2 | supported | Validator proved numeric totals and the exact membership set together. |
+| H3 | supported | Lightweight completed the bounded recovery with one correction and Review. |
+| H4 | supported | EXP-009 reached a recovery result while EXP-008 remained blocked and unchanged. |
+| H5 | contradicted | Initial executable checks missed F-001, the same omission class. |
+| H6 | inconclusive | Surface fell from 71 to 5 governance files, but one stale projection still occurred. |
+
+## Final Conclusion
+
+The initial candidate was not trustworthy enough for acceptance; independent Review was
+essential. The one scoped correction was reverified on all axes without changing frozen
+membership or history. EXP-009 is therefore `RECOVERY-ACCEPTED-WITH-DISCLOSED-RESIDUALS`.
+EXP-008 remains `BLOCKED-WITH-VERIFIED-PARTIAL-DELIVERY`.

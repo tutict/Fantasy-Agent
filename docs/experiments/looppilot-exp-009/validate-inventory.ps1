@@ -291,7 +291,7 @@ function Measure-LocalFiles {
 
 $recoveryGovernance = Measure-LocalFiles -Names $governanceNames
 $recoveryEvaluation = Measure-LocalFiles -Names $recoveryEvaluationNames
-$stalePattern = "R2 pending|TASK-010 revision 2 under review|finish TASK-010 revision 2|final pending R2|EXP-008 Status: active"
+$stalePattern = "R2 pending|TASK-010 revision 2 under review|finish TASK-010 revision 2|final pending R2|EXP-008 Status: active|PENDING-CANDIDATE-FREEZE|pending candidate freeze|Candidate commit/tree: pending"
 $staleHits = @(Get-ChildItem -LiteralPath $PSScriptRoot -File -Filter *.md | Select-String -Pattern $stalePattern -CaseSensitive:$false)
 if ($staleHits.Count -ne 0) {
     throw "New EXP-009 artifacts contain stale present-tense historical claims"
