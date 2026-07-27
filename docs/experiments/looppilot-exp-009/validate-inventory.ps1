@@ -9,6 +9,7 @@ $ProductCommit = "52173e08ae267700ef62e7e563ab6a50523981ad"
 $ProductTree = "82df778e7401f5b0fccacbd81b124664fea080f9"
 $ArchiveCommit = "8b6075aaee8e86a6c7905911487e537672a4125b"
 $ArchiveTree = "aeb86d86782377d7fac7101f931e14cda9d1fb4a"
+$PreregistrationCommit = "5a0347a7bf7161ac992e1dfa1ea86f68b634dc85"
 $InventoryPath = Join-Path $PSScriptRoot "EVIDENCE-INVENTORY.tsv"
 
 $ProductPaths = @(
@@ -244,4 +245,58 @@ Write-Output "Membership SHA-256: $membershipHash"
 Write-Output "Governance: files=$($governanceRows.Count) lines=$(($governanceRows | Measure-Object physical_lines -Sum).Sum) bytes=$(($governanceRows | Measure-Object bytes -Sum).Sum)"
 Write-Output "Evaluation: files=$($evaluationRows.Count) lines=$(($evaluationRows | Measure-Object physical_lines -Sum).Sum) bytes=$(($evaluationRows | Measure-Object bytes -Sum).Sum)"
 Write-Output "Product evidence: files=$($productRows.Count) lines=$(($productRows | Measure-Object physical_lines -Sum).Sum) bytes=$(($productRows | Measure-Object bytes -Sum).Sum)"
-Write-Output "RESULT inventory=PASS count=PASS membership=PASS sha256=PASS lines=PASS bytes=PASS product_boundary=PASS"
+
+& git diff --quiet $PreregistrationCommit -- $InventoryPath
+if ($LASTEXITCODE -ne 0) {
+    throw "Frozen inventory file differs from the preregistration commit"
+}
+& git diff --quiet $ArchiveCommit HEAD -- .looppilot docs/experiments/looppilot-exp-008
+if ($LASTEXITCODE -ne 0) {
+    throw "Archived EXP-008 evidence differs from the archival base"
+}
+
+$governanceNames = @(
+    "CHECKLIST.md",
+    "RECOVERY-CONTRACT.md",
+    "REVIEW-CONTRACT.md",
+    "REVIEW.md",
+    "STATE.md"
+)
+$recoveryEvaluationNames = @(
+    "EVIDENCE-INVENTORY.tsv",
+    "EVALUATION-SCORECARD.md",
+    "EXPERIMENT-PLAN.md",
+    "RECOVERY-ANALYSIS.md",
+    "RESULTS.md",
+    "validate-inventory.ps1"
+)
+$expectedRecoveryNames = @(($governanceNames + $recoveryEvaluationNames) | Sort-Object)
+$actualRecoveryNames = @(Get-ChildItem -LiteralPath $PSScriptRoot -File | Select-Object -ExpandProperty Name | Sort-Object)
+if (@(Compare-Object $expectedRecoveryNames $actualRecoveryNames).Count -ne 0) {
+    throw "EXP-009 artifact membership differs from the contracted 5 governance / 6 evaluation files"
+}
+
+function Measure-LocalFiles {
+    param([string[]]$Names)
+
+    $totalLines = 0
+    $totalBytes = 0
+    foreach ($name in $Names) {
+        $bytes = [System.IO.File]::ReadAllBytes((Join-Path $PSScriptRoot $name))
+        $totalBytes += $bytes.Length
+        $totalLines += Get-PhysicalLines -Bytes $bytes
+    }
+    return [PSCustomObject]@{ files = $Names.Count; lines = $totalLines; bytes = $totalBytes }
+}
+
+$recoveryGovernance = Measure-LocalFiles -Names $governanceNames
+$recoveryEvaluation = Measure-LocalFiles -Names $recoveryEvaluationNames
+$stalePattern = "R2 pending|TASK-010 revision 2 under review|finish TASK-010 revision 2|final pending R2|EXP-008 Status: active"
+$staleHits = @(Get-ChildItem -LiteralPath $PSScriptRoot -File -Filter *.md | Select-String -Pattern $stalePattern -CaseSensitive:$false)
+if ($staleHits.Count -ne 0) {
+    throw "New EXP-009 artifacts contain stale present-tense historical claims"
+}
+
+Write-Output "EXP-009 governance: files=$($recoveryGovernance.files) lines=$($recoveryGovernance.lines) bytes=$($recoveryGovernance.bytes)"
+Write-Output "EXP-009 evaluation: files=$($recoveryEvaluation.files) lines=$($recoveryEvaluation.lines) bytes=$($recoveryEvaluation.bytes)"
+Write-Output "RESULT inventory=PASS count=PASS membership=PASS sha256=PASS lines=PASS bytes=PASS product_boundary=PASS archive_boundary=PASS stale_scan=PASS recovery_artifacts=PASS"
