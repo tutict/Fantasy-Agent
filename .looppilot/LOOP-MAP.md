@@ -1,7 +1,7 @@
 # Project Loop Map
 
 Status: active
-Updated: 2026-07-26
+Updated: 2026-07-27
 Updated by: Integrator
 Supervisor: root
 Integrator: root
@@ -25,7 +25,7 @@ Bind Creative Review approvals to reviewed artifact bytes and reject stale same-
 
 | Complete | Loop ID | Title | Status | Depends On | Contract | Closure | Commit Required | Commit Authorized | Commit Result | Checkpoint |
 |---|---|---|---|---|---|---|---|---|---|---|
-| [ ] | LOOP-001 | Approval identity and ingest enforcement | contracted | none | approved | pending | yes | yes | not-created | CHECKPOINT-001 |
+| [ ] | LOOP-001 | Approval identity and ingest enforcement | closure-review | none | approved | R1 NOT-CLOSEABLE; TASK-010 revision 2 submitted | yes | yes | `52173e0` rework committed | CHECKPOINT-028 |
 
 ## Grouping Rationale
 

@@ -136,7 +136,7 @@ Focused RED/GREEN evidence, non-overlap, shared API, cross-owner GREEN, full pyt
 
 ### Delivery Acceptance
 
-Deliveries, Integration Record, reviews, closure review, RESULTS, three coherent commits,
+Deliveries, Integration Record, reviews, closure review, RESULTS, four coherent commits,
 experiment-branch push, sync, clean status, and disclosed external-tool limits.
 
 ## Barriers

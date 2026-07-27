@@ -2,7 +2,7 @@
 
 Goal ID: `PROJECT-EXP-008`
 Status: active
-Updated: 2026-07-26
+Updated: 2026-07-27
 Updated by: Integrator
 Supervisor: root
 Integrator: root
@@ -14,25 +14,28 @@ Evaluate Phase 9 coordination on a real multi-owner approval-identity change.
 
 ## Success Criteria
 
-- [ ] Both mandatory Tasks are independently approved and integrated.
-- [ ] Cross-owner identity invariant is executable and passes.
-- [ ] Reviews, Closure, Results, commits, push, sync, and clean status are observed.
+- [x] Both mandatory ownership domains and their Rework Tasks are approved and integrated.
+- [x] Cross-owner identity invariant is executable and passes.
+- [ ] Closure R1 Findings corrected and R2 passes all three axes.
+- [ ] Final governance commit, push, sync, and clean status observed.
 
 ## Mode Gate
 
 - [x] Problem/scope and risk/boundary evidence checked.
-- [x] Mode decision recorded before implementation.
-- [x] Contract Barrier passed.
+- [x] Full Loop selected before implementation and Contract Barrier passed.
 
 ## Work Items
 
-- [ ] TASK-001 integrated.
-- [ ] TASK-002 integrated.
-- [ ] LOOP-001 closed.
+- [x] TASK-001 through TASK-009, TASK-011, and TASK-012 integrated.
+- [x] Fresh repository validation and exact generated cleanup complete.
+- [x] Closure R1 recorded; Spec Finding VERIFIED-CORRECTED.
+- [ ] TASK-010 revision 2/2 and final accounting complete.
+- [ ] Original Closure Reviewer R2 complete.
+- [ ] LOOP-001 and PROJECT-EXP-008 closed or honestly blocked.
 
 ## Blocked Items
 
-- None.
+- STD-001 and STD-002 block Closure pending revision 2 and R2.
 
 ## Deferred Items
 
@@ -40,23 +43,23 @@ Evaluate Phase 9 coordination on a real multi-owner approval-identity change.
 
 ## Last Verified Evidence
 
-- Corrected baseline: 159 passed; Ruff passed; Candidate A gate passed.
+- R1: product/tree/scope/hashes/pre-R1 counts verified; Spec PASS, Standards/Evidence FAIL.
 
 ## Execution Budget
 
 Budget mode: bounded
 Context pressure: normal
 Resume required: false
-Last compaction: CONTEXT-001
+Last compaction: CONTEXT-028
 
 ## Resume Point
 
-- CHECKPOINT-001: commit the approved Contract Barrier, then dispatch TASK-001.
+- CHECKPOINT-028: finish TASK-010 revision 2, recompute bytes, and freeze R2 tree.
 
 ## Full Loop Relationship
 
-This is a projection only; authoritative status remains in Project, Map, Ledgers, and Checkpoint.
+Projection only; authoritative status remains in Project, Map, Ledgers, and Checkpoint.
 
 ## Stop Reason
 
-- None.
+- None; R2 failure is a stop unless strategy/scope changes with current authority.

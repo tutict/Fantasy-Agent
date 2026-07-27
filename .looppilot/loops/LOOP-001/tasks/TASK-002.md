@@ -1,11 +1,11 @@
 ---
 task_id: TASK-002
 parent_goal: PROJECT-EXP-008 / LOOP-001
-status: assigned
-previous_status: proposed
+status: integrated
+previous_status: approved
 status_changed_by: supervisor
 assigned_role: worker
-assigned_to: WORKER-B
+assigned_to: /root/exp008_worker_b
 objective: Enforce approved artifact identity at the Godot ingest boundary.
 scope:
   allowed:

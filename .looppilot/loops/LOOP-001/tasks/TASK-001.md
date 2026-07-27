@@ -1,11 +1,11 @@
 ---
 task_id: TASK-001
 parent_goal: PROJECT-EXP-008 / LOOP-001
-status: assigned
-previous_status: proposed
+status: integrated
+previous_status: approved
 status_changed_by: supervisor
 assigned_role: worker
-assigned_to: WORKER-A
+assigned_to: /root/exp008_worker_a
 objective: Produce canonical reviewed-artifact identity in approval manifests.
 scope:
   allowed:
@@ -54,7 +54,7 @@ authority:
   external_communication: false
 reviewer: REVIEWER-TASK-001
 integration_owner: root
-revision_count: 0
+revision_count: 1
 revision_budget: 2
 created: 2026-07-26
 updated: 2026-07-26

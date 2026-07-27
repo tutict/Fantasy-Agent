@@ -2,111 +2,75 @@
 
 ## Identity
 
-- Checkpoint ID: `CHECKPOINT-001`
-- Project ID: `PROJECT-EXP-008`
-- Loop ID: `LOOP-001`
-- Created: 2026-07-26
-- Created by / verified by: Integrator
+- Checkpoint ID: `CHECKPOINT-028`
+- Project ID / Loop ID: `PROJECT-EXP-008` / `LOOP-001`
+- Created / verified by: 2026-07-27 / Integrator
 - Checkpoint Status: ready
-- Replaces / superseded by: none
+- Replaces: `CHECKPOINT-027`; superseded by: none
 
 ## Recovery Boundary
 
-- Repository: `tutict/Fantasy-Agent`
-- Branch: `experiment/looppilot-fantasy-agent-exp-008`
-- Verified HEAD: `4355dd6d70a58477673f2a6e29c923219d3e8801`
-- Working tree: inspected; Full Loop governance/baseline files are uncommitted
-- Diff boundary: HEAD plus `.looppilot/` and `docs/experiments/looppilot-exp-008/`
-- Integrated boundary / Latest Loop Closure: none
-- Project/Loop/Task/Finding/Recovery authorities: `PROJECT.md`, `LOOP-MAP.md`,
-  LOOP-001 Ledgers, and this file
+- Repository / branch: `tutict/Fantasy-Agent` /
+  `experiment/looppilot-fantasy-agent-exp-008`
+- Product HEAD: `52173e08ae267700ef62e7e563ab6a50523981ad`
+- Integrated boundary: INTEGRATION-003, fourteen hashes, nine rework paths
+- Closure R1 boundary: staged tree `ab93e728d9e0165255730a8812d8e9a59723c7b9`
+- Working tree: product clean; governance revision 2 candidate is ready for the R2 index
+- Generated state: only `generated/.gitkeep`; no dist/junction/timestamp/pycache observed
+- Authorities: PROJECT, LOOP-MAP, Task/Finding Ledgers, and this Checkpoint
 
-## Current Execution State
+## Current State
 
-- Current mode/load profile: Full Loop / Full Loop profile
-- Successful Deliveries / failed attempts: none / none
-- Current implementation owners: WORKER-A TASK-001; WORKER-B TASK-002
-- Current Loop/status: LOOP-001 / contracted
-- Current Barrier: Contract Barrier passed; Implementation Barrier awaits baseline commit
-- Active Task: TASK-001 assigned; TASK-002 dependency-waiting
-- Integration/review/closure: pending / pending / draft
-- Context Pressure / Budget State: normal / healthy
+- Mode/profile: Full Loop / Full Loop profile
+- Assignments / valid Deliveries / approved outcomes: `11 / 11 / 10`
+- Unsuccessful unchanged / zero-output: `0 / 0`; Failure Budget not exercised
+- Active owner: none; TASK-010 revision 2/2 is under review
+- Loop/Barrier: closure-review / original Closure Reviewer R2
+- Loop reviews: Spec, Standards, Security, Compatibility PASS
+- Validation: full pytest 177, Ruff, planning CLI, typecheck/build, cleanup PASS
+- Closure R1: Spec PASS; Standards FAIL; Evidence/Factual Accuracy FAIL; NOT-CLOSEABLE
+- Open Closure Findings: STD-001, STD-002, EVID-001, EVID-002
+- EII subtotal: 49 groups; context pressure/budget: normal/healthy
 
-## Verified Completed Work
+## Observed Review Evidence
 
-- EXP-007 closure, isolation, corrected baseline, five-candidate audit, Mode Selection,
-  Project/Loop contract, Task Contracts, Ledgers, fallback, and review axes.
+- R1 independently matched product HEAD, staged tree, 70-path scope, and diff-check.
+- R1 independently counted pre-R1 governance as 68 files / 4,498 physical lines.
+- R1 matched all fourteen product hashes and both product diff boundaries.
+- R1 observed Node 1 PASS and focused Ruff PASS; focused pytest was ACL-blocked.
+- R1 VERIFIED-CORRECTED EXP008-CLOSURE-SPEC-001.
+- R1 found five stale governance claims and Major EXP008-CLOSURE-STD-002.
+- Uncontracted Reviewer support Agents were interrupted; their outputs were not read or used.
 
-## Unfinished Work
+## EII and Accounting
 
-- Commit baseline/contract; dispatch Workers; review; integrate; validate; close; push.
+- Groups 39-43 cover pre-R1 index/write/authorization/transport incidents.
+- Group 44: Reviewer `git write-tree` lock denial; no state change.
+- Group 45: Reviewer isolated pytest basetemp ACL denial; 2 unrelated passes and 17 setup
+  errors are not behavioral pass/fail evidence.
+- Group 46: R2-preparation apply-patch sandbox-helper refresh failures, coalesced.
+- Group 47: R2-preparation batch-wrapper ACL denial.
+- Group 48: R2-preparation batch-wrapper argument/terminator transport failure.
+- Group 49: R2 tree-freeze `git write-tree` and restaging index-lock ACL denials; no partial state change.
+- Pre-R2 governance candidate: 70 files / 4,559 lines / 208,197 bytes; final count includes R2 artifacts.
 
-## Open Blockers
+## Required Work
 
-- None.
-
-## Execution Infrastructure Incidents Affecting Recovery
-
-- Use CPython venv, pytest `--basetemp` under `C:\tmp`, disabled pytest/Ruff caches.
-
-## Open Major Findings and Pending Decisions
-
-- None.
+- Obtain original Closure Reviewer R2 on the frozen revision 2 tree.
+- Verify R2 Finding decisions and preserve the original Reviewer judgment.
+- Obtain original Closure Reviewer R2; no unchanged revision is allowed if R2 fails.
+- On R2 PASS only: record dispositions, close Loop/Project, commit, verify, push, and sync.
 
 ## Authority State
 
-- Modify: yes, bounded Worker/Integrator scopes
-- Delete: no material data; cleanup only exact experiment-generated ignored artifacts
-- Commit authorized: yes; Commit result: not-created
-- Push: experiment branch only
-- Release / Deploy: no / no
-- Authority source: latest user instruction
-
-## Required Context
-
-| Priority | Artifact | Why required | Verified |
-|---|---|---|---|
-| 1 | latest user instruction | authority and experiment acceptance | yes |
-| 2 | PROJECT/LOOP-MAP/LOOP-CONTRACT | scope and Loop state | yes |
-| 3 | TASK/FINDING Ledgers and Task Contracts | ownership and next action | yes |
-| 4 | baseline, audit, Mode Selection | evidence boundary | yes |
-
-## Context Exclusions
-
-- Raw logs, full chat, hidden reasoning, unrelated original-main changes, closed EXP-007 detail.
-
-## Evidence Requiring Revalidation
-
-| Evidence | Source | Reason | Required action |
-|---|---|---|---|
-| baseline contract commit | current working tree | not yet committed | commit and record exact SHA at dispatch |
+- Commit/push: authorized on experiment branch only
+- Main/LoopPilot/real tools/release/deploy: read-only/no/no/no
 
 ## Exact Resume Point
 
-- Resume item: `BARRIER-CONTRACT-001`
-- Resume action: verify governance-only diff, commit baseline/contract, record SHA, dispatch TASK-001
-- Required inputs: current contracts and user commit authority
-- Required tool: Git plus Worker assignment
-- Expected result: clean baseline commit and one WORKER-A attempt in progress
-- Stop condition: contract/diff/authority mismatch
-
-## Next Highest-Value Action
-
-- Create the authorized baseline/contract commit.
-
-## Budget Stop Record
-
-- Trigger: none; pressure normal; no budget stop.
-- Reviews remain Spec and Standards; no verification skipped.
-
-## Recovery Readiness
-
-- Recovery ready: yes
-- Resume Validation reference: current-state verification above
-- Required references present / Resume Point actionable: yes / yes
-- Unresolved recovery conflicts: none
+- Resume action: dispatch original Closure Reviewer R2 on the final staged tree
+- Stop: count mismatch, stale claim, R2 failure, product path change, or scope expansion
 
 ## Honesty Boundary
 
-This Checkpoint is recovery authority only; it does not own Project, Loop, Task, or Finding
-status and grants no new permission.
+This record owns no Project, Loop, Task, or Finding status and grants no new authority.

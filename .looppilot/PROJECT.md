@@ -243,7 +243,7 @@ Shared pure hashing/validation API with producer and consumer adapters.
 
 ### Frontend Architecture
 
-No frontend change planned.
+Frontend change is limited to Studio Hook target propagation and its request-body test; no visual redesign is included.
 
 ### Dependency Injection
 
@@ -280,7 +280,7 @@ Non-overlapping Deliveries, integration proof, permanent and selected specialist
 
 ### Project Delivery Acceptance
 
-Three coherent commits, experiment-branch push, truthful RESULTS, clean worktree, no release.
+Four coherent commits (baseline, initial product, rework, governance/final), experiment-branch push, truthful RESULTS, clean worktree, no release.
 
 ## Baseline Evidence
 
@@ -352,4 +352,7 @@ Project: this file; Loop: `LOOP-MAP.md`; Task/Finding: LOOP-001 Ledgers; recover
 
 ### Project Closure
 
-Not yet reached.
+Closure R0 found a blocking public FBX-to-GLB identity-contract gap and governance/evidence
+inaccuracies. TASK-008/011/009/012 rework is integrated in INTEGRATION-003; TASK-010
+governance revision 2/2 is under review after R1 NOT-CLOSEABLE; full validation passed.
+Project Closure is not reached.

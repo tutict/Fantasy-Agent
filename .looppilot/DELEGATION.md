@@ -1,56 +1,62 @@
 # Delegation State
 
 Status: active
-Updated: 2026-07-26
+Updated: 2026-07-27
 Supervisor: root
 Integrator: root
 
 ## Parent Goal
 
-Deliver LOOP-001 through two non-overlapping implementation owners and formal integration.
+Deliver LOOP-001 through two real implementation owners, formal integration, and truthful closure.
 
 ## Active Assignments
 
-- TASK-001 -> WORKER-A; attempt 1 pending.
-- TASK-002 -> WORKER-B; attempt 1 pending after TASK-001 API boundary.
+- TASK-010 revision 2/2 is under review by the original Closure Reviewer.
+- No implementation Worker or product write assignment is active.
+- No Reviewer support delegation is authorized for R2.
 
 ## Review Queue
 
-- Each Delivery requires independent Spec and Standards decisions before integration.
-- Loop boundary requires Spec, Standards, Security, and Compatibility reviews.
+- All Task reviews and Loop Spec/Standards/Security/Compatibility reviews passed after Rework.
+- Closure R0: Spec/Standards/Evidence FAIL.
+- Closure R1: Spec PASS, Standards FAIL, Evidence FAIL, NOT-CLOSEABLE.
+- R1 VERIFIED-CORRECTED EXP008-CLOSURE-SPEC-001.
+- R2 must reverify STD-001, STD-002, EVID-001, and EVID-002.
 
 ## Revision Queue
 
-- None.
+- TASK-010 revision 2/2 corrects five stale claims, records EII 49, and discloses the
+  uncontracted Reviewer support delegation.
+- No unchanged revision 3 is allowed if R2 fails.
 
-## Blocked Tasks
+## Blocked Tasks and Findings
 
-- None.
+- No Task is infrastructure-blocked.
+- STD-001 and STD-002 block Closure; EVID-001/002 gate factual acceptance.
 
-## Conflicts
+## Conflicts and Role Discipline
 
-- None.
+- Product ownership overlap remains zero; INTEGRATION-003 remains unchanged.
+- During R1 the Reviewer spawned two support Agents without Contracts. Supervisor interrupted
+  them; the Reviewer did not read/use their output and remained sole judgment authority.
+- No further Reviewer delegation is permitted for R2.
 
-## Integration Status
+## Integration and Evidence
 
-- Waiting for independently reviewed Deliveries.
+- INTEGRATION-003 freezes fourteen product/test files; all four Loop axes PASS.
+- R1 independently matched all hashes, boundaries, pre-R1 counts, Node PASS, and focused Ruff PASS.
+- Focused pytest R1 was ACL-blocked and supplies no behavioral pass/fail evidence.
 
-## Research Status
+## Research and Skills
 
-- Local repository audit complete; no current external information affects this bounded task.
+- No external research; repository evidence and LoopPilot are sufficient.
 
-## Skill Assignment Summary
+## Checklist and Budget
 
-- No task-specific Skill required; repository and LoopPilot instructions are sufficient.
-
-## Checklist Status
-
-- Active at `.looppilot/CHECKLIST.md`.
-
-## Budget Status
-
-- Normal context pressure; two unsuccessful attempts maximum per unchanged responsibility.
+- Checklist: `.looppilot/CHECKLIST.md`; recovery: CHECKPOINT-028.
+- Worker Failure Budget not exercised; 11 assignments / 11 valid Deliveries / 10 approved outcomes.
+- TASK-010 revision budget is 2/2; context pressure normal.
 
 ## Next Coordination Action
 
-- Commit the Contract Barrier, then dispatch TASK-001.
+- Dispatch the original Closure Reviewer R2 on the frozen tree.
