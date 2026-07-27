@@ -1,7 +1,7 @@
 # Finding — EXP008-CLOSURE-STD-002
 
 - Source: `REVIEW-EXP-008-CLOSURE-R1`
-- Category / Severity / Status: Reviewer delegation discipline / Major / open
+- Category / Severity / Status: Reviewer delegation discipline / Major / closed
 - Reviewer: `/root/exp008_closure_reviewer`
 - Rework: TASK-010 revision 2
 
@@ -19,3 +19,8 @@ Keep all support outputs excluded. Preserve the original Reviewer judgment, reco
 the deviation in coordination/evaluation/closure evidence, prohibit further
 Reviewer delegation, and return TASK-010 revision 2 to the same Reviewer. No
 implementation, Worker-attempt, Finding-severity, or authority change is permitted.
+
+## R2 Verification
+
+R2 VERIFIED-CORRECTED. The original Reviewer delegated no support work, did not read
+interrupted R1 support output, and confirmed the deviation and exclusion are disclosed.

@@ -5,7 +5,7 @@ Template Status: active instance
 ## Identity
 
 - Project / Loop: `PROJECT-EXP-008` / `LOOP-001`
-- Closure Status: review-candidate
+- Closure Status: blocked-with-verified-partial-delivery
 - Prepared/recorded by: Integrator
 - Date: 2026-07-27
 
@@ -35,8 +35,7 @@ release/deploy, main, and LoopPilot changes remain excluded.
 - TASK-001 through TASK-009 and TASK-011 are integrated after independent Task review.
 - TASK-008's target-agnostic Delivery was not approved; TASK-011 corrected it under
   the original producer owner and original TASK-008 Reviewer.
-- TASK-010 governance reconciliation is in revision 2/2 after R1 NOT-CLOSEABLE;
-  original Closure Reviewer R2 remains pending.
+- TASK-010 revision 2/2 received R2 and is blocked after its revision budget was exhausted.
 
 ## Integrated Boundary
 
@@ -54,7 +53,8 @@ release/deploy, main, and LoopPilot changes remain excluded.
 - Original Specialist R3: Security/Compatibility PASS; LOOP001-COMP-001
   VERIFIED-CORRECTED; no new Finding.
 - Closure R1: Spec PASS, Standards FAIL, Evidence/Factual Accuracy FAIL, NOT-CLOSEABLE.
-- R2 must reverify STD-001, STD-002, EVID-001, and EVID-002.
+- Closure R2: Spec PASS, Standards FAIL, Evidence/Factual Accuracy FAIL, NOT-CLOSEABLE.
+- R2 VERIFIED-CORRECTED STD-002/EVID-002 and did not verify STD-001/EVID-001.
 
 ## Finding Disposition
 
@@ -65,10 +65,10 @@ release/deploy, main, and LoopPilot changes remain excluded.
 | `LOOP001-SEC-001` | Major | closed | original specialist R1 |
 | `TASK008-SPEC-001` | Major | closed | TASK-011 original Reviewer R0 |
 | `EXP008-CLOSURE-SPEC-001` | Major | closed | R1 VERIFIED-CORRECTED |
-| `EXP008-CLOSURE-STD-001` | Major | open | TASK-010 revision 2 and R2 |
-| `EXP008-CLOSURE-STD-002` | Major | open | support output excluded; disclosure and R2 |
-| `EXP008-CLOSURE-EVID-001` | Minor | open | final post-R1 byte-derived count and R2 |
-| `EXP008-CLOSURE-EVID-002` | Minor | open | EII 49 plus later incidents and R2 |
+| `EXP008-CLOSURE-STD-001` | Major | open | R2 NOT VERIFIED; budget exhausted |
+| `EXP008-CLOSURE-STD-002` | Major | closed | R2 VERIFIED-CORRECTED |
+| `EXP008-CLOSURE-EVID-001` | Minor | open | R2 NOT VERIFIED; budget exhausted |
+| `EXP008-CLOSURE-EVID-002` | Minor | closed | R2 VERIFIED-CORRECTED at frozen count 49 |
 | `LOOP001-COMP-001` | Major | closed | original Specialist VERIFIED-CORRECTED |
 
 `EXP008-PATH-001` remains a deferred evaluation-level Minor Test Harness Finding.
@@ -97,7 +97,7 @@ release/deploy, main, and LoopPilot changes remain excluded.
 
 - Contract, Implementation, and Integration Barriers: passed.
 - Review Barrier: passed on INTEGRATION-003.
-- Closure Barrier: R1 is NOT-CLOSEABLE; four Findings remain open for revision 2 and R2.
+- Closure Barrier: R2 is NOT-CLOSEABLE; STD-001 and EVID-001 remain open.
 
 ## Worker Reliability and Ownership
 
@@ -108,7 +108,9 @@ release/deploy, main, and LoopPilot changes remain excluded.
 
 ## Evidence Accounting
 
-- EII through R2 freeze: 49 phase/cause groups; final count pending R2.
+- EII through the R2 freeze: 49 phase/cause groups, independently verified by R2.
+- Group 50: post-R2 blocked-state wrapper argument/terminator failures, coalesced;
+  final observed EII is 50 and is not claimed as independently reverified.
 - Pre-R1 governance: 68 artifacts / 4,498 physical lines from bytes.
 - Pre-R2 governance candidate: 70 artifacts / 4,559 lines / 208,197 bytes; R2 artifact excluded.
 - Evaluation artifacts: seven files under `docs/experiments/looppilot-exp-008`.
@@ -128,14 +130,16 @@ release/deploy, main, and LoopPilot changes remain excluded.
 - Initial product: `068f25b13a4f5c3fb1fb377d81b68a02e528b586`.
 - Rework: `52173e08ae267700ef62e7e563ab6a50523981ad`.
 - Governance/final commit and authorized experiment-branch push: pending.
-- Current recovery record: `CHECKPOINT-028`.
+- Current recovery record: `CHECKPOINT-029`.
 
 ## Closure Decision
 
-No terminal decision is proposed. R1 is `NOT-CLOSEABLE`; TASK-010 revision 2 and
-original Closure Reviewer R2 are required, with no unchanged revision 3 allowed.
+`BLOCKED-WITH-VERIFIED-PARTIAL-DELIVERY`. Product implementation, integration, Loop
+reviews, validation, and three commits are observed. Closure R2 is NOT-CLOSEABLE,
+STD-001/EVID-001 remain open, and TASK-010 exhausted revision budget 2/2. No revision 3,
+final governance commit, push, release, or deployment is claimed.
 
 ## Honesty Boundary
 
-This is a review candidate, not Project acceptance. It grants no release, deployment,
-main mutation, or real-tool authority and does not claim pending verification.
+This blocked record is not Project acceptance. It grants no release, deployment, main
+mutation, real-tool, revision, commit, or push authority.

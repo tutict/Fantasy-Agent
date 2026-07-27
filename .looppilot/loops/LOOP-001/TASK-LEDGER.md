@@ -1,7 +1,7 @@
 # Task Ledger
 
 Loop ID: `LOOP-001`
-Status: active
+Status: blocked
 Updated: 2026-07-27
 Updated by: Integrator
 Integrator: root
@@ -26,7 +26,7 @@ Integrator: root
 | TASK-007 | Adapt cross-owner workspace-root caller | rework | yes | integrated | /root/exp008_worker_b | TASK-006 approved API | DELIVERY-TASK-007 | Spec PASS; Standards PASS | TASK-002 |
 | TASK-008 | Bind public Blender review to Godot GLB bytes | rework | yes | integrated-after-rework | /root/exp008_worker_a | EXP008-CLOSURE-SPEC-001 | DELIVERY-TASK-008 | TASK-011 Spec PASS; Standards PASS | TASK-001,TASK-006 |
 | TASK-009 | Prove unmodified-plan FBX-to-GLB invariant | rework | yes | integrated | /root/exp008_worker_b | TASK-011 approved API | DELIVERY-TASK-009 | Spec PASS; Standards PASS | TASK-002,TASK-007 |
-| TASK-010 | Reconcile Closure governance and accounting | governance-rework | yes | under-review | root Integrator | INTEGRATION-003,R1 | revision 2 candidate | original Closure Reviewer R2 | Closure R0/R1 |
+| TASK-010 | Reconcile Closure governance and accounting | governance-rework | yes | blocked | root Integrator | INTEGRATION-003,R1 | revision 2 reviewed | R2 NOT-CLOSEABLE | Closure R0/R1 |
 | TASK-011 | Make producer artifact selection target-aware | rework | yes | integrated | /root/exp008_worker_a | TASK008-SPEC-001 | DELIVERY-TASK-011 | Spec PASS; Standards PASS | TASK-008 |
 | TASK-012 | Propagate Studio approval target | compatibility-rework | yes | integrated | /root/exp008_worker_a_task012 | LOOP001-COMP-001 | DELIVERY-TASK-012 | Spec PASS; Standards PASS | TASK-011 |
 
@@ -65,7 +65,7 @@ Integrator: root
 
 ## Blocked Tasks
 
-- None; TASK-010 dependency is satisfied by INTEGRATION-003.
+- TASK-010 is blocked after R2 Standards/Evidence FAIL and exhaustion of revision budget 2/2.
 
 ## Cancelled Tasks
 

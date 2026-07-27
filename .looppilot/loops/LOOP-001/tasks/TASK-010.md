@@ -1,8 +1,8 @@
 ---
 task_id: TASK-010
 parent_goal: LOOP-001 / Closure R0 governance and evidence Findings
-status: under-review
-previous_status: submitted
+status: blocked
+previous_status: under-review
 assigned_role: integrator
 assigned_to: root
 objective: Reconcile authoritative/projection state and final physical-line/EII accounting.
@@ -30,3 +30,7 @@ grouping. No product/test edit. R1 passed Spec but requested the final allowed r
 for stale governance claims, post-R1 accounting, and STD-002 disclosure. The original
 Closure Reviewer must reverify the remaining Findings in R2; another unchanged revision
 is forbidden if R2 fails.
+
+R2 returned Spec PASS, Standards FAIL, Evidence/Factual Accuracy FAIL, and NOT-CLOSEABLE.
+The 2/2 revision budget is exhausted. No revision 3 or further unchanged correction is
+permitted under the current Contract.

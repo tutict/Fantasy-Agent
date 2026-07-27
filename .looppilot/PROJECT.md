@@ -1,6 +1,6 @@
 # Project Engineering Context
 
-Status: active
+Status: blocked
 
 Project ID: `PROJECT-EXP-008`
 
@@ -352,7 +352,8 @@ Project: this file; Loop: `LOOP-MAP.md`; Task/Finding: LOOP-001 Ledgers; recover
 
 ### Project Closure
 
-Closure R0 found a blocking public FBX-to-GLB identity-contract gap and governance/evidence
-inaccuracies. TASK-008/011/009/012 rework is integrated in INTEGRATION-003; TASK-010
-governance revision 2/2 is under review after R1 NOT-CLOSEABLE; full validation passed.
-Project Closure is not reached.
+Product Rework is integrated in INTEGRATION-003 and full validation passed. Closure R2
+returned Spec PASS, Standards FAIL, Evidence/Factual Accuracy FAIL, and NOT-CLOSEABLE.
+TASK-010 exhausted its 2/2 revision budget. Project Closure is blocked with verified
+partial product delivery; no revision 3, commit, push, release, or deploy is authorized
+by this status transition.
