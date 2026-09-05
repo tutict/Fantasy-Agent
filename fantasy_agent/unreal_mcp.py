@@ -10,6 +10,11 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
+from fantasy_agent.process_runner import (
+    current_cancel_event,
+    is_streaming_runner,
+    run_streaming,
+)
 from fantasy_agent.contracts import (
     ComfyUIRunManifest,
     UnrealAssetIngestJob,
@@ -185,7 +190,7 @@ class UnrealMCPBridge:
         runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     ) -> None:
         self.workspace_root = Path(workspace_root).resolve()
-        self.runner = runner or subprocess.run
+        self.runner = runner or run_streaming
 
     def create_project_structure(self, request: UnrealMCPCreateProjectRequest) -> UnrealMCPResult:
         plan = self._load_plan(request)
@@ -397,16 +402,13 @@ class UnrealMCPBridge:
         project_log_path = self._project_log_path(project_file)
         project_log_offset = project_log_path.stat().st_size if project_log_path.exists() else 0
         try:
-            process = self.runner(
+            process = self._run_tool(
                 command,
                 cwd=project_file.parent,
                 env=env,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
                 timeout=request.timeout_seconds,
-                check=False,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
             )
         except FileNotFoundError as exc:
             stderr = f"Unreal Editor command executable not found: {request.unreal_editor_cmd}"
@@ -501,16 +503,13 @@ class UnrealMCPBridge:
         project_log_path = self._project_log_path(project_file)
         project_log_offset = project_log_path.stat().st_size if project_log_path.exists() else 0
         try:
-            process = self.runner(
+            process = self._run_tool(
                 command,
                 cwd=project_file.parent,
                 env=env,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
                 timeout=request.timeout_seconds,
-                check=False,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
             )
         except FileNotFoundError as exc:
             stderr = f"Unreal Editor command executable not found: {request.unreal_editor_cmd}"
@@ -598,16 +597,13 @@ class UnrealMCPBridge:
         self._shader_working_dir(project_file).mkdir(parents=True, exist_ok=True)
         env = self._unreal_env(project_file)
         try:
-            process = self.runner(
+            process = self._run_tool(
                 command,
                 cwd=project_file.parent,
                 env=env,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
                 timeout=request.timeout_seconds,
-                check=False,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
             )
         except FileNotFoundError as exc:
             stderr = f"Unreal Editor command executable not found: {request.unreal_editor_cmd}"
@@ -1234,6 +1230,42 @@ class UnrealMCPBridge:
         except ValueError as exc:
             raise UnrealMCPSafetyError(f"Path escapes workspace: {path}") from exc
         return resolved
+
+    def _run_tool(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        timeout: float | None,
+        stdout_path: Path,
+        stderr_path: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a local tool, streaming output into the given log paths.
+
+        Injected test doubles keep the legacy ``subprocess.run`` contract and
+        never see the streaming keywords, so existing fakes keep working.
+        """
+
+        shared: dict[str, Any] = {
+            "cwd": cwd,
+            "env": env,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "capture_output": True,
+            "timeout": timeout,
+            "check": False,
+        }
+        if is_streaming_runner(self.runner):
+            return self.runner(
+                command,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+                cancel_event=current_cancel_event(),
+                **shared,
+            )
+        return self.runner(command, **shared)
 
     def _log_paths(self, project_name: str, commandlet: str) -> tuple[Path, Path]:
         safe_name = f"{_slug(project_name)}_{_slug(commandlet)}"

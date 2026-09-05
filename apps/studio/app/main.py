@@ -10,67 +10,77 @@ import shutil
 from typing import Any
 from urllib import error, request
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
-from fantasy_agent.chatgpt_app import (
-    SERVER_NAME,
-    SERVER_VERSION,
-    WIDGET_MIME_TYPE,
-    WIDGET_URI,
-    call_workbench_tool,
-    tool_descriptors,
-    widget_resource,
-    widget_resource_meta,
-)
+from fantasy_agent import api_settings
+from fantasy_agent.api_settings import public_settings
+from fantasy_agent.blender_codegen import build_blender_script_artifact
 from fantasy_agent.contracts import (
     AssetApprovalManifest,
+    BlenderAssetPlan,
+    BlenderScriptArtifact,
+    ComfyUIVisualPlan,
     CompiledSpecArtifact,
     CreativeReviewReport,
+    CreativeReviewRequest,
     DirectorBuildPlan,
     DirectorTaskBreakdown,
     EnemyPressureTuning,
     ExecutableQAReport,
+    GDDDocument,
+    GameplaySpec,
+    GodotProjectPlan,
+    IdeaDiscoveryRequest,
+    IdeaSeed,
     PromptRequest,
     ProductionSpecBundle,
+    QAPlan,
     SpecTraceRecord,
     SpecValidationReport,
+    UnrealProjectPlan,
     default_comfyui_endpoint_candidates,
 )
+from fantasy_agent.generation import design_from_prompt
+from fantasy_agent.idea_discovery import extract_idea_seed, prompt_request_from_seed
 from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
+from fantasy_agent.mcp import initial_mcp_contracts
 from fantasy_agent.studio_jobs import InMemoryJobRegistry
 from fantasy_agent.workflows import (
     build_asset_approval_manifest,
     decompose_production_tasks,
+    prepare_blender_assets,
+    prepare_comfyui_visuals,
+    prepare_creative_review,
+    prepare_godot_project,
+    prepare_qa_plan,
+    prepare_unreal_project,
     run_director_workflow,
 )
+
+STUDIO_NAME = "fantasy-agent-studio"
+STUDIO_VERSION = "0.1.0"
 
 APP_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = APP_DIR.parents[1]
 STATIC_DIR = APP_DIR / "static"
-WEB_CONSOLE_STATIC_DIR = REPO_ROOT / "apps" / "web-console" / "static"
-CHATGPT_WORKBENCH_STATIC_DIR = REPO_ROOT / "apps" / "chatgpt-workbench" / "static"
+WEB_CONSOLE_STATIC_DIR = STATIC_DIR / "web-console"
 FRONTEND_DIST_DIR = REPO_ROOT / "apps" / "frontend" / "dist"
 FRONTEND_INDEX_PATH = FRONTEND_DIST_DIR / "index.html"
-WORKBENCH_PATH = CHATGPT_WORKBENCH_STATIC_DIR / "workbench.html"
+WORKBENCH_PATH = STATIC_DIR / "planning-workbench.html"
 
 app = FastAPI(
     title="Fantasy Agent Studio",
-    version=SERVER_VERSION,
-    description="Single local desktop-style panel for Fantasy Agent production workflows.",
+    version=STUDIO_VERSION,
+    description="Standalone local workbench for Fantasy Agent production workflows.",
 )
 
 app.mount("/studio-static", StaticFiles(directory=str(STATIC_DIR)), name="studio_static")
 app.mount("/assets", StaticFiles(directory=str(WEB_CONSOLE_STATIC_DIR)), name="web_console_assets")
 if FRONTEND_DIST_DIR.exists():
     app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIST_DIR)), name="frontend_assets")
-app.mount(
-    "/static",
-    StaticFiles(directory=str(CHATGPT_WORKBENCH_STATIC_DIR)),
-    name="chatgpt_workbench_static",
-)
 
 
 class ManualCorrectionOpenRequest(BaseModel):
@@ -139,33 +149,6 @@ ExecuteDemoRequest.model_rebuild()
 _EXECUTE_POOL = ThreadPoolExecutor(max_workers=1)
 _EXECUTE_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
 _ASSET_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
-
-
-def _jsonrpc_result(request_id: Any, result: dict[str, Any]) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": request_id, "result": result}
-
-
-def _jsonrpc_error(request_id: Any, code: int, message: str) -> dict[str, Any]:
-    return {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}
-
-
-def _initialize(request_id: Any, params: dict[str, Any]) -> dict[str, Any]:
-    protocol_version = params.get("protocolVersion") or "2024-11-05"
-    return _jsonrpc_result(
-        request_id,
-        {
-            "protocolVersion": protocol_version,
-            "capabilities": {
-                "tools": {"listChanged": False},
-                "resources": {"subscribe": False, "listChanged": False},
-            },
-            "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
-        },
-    )
-
-
-def _read_widget() -> str:
-    return WORKBENCH_PATH.read_text(encoding="utf-8")
 
 
 def _frontend_index_or(static_path: Path) -> FileResponse:
@@ -376,22 +359,6 @@ def _probe_executable(
     )
 
 
-def _probe_studio_mcp() -> dict[str, Any]:
-    tools = tool_descriptors()
-    return _mcp_status_item(
-        service_id="studio-mcp",
-        label="Fantasy Agent MCP",
-        status="ready" if tools else "unavailable",
-        target="/mcp",
-        detail=f"JSON-RPC endpoint is mounted with {len(tools)} planning tools.",
-        next_action="Use an HTTPS tunnel when connecting this endpoint to ChatGPT Apps.",
-        detail_key="mcpDetailStudioReady",
-        detail_args={"tool_count": len(tools)},
-        next_action_key="mcpNextStudioReady",
-        metadata={"tool_count": len(tools)},
-    )
-
-
 def _probe_github_cli() -> dict[str, Any]:
     git = shutil.which("git")
     gh = shutil.which("gh")
@@ -456,7 +423,6 @@ def _is_godot_engine(engine: str) -> bool:
 def _mcp_connectivity_status(engine: str = "UE5") -> dict[str, Any]:
     godot_selected = _is_godot_engine(engine)
     services = [
-        _probe_studio_mcp(),
         _probe_comfyui(),
         _probe_executable(
             service_id="blender",
@@ -502,48 +468,6 @@ def _mcp_connectivity_status(engine: str = "UE5") -> dict[str, Any]:
     }
 
 
-def _handle_rpc(message: dict[str, Any]) -> dict[str, Any] | None:
-    method = message.get("method")
-    request_id = message.get("id")
-    params = message.get("params") or {}
-
-    if request_id is None and isinstance(method, str) and method.startswith("notifications/"):
-        return None
-
-    if method == "initialize":
-        return _initialize(request_id, params)
-    if method == "ping":
-        return _jsonrpc_result(request_id, {})
-    if method == "tools/list":
-        return _jsonrpc_result(request_id, {"tools": tool_descriptors()})
-    if method == "tools/call":
-        name = params.get("name")
-        arguments = params.get("arguments") or {}
-        if not isinstance(name, str):
-            return _jsonrpc_error(request_id, -32602, "tools/call requires params.name")
-        return _jsonrpc_result(request_id, call_workbench_tool(name, arguments))
-    if method == "resources/list":
-        return _jsonrpc_result(request_id, {"resources": [widget_resource()]})
-    if method == "resources/read":
-        uri = params.get("uri")
-        if uri != WIDGET_URI:
-            return _jsonrpc_error(request_id, -32002, f"Unknown resource URI: {uri}")
-        return _jsonrpc_result(
-            request_id,
-            {
-                "contents": [
-                    {
-                        "uri": WIDGET_URI,
-                        "mimeType": WIDGET_MIME_TYPE,
-                        "text": _read_widget(),
-                        "_meta": widget_resource_meta(),
-                    }
-                ]
-            },
-        )
-    return _jsonrpc_error(request_id, -32601, f"Unsupported method: {method}")
-
-
 @app.get("/")
 def index() -> FileResponse:
     return _frontend_index_or(STATIC_DIR / "index.html")
@@ -554,19 +478,79 @@ def web_console() -> FileResponse:
     return _frontend_index_or(WEB_CONSOLE_STATIC_DIR / "index.html")
 
 
-@app.get("/workbench")
-def workbench() -> FileResponse:
-    return FileResponse(WORKBENCH_PATH)
-
-
 @app.get("/health")
 def health() -> dict[str, str]:
-    return {"status": "ok", "agent": "fantasy-agent-studio", "version": SERVER_VERSION}
+    return {"status": "ok", "agent": STUDIO_NAME, "version": STUDIO_VERSION, "mode": "standalone"}
 
 
-@app.get("/api/mcp/status")
+@app.get("/api/tool-status")
 def mcp_status(engine: str = "UE5") -> dict[str, Any]:
     return _mcp_connectivity_status(engine)
+
+
+@app.get("/api/settings/llm")
+def get_llm_settings() -> dict[str, Any]:
+    """Return the saved API settings with the secret masked."""
+
+    return public_settings()
+
+
+class LLMApiSettingsRequest(BaseModel):
+    enabled: bool = False
+    provider: str = api_settings.ANTHROPIC
+    base_url: str = ""
+    model: str = ""
+    api_key: str = ""
+    timeout_seconds: float = 60.0
+
+
+LLMApiSettingsRequest.model_rebuild()
+
+
+@app.put("/api/settings/llm")
+def update_llm_settings(req: LLMApiSettingsRequest) -> Any:
+    """Save API settings.
+
+    An empty (or still-masked) key keeps the previously stored secret, so
+    editing the model or base URL never forces re-entering the key.
+    """
+
+    incoming = req.model_dump()
+    key = str(incoming.get("api_key") or "").strip()
+    if not key or "*" in key:
+        incoming["api_key"] = api_settings.load_settings().api_key
+    try:
+        saved = api_settings.save_settings(api_settings.LLMApiSettings.model_validate(incoming))
+    except ValidationError as exc:
+        return JSONResponse({"ok": False, "error": str(exc)}, status_code=400)
+    return public_settings(saved)
+
+
+@app.post("/api/settings/llm/test")
+def test_llm_settings(req: LLMApiSettingsRequest) -> dict[str, Any]:
+    """Probe the endpoint with a minimal request and report the outcome."""
+
+    incoming = req.model_dump()
+    key = str(incoming.get("api_key") or "").strip()
+    if not key or "*" in key:
+        incoming["api_key"] = api_settings.load_settings().api_key
+    try:
+        candidate = api_settings.LLMApiSettings.model_validate(incoming)
+    except ValidationError as exc:
+        return api_settings.ApiTestResult(
+            ok=False, status="invalid", detail_key="apiTestInvalid", detail=str(exc)
+        ).model_dump()
+    result = api_settings.test_connection(candidate)
+    payload = result.model_dump()
+    payload["settings"] = public_settings(candidate)
+    return payload
+
+
+@app.delete("/api/settings/llm")
+def delete_llm_settings() -> dict[str, Any]:
+    """Forget the stored credentials and return to deterministic-only mode."""
+
+    return public_settings(api_settings.clear_settings())
 
 
 @app.get("/api/manual-correction/targets")
@@ -585,7 +569,7 @@ def correction_open(request: ManualCorrectionOpenRequest) -> dict[str, Any]:
 
 @app.post("/api/plan", response_model=DirectorBuildPlan)
 def plan(request: PromptRequest) -> DirectorBuildPlan:
-    return run_director_workflow(request)
+    return run_director_workflow(request, use_llm=_use_llm())
 
 
 @app.post("/api/tasks", response_model=DirectorTaskBreakdown)
@@ -593,38 +577,323 @@ def tasks(request: PromptRequest) -> DirectorTaskBreakdown:
     return decompose_production_tasks(request)
 
 
-@app.get("/mcp")
-def mcp_info() -> dict[str, Any]:
+@app.get("/api/tool-contracts")
+def tool_contracts() -> list[Any]:
+    """Local tool contracts inspected before any execution side effect."""
+
+    return initial_mcp_contracts()
+
+
+def _use_llm() -> bool:
+    """Whether the LLM backend should be attempted for this request.
+
+    Driven by the API access panel in the Studio; falls back to the
+    ``FANTASY_AGENT_USE_LLM`` environment flag when it is set.
+    """
+
+    return api_settings.llm_enabled()
+
+
+class IdeaSeedResponse(BaseModel):
+    idea_seed: IdeaSeed
+    prompt_request: PromptRequest
+
+
+IdeaSeedResponse.model_rebuild()
+
+
+@app.post("/api/idea-seed", response_model=IdeaSeedResponse)
+def idea_seed(request: IdeaDiscoveryRequest) -> IdeaSeedResponse:
+    """Turn interview answers into an IdeaSeed and a ready-to-plan PromptRequest."""
+
+    seed = extract_idea_seed(request)
+    return IdeaSeedResponse(
+        idea_seed=seed,
+        prompt_request=prompt_request_from_seed(seed, request),
+    )
+
+
+@app.post("/api/design", response_model=GameplaySpec)
+def design(request: PromptRequest) -> GameplaySpec:
+    return design_from_prompt(request, use_llm=_use_llm())
+
+
+@app.post("/api/gdd", response_model=GDDDocument)
+def gdd(request: PromptRequest) -> GDDDocument:
+    return run_director_workflow(request, use_llm=_use_llm()).gdd
+
+
+@app.post("/api/pipeline")
+def pipeline(request: PromptRequest) -> dict[str, Any]:
+    plan = run_director_workflow(request, use_llm=_use_llm())
     return {
-        "status": "ok",
-        "transport": "json-rpc-over-http",
-        "endpoint": "/mcp",
-        "serverInfo": {"name": SERVER_NAME, "version": SERVER_VERSION},
+        "gameplay_title": plan.gameplay_spec.title,
+        "production_pipeline": (
+            plan.production_pipeline.model_dump(mode="json") if plan.production_pipeline else None
+        ),
     }
 
 
-@app.post("/mcp")
-async def mcp(request: Request) -> Response:
-    payload = await request.json()
-    if isinstance(payload, list):
-        responses = [_handle_rpc(message) for message in payload if isinstance(message, dict)]
-        responses = [response for response in responses if response is not None]
-        if not responses:
-            return Response(status_code=202)
-        return JSONResponse(responses)
-    if not isinstance(payload, dict):
-        return JSONResponse(_jsonrpc_error(None, -32600, "Invalid JSON-RPC payload"), status_code=400)
-
-    response = _handle_rpc(payload)
-    if response is None:
-        return Response(status_code=202)
-    return JSONResponse(response)
+@app.post("/api/unreal/plan", response_model=UnrealProjectPlan)
+def unreal_plan(spec: GameplaySpec) -> UnrealProjectPlan:
+    return prepare_unreal_project(spec)
 
 
-@app.post("/debug/tool/{tool_name}")
-async def debug_tool(tool_name: str, request: Request) -> dict[str, Any]:
+@app.post("/api/godot/plan", response_model=GodotProjectPlan)
+def godot_plan(spec: GameplaySpec) -> GodotProjectPlan:
+    return prepare_godot_project(spec)
+
+
+@app.post("/api/blender/plan", response_model=BlenderAssetPlan)
+def blender_plan(spec: GameplaySpec) -> BlenderAssetPlan:
+    return prepare_blender_assets(spec)
+
+
+@app.post("/api/blender/script", response_model=BlenderScriptArtifact)
+def blender_script(plan: BlenderAssetPlan) -> BlenderScriptArtifact:
+    return build_blender_script_artifact(plan)
+
+
+@app.post("/api/blender/plan-script", response_model=BlenderScriptArtifact)
+def blender_plan_script(spec: GameplaySpec) -> BlenderScriptArtifact:
+    return build_blender_script_artifact(prepare_blender_assets(spec))
+
+
+@app.post("/api/comfyui/plan", response_model=ComfyUIVisualPlan)
+def comfyui_plan(spec: GameplaySpec) -> ComfyUIVisualPlan:
+    return prepare_comfyui_visuals(spec)
+
+
+@app.post("/api/creative-review", response_model=CreativeReviewReport)
+def creative_review(request: CreativeReviewRequest) -> CreativeReviewReport:
+    return prepare_creative_review(
+        request.gameplay_spec,
+        request.blender_plan,
+        request.comfyui_plan,
+    )
+
+
+@app.post("/api/qa", response_model=QAPlan)
+def qa(spec: GameplaySpec) -> QAPlan:
+    return prepare_qa_plan(spec)
+
+def _plan_summary(plan: DirectorBuildPlan) -> dict[str, Any]:
+    """Flatten a build plan into the summary block the workbench UI renders."""
+
+    spec = plan.gameplay_spec
+    pipeline = plan.production_pipeline
+    return {
+        "title": spec.title,
+        "logline": spec.logline,
+        "target_session_minutes": spec.target_session_minutes,
+        "core_verbs": spec.core_verbs,
+        "design_pillars": spec.design_pillars,
+        "win_state": spec.win_state,
+        "failure_states": spec.failure_states,
+        "next_actions": plan.next_actions,
+        "production_pipeline_stages": [stage.title for stage in pipeline.stages] if pipeline else [],
+    }
+
+
+def _workbench_result(
+    tool_name: str,
+    structured_content: dict[str, Any],
+    content_text: str,
+    meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Shape a planning result for the workbench UI without an external agent bridge."""
+
+    return {
+        "structuredContent": structured_content,
+        "content": [{"type": "text", "text": content_text}],
+        "_meta": {"toolName": tool_name, **(meta or {})},
+    }
+
+
+def _plan_headline(prefix: str, plan: DirectorBuildPlan) -> str:
+    spec = plan.gameplay_spec
+    next_action = plan.next_actions[0] if plan.next_actions else "Review the generated plan."
+    return (
+        f"{prefix}: {spec.title}. "
+        f"Target session: {spec.target_session_minutes} minutes. "
+        f"Core verbs: {', '.join(spec.core_verbs)}. "
+        f"Next action: {next_action}"
+    )
+
+
+def _workbench_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Run a workbench planning tool by name against the local workflows."""
+
+    if name == "extract_idea_seed":
+        request = IdeaDiscoveryRequest.model_validate(arguments)
+        seed = extract_idea_seed(request)
+        prompt_request = prompt_request_from_seed(seed, request)
+        seed_payload = seed.model_dump(mode="json")
+        prompt_payload = prompt_request.model_dump(mode="json")
+        return _workbench_result(
+            name,
+            {"kind": "idea_seed", "idea_seed": seed_payload, "prompt_request": prompt_payload},
+            (
+                "Extracted an IdeaSeed for planning. "
+                f"Core action: {seed.core_action}. Next step: generate a production plan from the seed."
+            ),
+            {"ideaSeed": seed_payload, "promptRequest": prompt_payload, "activePanel": "discovery"},
+        )
+
+    request = PromptRequest.model_validate(arguments)
+
+    if name == "decompose_production_tasks":
+        breakdown = decompose_production_tasks(request)
+        payload = breakdown.model_dump(mode="json")
+        return _workbench_result(
+            name,
+            {"kind": "director_task_breakdown", "task_breakdown": payload},
+            (
+                f"Prepared {len(breakdown.tasks)} production tasks. "
+                f"Recommended next task: {breakdown.recommended_next_task}. "
+                "Execution tasks still require explicit confirmation."
+            ),
+            {"taskBreakdown": payload, "activePanel": "tasks"},
+        )
+
+    plan = run_director_workflow(request, use_llm=_use_llm())
+    spec = plan.gameplay_spec
+    summary = _plan_summary(plan)
+
+    if name == "generate_game_production_plan":
+        plan_payload = plan.model_dump(mode="json")
+        task_payload = plan.task_breakdown.model_dump(mode="json") if plan.task_breakdown else None
+        pipeline_payload = (
+            plan.production_pipeline.model_dump(mode="json") if plan.production_pipeline else None
+        )
+        return _workbench_result(
+            name,
+            {
+                "kind": "director_build_plan",
+                "summary": summary,
+                "plan": plan_payload,
+                "task_breakdown": task_payload,
+                "production_pipeline": pipeline_payload,
+            },
+            _plan_headline("Generated full production plan", plan),
+            {
+                "plan": plan_payload,
+                "taskBreakdown": task_payload,
+                "productionPipeline": pipeline_payload,
+                "activePanel": "overview",
+            },
+        )
+
+    if name == "render_gdd":
+        gdd_payload = plan.gdd.model_dump(mode="json")
+        return _workbench_result(
+            name,
+            {"kind": "gdd_document", "summary": summary, "gdd": gdd_payload},
+            _plan_headline("Rendered GDD", plan),
+            {"gdd": gdd_payload, "activePanel": "gdd"},
+        )
+
+    if name == "prepare_production_pipeline":
+        pipeline_payload = (
+            plan.production_pipeline.model_dump(mode="json") if plan.production_pipeline else None
+        )
+        return _workbench_result(
+            name,
+            {"kind": "production_pipeline", "summary": summary, "production_pipeline": pipeline_payload},
+            _plan_headline("Prepared production pipeline", plan),
+            {"productionPipeline": pipeline_payload, "activePanel": "pipeline"},
+        )
+
+    if name == "prepare_unreal_plan":
+        unreal_plan = prepare_unreal_project(spec, request.engine_version)
+        payload = unreal_plan.model_dump(mode="json")
+        return _workbench_result(
+            name,
+            {"kind": "unreal_project_plan", "gameplay_title": spec.title, "unreal_plan": payload},
+            f"Prepared Unreal handoff for {spec.title}: {', '.join(unreal_plan.maps)}.",
+            {"unrealPlan": payload, "activePanel": "build"},
+        )
+
+    if name == "prepare_godot_plan":
+        godot_plan = prepare_godot_project(spec)
+        payload = godot_plan.model_dump(mode="json")
+        return _workbench_result(
+            name,
+            {"kind": "godot_project_plan", "gameplay_title": spec.title, "godot_plan": payload},
+            f"Prepared Godot quick-play handoff for {spec.title}: {', '.join(godot_plan.scenes)}.",
+            {"godotPlan": payload, "activePanel": "build"},
+        )
+
+    if name == "prepare_blender_plan":
+        blender_plan = prepare_blender_assets(spec)
+        payload = blender_plan.model_dump(mode="json")
+        return _workbench_result(
+            name,
+            {"kind": "blender_asset_plan", "gameplay_title": spec.title, "blender_plan": payload},
+            f"Prepared {len(blender_plan.jobs)} Blender greybox asset jobs for {spec.title}.",
+            {"blenderPlan": payload, "activePanel": "build"},
+        )
+
+    if name == "prepare_comfyui_plan":
+        comfyui_plan = prepare_comfyui_visuals(spec)
+        payload = comfyui_plan.model_dump(mode="json")
+        return _workbench_result(
+            name,
+            {"kind": "comfyui_visual_plan", "gameplay_title": spec.title, "comfyui_plan": payload},
+            f"Prepared {len(comfyui_plan.jobs)} ComfyUI visual reference jobs for {spec.title}.",
+            {"comfyuiPlan": payload, "activePanel": "visuals"},
+        )
+
+    if name == "prepare_creative_review_plan":
+        review = prepare_creative_review(
+            spec,
+            prepare_blender_assets(spec),
+            prepare_comfyui_visuals(spec),
+        )
+        payload = review.model_dump(mode="json")
+        return _workbench_result(
+            name,
+            {"kind": "creative_review_report", "gameplay_title": spec.title, "creative_review": payload},
+            (
+                f"Prepared {len(review.items)} creative review items for {spec.title}. "
+                "Unreal ingest remains blocked until user approvals are recorded."
+            ),
+            {"creativeReview": payload, "activePanel": "visuals"},
+        )
+
+    if name == "prepare_qa_plan":
+        qa_plan = prepare_qa_plan(spec)
+        payload = qa_plan.model_dump(mode="json")
+        return _workbench_result(
+            name,
+            {"kind": "qa_plan", "gameplay_title": spec.title, "qa_plan": payload},
+            f"Prepared QA checks for a {qa_plan.target_session_minutes}-minute slice of {spec.title}.",
+            {"qaPlan": payload, "activePanel": "qa"},
+        )
+
+    available = (
+        "extract_idea_seed, decompose_production_tasks, generate_game_production_plan, render_gdd, "
+        "prepare_production_pipeline, prepare_unreal_plan, prepare_godot_plan, prepare_blender_plan, "
+        "prepare_comfyui_plan, prepare_creative_review_plan, prepare_qa_plan"
+    )
+    return {
+        "isError": True,
+        "content": [{"type": "text", "text": f"Unknown Studio planning tool '{name}'. Available tools: {available}."}],
+    }
+
+
+@app.get("/workbench")
+def workbench() -> FileResponse:
+    return FileResponse(WORKBENCH_PATH)
+
+
+@app.post("/api/tools/{tool_name}")
+async def workbench_tool(tool_name: str, request: Request) -> dict[str, Any]:
+    """Data endpoint for the local planning workbench page."""
+
     arguments = await request.json()
-    return call_workbench_tool(tool_name, arguments)
+    return _workbench_tool(tool_name, arguments or {})
+
 
 
 def _infer_engine(plan: DirectorBuildPlan, override: str) -> str:
@@ -775,6 +1044,11 @@ def asset_execute_status(job_id: str) -> dict[str, Any]:
     return _ASSET_JOB_REGISTRY.status(job_id)
 
 
+@app.post("/api/assets/execute/{job_id}/cancel")
+def asset_execute_cancel(job_id: str) -> dict[str, Any]:
+    return _ASSET_JOB_REGISTRY.cancel(job_id)
+
+
 @app.post("/api/execute")
 def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
     engine = _infer_engine(req.plan, req.engine)
@@ -790,4 +1064,9 @@ def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
 @app.get("/api/execute/{job_id}")
 def execute_status(job_id: str) -> dict[str, Any]:
     return _EXECUTE_JOB_REGISTRY.status(job_id)
+
+
+@app.post("/api/execute/{job_id}/cancel")
+def execute_cancel(job_id: str) -> dict[str, Any]:
+    return _EXECUTE_JOB_REGISTRY.cancel(job_id)
 

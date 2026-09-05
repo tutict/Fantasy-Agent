@@ -39,6 +39,7 @@ from fantasy_agent.approval_manifest import (
     filter_approved_blender_assets,
     load_asset_approval_manifest,
 )
+from fantasy_agent.process_runner import ProcessCancelled
 from fantasy_agent.godot_mcp import (
     DEFAULT_WORKSPACE_ROOT,
     GodotMCPBridge,
@@ -163,6 +164,8 @@ def _run_comfyui_stage(
         result = comfyui_bridge.run_visual_reference_workflow(
             ComfyUIMCPExecuteRequest(**request_kwargs)
         )
+    except ProcessCancelled:
+        raise
     except Exception as exc:  # noqa: BLE001 - degrade gracefully on any failure
         stages.append(
             StageResult("comfyui", "failed", detail=f"{exc}; continuing without references")
@@ -221,6 +224,8 @@ def _run_blender_stage(
                 confirmed_side_effects=True,
             )
         )
+    except ProcessCancelled:
+        raise
     except Exception as exc:  # noqa: BLE001 - degrade gracefully on any failure
         stages.append(
             StageResult("blender", "failed", detail=f"{exc}; degrading to greybox")
@@ -493,6 +498,8 @@ def _run_gameplay_codegen(
             StageResult("gameplay", "done", detail=f"LLM generated {len(scripts)} scripts")
         )
         return scripts, True
+    except ProcessCancelled:
+        raise
     except Exception as exc:  # noqa: BLE001 - degrade to deterministic
         scripts = gameplay_codegen.deterministic_gameplay_scripts(
             plan.gameplay_spec,
@@ -617,6 +624,8 @@ def _run_approval_gate(
             exported_glb, manifest, manifest_path=approval_manifest_path
         )
         return approval.approved, approval, _approval_gate_stage(approval, approval_manifest_path)
+    except ProcessCancelled:
+        raise
     except Exception as exc:  # noqa: BLE001 - gate assets, keep greybox running
         return [], None, _blocked_approval_gate_stage(approval_manifest_path, exc)
 
@@ -839,6 +848,8 @@ def execute_godot_demo(
                     )
                 }
             )
+        except ProcessCancelled:
+            raise
         except Exception:
             # The approval_gate stage reports invalid manifests. Keep greybox
             # execution available when no approved assets can be ingested.
@@ -1179,6 +1190,8 @@ def execute_unreal_demo(
                 project_dir,
                 workspace_root,
             )
+        except ProcessCancelled:
+            raise
         except Exception as exc:  # noqa: BLE001 - expose adapter failures as stage results
             stages.append(StageResult("spec_compile", "failed", detail=str(exc)))
             return ExecutionResult("failed", session_id, project_dir, stages, planned)

@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 echo Starting Fantasy Agent Studio...
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-fantasy-agent.ps1" -App studio
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\start-fantasy-agent.ps1"
 
 if errorlevel 1 (
   echo.

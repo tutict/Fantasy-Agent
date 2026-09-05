@@ -1,7 +1,4 @@
 param(
-    [ValidateSet("studio", "web-console", "chatgpt-workbench", "godot-builder")]
-    [string]$App = "studio",
-
     [int]$Port = 0,
 
     [switch]$NoOpen,
@@ -20,42 +17,12 @@ function Write-Step {
     Write-Host "[Fantasy Agent] $Message"
 }
 
-function Get-AppConfig {
-    param([string]$Name)
-
-    if ($Name -eq "studio") {
-        return @{
-            Title = "Fantasy Agent Studio"
-            AppDir = "apps/studio"
-            DefaultPort = 7860
-            UrlPath = "/"
-        }
-    }
-
-    if ($Name -eq "chatgpt-workbench") {
-        return @{
-            Title = "Fantasy Agent ChatGPT Workbench"
-            AppDir = "apps/chatgpt-workbench"
-            DefaultPort = 8787
-            UrlPath = "/"
-        }
-    }
-
-    if ($Name -eq "godot-builder") {
-        return @{
-            Title = "Fantasy Agent Godot Builder"
-            AppDir = "apps/godot-builder"
-            DefaultPort = 8790
-            UrlPath = "/mcp"
-        }
-    }
-
-    return @{
-        Title = "Fantasy Agent Studio"
-        AppDir = "apps/web-console"
-        DefaultPort = 7860
-        UrlPath = "/"
-    }
+# Fantasy Agent ships a single standalone Studio process.
+$StudioConfig = @{
+    Title = "Fantasy Agent Studio"
+    AppDir = "apps/studio"
+    DefaultPort = 7860
+    UrlPath = "/"
 }
 
 function Test-HttpOk {
@@ -236,7 +203,7 @@ function Start-UvicornProcess {
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $repoRoot
 
-$config = Get-AppConfig -Name $App
+$config = $StudioConfig
 $selectedPort = if ($Port -gt 0) { $Port } else { [int]$config.DefaultPort }
 $healthUrl = "http://127.0.0.1:$selectedPort/health"
 

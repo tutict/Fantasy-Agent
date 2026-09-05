@@ -6,9 +6,9 @@ from pathlib import Path
 from fantasy_agent.contracts import PromptRequest
 
 
-def _load_web_console_app():
-    module_path = Path("apps/web-console/app/main.py").resolve()
-    spec = importlib.util.spec_from_file_location("fantasy_agent_web_console_app", module_path)
+def _load_studio_app():
+    module_path = Path("apps/studio/app/main.py").resolve()
+    spec = importlib.util.spec_from_file_location("fantasy_agent_studio_app", module_path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -17,13 +17,14 @@ def _load_web_console_app():
 
 
 def test_web_console_static_ui_exposes_flow_console_sections():
-    module = _load_web_console_app()
-    html = module.STATIC_DIR.joinpath("index.html").read_text(encoding="utf-8")
-    js = module.STATIC_DIR.joinpath("app.js").read_text(encoding="utf-8")
+    module = _load_studio_app()
+    console_dir = module.STATIC_DIR.joinpath("web-console")
+    html = console_dir.joinpath("index.html").read_text(encoding="utf-8")
+    js = console_dir.joinpath("app.js").read_text(encoding="utf-8")
     frontend_source = module.REPO_ROOT.joinpath("apps/frontend/src/console/FlowConsole.tsx").read_text(encoding="utf-8")
     frontend_i18n = module.REPO_ROOT.joinpath("apps/frontend/src/shared/i18n.ts").read_text(encoding="utf-8")
 
-    assert module.health()["agent"] == "web-console"
+    assert module.health()["agent"] == "fantasy-agent-studio"
     assert 'id="stage-strip"' in html or 'id="stage-strip"' in frontend_source
     assert 'id="gate-summary"' in html or 'id="gate-summary"' in frontend_source
     assert 'id="review-panel"' in html or 'id={`${tab}-panel`}' in frontend_source
@@ -55,15 +56,15 @@ def test_web_console_static_ui_exposes_flow_console_sections():
 
 
 def test_web_console_prefers_vite_frontend_dist_when_available(monkeypatch):
-    module = _load_web_console_app()
+    module = _load_studio_app()
     frontend_index = module.STATIC_DIR / "index.html"
     monkeypatch.setattr(module, "FRONTEND_INDEX_PATH", frontend_index)
 
-    assert Path(module.index().path) == frontend_index
+    assert Path(module.web_console().path) == frontend_index
 
 
 def test_web_console_plan_payload_feeds_review_and_pipeline_ui():
-    module = _load_web_console_app()
+    module = _load_studio_app()
     plan = module.plan(
         PromptRequest(
             prompt="a rooftop parkour demo with wall-runs, vaults, slides, boost pads, and checkpoints",
@@ -79,7 +80,7 @@ def test_web_console_plan_payload_feeds_review_and_pipeline_ui():
 
 
 def test_web_console_plan_payload_switches_to_godot_pipeline_when_selected():
-    module = _load_web_console_app()
+    module = _load_studio_app()
     plan = module.plan(
         PromptRequest(
             prompt="a rooftop parkour demo with wall-runs, vaults, slides, boost pads, and checkpoints",

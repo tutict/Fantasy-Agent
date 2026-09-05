@@ -418,6 +418,91 @@
         background: var(--bg);
       }
 
+      .api-form {
+        display: grid;
+        gap: 12px;
+        margin-top: 12px;
+      }
+
+      .api-toggle {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text-soft);
+        font-weight: 600;
+      }
+
+      .api-toggle input {
+        width: 18px;
+        height: 18px;
+        accent-color: var(--accent);
+      }
+
+      .api-field {
+        display: grid;
+        gap: 6px;
+      }
+
+      .api-field label {
+        color: var(--muted-strong);
+        font-size: 13px;
+      }
+
+      .api-field input,
+      .api-field select {
+        width: 100%;
+        box-sizing: border-box;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--field);
+        color: var(--text);
+        padding: 10px 12px;
+        font: inherit;
+        font-size: 14px;
+      }
+
+      .api-field input:focus,
+      .api-field select:focus {
+        outline: 2px solid var(--line-strong);
+        outline-offset: 1px;
+      }
+
+      .api-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 4px;
+      }
+
+      .api-state-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 10px;
+      }
+
+      .api-state-card {
+        display: grid;
+        gap: 6px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-muted);
+        padding: 12px;
+      }
+
+      .api-state-card span {
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .api-state-card code {
+        display: block;
+        overflow-wrap: anywhere;
+        color: var(--text-soft);
+        font: 12px/1.5 "Cascadia Code", Consolas, monospace;
+      }
+
       .mcp-panel {
         height: 100%;
         overflow: auto;
@@ -731,7 +816,11 @@
           </button>
           <button type="button" data-target="mcp">
             <span class="nav-icon" aria-hidden="true">MCP</span>
-            <span class="nav-label" data-i18n="mcpTitle">MCP Endpoint</span>
+            <span class="nav-label" data-i18n="mcpTitle">Tool Environment</span>
+          </button>
+          <button type="button" data-target="api">
+            <span class="nav-icon" aria-hidden="true">API</span>
+            <span class="nav-label" data-i18n="apiTitle">API Access</span>
           </button>
         </nav>
 
@@ -760,16 +849,16 @@
           <div class="mcp-panel">
             <div class="mcp-grid">
               <article class="card wide">
-                <h3 data-i18n="mcpUrlTitle">ChatGPT Apps MCP URL</h3>
-                <p data-i18n="mcpUrlBody">Use this endpoint when connecting Fantasy Agent through an HTTPS tunnel.</p>
-                <code id="mcp-url">http://127.0.0.1/mcp</code>
+                <h3 data-i18n="mcpUrlTitle">Local endpoint</h3>
+                <p data-i18n="mcpUrlBody">Studio only listens on 127.0.0.1. No external client or MCP endpoint is exposed.</p>
+                <code id="mcp-url">http://127.0.0.1/api/tool-status</code>
               </article>
               <article class="card wide">
                 <div class="mcp-status-shell">
                   <div class="mcp-status-header">
                     <div>
                       <h3 data-i18n="mcpStatusTitle">Required app connectivity</h3>
-                      <p data-i18n="mcpStatusBody">Check whether local MCP services and required production apps are reachable before running the pipeline.</p>
+                      <p data-i18n="mcpStatusBody">Check whether required local production apps and tools are reachable before running the pipeline.</p>
                     </div>
                     <button class="mcp-refresh" id="mcp-refresh" type="button" data-i18n="mcpRefresh">Run check</button>
                   </div>
@@ -786,8 +875,71 @@
                 <ul>
                   <li data-i18n="flowGenerate">Generate a gameplay-first production plan.</li>
                   <li data-i18n="flowReview">Review ComfyUI, Blender, Godot, Unreal, and QA handoffs.</li>
-                  <li data-i18n="flowExecute">Execute MCP production steps only after confirming the actual operation.</li>
+                  <li data-i18n="flowExecute">Execute local production steps only after confirming the actual operation.</li>
                 </ul>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="api">
+          <div class="mcp-panel">
+            <div class="mcp-grid">
+              <article class="card wide">
+                <h3 data-i18n="apiFormTitle">Model API access</h3>
+                <p data-i18n="apiFormBody">Connect a model API to enrich gameplay and GDD generation. Leave it disabled to stay fully deterministic and offline.</p>
+                <form class="api-form" id="api-form" autocomplete="off">
+                  <label class="api-toggle">
+                    <input type="checkbox" id="api-enabled" />
+                    <span data-i18n="apiEnabled">Enable model API</span>
+                  </label>
+                  <div class="api-field">
+                    <label for="api-provider" data-i18n="apiProvider">Provider</label>
+                    <select id="api-provider">
+                      <option value="anthropic" data-i18n="apiProviderAnthropic">Anthropic</option>
+                      <option value="openai_compatible" data-i18n="apiProviderOpenAI">OpenAI-compatible</option>
+                    </select>
+                  </div>
+                  <div class="api-field">
+                    <label for="api-base-url" data-i18n="apiBaseUrl">Base URL</label>
+                    <input type="text" id="api-base-url" spellcheck="false" placeholder="https://api.anthropic.com" />
+                  </div>
+                  <div class="api-field">
+                    <label for="api-model" data-i18n="apiModel">Model</label>
+                    <input type="text" id="api-model" spellcheck="false" placeholder="claude-opus-4-8" />
+                  </div>
+                  <div class="api-field">
+                    <label for="api-key" data-i18n="apiKey">API key</label>
+                    <input type="password" id="api-key" autocomplete="off" spellcheck="false" data-i18n-placeholder="apiKeyPlaceholder" placeholder="Leave blank to keep the stored key" />
+                  </div>
+                  <div class="api-field">
+                    <label for="api-timeout" data-i18n="apiTimeout">Timeout (seconds)</label>
+                    <input type="number" id="api-timeout" min="5" max="600" step="1" />
+                  </div>
+                  <div class="api-actions">
+                    <button class="mcp-refresh" id="api-save" type="button" data-i18n="apiSave">Save</button>
+                    <button class="mcp-refresh" id="api-test" type="button" data-i18n="apiTest">Test connection</button>
+                    <button class="mcp-refresh" id="api-clear" type="button" data-i18n="apiClear">Clear credentials</button>
+                  </div>
+                </form>
+              </article>
+              <article class="card wide">
+                <div class="mcp-status-shell">
+                  <div class="mcp-status-header">
+                    <div>
+                      <h3 data-i18n="apiStateTitle">Current configuration</h3>
+                      <p data-i18n="apiStateBody">Shows what is actually in effect. The API key is never sent back to the browser.</p>
+                    </div>
+                    <button class="mcp-refresh" id="api-refresh" type="button" data-i18n="apiRefresh">Reload</button>
+                  </div>
+                  <p class="mcp-status-summary" id="api-summary" data-i18n="apiStateIdle">Not loaded yet.</p>
+                  <div class="api-state-grid" id="api-state-grid" aria-live="polite"></div>
+                </div>
+              </article>
+              <article class="card wide">
+                <h3 data-i18n="apiSafetyTitle">Where credentials are stored</h3>
+                <p data-i18n="apiSafetyBody">Keys are saved on this machine only and masked in every response. Requests go directly from this machine to the endpoint above. Planning tools stay read-only, and engine execution still requires explicit confirmation.</p>
+                <code id="api-config-path">-</code>
               </article>
             </div>
           </div>
@@ -802,10 +954,10 @@
           productLabel: "Desktop Studio",
           consoleTitle: "Flow Console",
           workbenchTitle: "Planning Workbench",
-          mcpTitle: "MCP Endpoint",
+          mcpTitle: "Tool Environment",
           localServer: "Local server",
-          mcpUrlTitle: "ChatGPT Apps MCP URL",
-          mcpUrlBody: "Use this endpoint when connecting Fantasy Agent through an HTTPS tunnel.",
+          mcpUrlTitle: "Local endpoint",
+          mcpUrlBody: "Studio only listens on 127.0.0.1. No external client or MCP endpoint is exposed.",
           previewTitle: "Local preview",
           previewBody: "The Studio combines the local flow console and planning workbench in one desktop launcher.",
           safetyTitle: "Safety boundary",
@@ -814,10 +966,10 @@
           flowTitle: "Typical flow",
           flowGenerate: "Generate a gameplay-first production plan.",
           flowReview: "Review ComfyUI, Blender, Godot, Unreal, and QA handoffs.",
-          flowExecute: "Execute MCP production steps only after confirming the actual operation.",
-          mcpStatusTitle: "Required app connectivity",
+          flowExecute: "Execute local production steps only after confirming the actual operation.",
+          mcpStatusTitle: "Required tool connectivity",
           mcpStatusBody:
-            "Check whether local MCP services and required production apps are reachable before running the pipeline.",
+            "Check whether required local production apps and tools are reachable before running the pipeline.",
           mcpRefresh: "Run check",
           mcpChecking: "Checking local services...",
           mcpStatusIdle: "Not checked yet.",
@@ -832,13 +984,11 @@
           mcpTarget: "Target",
           mcpNextAction: "Next action",
           mcpCheckFailed: "Status check failed. Confirm the Studio backend is running.",
-          mcpDetailStudioReady: "JSON-RPC endpoint is mounted with {tool_count} planning tools.",
-          mcpNextStudioReady: "Use an HTTPS tunnel when connecting this endpoint to ChatGPT Apps.",
           mcpDetailComfyReady: "Connected to ComfyUI ({version}).",
           mcpNextComfyReady: "Run capability probe before submitting visual reference jobs.",
           mcpDetailComfyMissing: "No local ComfyUI endpoint responded.",
           mcpNextComfyMissing: "Start ComfyUI and confirm it is listening on 127.0.0.1:8188.",
-          mcpDetailExecutableReady: "Executable found. MCP execution still requires explicit confirmation.",
+          mcpDetailExecutableReady: "Executable found. Local execution still requires explicit confirmation.",
           mcpDetailExecutableMissing: "No executable was found on PATH, in configured environment variables, or common install folders.",
           mcpNextBlenderReady: "Generate Blender Python first, then execute only after confirmation.",
           mcpNextBlenderMissing: "Install Blender or set BLENDER_EXECUTABLE to blender.exe.",
@@ -850,6 +1000,50 @@
           mcpNextGithubReady: "Run gh auth status before creating PRs or issue automation.",
           mcpDetailGithubOptional: "GitHub MCP is optional; gh is not required for local prototype generation.",
           mcpNextGithubOptional: "Install GitHub CLI only if you want PR, issue, or repository automation.",
+          apiTitle: "API Access",
+          apiFormTitle: "Model API access",
+          apiFormBody:
+            "Connect a model API to enrich gameplay and GDD generation. Leave it disabled to stay fully deterministic and offline.",
+          apiEnabled: "Enable model API",
+          apiProvider: "Provider",
+          apiProviderAnthropic: "Anthropic",
+          apiProviderOpenAI: "OpenAI-compatible",
+          apiBaseUrl: "Base URL",
+          apiModel: "Model",
+          apiKey: "API key",
+          apiKeyPlaceholder: "Leave blank to keep the stored key",
+          apiTimeout: "Timeout (seconds)",
+          apiSave: "Save",
+          apiTest: "Test connection",
+          apiTesting: "Testing connection...",
+          apiClear: "Clear credentials",
+          apiRefresh: "Reload",
+          apiStateTitle: "Current configuration",
+          apiStateBody: "Shows what is actually in effect. The API key is never sent back to the browser.",
+          apiStateIdle: "Not loaded yet.",
+          apiStatusLabel: "Status",
+          apiStatusReady: "Ready",
+          apiStatusDisabled: "Disabled",
+          apiStatusMissingKey: "Enabled, but no key",
+          apiEndpointLabel: "Endpoint",
+          apiModelLabel: "Model",
+          apiKeyLabel: "Key",
+          apiKeyNotSet: "not set",
+          apiKeyStored: "stored locally",
+          apiKeyFromEnv: "from environment",
+          apiSaveOk: "Settings saved.",
+          apiSaveFailed: "Save failed.",
+          apiClearOk: "Credentials cleared.",
+          apiLoadFailed: "Failed to load settings.",
+          apiTestConnected: "Connected in {ms} ms.",
+          apiTestMissingKey: "No API key configured.",
+          apiTestHttpError: "{detail}",
+          apiTestUnreachable: "{detail}",
+          apiTestBadResponse: "{detail}",
+          apiTestInvalid: "{detail}",
+          apiSafetyTitle: "Where credentials are stored",
+          apiSafetyBody:
+            "Keys are saved on this machine only and masked in every response. Requests go directly from this machine to the endpoint above. Planning tools stay read-only, and engine execution still requires explicit confirmation.",
           consoleFrameTitle: "Fantasy Agent Flow Console",
           workbenchFrameTitle: "Fantasy Agent Planning Workbench",
           collapseSidebar: "Collapse sidebar",
@@ -862,10 +1056,10 @@
           productLabel: "桌面工作室",
           consoleTitle: "流程控制台",
           workbenchTitle: "策划工作台",
-          mcpTitle: "MCP 端点",
+          mcpTitle: "工具环境",
           localServer: "本地服务",
-          mcpUrlTitle: "ChatGPT Apps MCP 地址",
-          mcpUrlBody: "通过 HTTPS 隧道连接 Fantasy Agent 时使用这个端点。",
+          mcpUrlTitle: "本地端点",
+          mcpUrlBody: "Studio 只监听 127.0.0.1，不对外暴露 MCP 端点，也不接受外部客户端接入。",
           previewTitle: "本地预览",
           previewBody: "Studio 把流程控制台和策划工作台合并到一个桌面启动器里。",
           safetyTitle: "安全边界",
@@ -873,9 +1067,9 @@
           flowTitle: "典型流程",
           flowGenerate: "生成玩法优先的生产计划。",
           flowReview: "审阅 ComfyUI、Blender、Godot、Unreal 和 QA 交接结果。",
-          flowExecute: "确认实际操作后再执行 MCP 生产步骤。",
-          mcpStatusTitle: "所需应用连接检测",
-          mcpStatusBody: "在运行流水线前，检查本地 MCP 服务和所需生产应用是否可连接。",
+          flowExecute: "确认实际操作后再执行本地生产步骤。",
+          mcpStatusTitle: "所需工具连接检测",
+          mcpStatusBody: "在运行流水线前，检查所需本地生产应用和工具是否可连接。",
           mcpRefresh: "运行检测",
           mcpChecking: "正在检测本地服务...",
           mcpStatusIdle: "尚未检测。",
@@ -890,13 +1084,11 @@
           mcpTarget: "目标",
           mcpNextAction: "下一步",
           mcpCheckFailed: "状态检测失败，请确认 Studio 后端正在运行。",
-          mcpDetailStudioReady: "JSON-RPC 端点已挂载，包含 {tool_count} 个策划工具。",
-          mcpNextStudioReady: "连接到 ChatGPT Apps 时，请通过 HTTPS 隧道暴露此端点。",
           mcpDetailComfyReady: "已连接 ComfyUI（{version}）。",
           mcpNextComfyReady: "提交视觉参考任务前，先运行能力探测。",
           mcpDetailComfyMissing: "没有本地 ComfyUI 端点响应。",
           mcpNextComfyMissing: "启动 ComfyUI，并确认它监听在 127.0.0.1:8188。",
-          mcpDetailExecutableReady: "已找到可执行文件。MCP 执行仍需明确确认。",
+          mcpDetailExecutableReady: "已找到可执行文件。本地执行仍需明确确认。",
           mcpDetailExecutableMissing: "未在 PATH、已配置环境变量或常见安装目录中找到可执行文件。",
           mcpNextBlenderReady: "先生成 Blender Python，确认后再执行。",
           mcpNextBlenderMissing: "安装 Blender，或将 BLENDER_EXECUTABLE 指向 blender.exe。",
@@ -908,6 +1100,48 @@
           mcpNextGithubReady: "创建 PR 或 issue 自动化前，先运行 gh auth status。",
           mcpDetailGithubOptional: "GitHub MCP 是可选项；本地原型生成不依赖 gh。",
           mcpNextGithubOptional: "只有需要 PR、issue 或仓库自动化时才需要安装 GitHub CLI。",
+          apiTitle: "API 接入",
+          apiFormTitle: "模型 API 接入",
+          apiFormBody: "接入模型 API 可以让玩法与 GDD 生成更丰富。关闭时完全走确定性生成，可离线运行。",
+          apiEnabled: "启用模型 API",
+          apiProvider: "服务商",
+          apiProviderAnthropic: "Anthropic",
+          apiProviderOpenAI: "OpenAI 兼容",
+          apiBaseUrl: "接口地址",
+          apiModel: "模型",
+          apiKey: "API Key",
+          apiKeyPlaceholder: "留空表示保持已保存的密钥",
+          apiTimeout: "超时（秒）",
+          apiSave: "保存",
+          apiTest: "测试连接",
+          apiTesting: "正在测试连接...",
+          apiClear: "清除密钥",
+          apiRefresh: "重新载入",
+          apiStateTitle: "当前生效配置",
+          apiStateBody: "展示实际生效的配置。API Key 不会回传到浏览器。",
+          apiStateIdle: "尚未载入。",
+          apiStatusLabel: "状态",
+          apiStatusReady: "可用",
+          apiStatusDisabled: "已关闭",
+          apiStatusMissingKey: "已启用但缺少密钥",
+          apiEndpointLabel: "接口地址",
+          apiModelLabel: "模型",
+          apiKeyLabel: "密钥",
+          apiKeyNotSet: "未设置",
+          apiKeyStored: "本地已保存",
+          apiKeyFromEnv: "来自环境变量",
+          apiSaveOk: "设置已保存。",
+          apiSaveFailed: "保存失败。",
+          apiClearOk: "密钥已清除。",
+          apiLoadFailed: "载入设置失败。",
+          apiTestConnected: "连接成功，耗时 {ms} ms。",
+          apiTestMissingKey: "尚未配置 API Key。",
+          apiTestHttpError: "{detail}",
+          apiTestUnreachable: "{detail}",
+          apiTestBadResponse: "{detail}",
+          apiTestInvalid: "{detail}",
+          apiSafetyTitle: "密钥保存在哪里",
+          apiSafetyBody: "密钥只保存在本机，所有响应中都做脱敏处理。请求由本机直接发往上面的接口地址。策划工具保持只读，引擎执行仍需明确确认。",
           consoleFrameTitle: "Fantasy Agent 流程控制台",
           workbenchFrameTitle: "Fantasy Agent 策划工作台",
           collapseSidebar: "收起侧边栏",
@@ -921,7 +1155,8 @@
       const panels = {
         workbench: { titleKey: "workbenchTitle", href: "/workbench" },
         console: { titleKey: "consoleTitle", href: "/web-console" },
-        mcp: { titleKey: "mcpTitle", href: "/mcp" }
+        mcp: { titleKey: "mcpTitle", href: "/api/tool-status" },
+        api: { titleKey: "apiTitle", href: "/api/settings/llm" }
       };
 
       let activePanel = "workbench";
@@ -935,11 +1170,25 @@
       const mcpRefresh = document.querySelector("#mcp-refresh");
       const mcpStatusGrid = document.querySelector("#mcp-status-grid");
       const mcpStatusSummary = document.querySelector("#mcp-status-summary");
+      const apiEnabled = document.querySelector("#api-enabled");
+      const apiProvider = document.querySelector("#api-provider");
+      const apiBaseUrl = document.querySelector("#api-base-url");
+      const apiModel = document.querySelector("#api-model");
+      const apiKey = document.querySelector("#api-key");
+      const apiTimeout = document.querySelector("#api-timeout");
+      const apiSave = document.querySelector("#api-save");
+      const apiTestButton = document.querySelector("#api-test");
+      const apiClearButton = document.querySelector("#api-clear");
+      const apiRefresh = document.querySelector("#api-refresh");
+      const apiSummary = document.querySelector("#api-summary");
+      const apiStateGrid = document.querySelector("#api-state-grid");
+      const apiConfigPath = document.querySelector("#api-config-path");
       const sidebarMinWidth = 206;
       const sidebarMaxWidth = 390;
       let mcpStatusPayload = null;
+      let apiSettingsPayload = null;
       document.querySelector("#server-url").textContent = origin;
-      document.querySelector("#mcp-url").textContent = `${origin}/mcp`;
+      document.querySelector("#mcp-url").textContent = `${origin}/api/tool-status`;
 
       function initialLocale() {
         const params = new URLSearchParams(window.location.search);
@@ -1060,7 +1309,7 @@
         mcpStatusSummary.textContent = t("mcpChecking");
         try {
           const query = new URLSearchParams({ engine: selectedEngineVersion() });
-          const response = await fetch(`/api/mcp/status?${query.toString()}`, { headers: { Accept: "application/json" } });
+          const response = await fetch(`/api/tool-status?${query.toString()}`, { headers: { Accept: "application/json" } });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           renderMcpStatus(await response.json());
         } catch (error) {
@@ -1072,8 +1321,156 @@
         }
       }
 
+      function collectApiSettings() {
+        return {
+          enabled: Boolean(apiEnabled.checked),
+          provider: apiProvider.value,
+          base_url: apiBaseUrl.value.trim(),
+          model: apiModel.value.trim(),
+          api_key: apiKey.value.trim(),
+          timeout_seconds: Number(apiTimeout.value) || 60
+        };
+      }
+
+      function apiStatusText(payload) {
+        if (!payload) return "-";
+        if (payload.ready) return t("apiStatusReady");
+        return payload.enabled ? t("apiStatusMissingKey") : t("apiStatusDisabled");
+      }
+
+      function renderApiState(payload) {
+        if (!payload) return;
+        let keyText = t("apiKeyNotSet");
+        if (payload.api_key_configured) {
+          const source = payload.api_key_source === "env" ? t("apiKeyFromEnv") : t("apiKeyStored");
+          keyText = `${payload.api_key_masked} · ${source}`;
+        }
+        const rows = [
+          [t("apiStatusLabel"), apiStatusText(payload)],
+          [t("apiEndpointLabel"), payload.base_url || "-"],
+          [t("apiModelLabel"), payload.model || "-"],
+          [t("apiKeyLabel"), keyText]
+        ];
+        apiStateGrid.innerHTML = rows
+          .map(
+            ([label, value]) => `
+              <article class="api-state-card">
+                <span>${escapeHtml(label)}</span>
+                <code>${escapeHtml(String(value))}</code>
+              </article>
+            `
+          )
+          .join("");
+        if (apiConfigPath) {
+          apiConfigPath.textContent = payload.config_path || "-";
+        }
+      }
+
+      function applyApiSettings(payload) {
+        apiSettingsPayload = payload;
+        apiEnabled.checked = Boolean(payload?.enabled);
+        apiProvider.value = payload?.provider || "anthropic";
+        apiBaseUrl.value = payload?.base_url || "";
+        apiModel.value = payload?.model || "";
+        apiKey.value = "";
+        apiTimeout.value = payload?.timeout_seconds ?? 60;
+        renderApiState(payload);
+      }
+
+      function setApiBusy(busy, message) {
+        apiSave.disabled = busy;
+        apiTestButton.disabled = busy;
+        apiClearButton.disabled = busy;
+        apiRefresh.disabled = busy;
+        if (message) {
+          apiSummary.textContent = message;
+        }
+      }
+
+      async function loadApiSettings(options = {}) {
+        apiRefresh.disabled = true;
+        if (!options.silent) {
+          apiSummary.textContent = t("mcpChecking");
+        }
+        try {
+          const response = await fetch("/api/settings/llm", { headers: { Accept: "application/json" } });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          applyApiSettings(await response.json());
+          if (!options.silent) {
+            apiSummary.textContent = apiStatusText(apiSettingsPayload);
+          }
+        } catch (error) {
+          apiSummary.textContent = `${t("apiLoadFailed")} ${error}`;
+        } finally {
+          apiRefresh.disabled = false;
+        }
+      }
+
+      async function saveApiSettings(options = {}) {
+        setApiBusy(true, t("apiTesting"));
+        try {
+          const response = await fetch("/api/settings/llm", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(collectApiSettings())
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            apiSummary.textContent = `${t("apiSaveFailed")} ${payload?.error || `HTTP ${response.status}`}`;
+            return;
+          }
+          applyApiSettings(payload);
+          apiSummary.textContent = t("apiSaveOk");
+          if (options.testAfter) {
+            await runApiTest();
+          }
+        } catch (error) {
+          apiSummary.textContent = `${t("apiSaveFailed")} ${error}`;
+        } finally {
+          setApiBusy(false);
+        }
+      }
+
+      async function runApiTest() {
+        setApiBusy(true, t("apiTesting"));
+        try {
+          const response = await fetch("/api/settings/llm/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify(collectApiSettings())
+          });
+          const payload = await response.json();
+          if (payload?.settings) {
+            applyApiSettings(payload.settings);
+          }
+          const key = payload?.detail_key ? t(payload.detail_key) : payload?.detail || "";
+          const message = interpolate(key, { ms: payload?.latency_ms ?? 0, detail: payload?.detail || "" });
+          apiSummary.textContent = payload?.ok
+            ? `${t("apiStatusReady")} · ${message}`
+            : message || t("apiSaveFailed");
+        } catch (error) {
+          apiSummary.textContent = `${t("apiSaveFailed")} ${error}`;
+        } finally {
+          setApiBusy(false);
+        }
+      }
+
+      async function clearApiSettings() {
+        setApiBusy(true, t("mcpChecking"));
+        try {
+          const response = await fetch("/api/settings/llm", { method: "DELETE", headers: { Accept: "application/json" } });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          applyApiSettings(await response.json());
+          apiSummary.textContent = t("apiClearOk");
+        } catch (error) {
+          apiSummary.textContent = `${t("apiSaveFailed")} ${error}`;
+        } finally {
+          setApiBusy(false);
+        }
+      }
+
       function localizedHref(href, params = {}) {
-        if (href === "/mcp") return href;
+        if (href === "/api/tool-status") return href;
         const search = new URLSearchParams({ locale: uiLocale, theme: uiTheme, ...params });
         return `${href}?${search.toString()}`;
       }
@@ -1095,6 +1492,16 @@
         document.querySelectorAll("[data-i18n]").forEach((node) => {
           node.textContent = t(node.dataset.i18n);
         });
+        document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+          node.placeholder = t(node.dataset.i18nPlaceholder);
+        });
+        if (apiSettingsPayload) {
+          renderApiState(apiSettingsPayload);
+          apiSave.textContent = t("apiSave");
+          apiTestButton.textContent = t("apiTest");
+          apiClearButton.textContent = t("apiClear");
+          apiRefresh.textContent = t("apiRefresh");
+        }
         document.querySelectorAll("[data-locale]").forEach((button) => {
           button.classList.toggle("active", button.dataset.locale === uiLocale);
         });
@@ -1133,6 +1540,9 @@
         if (target === "mcp" && !mcpStatusPayload) {
           loadMcpStatus();
         }
+        if (target === "api") {
+          loadApiSettings({ silent: Boolean(apiSettingsPayload) });
+        }
       }
 
       function setSidebarWidth(width) {
@@ -1168,6 +1578,20 @@
       });
 
       mcpRefresh.addEventListener("click", loadMcpStatus);
+
+      apiSave.addEventListener("click", () => saveApiSettings());
+      apiTestButton.addEventListener("click", () => saveApiSettings({ testAfter: true }));
+      apiClearButton.addEventListener("click", clearApiSettings);
+      apiRefresh.addEventListener("click", () => loadApiSettings());
+      apiProvider.addEventListener("change", () => {
+        if (apiProvider.value === "openai_compatible" && !apiBaseUrl.value.trim()) {
+          apiBaseUrl.value = "https://api.openai.com/v1";
+          if (!apiModel.value.trim()) apiModel.value = "gpt-4o-mini";
+        } else if (apiProvider.value === "anthropic" && !apiBaseUrl.value.trim()) {
+          apiBaseUrl.value = "https://api.anthropic.com";
+          if (!apiModel.value.trim()) apiModel.value = "claude-opus-4-8";
+        }
+      });
 
       sidebarToggle.addEventListener("click", () => {
         setSidebarCollapsed(!shell.classList.contains("sidebar-collapsed"));

@@ -11,8 +11,8 @@
 - 定义 `gameplay-schema.yaml`。
 - 提供确定性的第一版 workflow。
 - 文档化编排规则与游戏设计哲学。
-- 增加兼容 ChatGPT Apps 的策划工作台，提供只读 MCP 规划工具和交互式 widget。
-- 增加本地 Studio、流程控制台和 MCP 连接检测页。
+- 增加本地策划工作台页面，提供只读规划 REST 工具与交互式界面。
+- 增加本地 Studio、流程控制台和工具环境检测页。
 
 ## 第二阶段：玩法与 GDD 生成
 
@@ -21,7 +21,7 @@
 - 将 GDD 渲染到 `generated/gdd.md`。
 - 增加潜入、生存、谜题、战斗和移动原型示例。
 - 增加循环连贯性、必填字段和目标会话时长测试。
-- 在保持只读安全边界的前提下，将 ChatGPT Workbench 工具从确定性规划扩展到 LLM 支持的玩法与 GDD 生成。
+- 在保持只读安全边界的前提下，将策划工作台工具从确定性规划扩展到 LLM 支持的玩法与 GDD 生成。
 
 ## 第三阶段：Blender MCP 集成
 
@@ -86,13 +86,13 @@
 - [x] M7.5：Unreal DataTable/DataAsset adapter 与机器可执行 QA 接入执行链。
 
 后续验证重点：真实 Unreal Editor 导入 adapter 源、PIE 指标采集、Godot packaged playtest 和跨版本 schema migration。
-## 第八阶段：ChatGPT 生产工作台
+## 第八阶段：独立工作台生产化
 
-- 增加 ChatGPT 托管生产计划的认证项目会话。
+- 增加本地托管生产计划的项目会话。
 - 持久化已批准的 spec、GDD 和交接 manifest。
 - 为会修改 Unreal、Godot、Blender、ComfyUI、GitHub 和打包工具的操作增加执行前确认。
-- 将生产事件流回 ChatGPT widget。
-- 等私有 Developer Mode 工作流稳定后，再准备提交就绪审阅。
+- 将生产事件流回 Studio 工作台页面。
+- 保持单进程本地自闭环；不引入任何对外暴露的协议端点。
 
 ## 非目标
 

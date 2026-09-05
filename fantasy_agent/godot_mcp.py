@@ -15,6 +15,11 @@ from fantasy_agent.path_safety import (
     display_workspace_path,
     resolve_workspace_path,
 )
+from fantasy_agent.process_runner import (
+    current_cancel_event,
+    is_streaming_runner,
+    run_streaming,
+)
 from fantasy_agent.contracts import (
     EnemyPressureTuning,
     GameplaySpec,
@@ -95,7 +100,7 @@ class GodotMCPBridge:
         runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
     ) -> None:
         self.workspace_root = Path(workspace_root).resolve()
-        self.runner = runner or subprocess.run
+        self.runner = runner or run_streaming
 
     def create_godot_project_structure(
         self,
@@ -193,16 +198,13 @@ class GodotMCPBridge:
         stdout_path, stderr_path = self._log_paths(project_file.parent.name, "import")
         env = dict(os.environ)
         try:
-            process = self.runner(
+            process = self._run_tool(
                 command,
                 cwd=project_file.parent,
                 env=env,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                capture_output=True,
                 timeout=request.timeout_seconds,
-                check=False,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
             )
         except FileNotFoundError as exc:
             stderr = f"Godot executable not found: {request.godot_executable}"
@@ -400,6 +402,42 @@ class GodotMCPBridge:
             return resolve_workspace_path(path, workspace_root=self.workspace_root)
         except WorkspacePathError as exc:
             raise GodotMCPSafetyError(str(exc)) from exc
+
+    def _run_tool(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        timeout: float | None,
+        stdout_path: Path,
+        stderr_path: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a local tool, streaming output into the given log paths.
+
+        Injected test doubles keep the legacy ``subprocess.run`` contract and
+        never see the streaming keywords, so existing fakes keep working.
+        """
+
+        shared: dict[str, Any] = {
+            "cwd": cwd,
+            "env": env,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "capture_output": True,
+            "timeout": timeout,
+            "check": False,
+        }
+        if is_streaming_runner(self.runner):
+            return self.runner(
+                command,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+                cancel_event=current_cancel_event(),
+                **shared,
+            )
+        return self.runner(command, **shared)
 
     def _log_paths(self, project_name: str, operation: str) -> tuple[Path, Path]:
         safe_name = _slug(project_name)

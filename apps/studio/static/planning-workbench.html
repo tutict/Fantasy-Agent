@@ -1068,15 +1068,11 @@
         <nav class="nav-list">
           <a class="nav-item active" href="/workbench?locale=zh-CN">
             <span class="nav-icon" aria-hidden="true">✦</span>
-            <span class="nav-label" data-i18n="navPlanning">GPT 策划工作台</span>
+            <span class="nav-label" data-i18n="navPlanning">策划工作台</span>
           </a>
           <a class="nav-item" href="/web-console?locale=zh-CN">
             <span class="nav-icon" aria-hidden="true">⌁</span>
             <span class="nav-label" data-i18n="navFlow">流程控制台</span>
-          </a>
-          <a class="nav-item" href="/mcp">
-            <span class="nav-icon" aria-hidden="true">◎</span>
-            <span class="nav-label" data-i18n="navMcp">MCP 端点</span>
           </a>
         </nav>
 
@@ -1245,7 +1241,9 @@
     </main>
 
     <script>
-      const bridge = window.openai;
+      // Standalone workbench: no external agent bridge is available.
+      // Tool calls go straight to the local Studio REST endpoints.
+      const bridge = null;
       const PLANNING_HANDOFF_KEY = "fantasy-agent-planning-handoff";
       const THEME_KEY = "fantasy-agent-theme";
       const urlParams = new URLSearchParams(window.location.search);
@@ -1253,7 +1251,7 @@
       const strings = {
         en: {
           appEyebrow: "Game Production",
-          navPlanning: "GPT Planning Workbench",
+          navPlanning: "Planning Workbench",
           navFlow: "Flow Console",
           navMcp: "MCP Endpoint",
           localService: "Local Service",
@@ -1335,7 +1333,7 @@
         },
         "zh-CN": {
           appEyebrow: "游戏生产",
-          navPlanning: "GPT 策划工作台",
+          navPlanning: "策划工作台",
           navFlow: "流程控制台",
           navMcp: "MCP 端点",
           localService: "本地服务",
@@ -1418,7 +1416,7 @@
       function initialLocale() {
         const requested =
           urlParams.get("locale") ||
-          localStorage.getItem("fantasy-agent-chatgpt-workbench-locale") ||
+          localStorage.getItem("fantasy-agent-planning-workbench-locale") ||
           bridge?.locale;
         if (requested?.startsWith("zh")) return "zh-CN";
         if (requested === "en") return "en";
@@ -1854,7 +1852,7 @@
           if (bridge?.callTool) {
             result = await bridge.callTool(name, payload);
           } else {
-            const response = await fetch(`/debug/tool/${name}`, {
+            const response = await fetch(`/api/tools/${name}`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload)
@@ -1990,7 +1988,7 @@
             window.location.origin
           );
         } catch {
-          // Embedded ChatGPT runtimes may restrict storage; rendering still works.
+          // Restricted storage runtimes may throw; rendering still works.
         }
       }
 
@@ -2213,7 +2211,7 @@
 
       function applyLocale(locale) {
         state.locale = locale;
-        localStorage.setItem("fantasy-agent-chatgpt-workbench-locale", locale);
+        localStorage.setItem("fantasy-agent-planning-workbench-locale", locale);
         document.documentElement.lang = locale;
         document.querySelectorAll("[data-i18n]").forEach((node) => {
           node.textContent = t(node.dataset.i18n);

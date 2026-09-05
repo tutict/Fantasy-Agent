@@ -13,9 +13,11 @@ from fantasy_agent.workflows import (
 )
 
 
-def _load_creative_review_app():
-    module_path = Path("apps/creative-review-agent/app/main.py").resolve()
-    spec = importlib.util.spec_from_file_location("fantasy_agent_creative_review_app", module_path)
+def _load_studio_app():
+    """The creative review capability now lives in the single Studio process."""
+
+    module_path = Path("apps/studio/app/main.py").resolve()
+    spec = importlib.util.spec_from_file_location("fantasy_agent_studio_app", module_path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -46,8 +48,8 @@ def test_prepare_creative_review_blocks_unreal_ingest_until_user_decisions():
     assert any(item.revision_prompt for item in review.items if item.source == "comfyui")
 
 
-def test_creative_review_agent_endpoint_returns_report_model():
-    module = _load_creative_review_app()
+def test_creative_review_endpoint_returns_report_model():
+    module = _load_studio_app()
     director_plan = run_director_workflow(
         PromptRequest(
             prompt="a stealth courier escapes a haunted train station",
@@ -60,9 +62,9 @@ def test_creative_review_agent_endpoint_returns_report_model():
         comfyui_plan=prepare_comfyui_visuals(director_plan.gameplay_spec),
     )
 
-    response = module.review(request)
+    response = module.creative_review(request)
 
-    assert module.health()["agent"] == "creative-review-agent"
+    assert module.health()["agent"] == "fantasy-agent-studio"
     assert response.source == "creative-review-agent"
     assert response.items
     assert response.handoff_artifacts == [

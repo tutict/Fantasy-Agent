@@ -314,6 +314,11 @@ export interface ExecuteJob {
   error?: string;
 }
 
+export interface JobCancelResponse {
+  job_id?: string;
+  status?: string;
+}
+
 export type AssetExecutePreview = ExecutePreview;
 export type AssetExecuteStart = ExecuteStart;
 export type AssetExecuteJob = ExecuteJob;
@@ -339,4 +344,37 @@ export interface McpStatus {
   required_ready?: number;
   required_total?: number;
   services?: McpService[];
+}
+
+/** UI-safe view of the LLM API settings: the raw key is never sent to the browser. */
+export interface LlmApiSettings {
+  enabled?: boolean;
+  provider?: string;
+  base_url?: string;
+  model?: string;
+  timeout_seconds?: number;
+  api_key_masked?: string;
+  api_key_configured?: boolean;
+  api_key_source?: string;
+  ready?: boolean;
+  config_path?: string;
+}
+
+export interface LlmApiTestResult {
+  ok?: boolean;
+  status?: string;
+  latency_ms?: number;
+  detail?: string;
+  detail_key?: string;
+  settings?: LlmApiSettings;
+}
+
+/** What the settings form sends. An empty key keeps the stored secret. */
+export interface LlmApiSettingsInput {
+  enabled: boolean;
+  provider: string;
+  base_url: string;
+  model: string;
+  api_key: string;
+  timeout_seconds: number;
 }

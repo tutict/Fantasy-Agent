@@ -1,6 +1,9 @@
 .idea/
 .vscode/
 
+# Local agent working memory (not project source)
+.workbuddy/
+
 # Local agent/tool configuration
 .claude/*.local.json
 

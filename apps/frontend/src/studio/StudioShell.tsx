@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
-import { getMcpStatus } from "../shared/api";
+import { getLlmSettings, deleteLlmSettings, getMcpStatus, putLlmSettings, testLlmSettings } from "../shared/api";
 import { makeTranslator, studioI18n } from "../shared/i18n";
 import {
   STUDIO_LOCALE_KEY,
@@ -10,15 +10,16 @@ import {
   initialLocale,
   initialTheme
 } from "../shared/storage";
-import type { Locale, McpService, McpStatus, Theme } from "../shared/types";
+import type { Locale, LlmApiSettings, McpService, McpStatus, Theme } from "../shared/types";
 import "../styles/studio.css";
 
-type PanelKey = "workbench" | "console" | "mcp";
+type PanelKey = "workbench" | "console" | "mcp" | "api";
 
 const panels: Record<PanelKey, { titleKey: string; icon: string }> = {
   workbench: { titleKey: "workbench", icon: "PL" },
   console: { titleKey: "console", icon: "FC" },
-  mcp: { titleKey: "mcp", icon: "MC" }
+  mcp: { titleKey: "mcp", icon: "MC" },
+  api: { titleKey: "api", icon: "AI" }
 };
 
 export function StudioShell() {
@@ -75,7 +76,6 @@ export function StudioShell() {
   }, [activePanel, checkingMcp, loadMcpStatus, mcpStatus]);
 
   const localizedHref = (href: string, params: Record<string, string> = {}) => {
-    if (href === "/mcp") return href;
     const search = new URLSearchParams({ locale, theme, ...params });
     const base = import.meta.env.BASE_URL.replace(/\/$/, "");
     const frontendRoute = href === "/web-console" && import.meta.env.DEV && base ? `${base}${href}` : href;
@@ -136,7 +136,7 @@ export function StudioShell() {
 
         <section className="studio-status">
           <strong>{t(panels[activePanel].titleKey)}</strong>
-          <code>{activePanel === "mcp" ? "/mcp" : activePanel === "console" ? "/web-console" : "/workbench"}</code>
+          <code>{panelEndpoint(activePanel)}</code>
         </section>
 
         <div
@@ -211,9 +211,219 @@ export function StudioShell() {
               )}
             </div>
           </section>
+          <section className={`api-panel ${activePanel === "api" ? "active" : ""}`} data-panel="api">
+            <ApiSettingsPanel t={t} />
+          </section>
         </section>
       </section>
     </main>
+  );
+}
+
+function panelEndpoint(panel: PanelKey) {
+  if (panel === "mcp") return "/api/tool-status";
+  if (panel === "console") return "/web-console";
+  if (panel === "api") return "/api/settings/llm";
+  return "/workbench";
+}
+
+type Translator = (key: string, args?: Record<string, unknown>) => string;
+
+function ApiSettingsPanel({ t }: { t: Translator }) {
+  const [settings, setSettings] = useState<LlmApiSettings | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [provider, setProvider] = useState("anthropic");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [model, setModel] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [timeoutSeconds, setTimeoutSeconds] = useState(60);
+  const [busy, setBusy] = useState(false);
+  const [summary, setSummary] = useState("");
+  const [failed, setFailed] = useState(false);
+
+  const apply = useCallback((payload: LlmApiSettings) => {
+    setSettings(payload);
+    setEnabled(Boolean(payload.enabled));
+    setProvider(payload.provider || "anthropic");
+    setBaseUrl(payload.base_url || "");
+    setModel(payload.model || "");
+    // The backend only ever returns a masked key, so never echo it into the field.
+    setApiKey("");
+    setTimeoutSeconds(Math.round(payload.timeout_seconds ?? 60));
+  }, []);
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      apply(await getLlmSettings());
+      setFailed(false);
+    } catch (error) {
+      setSummary(`${t("apiLoadFailed")} ${error}`);
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }, [apply, t]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const collect = () => ({
+    enabled,
+    provider,
+    base_url: baseUrl,
+    model,
+    api_key: apiKey,
+    timeout_seconds: timeoutSeconds
+  });
+
+  const save = async (testAfter: boolean) => {
+    setBusy(true);
+    try {
+      const payload = await putLlmSettings(collect());
+      if (payload.error) {
+        setSummary(`${t("apiSaveFailed")} ${payload.error}`);
+        setFailed(true);
+        return;
+      }
+      apply(payload);
+      setSummary(t("apiSaveOk"));
+      setFailed(false);
+      if (testAfter) await runTest();
+    } catch (error) {
+      setSummary(`${t("apiSaveFailed")} ${error}`);
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runTest = async () => {
+    setBusy(true);
+    setSummary(t("apiTesting"));
+    try {
+      const payload = await testLlmSettings(collect());
+      if (payload.settings) apply(payload.settings);
+      const message = payload.detail_key ? t(payload.detail_key, { ms: payload.latency_ms ?? 0, detail: payload.detail }) : payload.detail || "";
+      setSummary(payload.ok ? `${t("apiStateReady")} · ${message}` : message || t("apiSaveFailed"));
+      setFailed(!payload.ok);
+    } catch (error) {
+      setSummary(`${t("apiSaveFailed")} ${error}`);
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clear = async () => {
+    setBusy(true);
+    try {
+      apply(await deleteLlmSettings());
+      setSummary(t("apiClearOk"));
+      setFailed(false);
+    } catch (error) {
+      setSummary(`${t("apiSaveFailed")} ${error}`);
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const keyLabel = settings?.api_key_configured
+    ? `${settings.api_key_masked || ""} (${settings.api_key_source === "environment" ? t("apiKeyEnv") : t("apiKeyStored")})`
+    : t("apiKeyNone");
+
+  return (
+    <>
+      <div className="api-header">
+        <div>
+          <h3>{t("apiTitle")}</h3>
+          <p>{t("apiHint")}</p>
+        </div>
+        <button className="primary-action" type="button" id="api-refresh" onClick={() => void load()} disabled={busy}>
+          {t("apiRefresh")}
+        </button>
+      </div>
+
+      <form
+        className="api-form"
+        id="api-form"
+        autoComplete="off"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save(false);
+        }}
+      >
+        <label className="api-toggle">
+          <input type="checkbox" id="api-enabled" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />
+          <span>{t("apiEnabled")}</span>
+        </label>
+
+        <div className="api-field">
+          <label htmlFor="api-provider">{t("apiProvider")}</label>
+          <select id="api-provider" value={provider} onChange={(event) => setProvider(event.target.value)}>
+            <option value="anthropic">anthropic</option>
+            <option value="openai_compatible">openai_compatible</option>
+          </select>
+        </div>
+
+        <div className="api-field">
+          <label htmlFor="api-base-url">{t("apiBaseUrl")}</label>
+          <input id="api-base-url" type="text" spellCheck={false} placeholder="https://api.anthropic.com" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
+        </div>
+
+        <div className="api-field">
+          <label htmlFor="api-model">{t("apiModel")}</label>
+          <input id="api-model" type="text" spellCheck={false} placeholder="claude-opus-4-8" value={model} onChange={(event) => setModel(event.target.value)} />
+        </div>
+
+        <div className="api-field">
+          <label htmlFor="api-key">{t("apiKey")}</label>
+          <input id="api-key" type="password" autoComplete="off" spellCheck={false} placeholder={t("apiKeyPlaceholder")} value={apiKey} onChange={(event) => setApiKey(event.target.value)} />
+        </div>
+
+        <div className="api-field">
+          <label htmlFor="api-timeout">{t("apiTimeout")}</label>
+          <input id="api-timeout" type="number" min={5} max={600} step={1} value={timeoutSeconds} onChange={(event) => setTimeoutSeconds(Number(event.target.value))} />
+        </div>
+
+        <div className="api-actions">
+          <button className="primary-action" type="button" id="api-save" disabled={busy} onClick={() => void save(false)}>
+            {t("apiSave")}
+          </button>
+          <button className="primary-action" type="button" id="api-test" disabled={busy} onClick={() => void runTest()}>
+            {t("apiTest")}
+          </button>
+          <button className="primary-action" type="button" id="api-clear" disabled={busy} onClick={() => void clear()}>
+            {t("apiClear")}
+          </button>
+        </div>
+      </form>
+
+      <p className="api-summary" id="api-summary" data-state={failed ? "error" : "ok"}>
+        {summary || (settings ? (settings.ready ? t("apiStateReady") : t("apiStateDisabled")) : t("apiStateIdle"))}
+      </p>
+
+      <div className="api-state-grid" id="api-state-grid" aria-live="polite">
+        <article className="api-state-card">
+          <span>{t("apiStatusReady")}</span>
+          <strong>{settings?.ready ? t("apiStateReady") : t("apiStateDisabled")}</strong>
+        </article>
+        <article className="api-state-card">
+          <span>{t("apiStatusKey")}</span>
+          <code>{keyLabel}</code>
+        </article>
+        <article className="api-state-card">
+          <span>{t("apiStatusEndpoint")}</span>
+          <code>{settings?.base_url || "-"}</code>
+        </article>
+        <article className="api-state-card">
+          <span>{t("apiConfigPath")}</span>
+          <code>{settings?.config_path || "-"}</code>
+        </article>
+      </div>
+    </>
   );
 }
 

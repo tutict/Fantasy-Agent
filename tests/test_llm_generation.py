@@ -10,7 +10,10 @@ Covers the three behaviors that matter:
 from __future__ import annotations
 
 import importlib
+import io
+import json
 from unittest import mock
+from urllib import error
 
 import pytest
 
@@ -98,27 +101,87 @@ def test_env_flag_enables_llm(monkeypatch):
     assert spec.title == "LLM Cat Quest"
 
 
-def test_complete_json_strips_code_fence():
-    """The fenced-JSON cleanup should yield a parsed dict."""
+def _anthropic_response(text: str):
+    """Build a context-manager stand-in for urlopen() returning Anthropic JSON."""
+
+    body = json.dumps({"model": "claude-test", "content": [{"type": "text", "text": text}]})
+    handle = mock.MagicMock()
+    handle.read.return_value = body.encode("utf-8")
+    handle.__enter__.return_value = handle
+    handle.__exit__.return_value = False
+    return handle
+
+
+@pytest.fixture
+def anthropic_credentials(tmp_path, monkeypatch):
+    """Point settings at a throwaway dir and enable a keyed Anthropic provider."""
+
+    monkeypatch.setenv("FANTASY_AGENT_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("FANTASY_AGENT_MODEL", raising=False)
+    monkeypatch.delenv("FANTASY_AGENT_BASE_URL", raising=False)
+    from fantasy_agent.api_settings import LLMApiSettings, save_settings
+
+    save_settings(LLMApiSettings(enabled=True, api_key="sk-test-1234567890"))
+    return tmp_path
+
+
+def test_complete_json_strips_code_fence(anthropic_credentials):
     fenced = '```json\n{"a": 1}\n```'
 
-    fake_message = mock.Mock()
-    fake_message.content = [mock.Mock(text=fenced)]
-    fake_client = mock.Mock()
-    fake_client.messages.create.return_value = fake_message
-
-    with mock.patch.object(llm, "get_client", return_value=fake_client):
+    with mock.patch(
+        "urllib.request.urlopen", return_value=_anthropic_response(fenced)
+    ):
         result = llm.complete_json(system="s", user="u")
 
     assert result == {"a": 1}
 
 
-def test_complete_json_raises_on_non_object():
-    fake_message = mock.Mock()
-    fake_message.content = [mock.Mock(text="[1, 2, 3]")]
-    fake_client = mock.Mock()
-    fake_client.messages.create.return_value = fake_message
-
-    with mock.patch.object(llm, "get_client", return_value=fake_client):
+def test_complete_json_raises_on_non_object(anthropic_credentials):
+    with mock.patch(
+        "urllib.request.urlopen", return_value=_anthropic_response("[1, 2, 3]")
+    ):
         with pytest.raises(llm.LLMError):
+            llm.complete_json(system="s", user="u")
+
+
+def test_complete_json_posts_to_anthropic_messages_api(anthropic_credentials):
+    """The default provider must work over HTTP without the anthropic SDK."""
+
+    with mock.patch(
+        "urllib.request.urlopen", return_value=_anthropic_response('{"a": 1}')
+    ) as mocked:
+        result = llm.complete_json(system="sys", user="usr")
+
+    assert result == {"a": 1}
+    sent = mocked.call_args[0][0]
+    assert sent.full_url == "https://api.anthropic.com/v1/messages"
+    assert sent.get_header("X-api-key") == "sk-test-1234567890"
+    assert sent.get_header("Anthropic-version") == "2023-06-01"
+    body = json.loads(sent.data.decode("utf-8"))
+    assert body["system"] == "sys"
+    assert body["messages"] == [{"role": "user", "content": "usr"}]
+
+
+def test_complete_json_requires_key_for_anthropic(tmp_path, monkeypatch):
+    monkeypatch.setenv("FANTASY_AGENT_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(llm.LLMError, match="No API key"):
+        llm.complete_json(system="s", user="u")
+
+
+def test_complete_json_normalizes_http_error(anthropic_credentials):
+    http_error = error.HTTPError(
+        "https://api.anthropic.com/v1/messages",
+        429,
+        "Too Many Requests",
+        {},
+        io.BytesIO(b'{"error":"rate limited"}'),
+    )
+
+    with mock.patch("urllib.request.urlopen", side_effect=http_error):
+        with pytest.raises(llm.LLMError, match="HTTP 429"):
             llm.complete_json(system="s", user="u")

@@ -187,7 +187,7 @@ export function FlowConsole() {
     localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
-  useDemoJobPolling({
+  const { cancelling: demoCancelling, cancel: cancelDemoJob } = useDemoJobPolling({
     jobId: pollJobId,
     setJobId: setPollJobId,
     setResult: setGenerateResult,
@@ -195,17 +195,19 @@ export function FlowConsole() {
     addActivity,
     doneLabel: t("generateDone"),
     failedLabel: t("generateFailed"),
+    cancelledLabel: t("generateCancelled"),
     projectDirOnDone: true
   });
 
-  useAssetJobPolling({
+  const { cancelling: assetCancelling, cancel: cancelAssetJob } = useAssetJobPolling({
     jobId: pollAssetJobId,
     setJobId: setPollAssetJobId,
     setResult: setAssetResult,
     setStatus,
     addActivity,
     doneLabel: t("assetExecutionDone"),
-    failedLabel: t("assetExecutionFailed")
+    failedLabel: t("assetExecutionFailed"),
+    cancelledLabel: t("assetExecutionCancelled")
   });
 
   const recordCorrection = () => {
@@ -650,6 +652,11 @@ export function FlowConsole() {
             <button className="secondary-action" type="button" id="asset-execute-button" disabled={status === "running"} onClick={() => void onAssetExecutionClick()}>
               {t("assetExecutionButton")}
             </button>
+            {pollAssetJobId ? (
+              <button className="secondary-action" type="button" id="asset-execute-stop" disabled={assetCancelling} onClick={() => void cancelAssetJob()}>
+                {assetCancelling ? t("stoppingJob") : t("stopJob")}
+              </button>
+            ) : null}
             {assetEffects ? (
               <div id="asset-execute-confirm" className="generate-confirm">
                 <strong>{t("generateConfirmTitle")}</strong>
@@ -727,6 +734,11 @@ export function FlowConsole() {
             <button className="primary-action" type="button" id="generate-demo-button" disabled={status === "running"} onClick={() => void onGenerateClick()}>
               {t("generateButton")}
             </button>
+            {pollJobId ? (
+              <button className="secondary-action" type="button" id="generate-stop" disabled={demoCancelling} onClick={() => void cancelDemoJob()}>
+                {demoCancelling ? t("stoppingJob") : t("stopJob")}
+              </button>
+            ) : null}
             {generateEffects ? (
               <div id="generate-confirm" className="generate-confirm">
                 <strong>{t("generateConfirmTitle")}</strong>

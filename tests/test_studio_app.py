@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import threading
+import time
 from pathlib import Path
 
 from fantasy_agent.contracts import PromptRequest
@@ -21,30 +23,47 @@ def test_studio_serves_combined_desktop_panel():
     paths = {route.path for route in module.app.routes}
 
     assert module.health()["agent"] == "fantasy-agent-studio"
+    assert module.health()["mode"] == "standalone"
     assert {
         "/",
         "/web-console",
         "/workbench",
         "/health",
         "/api/plan",
-        "/api/mcp/status",
+        "/api/tasks",
+        "/api/design",
+        "/api/gdd",
+        "/api/pipeline",
+        "/api/idea-seed",
+        "/api/qa",
+        "/api/tool-contracts",
+        "/api/unreal/plan",
+        "/api/godot/plan",
+        "/api/blender/plan",
+        "/api/comfyui/plan",
+        "/api/creative-review",
+        "/api/tool-status",
         "/api/manual-correction/targets",
         "/api/manual-correction/open",
-        "/mcp",
+        "/api/tools/{tool_name}",
     } <= paths
+    # The standalone workbench must not expose an inbound MCP endpoint.
+    assert "/mcp" not in paths
+    assert "/debug/tool/{tool_name}" not in paths
     assert module.STATIC_DIR.joinpath("index.html").exists()
+    assert module.STATIC_DIR.joinpath("planning-workbench.html").exists()
     assert module.WEB_CONSOLE_STATIC_DIR.joinpath("index.html").exists()
     assert module.FRONTEND_DIST_DIR.name == "dist"
     assert module.FRONTEND_INDEX_PATH.name == "index.html"
     assert module.WORKBENCH_PATH.exists()
-    assert module.mcp_info()["endpoint"] == "/mcp"
     status = module.mcp_status()
     assert status["engine_kind"] == "unreal"
-    assert status["required_total"] >= 4
+    assert status["required_total"] >= 3
     assert 0 <= status["required_ready"] <= status["required_total"]
     services = {service["id"]: service for service in status["services"]}
     service_ids = set(services)
-    assert {"studio-mcp", "comfyui", "blender", "unreal", "godot", "github"} <= service_ids
+    assert {"comfyui", "blender", "unreal", "godot", "github"} <= service_ids
+    assert "studio-mcp" not in service_ids
     for service in services.values():
         assert service["detail_key"].startswith("mcp")
         assert service["next_action_key"].startswith("mcp")
@@ -107,7 +126,7 @@ def test_studio_shell_includes_bilingual_ui_controls():
     assert 'data-target="workbench"' in html or 'data-target={key}' in frontend_source
     assert 'id="mcp-refresh"' in html or 'id="mcp-refresh"' in frontend_source
     assert 'id="mcp-status-grid"' in html or 'id="mcp-status-grid"' in frontend_source
-    assert "/api/mcp/status" in html or "getMcpStatus" in frontend_source
+    assert "/api/tool-status" in html or "getMcpStatus" in frontend_source
     assert "mcpStatusTitle" in html or "mcpStatusTitle" in frontend_i18n
     assert 'activePanel, setActivePanel] = useState<PanelKey>("workbench")' in frontend_source
     assert "Flow Console" in html or "consoleFrameTitle" in frontend_i18n
@@ -138,19 +157,13 @@ def test_studio_routes_plan_and_workbench_tools_through_one_server():
     assert plan.production_pipeline is not None
     assert plan.production_pipeline.next_stage == "comfyui_visual_production"
 
-    tool = module._handle_rpc(
-        {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": {
-                "name": "prepare_production_pipeline",
-                "arguments": request.model_dump(mode="json"),
-            },
-        }
+    tool = module._workbench_tool(
+        "prepare_production_pipeline", request.model_dump(mode="json")
     )
-    assert tool is not None
-    assert tool["result"]["structuredContent"]["kind"] == "production_pipeline"
+    assert tool["structuredContent"]["kind"] == "production_pipeline"
+
+    unknown = module._workbench_tool("does_not_exist", request.model_dump(mode="json"))
+    assert unknown["isError"] is True
 
 
 def test_execute_confirmation_gate_runs_no_job():
@@ -384,6 +397,52 @@ def test_spec_bundle_preview_api_returns_validation_artifacts_and_traces():
     assert any(trace.spec_field.startswith("config_tables.tables.") for trace in response.traces)
     assert response.executable_qa.results
     assert "/api/specs/preview" in {route.path for route in module.app.routes}
+
+
+def test_studio_exposes_job_cancel_endpoints():
+    module = _load_studio_app()
+    routes = {route.path for route in module.app.routes}
+
+    assert "/api/execute/{job_id}/cancel" in routes
+    assert "/api/assets/execute/{job_id}/cancel" in routes
+    assert module.execute_cancel("nope") == {"status": "unknown", "job_id": "nope"}
+    assert module.asset_execute_cancel("nope") == {"status": "unknown", "job_id": "nope"}
+
+
+def test_cancel_endpoint_stops_a_running_job(monkeypatch):
+    module = _load_studio_app()
+    from fantasy_agent import process_runner
+    from fantasy_agent.workflows import run_director_workflow
+
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+    running = threading.Event()
+
+    def slow_execute(req, *, confirmed):
+        running.set()
+        while True:
+            event = process_runner.current_cancel_event()
+            if event is not None and event.is_set():
+                raise process_runner.ProcessCancelled("godot import")
+            time.sleep(0.05)
+
+    monkeypatch.setattr(module, "_build_execution_result", slow_execute)
+
+    started = module.execute_demo(
+        module.ExecuteDemoRequest(plan=plan, engine="Godot 4", confirmed=True)
+    )
+    job_id = started["job_id"]
+    assert running.wait(timeout=5)
+
+    assert module.execute_cancel(job_id) == {"job_id": job_id, "status": "cancelling"}
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline and module.execute_status(job_id)["status"] != "cancelled":
+        time.sleep(0.05)
+
+    assert module.execute_status(job_id)["status"] == "cancelled"
+    module._EXECUTE_POOL.shutdown(wait=True)
 
 
 def test_frontend_includes_spec_bundle_panel():

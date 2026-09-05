@@ -187,7 +187,7 @@ def prepare_blender_assets(spec: GameplaySpec) -> BlenderAssetPlan:
         BlenderAssetPlan(
             job_name=f"{spec.title} Greybox Asset Pass",
             jobs=jobs,
-            python_entrypoint="apps/blender-worker/app/procedural_asset_job.py",
+            python_entrypoint="fantasy_agent/blender_procedural_job.py",
             handoff_artifacts=[],
         )
     ).jobs
@@ -212,7 +212,7 @@ def prepare_blender_assets(spec: GameplaySpec) -> BlenderAssetPlan:
         BlenderAssetPlan(
             job_name=f"{spec.title} Greybox Asset Pass",
             jobs=jobs,
-            python_entrypoint="apps/blender-worker/app/procedural_asset_job.py",
+            python_entrypoint="fantasy_agent/blender_procedural_job.py",
             handoff_artifacts=[
                 "generated/assets/*.fbx",
                 "generated/blender/*.py",
@@ -1263,8 +1263,16 @@ def _build_task_breakdown(
     )
 
 
-def run_director_workflow(request: PromptRequest) -> DirectorBuildPlan:
-    gameplay_spec = design_from_prompt(request)
+def run_director_workflow(request: PromptRequest, *, use_llm: bool | None = None) -> DirectorBuildPlan:
+    """Run the full planning orchestration.
+
+    Args:
+        request: The prompt and scope constraints.
+        use_llm: Optional LLM switch forwarded to the gameplay generator. When
+            None the generator reads the environment flag / saved UI setting.
+    """
+
+    gameplay_spec = design_from_prompt(request, use_llm=use_llm)
     unreal_plan = prepare_unreal_project(gameplay_spec, _unreal_engine_version(request.engine_version))
     godot_plan = prepare_godot_project(gameplay_spec, _godot_engine_version(request.engine_version))
     blender_plan = prepare_blender_assets(gameplay_spec)

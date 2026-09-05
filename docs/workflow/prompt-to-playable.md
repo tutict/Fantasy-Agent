@@ -49,11 +49,11 @@ GDD Writer 将 gameplay spec 渲染为 Markdown。它不添加新范围，只澄
 - Unreal Builder 准备工程结构、地图、Blueprint 类和自动化步骤。
 - Godot Builder 准备轻量 quick-play 工程，用于检查循环时长和路线可读性。
 
-## 阶段 5：MCP 执行
+## 阶段 5：本地工具执行
 
-未来 MCP 服务执行受控操作：
+本地工具桥接层在明确确认后执行受控操作：
 
-- ChatGPT Apps MCP 暴露只读规划工具和 widget 状态。
+- Studio 的 `/api/tools/{tool_name}` 端点暴露只读规划工具。
 - Blender MCP 生成 allowlist 脚本，要求明确执行确认，运行 `bpy` 任务，捕获日志并导出资产。
 - ComfyUI MCP 准备 allowlist workflow JSON，要求明确执行确认，提交 prompt job，捕获 prompt ID，并可下载已审阅的参考输出。
 - Unreal MCP 创建、导入和验证工程内容。

@@ -7,6 +7,10 @@ import type {
   ExecuteJob,
   ExecutePreview,
   ExecuteStart,
+  JobCancelResponse,
+  LlmApiSettings,
+  LlmApiSettingsInput,
+  LlmApiTestResult,
   ManualTargetsPayload,
   McpStatus,
   ProductionSpecBundle,
@@ -97,9 +101,50 @@ export function getExecuteJob(jobId: string): Promise<ExecuteJob> {
   return jsonRequest<ExecuteJob>(`/api/execute/${encodeURIComponent(jobId)}`);
 }
 
+export function cancelExecuteJob(jobId: string): Promise<JobCancelResponse> {
+  return jsonRequest<JobCancelResponse>(`/api/execute/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST"
+  });
+}
+
 export function getMcpStatus(engine: string): Promise<McpStatus> {
   const query = new URLSearchParams({ engine });
-  return jsonRequest<McpStatus>(`/api/mcp/status?${query.toString()}`);
+  return jsonRequest<McpStatus>(`/api/tool-status?${query.toString()}`);
+}
+
+/**
+ * LLM settings calls deliberately bypass `jsonRequest`: the backend answers
+ * with 200 + `ok: false` for a failed probe (and 400 + `{ error }` for an
+ * invalid payload), and the panel needs those bodies to explain what happened.
+ */
+async function settingsRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, {
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    ...init
+  });
+  return (await response.json()) as T;
+}
+
+export function getLlmSettings(): Promise<LlmApiSettings> {
+  return jsonRequest<LlmApiSettings>("/api/settings/llm");
+}
+
+export function putLlmSettings(settings: LlmApiSettingsInput): Promise<LlmApiSettings & { error?: string }> {
+  return settingsRequest<LlmApiSettings & { error?: string }>("/api/settings/llm", {
+    method: "PUT",
+    body: JSON.stringify(settings)
+  });
+}
+
+export function testLlmSettings(settings: LlmApiSettingsInput): Promise<LlmApiTestResult> {
+  return settingsRequest<LlmApiTestResult>("/api/settings/llm/test", {
+    method: "POST",
+    body: JSON.stringify(settings)
+  });
+}
+
+export function deleteLlmSettings(): Promise<LlmApiSettings> {
+  return jsonRequest<LlmApiSettings>("/api/settings/llm", { method: "DELETE" });
 }
 
 
@@ -153,6 +198,12 @@ export function startAssetExecution(
 
 export function getAssetExecutionJob(jobId: string): Promise<AssetExecuteJob> {
   return jsonRequest<AssetExecuteJob>(`/api/assets/execute/${encodeURIComponent(jobId)}`);
+}
+
+export function cancelAssetExecutionJob(jobId: string): Promise<JobCancelResponse> {
+  return jsonRequest<JobCancelResponse>(`/api/assets/execute/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST"
+  });
 }
 
 

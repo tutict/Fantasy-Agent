@@ -1,6 +1,6 @@
 # Fantasy Agent 编排规则
 
-Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清晰边界内的任务，接收结构化输入，返回结构化输出，未来可以由 LLM、LangGraph 节点、本地脚本或 MCP 工具驱动。
+Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，不是独立服务进程。每个角色只负责清晰边界内的任务，接收结构化输入，返回结构化输出，由 Studio 单进程直接调用，彼此之间没有 RPC。
 
 ## 全局规则
 
@@ -10,14 +10,15 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - 优先做一个内聚循环，而不是多个断开的功能。
 - 不创建空洞的程序化空间。
 - 不隐藏不确定性。必须标出假设和未解决的生产风险。
-- MCP 工具的实际操作必须在执行前声明清楚。
+- 本地工具（Blender / ComfyUI / Unreal / Godot / GitHub CLI）的实际操作必须在执行前声明清楚。
+- Studio 是唯一的对外入口，只监听 `127.0.0.1`；不得新增任何供外部客户端接入的 MCP 端点。
 - QA 检查必须先于打包和视觉扩展。
 - 面向人的文档、界面和设计说明优先使用简体中文。
 - 实现标识保持英文：类名、Blueprint 名、目录路径、MCP tool 名和 metric key 不翻译。
 - ComfyUI 是视觉参考工人，不是玩法权威。
 - ComfyUI 与 Blender 输出必须先通过 Creative Review，再进入 Unreal 或 Godot 导入。
 - Godot 是快速可玩验证目标，不替代 Unreal 主线生产导入。
-- ChatGPT Apps 工具是交互式计划入口；没有明确确认时不得执行生产实际操作。
+- 策划工作台是交互式计划入口，由 Studio 以本地 REST 端点提供；没有明确确认时不得执行生产实际操作。
 
 ## 语言规则
 
@@ -26,13 +27,13 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 - 核心 DSL 仍保存稳定英文主字段；需要多语言时，字段路径翻译放在可选 `i18n` 下。
 - GDD 与审阅文本可以按 `PromptRequest.output_locales` 输出多语言版本。
 
-## 智能体交接合约
+## 角色交接合约
 
-智能体通过 `fantasy_agent/contracts.py` 中的 Pydantic 模型，以及 `generated/` 下的 YAML 或 Markdown 产物交换信息。
+各角色通过 `fantasy_agent/contracts.py` 中的 Pydantic 模型，以及 `generated/` 下的 YAML 或 Markdown 产物交换信息。
 
 必要交接属性：
 
-- `source`：产出智能体或工具。
+- `source`：产出角色或工具。
 - `schema_version`：gameplay DSL 或 tool contract 版本。
 - `inputs`：来源 prompt、spec 或 manifest。
 - `outputs`：生成产物。
@@ -88,10 +89,11 @@ Fantasy Agent 的智能体是模块化生产工人。每个智能体只负责清
 可选 LLM 后端：
 
 - 默认使用确定性生成（`design_from_prompt_deterministic`），基于关键词与模板，无需任何外部依赖或 API key。
-- 设置环境变量 `FANTASY_AGENT_USE_LLM=1`（或在 CLI 传 `--llm`）可启用 LLM 后端，由 `fantasy_agent/llm.py` 统一调用 Claude 生成 `GameplaySpec`。
-- 模型默认 `claude-opus-4-8`，可通过 `FANTASY_AGENT_MODEL` 覆盖；凭据走标准的 `ANTHROPIC_API_KEY`。
-- LLM 依赖是可选安装项：`pip install fantasy-agent[llm]`。
-- 任何 LLM 失败（未安装、无 key、API 错误、输出非法或未通过 `GameplaySpec` 校验）都会自动回退到确定性生成，绝不中断流程。无论走哪条路径，返回的都是同一套 `GameplaySpec` 契约，下游 Unreal/Godot/Blender/ComfyUI/QA 编排无需改动。
+- 设置环境变量 `FANTASY_AGENT_USE_LLM=1`（或在 CLI 传 `--llm`）可启用 LLM 后端，由 `fantasy_agent/llm.py` 统一生成 `GameplaySpec`。
+- Studio 的「API 接入」面板可在界面上配置 provider、base URL、model、key 和 timeout，写入 `generated/config/llm-api.json`；`fantasy_agent/api_settings.py` 是唯一的配置读写入口，凭据只存本机且对外只返回掩码。
+- provider 支持 `anthropic` 与 `openai_compatible`（含本地网关）；两条路径都用标准库发 HTTP，**不强制安装 SDK**，`pip install fantasy-agent[llm]` 只是可选的 SDK 逃生通道。
+- 模型默认 `claude-opus-4-8`，可通过 `FANTASY_AGENT_MODEL` 覆盖；凭据走标准的 `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`。界面配置的优先级高于环境变量。
+- 任何 LLM 失败（未配置、无 key、API 错误、输出非法或未通过 `GameplaySpec` 校验）都会自动回退到确定性生成，绝不中断流程。无论走哪条路径，返回的都是同一套 `GameplaySpec` 契约，下游 Unreal/Godot/Blender/ComfyUI/QA 编排无需改动。
 
 命令行入口：
 
@@ -300,13 +302,13 @@ ComfyUI → Godot 参考链（M3）：
 - 审阅关卡会阻塞引擎导入，直到资产被批准、修改或拒绝。
 - 反馈必须说明资产名称、玩法角色和具体修改请求。
 
-## ChatGPT Workbench
+## 策划工作台
 
 职责：
 
-- 将 Fantasy Agent 暴露为兼容 ChatGPT Apps 的交互式工作台。
-- 将 ChatGPT tool call 路由到本地智能体使用的同一套结构化规划合约。
-- 在 widget 中渲染玩法、GDD、Unreal、Godot、Blender、ComfyUI 和 QA 交接。
+- 在 Studio 内提供本地交互式策划工作台页面（`/workbench`）。
+- 通过 `POST /api/tools/{tool_name}` 本地 REST 端点路由到各角色使用的同一套结构化规划合约。
+- 在页面上渲染玩法、GDD、Unreal、Godot、Blender、ComfyUI 和 QA 交接。
 
 输入：
 
@@ -320,9 +322,10 @@ ComfyUI → Godot 参考链（M3）：
 规则：
 
 - 在明确执行前确认机制实现前，工具必须保持只读且幂等。
-- Widget 状态可以总结计划，但实现标识保持英文。
-- ChatGPT 交互必须保持玩法优先层级和 i18n 输出。
+- 页面状态可以总结计划，但实现标识保持英文。
+- 工作台交互必须保持玩法优先层级和 i18n 输出。
 - 默认不得从该界面启动 Unreal、Godot、Blender、ComfyUI、打包、写文件或推送 GitHub。
+- 所有端点只监听 `127.0.0.1`，不对外暴露协议端点。
 
 studio 一键生成（M5a / M6c / M6d）：
 
@@ -331,7 +334,7 @@ studio 一键生成（M5a / M6c / M6d）：
 - 两段式授权：`confirmed=false` 同步返回 `planned_side_effects`（确认门，不写盘）；前端展示清单、用户点「继续」后再以 `confirmed=true` 发起。
 - `confirmed=true` 时后端用单 worker `ThreadPoolExecutor` 起后台 job（避免并发跑多引擎），立即返回 `job_id`；前端轮询 `/api/execute/{job_id}` 拿阶段状态与产物，完成后展示 `project_dir`。
 - 引擎路由：`engine` 含 godot/ue/unreal 或从 `plan.gameplay_spec.engine_choice` 推断，分派到 `execute_godot_demo` / `execute_unreal_demo`。引擎可执行文件用 local_tools 探测。
-- 前端在 web-console（flow console）的执行确认区下方提供「一键生成」与「资产工人执行」面板，复用 MCP 状态卡片样式渲染阶段，i18n 中英双语；approval gate 阶段额外展示批准/跳过清单和报告 artifact。job 仅存内存，studio 为本地开发工具。
+- 前端在 web-console（flow console）的执行确认区下方提供「一键生成」与「资产工人执行」面板，复用工具状态卡片样式渲染阶段，i18n 中英双语；approval gate 阶段额外展示批准/跳过清单和报告 artifact。job 仅存内存，studio 为本地开发工具。
 
 ## QA Agent
 

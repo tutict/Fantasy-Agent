@@ -3,12 +3,18 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
 from fantasy_agent.blender_codegen import build_blender_script_artifact
+from fantasy_agent.process_runner import (
+    current_cancel_event,
+    is_streaming_runner,
+    run_streaming,
+)
 from fantasy_agent.contracts import (
     BlenderAssetPlan,
     BlenderMCPExecuteRequest,
@@ -64,8 +70,13 @@ class BlenderMCPSafetyError(ValueError):
 
 
 class BlenderMCPBridge:
-    def __init__(self, workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT) -> None:
+    def __init__(
+        self,
+        workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
+        runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
+    ) -> None:
         self.workspace_root = Path(workspace_root).resolve()
+        self.runner = runner or run_streaming
 
     def generate_blender_script(self, request: BlenderMCPGenerateScriptRequest) -> BlenderMCPResult:
         artifact = self._artifact(
@@ -120,14 +131,13 @@ class BlenderMCPBridge:
         )
 
         try:
-            process = subprocess.run(
+            process = self._run_tool(
                 command,
                 cwd=self.workspace_root,
                 env=env,
-                text=True,
-                capture_output=True,
                 timeout=request.timeout_seconds,
-                check=False,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
             )
         except FileNotFoundError as exc:
             stderr = f"Blender executable not found: {request.blender_executable}"
@@ -230,6 +240,42 @@ class BlenderMCPBridge:
         except ValueError as exc:
             raise BlenderMCPSafetyError(f"Path escapes workspace: {path}") from exc
         return resolved
+
+    def _run_tool(
+        self,
+        command: list[str],
+        *,
+        cwd: Path,
+        env: dict[str, str],
+        timeout: float | None,
+        stdout_path: Path,
+        stderr_path: Path,
+    ) -> subprocess.CompletedProcess[str]:
+        """Run a local tool, streaming output into the given log paths.
+
+        Injected test doubles keep the legacy ``subprocess.run`` contract and
+        never see the streaming keywords, so existing fakes keep working.
+        """
+
+        shared: dict[str, Any] = {
+            "cwd": cwd,
+            "env": env,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "capture_output": True,
+            "timeout": timeout,
+            "check": False,
+        }
+        if is_streaming_runner(self.runner):
+            return self.runner(
+                command,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
+                cancel_event=current_cancel_event(),
+                **shared,
+            )
+        return self.runner(command, **shared)
 
     def _log_paths(self, plan_name: str) -> tuple[Path, Path]:
         safe_name = "".join(ch.lower() if ch.isalnum() else "_" for ch in plan_name).strip("_")

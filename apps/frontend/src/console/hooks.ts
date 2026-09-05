@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { getAssetExecutionJob, getExecuteJob, getManualCorrectionTargets, previewSpecBundle, writeApprovalManifest } from "../shared/api";
+import {
+  cancelAssetExecutionJob,
+  cancelExecuteJob,
+  getAssetExecutionJob,
+  getExecuteJob,
+  getManualCorrectionTargets,
+  previewSpecBundle,
+  writeApprovalManifest
+} from "../shared/api";
 import { HANDOFF_KEY, readPlanningHandoff, savePlanningHandoff } from "../shared/storage";
 import type {
   CorrectionMode,
@@ -264,8 +272,10 @@ export function useExecutionJobPolling({
   addActivity,
   doneLabel,
   failedLabel,
+  cancelledLabel,
   projectDirOnDone,
-  fetchJob
+  fetchJob,
+  cancelJob
 }: {
   jobId: string | null;
   setJobId: (jobId: string | null) => void;
@@ -274,43 +284,76 @@ export function useExecutionJobPolling({
   addActivity: (label: string, message: string) => void;
   doneLabel: string;
   failedLabel: string;
+  cancelledLabel: string;
   projectDirOnDone?: boolean;
   fetchJob: (jobId: string) => Promise<{ status?: string; result?: ExecuteResult; error?: string }>;
+  cancelJob?: (jobId: string) => Promise<unknown>;
 }) {
+  const [cancelling, setCancelling] = useState(false);
+
+  const cancel = useCallback(async () => {
+    if (!jobId || !cancelJob) return;
+    setCancelling(true);
+    try {
+      await cancelJob(jobId);
+    } catch (error) {
+      setCancelling(false);
+      addActivity(failedLabel, String(error));
+    }
+  }, [addActivity, cancelJob, failedLabel, jobId]);
+
   useEffect(() => {
     if (!jobId) return;
     const timer = window.setInterval(async () => {
       try {
         const job = await fetchJob(jobId);
         if (job.result) setResult(job.result);
-        if (job.status !== "running") {
-          window.clearInterval(timer);
-          setJobId(null);
-          if (job.status === "done") {
-            setStatus("ready");
-            addActivity(doneLabel, projectDirOnDone ? job.result?.project_dir || "" : "");
-          } else {
-            setStatus("error");
-            addActivity(failedLabel, job.error || job.status || "");
-          }
+        // "cancelling" is transient: keep polling until the worker unwinds.
+        if (job.status === "running" || job.status === "cancelling") return;
+        window.clearInterval(timer);
+        setJobId(null);
+        setCancelling(false);
+        if (job.status === "done") {
+          setStatus("ready");
+          addActivity(doneLabel, projectDirOnDone ? job.result?.project_dir || "" : "");
+        } else if (job.status === "cancelled") {
+          setStatus("idle");
+          addActivity(cancelledLabel, job.error || "");
+        } else {
+          setStatus("error");
+          addActivity(failedLabel, job.error || job.status || "");
         }
       } catch (error) {
         setStatus("error");
         addActivity(failedLabel, String(error));
         setJobId(null);
+        setCancelling(false);
         window.clearInterval(timer);
       }
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [addActivity, doneLabel, failedLabel, fetchJob, jobId, projectDirOnDone, setJobId, setResult, setStatus]);
+  }, [
+    addActivity,
+    cancelledLabel,
+    doneLabel,
+    failedLabel,
+    fetchJob,
+    jobId,
+    projectDirOnDone,
+    setJobId,
+    setResult,
+    setStatus
+  ]);
+
+  return { cancelling, cancel };
 }
 
-export function useDemoJobPolling(args: Omit<Parameters<typeof useExecutionJobPolling>[0], "fetchJob">) {
-  useExecutionJobPolling({ ...args, fetchJob: getExecuteJob });
+export function useDemoJobPolling(args: Omit<Parameters<typeof useExecutionJobPolling>[0], "fetchJob" | "cancelJob">) {
+  return useExecutionJobPolling({ ...args, fetchJob: getExecuteJob, cancelJob: cancelExecuteJob });
 }
 
-export function useAssetJobPolling(args: Omit<Parameters<typeof useExecutionJobPolling>[0], "fetchJob">) {
-  useExecutionJobPolling({ ...args, fetchJob: getAssetExecutionJob });
+export function useAssetJobPolling(args: Omit<Parameters<typeof useExecutionJobPolling>[0], "fetchJob" | "cancelJob">) {
+  return useExecutionJobPolling({ ...args, fetchJob: getAssetExecutionJob, cancelJob: cancelAssetExecutionJob });
 }
 
 export function useApprovalManifest({

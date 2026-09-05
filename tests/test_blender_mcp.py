@@ -12,7 +12,7 @@ from fantasy_agent.contracts import (
 def _plan() -> BlenderAssetPlan:
     return BlenderAssetPlan(
         job_name="mcp-smoke",
-        python_entrypoint="apps/blender-worker/app/procedural_asset_job.py",
+        python_entrypoint="fantasy_agent/blender_procedural_job.py",
         export_format="fbx",
         handoff_artifacts=[],
         jobs=[

@@ -52,7 +52,7 @@ def test_enrich_blender_plan_supports_glb_exports_and_role_defaults():
     plan = BlenderAssetPlan(
         job_name="glb-test",
         export_format="glb",
-        python_entrypoint="apps/blender-worker/app/procedural_asset_job.py",
+        python_entrypoint="fantasy_agent/blender_procedural_job.py",
         handoff_artifacts=[],
         jobs=[
             BlenderAssetJob(
@@ -79,7 +79,7 @@ def test_enrich_blender_plan_supports_glb_exports_and_role_defaults():
 def test_enrich_blender_plan_normalizes_unreal_asset_and_collision_names():
     plan = BlenderAssetPlan(
         job_name="unsafe-name-test",
-        python_entrypoint="apps/blender-worker/app/procedural_asset_job.py",
+        python_entrypoint="fantasy_agent/blender_procedural_job.py",
         handoff_artifacts=[],
         jobs=[
             BlenderAssetJob(
@@ -107,7 +107,7 @@ def test_enrich_does_not_produce_double_extension_when_switching_to_glb():
     plan = BlenderAssetPlan(
         job_name="ext-test",
         export_format="glb",
-        python_entrypoint="apps/blender-worker/app/procedural_asset_job.py",
+        python_entrypoint="fantasy_agent/blender_procedural_job.py",
         handoff_artifacts=[],
         jobs=[
             BlenderAssetJob(
