@@ -5,6 +5,8 @@ param(
 
     [switch]$SkipInstall,
 
+    [switch]$SkipBuild,
+
     [switch]$VerboseAccessLog,
 
     [switch]$SmokeTest
@@ -139,6 +141,50 @@ function Ensure-Install {
     }
 }
 
+function Ensure-FrontendBuild {
+    param(
+        [string]$RepoRoot,
+        [switch]$SkipBuild
+    )
+
+    # The Studio serves apps/frontend/dist/index.html when it exists and falls
+    # back to the static page otherwise. The React shell is the maintained UI,
+    # so a missing bundle silently drops features such as job cancellation.
+    $distIndex = Join-Path $RepoRoot "apps\frontend\dist\index.html"
+    if (Test-Path $distIndex) {
+        return
+    }
+
+    if ($SkipBuild) {
+        Write-Step "Frontend build skipped; falling back to the static page."
+        return
+    }
+
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $node) {
+        Write-Step "Node.js was not found, so the React UI cannot be built."
+        Write-Step "Falling back to the static page (job cancellation unavailable)."
+        return
+    }
+
+    if (-not (Test-Path (Join-Path $RepoRoot "node_modules"))) {
+        Write-Step "node_modules is missing, so the React UI cannot be built."
+        Write-Step "Run 'npm install', or start with -SkipBuild to use the static page."
+        return
+    }
+
+    Write-Step "Building the React UI (dist is missing, this happens once)..."
+    Push-Location $RepoRoot
+    try {
+        & npx vite build 2>&1 | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "Frontend build failed. Start with -SkipBuild to use the static page."
+        }
+    } finally {
+        Pop-Location
+    }
+}
+
 function Open-Url {
     param([string]$Url)
 
@@ -225,6 +271,7 @@ $healthUrl = "http://127.0.0.1:$selectedPort/health"
 $openUrl = "http://127.0.0.1:$selectedPort$($config.UrlPath)"
 $pythonExe = Ensure-Venv -RepoRoot $repoRoot
 Ensure-Install -PythonExe $pythonExe -SkipInstall:$SkipInstall
+Ensure-FrontendBuild -RepoRoot $repoRoot -SkipBuild:$SkipBuild
 
 Write-Step "Panel: $openUrl"
 Write-Step "Health: $healthUrl"
