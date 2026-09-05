@@ -125,6 +125,10 @@ http://127.0.0.1:7860
 .\scripts\start-fantasy-agent.ps1 -SmokeTest -NoOpen
 ```
 
+前端界面：`start-fantasy-agent.ps1` 会在 `apps/frontend/dist/index.html` 缺失时自动构建
+React 界面（只在缺失时跑一次）；没有 Node 或 `node_modules` 时退回静态页并给出提示，
+此时执行面板**没有取消按钮**。加 `-SkipBuild` 可直接跳过构建。手动构建用 `npx vite build`。
+
 如果 `7860` 已被占用，可以换端口：
 
 ```powershell
