@@ -22,6 +22,7 @@ from pathlib import Path
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.gdd import render_gdd
+from fantasy_agent.pipeline_state import GODOT_STAGE_ORDER
 from fantasy_agent.workflows import run_director_workflow
 
 
@@ -105,6 +106,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "--comfyui-endpoint",
         default=None,
         help="ComfyUI endpoint override (defaults to auto-detection).",
+    )
+    parser.add_argument(
+        "--session-id",
+        default=None,
+        help="Reuse an existing session id instead of starting a new one.",
+    )
+    parser.add_argument(
+        "--from-stage",
+        default=None,
+        help=(
+            "With --execute and --session-id, resume the Godot chain at this node and "
+            "skip the earlier ones that already succeeded. One of: "
+            + ", ".join(GODOT_STAGE_ORDER)
+            + "."
+        ),
     )
     parser.add_argument(
         "--unreal-exe",
@@ -284,7 +300,17 @@ def _run_godot_executor(plan, args) -> int:
         )
         return 2
 
-    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if args.from_stage and not args.session_id:
+        print("--from-stage needs --session-id to know which run to resume.", file=sys.stderr)
+        return 2
+    if args.from_stage and args.from_stage not in GODOT_STAGE_ORDER:
+        print(
+            f"Unknown stage {args.from_stage!r}. Options: {', '.join(GODOT_STAGE_ORDER)}.",
+            file=sys.stderr,
+        )
+        return 2
+
+    session_id = args.session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
     result = execute_godot_demo(
         plan,
         session_id=session_id,
@@ -297,6 +323,7 @@ def _run_godot_executor(plan, args) -> int:
         comfyui_endpoint=args.comfyui_endpoint,
         with_gameplay=args.with_gameplay,
         approval_manifest_path=args.approval_manifest_path,
+        resume_from=args.from_stage,
     )
     print(format_execution_report(result))
     if result.status == "confirmation_required":

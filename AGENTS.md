@@ -40,6 +40,37 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - `risks`：阻塞问题或假设。
 - `next_actions`：具体下一步。
 
+## 返工（Rework）
+
+流水线必须支持节点级返工，不能等整条跑完再回头——ComfyUI、Blender 和 headless import 每个都要几分钟，跑完才发现问题是纯浪费。
+
+两条机制：
+
+**1. 前置闸门（`fantasy_agent/preflight.py`）**
+
+在任何昂贵节点之前跑廉价静态校验，每个问题带 `rework_target`，直接指出该回到哪个节点：
+
+- `prompt`：原始创意太薄，重写 prompt。
+- `spec`：gameplay spec 有洞（缺 `level_beats`、`win_state`、`failure_states` 等）。
+- `godot_plan`：引擎交接计划不合法（如工程名为空）。
+- `flags`：计划没问题，是运行开关错了（声明了资产需求但没开 Blender 等）。
+
+严重程度分两级，区分是关键：
+
+- `blocking`：下游节点不可能产出有意义的东西。立刻停在闸门，不烧时间。
+- `warning`：仍能产出可用的东西（降级灰盒、无参考图的 demo）。照常跑，只报告。
+
+warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，只有真正的设计缺陷才不再被拖到链路末尾。
+
+**2. 阶段状态落盘 + 从节点续跑（`fantasy_agent/pipeline_state.py`）**
+
+每次执行把每个已结束的阶段写进 `generated/<engine>/sessions/<session_id>/_pipeline_state.json`。
+
+- 续跑：`--session-id <id> --from-stage <node>`（Studio 用 `ExecuteDemoRequest.session_id` / `resume_from`）。
+- 只有**真的成功过**的阶段才会被跳过；失败阶段永远重跑，未知阶段名一律不跳过——续跑不能掩盖失败。
+- `create` 和 `validate` 不可跳过：它们便宜，且后续每个阶段都依赖其产出的 `project_file`。
+- `GODOT_STAGE_ORDER` 必须与 `execute_godot_demo` 的实际阶段保持同步，否则该节点永远不可续跑（有测试守着）。
+
 ## Director Agent
 
 职责：

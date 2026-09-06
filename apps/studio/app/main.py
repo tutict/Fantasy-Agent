@@ -132,6 +132,8 @@ class ExecuteDemoRequest(BaseModel):
     enemy_tuning: EnemyPressureTuning = Field(default_factory=EnemyPressureTuning)
     approval_manifest_path: str | None = None
     confirmed: bool = False
+    session_id: str = ""  # reuse an existing session when resuming
+    resume_from: str = ""  # node to resume at; earlier done stages are skipped
 
 
 # DirectorBuildPlan is imported from another module; ensure the forward
@@ -920,7 +922,7 @@ def _build_execution_result(req: ExecuteDemoRequest, *, confirmed: bool):
     from datetime import datetime
 
     engine = _infer_engine(req.plan, req.engine)
-    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_id = req.session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
     if engine == "unreal":
         return execute_unreal_demo(
             req.plan,
@@ -939,6 +941,7 @@ def _build_execution_result(req: ExecuteDemoRequest, *, confirmed: bool):
         with_gameplay=req.with_gameplay,
         enemy_tuning=req.enemy_tuning,
         approval_manifest_path=req.approval_manifest_path,
+        resume_from=req.resume_from or None,
     )
 
 
@@ -1069,4 +1072,34 @@ def execute_status(job_id: str) -> dict[str, Any]:
 @app.post("/api/execute/{job_id}/cancel")
 def execute_cancel(job_id: str) -> dict[str, Any]:
     return _EXECUTE_JOB_REGISTRY.cancel(job_id)
+
+
+@app.get("/api/sessions/{session_id}/state")
+def session_state(session_id: str, engine: str = "godot") -> dict[str, Any]:
+    """Stage state of a previous run, so the UI can offer node-level re-runs."""
+
+    from fantasy_agent.pipeline_state import GODOT_STAGE_ORDER, load_state
+
+    state = load_state(session_id, engine_key=engine, workspace_root=REPO_ROOT)
+    if state is None:
+        return {
+            "session_id": session_id,
+            "engine": engine,
+            "found": False,
+            "stage_order": list(GODOT_STAGE_ORDER),
+            "stages": [],
+            "done": [],
+            "failed": [],
+        }
+    return {
+        "session_id": session_id,
+        "engine": engine,
+        "found": True,
+        "project_dir": state.project_dir,
+        "updated_at": state.updated_at,
+        "stage_order": list(GODOT_STAGE_ORDER),
+        "stages": [stage.model_dump(mode="json") for stage in state.stages],
+        "done": sorted(state.done_stages()),
+        "failed": sorted(state.failed_stages()),
+    }
 

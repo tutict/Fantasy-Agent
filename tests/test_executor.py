@@ -63,7 +63,7 @@ def test_executes_create_validate_import_in_order(tmp_path: Path):
     )
 
     assert result.ok
-    assert [s.name for s in result.stages] == ["create", "validate", "import"]
+    assert [s.name for s in result.stages if s.name != "preflight"] == ["create", "validate", "import"]
     assert all(s.status == "done" for s in result.stages)
     # Project actually written under the godot sandbox prefix.
     assert (tmp_path / result.project_dir / "project.godot").exists()
@@ -174,7 +174,7 @@ def test_with_assets_defaults_to_approval_manifest_and_blocks_copy(tmp_path: Pat
     )
 
     assert result.ok
-    names = [s.name for s in result.stages]
+    names = [s.name for s in result.stages if s.name != "preflight"]
     assert names == ["blender", "approval_gate", "create", "validate", "import"]
     gate = next(s for s in result.stages if s.name == "approval_gate")
     assert gate.status == "blocked"
@@ -249,7 +249,7 @@ def test_with_assets_approval_manifest_copies_only_approved(tmp_path: Path):
     )
 
     assert result.ok
-    names = [s.name for s in result.stages]
+    names = [s.name for s in result.stages if s.name != "preflight"]
     assert names == ["blender", "approval_gate", "create", "copy_assets", "validate", "import"]
     gate = next(s for s in result.stages if s.name == "approval_gate")
     assert gate.detail == "1 approved, 2 skipped"
@@ -298,7 +298,7 @@ def test_with_assets_missing_approval_manifest_blocks_asset_copy(tmp_path: Path)
     assert gate.status == "blocked"
     assert gate.metadata["manifest_path"] == "generated/asset-approval-manifest.yaml"
     assert "blocked_reason" in gate.metadata
-    assert "copy_assets" not in [s.name for s in result.stages]
+    assert "copy_assets" not in [s.name for s in result.stages if s.name != "preflight"]
     assert not (tmp_path / result.project_dir / "assets" / "generated" / "start_marker.glb").exists()
 
 
@@ -378,7 +378,7 @@ def test_asset_pipeline_runs_comfyui_and_blender_without_godot_project(tmp_path:
     )
 
     assert result.ok
-    assert [s.name for s in result.stages] == ["comfyui", "blender"]
+    assert [s.name for s in result.stages if s.name != "preflight"] == ["comfyui", "blender"]
     assert not (tmp_path / "generated" / "godot").exists()
 
 
@@ -411,7 +411,7 @@ def test_blender_failure_degrades_to_greybox(tmp_path: Path):
 
     # Chain still completes (greybox), blender stage marked failed, no copy stage.
     assert result.ok
-    names = [s.name for s in result.stages]
+    names = [s.name for s in result.stages if s.name != "preflight"]
     assert "blender" in names
     assert next(s for s in result.stages if s.name == "blender").status == "failed"
     assert "copy_assets" not in names
@@ -485,7 +485,7 @@ def test_with_visuals_stage_order_and_copy(tmp_path: Path):
     )
 
     assert result.ok
-    names = [s.name for s in result.stages]
+    names = [s.name for s in result.stages if s.name != "preflight"]
     assert names == ["comfyui", "create", "copy_refs", "validate", "import"]
     copied = list((tmp_path / result.project_dir / "references" / "comfyui").glob("*.png"))
     assert len(copied) == 2
@@ -507,7 +507,7 @@ def test_comfyui_failure_does_not_break_chain(tmp_path: Path):
     )
 
     assert result.ok  # chain still completes without references
-    names = [s.name for s in result.stages]
+    names = [s.name for s in result.stages if s.name != "preflight"]
     assert next(s for s in result.stages if s.name == "comfyui").status == "failed"
     assert "copy_refs" not in names
     assert names[-1] == "import"
@@ -570,7 +570,7 @@ def test_visuals_and_assets_compose(tmp_path: Path):
     )
 
     assert result.ok
-    names = [s.name for s in result.stages]
+    names = [s.name for s in result.stages if s.name != "preflight"]
     # ComfyUI runs first, then Blender, then approval gate, create and both copies.
     assert names == [
         "comfyui",
@@ -632,7 +632,7 @@ def test_unreal_executes_stage_order(tmp_path: Path):
     )
 
     assert result.ok
-    assert [s.name for s in result.stages] == [
+    assert [s.name for s in result.stages if s.name != "preflight"] == [
         "create",
         "spec_compile",
         "spec_qa",
@@ -728,7 +728,7 @@ def test_with_gameplay_generates_scripts_and_imports(tmp_path: Path):
         )
 
     assert result.ok
-    names = [s.name for s in result.stages]
+    names = [s.name for s in result.stages if s.name != "preflight"]
     assert names[0] == "gameplay"
     assert names == ["gameplay", "create", "enemy_metrics", "validate", "import"]
     enemy_metrics = next(s for s in result.stages if s.name == "enemy_metrics")
@@ -930,7 +930,13 @@ def test_invalid_production_spec_blocks_before_godot_create(tmp_path: Path):
     assert result.status == "failed"
     assert result.stages[0].name == "spec_validation"
     assert result.stages[0].status == "failed"
-    assert not (tmp_path / "generated").exists()
+    # Blocked before Godot create: no project artifacts. The only file allowed
+    # is the session state record, which is bookkeeping for resuming rather
+    # than a build artifact.
+    generated = tmp_path / "generated"
+    if generated.exists():
+        written = [path.name for path in generated.rglob("*") if path.is_file()]
+        assert written == ["_pipeline_state.json"]
 
 def test_godot_execution_uses_config_compiler_and_writes_trace(tmp_path: Path):
     plan = _plan("combat arena with guards and ranged turrets")

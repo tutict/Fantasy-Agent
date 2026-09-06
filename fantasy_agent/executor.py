@@ -46,6 +46,14 @@ from fantasy_agent.godot_mcp import (
     resolve_enemy_pressure_tuning,
 )
 from fantasy_agent.path_safety import resolve_workspace_path
+from fantasy_agent.pipeline_state import (
+    RESUMABLE_STAGES,
+    StageState,
+    load_state,
+    record_stage,
+    stages_before,
+)
+from fantasy_agent.preflight import preflight_plan
 
 
 @dataclass
@@ -73,6 +81,56 @@ class ExecutionResult:
     @property
     def ok(self) -> bool:
         return self.status == "done"
+
+
+def _resume_skip(
+    *,
+    resume_from: str | None,
+    session_id: str,
+    workspace_root: Path | str,
+    engine_key: str = "godot",
+) -> set[str]:
+    """Stages to skip when resuming an existing session.
+
+    A stage is skipped only if it (a) comes before the resume point, (b) really
+    finished successfully in the previous run, and (c) is safe to skip. A stage
+    that never succeeded is never skipped, so resuming cannot hide a failure.
+    """
+
+    if not resume_from:
+        return set()
+    state = load_state(
+        session_id, engine_key=engine_key, workspace_root=workspace_root
+    )
+    if state is None:
+        return set()
+    return stages_before(resume_from) & state.done_stages() & RESUMABLE_STAGES
+
+
+def _persist_stages(
+    stages: list[StageResult],
+    *,
+    session_id: str,
+    project_dir: str = "",
+    workspace_root: Path | str,
+    engine_key: str = "godot",
+) -> None:
+    """Record finished stages so a later run can resume from them."""
+
+    for stage in stages:
+        record_stage(
+            session_id,
+            StageState(
+                name=stage.name,
+                status=stage.status,
+                detail=stage.detail,
+                artifacts=list(stage.artifacts),
+                logs=list(stage.logs),
+            ),
+            engine_key=engine_key,
+            project_dir=project_dir,
+            workspace_root=workspace_root,
+        )
 
 
 def _session_project_dir(session_id: str, project_name: str) -> str:
@@ -711,6 +769,32 @@ def execute_asset_pipeline(
         )
 
     stages: list[StageResult] = []
+    preflight = preflight_plan(
+        plan,
+        with_assets=with_assets,
+        with_visuals=with_visuals,
+    )
+    if preflight.blocked:
+        stages.append(
+            StageResult(
+                "preflight",
+                "failed",
+                detail=preflight.summary(),
+                metadata=preflight.model_dump(mode="json"),
+            )
+        )
+        return ExecutionResult(
+            "failed", session_id, stages=stages, planned_side_effects=planned
+        )
+    if preflight.issues:
+        stages.append(
+            StageResult(
+                "preflight",
+                "done",
+                detail=preflight.summary(),
+                metadata=preflight.model_dump(mode="json"),
+            )
+        )
     if with_visuals:
         _run_comfyui_stage(
             plan,
@@ -727,7 +811,7 @@ def execute_asset_pipeline(
             workspace_root=workspace_root,
             blender_bridge=blender_bridge,
         )
-    if not stages:
+    if not any(stage.name != "preflight" for stage in stages):
         stages.append(StageResult("assets", "blocked", detail="No asset workers selected"))
 
     status = "failed" if any(stage.status == "failed" for stage in stages) else "done"
@@ -752,6 +836,61 @@ def execute_godot_demo(
     bridge: GodotMCPBridge | None = None,
     blender_bridge: Any | None = None,
     comfyui_bridge: Any | None = None,
+    resume_from: str | None = None,
+) -> ExecutionResult:
+    """Run the Godot chain, recording stage state so a later run can resume.
+
+    Behaves exactly like the inner implementation, then persists every finished
+    stage to the session state file. See ``_execute_godot_demo_inner``.
+    """
+
+    result = _execute_godot_demo_inner(
+        plan,
+        session_id=session_id,
+        confirmed=confirmed,
+        godot_exe=godot_exe,
+        workspace_root=workspace_root,
+        run_import=run_import,
+        with_assets=with_assets,
+        blender_exe=blender_exe,
+        with_visuals=with_visuals,
+        comfyui_endpoint=comfyui_endpoint,
+        with_gameplay=with_gameplay,
+        enemy_tuning=enemy_tuning,
+        approval_manifest_path=approval_manifest_path,
+        bridge=bridge,
+        blender_bridge=blender_bridge,
+        comfyui_bridge=comfyui_bridge,
+        resume_from=resume_from,
+    )
+    _persist_stages(
+        result.stages,
+        session_id=session_id,
+        project_dir=result.project_dir,
+        workspace_root=workspace_root,
+    )
+    return result
+
+
+def _execute_godot_demo_inner(
+    plan: DirectorBuildPlan,
+    *,
+    session_id: str,
+    confirmed: bool = False,
+    godot_exe: str = "godot",
+    workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
+    run_import: bool = True,
+    with_assets: bool = False,
+    blender_exe: str = "blender",
+    with_visuals: bool = False,
+    comfyui_endpoint: str | None = None,
+    with_gameplay: bool = False,
+    enemy_tuning: EnemyPressureTuning | None = None,
+    approval_manifest_path: str | None = None,
+    bridge: GodotMCPBridge | None = None,
+    blender_bridge: Any | None = None,
+    comfyui_bridge: Any | None = None,
+    resume_from: str | None = None,
 ) -> ExecutionResult:
     """Orchestrate (optional ComfyUI/Blender) -> create -> validate -> import.
 
@@ -854,11 +993,58 @@ def execute_godot_demo(
             # The approval_gate stage reports invalid manifests. Keep greybox
             # execution available when no approved assets can be ingested.
             pass
+    # Pre-flight gate: cheap checks before ComfyUI/Blender, which are the most
+    # expensive nodes in the chain. Blocking issues stop here instead of
+    # burning minutes and only surfacing at the end.
+    preflight = preflight_plan(
+        plan,
+        engine="Godot 4",
+        with_assets=with_assets,
+        with_visuals=with_visuals,
+        with_gameplay=with_gameplay,
+    )
+    if preflight.blocked:
+        stages.append(
+            StageResult(
+                "preflight",
+                "failed",
+                detail=preflight.summary(),
+                metadata=preflight.model_dump(mode="json"),
+            )
+        )
+        return ExecutionResult("failed", session_id, project_dir, stages, planned)
+    if preflight.issues:
+        stages.append(
+            StageResult(
+                "preflight",
+                "done",
+                detail=preflight.summary(),
+                metadata=preflight.model_dump(mode="json"),
+            )
+        )
+
+    skip = _resume_skip(
+        resume_from=resume_from,
+        session_id=session_id,
+        workspace_root=workspace_root,
+    )
+
+    def _skipped(name: str) -> None:
+        stages.append(
+            StageResult(
+                name,
+                "skipped",
+                detail=f"resumed from {resume_from}; already done in this session",
+            )
+        )
+
     approval_result: Any | None = None
 
     # Stage A (optional): ComfyUI visual references. Degrades on failure.
     reference_images: list[str] = []
-    if with_visuals:
+    if "comfyui" in skip:
+        _skipped("comfyui")
+    elif with_visuals:
         reference_images = _run_comfyui_stage(
             plan,
             stages,
@@ -869,7 +1055,9 @@ def execute_godot_demo(
 
     # Stage B (optional): Blender asset export. Degrades to greybox on failure.
     exported_glb: list[str] = []
-    if with_assets:
+    if "blender" in skip:
+        _skipped("blender")
+    elif with_assets:
         exported_glb = _run_blender_stage(
             plan,
             stages,
@@ -889,7 +1077,9 @@ def execute_godot_demo(
     # Stage C (optional): generate real playable GDScript from the spec.
     gameplay_scripts: dict[str, str] = {}
     gameplay_was_llm = False
-    if with_gameplay:
+    if "gameplay" in skip:
+        _skipped("gameplay")
+    elif with_gameplay:
         gameplay_scripts, gameplay_was_llm = _run_gameplay_codegen(plan, stages)
 
     # Stage 1: create project files (with generated gameplay scripts if any).
@@ -947,14 +1137,18 @@ def execute_godot_demo(
 
     # Stage 1b (optional): copy exported glb assets into the project so the
     # import step picks them up and runtime load() calls resolve.
-    if with_assets and exported_glb:
+    if "copy_assets" in skip:
+        _skipped("copy_assets")
+    elif with_assets and exported_glb:
         _run_copy_assets_stage(
             stages, exported_glb, project_dir, workspace_root=workspace_root
         )
 
     # Stage 1c (optional): copy ComfyUI reference images into the project for
     # review (art-direction archive; not applied as textures).
-    if with_visuals and reference_images:
+    if "copy_refs" in skip:
+        _skipped("copy_refs")
+    elif with_visuals and reference_images:
         _run_copy_refs_stage(
             stages, reference_images, project_dir, workspace_root=workspace_root
         )
@@ -1158,6 +1352,29 @@ def execute_unreal_demo(
         from fantasy_agent.unreal_mcp import UnrealMCPBridge
 
         bridge = UnrealMCPBridge(workspace_root=workspace_root)
+
+    # Pre-flight gate: DataValidation launches a full editor and costs minutes,
+    # so a plan that cannot produce a level must be caught here, not at the end.
+    preflight = preflight_plan(plan, engine="UE5")
+    if preflight.blocked:
+        stages.append(
+            StageResult(
+                "preflight",
+                "failed",
+                detail=preflight.summary(),
+                metadata=preflight.model_dump(mode="json"),
+            )
+        )
+        return ExecutionResult("failed", session_id, project_dir, stages, planned)
+    if preflight.issues:
+        stages.append(
+            StageResult(
+                "preflight",
+                "done",
+                detail=preflight.summary(),
+                metadata=preflight.model_dump(mode="json"),
+            )
+        )
 
     # Write the Blender->Unreal import manifest so prepare_asset_ingest can read
     # it. Source fbx files need not exist yet (require_existing_sources=False).
