@@ -207,7 +207,7 @@ def test_execute_starts_job_and_polls(monkeypatch):
             stages=[StageResult("create", "done"), StageResult("import", "done")],
         )
 
-    monkeypatch.setattr(module, "_build_execution_result", lambda req, *, confirmed: fake_godot(req.plan, confirmed=confirmed))
+    monkeypatch.setattr(module, "_build_execution_result", lambda req, *, confirmed, **_kwargs: fake_godot(req.plan, confirmed=confirmed))
 
     started = module.execute_demo(module.ExecuteDemoRequest(plan=plan, engine="Godot 4", confirmed=True))
     assert started["status"] == "running"
@@ -220,6 +220,77 @@ def test_execute_starts_job_and_polls(monkeypatch):
     assert status["status"] == "done"
     assert status["result"]["project_dir"].endswith("demo")
     assert [s["name"] for s in status["result"]["stages"]] == ["create", "import"]
+
+
+def test_execute_returns_and_reuses_a_session_id(monkeypatch):
+    """Node-level rework needs the session id back, or nothing can be resumed."""
+
+    module = _load_studio_app()
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.executor import ExecutionResult
+    from fantasy_agent.workflows import run_director_workflow
+
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+    seen: list[str] = []
+
+    def fake_execute(req, *, confirmed, session_id, **_kwargs):
+        seen.append(session_id)
+        if not confirmed:
+            return ExecutionResult(
+                status="confirmation_required",
+                session_id=session_id,
+                planned_side_effects=["write project"],
+            )
+        return ExecutionResult(status="done", session_id=session_id)
+
+    monkeypatch.setattr(module, "_build_execution_result", fake_execute)
+
+    preview = module.execute_demo(
+        module.ExecuteDemoRequest(plan=plan, engine="Godot 4", confirmed=False)
+    )
+    assert preview["session_id"], "the UI needs the session id to resume later"
+
+    started = module.execute_demo(
+        module.ExecuteDemoRequest(
+            plan=plan,
+            engine="Godot 4",
+            confirmed=True,
+            session_id="sess-42",
+            resume_from="create",
+        )
+    )
+    module._EXECUTE_POOL.shutdown(wait=True)
+
+    assert started["session_id"] == "sess-42"
+    assert seen[-1] == "sess-42"
+
+
+def test_session_state_endpoint_reads_persisted_stages(monkeypatch, tmp_path):
+    """The rework panel reads this to offer one node to re-run."""
+
+    from fantasy_agent.pipeline_state import StageState, record_stage
+
+    module = _load_studio_app()
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+
+    record_stage(
+        "sess-1", StageState(name="blender", status="failed"), workspace_root=tmp_path
+    )
+    record_stage(
+        "sess-1", StageState(name="create", status="done"), workspace_root=tmp_path
+    )
+
+    state = module.session_state("sess-1", engine="godot")
+    assert state["found"]
+    assert state["done"] == ["create"]
+    assert state["failed"] == ["blender"]
+    assert "import" in state["stage_order"]
+
+    missing = module.session_state("nope", engine="godot")
+    assert missing["found"] is False
+    assert missing["stages"] == []
 
 
 def test_execute_status_unknown_job():
@@ -324,7 +395,7 @@ def test_execute_demo_job_ids_do_not_collide(monkeypatch):
         PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
     )
 
-    def fake_execute(req, *, confirmed):
+    def fake_execute(req, *, confirmed, **_kwargs):
         return ExecutionResult(status="done", session_id="x")
 
     monkeypatch.setattr(module, "_build_execution_result", fake_execute)
@@ -419,7 +490,7 @@ def test_cancel_endpoint_stops_a_running_job(monkeypatch):
     )
     running = threading.Event()
 
-    def slow_execute(req, *, confirmed):
+    def slow_execute(req, *, confirmed, **_kwargs):
         running.set()
         while True:
             event = process_runner.current_cancel_event()

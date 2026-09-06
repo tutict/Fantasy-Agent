@@ -71,6 +71,10 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - `create` 和 `validate` 不可跳过：它们便宜，且后续每个阶段都依赖其产出的 `project_file`。
 - `GODOT_STAGE_ORDER` 必须与 `execute_godot_demo` 的实际阶段保持同步，否则该节点永远不可续跑（有测试守着）。
 
+**3. 界面纠偏闭环（Studio 流程控制台）**
+
+`POST /api/execute` 返回 `session_id`，流程控制台据此在每次跑完后拉取 `GET /api/sessions/{id}/state`，列出各节点状态，每个节点一个「从此节点续跑」按钮。普通「生成 demo」永远开新 session，只有显式续跑才复用——避免节点级返工意外继承旧产物。
+
 ## Director Agent
 
 职责：

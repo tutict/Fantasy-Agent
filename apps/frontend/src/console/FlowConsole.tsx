@@ -5,7 +5,8 @@ import {
   previewAssetExecution,
   previewExecute,
   startAssetExecution,
-  startExecute
+  startExecute,
+  getSessionState
 } from "../shared/api";
 import { consoleI18n, makeTranslator } from "../shared/i18n";
 import { CONSOLE_LOCALE_KEY, THEME_KEY, initialLocale, initialTheme } from "../shared/storage";
@@ -16,6 +17,7 @@ import type {
   ExecuteStage,
   Locale,
   ManualCorrectionTarget,
+  SessionState,
   StatusState,
   Theme
 } from "../shared/types";
@@ -120,6 +122,8 @@ export function FlowConsole() {
   const [generateEffects, setGenerateEffects] = useState<string[] | null>(null);
   const [generateResult, setGenerateResult] = useState<ExecuteResult | null>(null);
   const [pollJobId, setPollJobId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [assetWithAssets, setAssetWithAssets] = useState(true);
   const [assetWithVisuals, setAssetWithVisuals] = useState(true);
   const [assetEffects, setAssetEffects] = useState<string[] | null>(null);
@@ -269,13 +273,18 @@ export function FlowConsole() {
     }
   };
 
-  const startGenerate = async () => {
+  const startGenerate = async (resumeFrom?: string) => {
     if (!currentPlan) return;
     setGenerateEffects(null);
     setGenerateResult(null);
     setStatus("running");
-    addActivity(t("generateRunning"), "");
+    addActivity(
+      resumeFrom ? t("reworkRunning") : t("generateRunning"),
+      resumeFrom ? `${t("reworkFromLabel")}: ${resumeFrom}` : ""
+    );
     try {
+      // Only a resume reuses the session; a plain run starts a fresh one so
+      // node-level rework can never inherit stale artifacts by accident.
       const started = await startExecute(
         currentPlan,
         usesGodotEngine(currentPlan) ? "godot" : "unreal",
@@ -283,10 +292,12 @@ export function FlowConsole() {
         withVisuals,
         withGameplay,
         enemyTuning,
-        approvalManifestPath || "generated/asset-approval-manifest.yaml"
+        approvalManifestPath || "generated/asset-approval-manifest.yaml",
+        resumeFrom ? { sessionId: sessionId || undefined, resumeFrom } : {}
       );
       if (started.job_id) {
         setPollJobId(started.job_id);
+        if (started.session_id) setSessionId(started.session_id);
       } else {
         setStatus("error");
         addActivity(t("generateFailed"), started.status || "");
@@ -296,6 +307,23 @@ export function FlowConsole() {
       addActivity(t("generateFailed"), String(error));
     }
   };
+
+  // Once a run settles, read back which nodes finished so the operator can
+  // re-run one of them instead of the whole chain.
+  useEffect(() => {
+    if (!sessionId || pollJobId) return;
+    let cancelled = false;
+    void getSessionState(sessionId, usesGodotEngine(currentPlan) ? "godot" : "unreal")
+      .then((state) => {
+        if (!cancelled) setSessionState(state);
+      })
+      .catch(() => {
+        if (!cancelled) setSessionState(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPlan, pollJobId, sessionId]);
 
   const onAssetExecutionClick = async () => {
     if (!currentPlan) {
@@ -762,6 +790,33 @@ export function FlowConsole() {
                 </p>
               ) : null}
             </div>
+            {sessionId && sessionState?.found ? (
+              <div className="rework-panel" id="rework-panel">
+                <div className="pane-section-header">
+                  <h3>{t("reworkTitle")}</h3>
+                </div>
+                <p className="handoff-note">{t("reworkHint")}</p>
+                <p className="handoff-note">
+                  {t("reworkSession")}: <code>{sessionId}</code>
+                </p>
+                <ul className="rework-list">
+                  {(sessionState?.stages || []).map((stage) => (
+                    <li key={stage.name} className={`rework-item rework-${stage.status || "unknown"}`}>
+                      <span className="rework-name">{stage.name}</span>
+                      <span className="rework-status">{stage.status}</span>
+                      <button
+                        className="ghost-action"
+                        type="button"
+                        disabled={status === "running" || !stage.name}
+                        onClick={() => void startGenerate(stage.name)}
+                      >
+                        {t("reworkResume")}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </section>
 
           <section className="rail-card activity-card" id="activity-drawer" aria-label="Activity log">

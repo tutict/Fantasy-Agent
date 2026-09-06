@@ -203,7 +203,13 @@ export const consoleI18n: Record<Locale, Dictionary> = {
     generateCancelled: "Demo generation cancelled",
     stopJob: "Stop",
     stoppingJob: "Stopping...",
-    generateArtifact: "Project"
+    generateArtifact: "Project",
+    reworkTitle: "Node rework",
+    reworkHint: "Resume from one node. Earlier stages that already succeeded are skipped; failed ones always re-run.",
+    reworkSession: "Session",
+    reworkResume: "Resume here",
+    reworkRunning: "Resuming from node...",
+    reworkFromLabel: "From"
   },
   "zh-CN": {
     productLabel: "流程控制台",
@@ -401,7 +407,13 @@ export const consoleI18n: Record<Locale, Dictionary> = {
     generateCancelled: "demo 生成已取消",
     stopJob: "停止",
     stoppingJob: "正在停止...",
-    generateArtifact: "工程"
+    generateArtifact: "工程",
+    reworkTitle: "节点级返工",
+    reworkHint: "从指定节点续跑：更早且已成功的阶段会被跳过，失败的阶段一定重跑。",
+    reworkSession: "会话",
+    reworkResume: "从此节点续跑",
+    reworkRunning: "正在从节点续跑...",
+    reworkFromLabel: "起点"
   }
 };
 

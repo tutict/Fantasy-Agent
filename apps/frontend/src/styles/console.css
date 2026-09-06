@@ -1251,6 +1251,66 @@ input[type="text"]:focus {
   display: none;
 }
 
+/* Node-level rework: resume a previous run at one node. */
+.rework-panel {
+  margin-top: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--surface-muted);
+}
+
+.rework-panel .pane-section-header h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.rework-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rework-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: var(--surface);
+}
+
+.rework-item.rework-done {
+  border-left-color: var(--accent);
+}
+
+.rework-item.rework-failed {
+  border-left-color: var(--danger);
+}
+
+.rework-item.rework-skipped {
+  border-left-color: var(--blue);
+}
+
+.rework-name {
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  color: var(--text);
+}
+
+.rework-status {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 11px;
+}
+
 .generate-stages .mcp-status-card {
   display: flex;
   flex-direction: column;

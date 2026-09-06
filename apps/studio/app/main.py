@@ -914,15 +914,14 @@ def _infer_engine(plan: DirectorBuildPlan, override: str) -> str:
     return "godot"
 
 
-def _build_execution_result(req: ExecuteDemoRequest, *, confirmed: bool):
+def _build_execution_result(
+    req: ExecuteDemoRequest, *, confirmed: bool, session_id: str
+):
     """Call the right executor; returns an ExecutionResult."""
     from fantasy_agent.executor import execute_godot_demo, execute_unreal_demo
     from fantasy_agent.local_tools import _find_blender, _find_godot, _find_unreal, _unreal_cmd_executable
 
-    from datetime import datetime
-
     engine = _infer_engine(req.plan, req.engine)
-    session_id = req.session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
     if engine == "unreal":
         return execute_unreal_demo(
             req.plan,
@@ -1054,14 +1053,21 @@ def asset_execute_cancel(job_id: str) -> dict[str, Any]:
 
 @app.post("/api/execute")
 def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
+    from datetime import datetime
+
     engine = _infer_engine(req.plan, req.engine)
+    # Own the session id here so the caller gets it back immediately and can
+    # resume this exact run later instead of starting a new one.
+    session_id = req.session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
     if not req.confirmed:
         # Confirmation gate: report side effects without writing or executing.
-        preview = _build_execution_result(req, confirmed=False)
-        return _EXECUTE_JOB_REGISTRY.preview(preview, engine=engine)
+        preview = _build_execution_result(req, confirmed=False, session_id=session_id)
+        return {**_EXECUTE_JOB_REGISTRY.preview(preview, engine=engine), "session_id": session_id}
 
-    job_id = _EXECUTE_JOB_REGISTRY.submit(lambda: _build_execution_result(req, confirmed=True))
-    return {"status": "running", "job_id": job_id, "engine": engine}
+    job_id = _EXECUTE_JOB_REGISTRY.submit(
+        lambda: _build_execution_result(req, confirmed=True, session_id=session_id)
+    )
+    return {"status": "running", "job_id": job_id, "engine": engine, "session_id": session_id}
 
 
 @app.get("/api/execute/{job_id}")

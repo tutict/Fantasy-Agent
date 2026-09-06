@@ -14,6 +14,7 @@ import type {
   ManualTargetsPayload,
   McpStatus,
   ProductionSpecBundle,
+  SessionState,
   SpecBundlePreviewResponse
 } from "./types";
 import type { DirectorBuildPlan, EnemyPressureTuning } from "./types";
@@ -49,6 +50,13 @@ export function openManualCorrectionTarget(targetId: string, engine: string): Pr
   });
 }
 
+export interface ExecuteRunOptions {
+  /** Reuse a previous run's session so finished stages can be skipped. */
+  sessionId?: string;
+  /** Node to resume at; earlier stages that succeeded are skipped. */
+  resumeFrom?: string;
+}
+
 export function previewExecute(
   plan: DirectorBuildPlan,
   engine: string,
@@ -56,7 +64,8 @@ export function previewExecute(
   withVisuals: boolean,
   withGameplay: boolean,
   enemyTuning: EnemyPressureTuning,
-  approvalManifestPath?: string
+  approvalManifestPath?: string,
+  options: ExecuteRunOptions = {}
 ): Promise<ExecutePreview> {
   return jsonRequest<ExecutePreview>("/api/execute", {
     method: "POST",
@@ -68,6 +77,8 @@ export function previewExecute(
       with_gameplay: withGameplay,
       enemy_tuning: enemyTuning,
       approval_manifest_path: approvalManifestPath || undefined,
+      session_id: options.sessionId || undefined,
+      resume_from: options.resumeFrom || undefined,
       confirmed: false
     })
   });
@@ -80,7 +91,8 @@ export function startExecute(
   withVisuals: boolean,
   withGameplay: boolean,
   enemyTuning: EnemyPressureTuning,
-  approvalManifestPath?: string
+  approvalManifestPath?: string,
+  options: ExecuteRunOptions = {}
 ): Promise<ExecuteStart> {
   return jsonRequest<ExecuteStart>("/api/execute", {
     method: "POST",
@@ -92,9 +104,18 @@ export function startExecute(
       with_gameplay: withGameplay,
       enemy_tuning: enemyTuning,
       approval_manifest_path: approvalManifestPath || undefined,
+      session_id: options.sessionId || undefined,
+      resume_from: options.resumeFrom || undefined,
       confirmed: true
     })
   });
+}
+
+export function getSessionState(sessionId: string, engine = "godot"): Promise<SessionState> {
+  const query = new URLSearchParams({ engine });
+  return jsonRequest<SessionState>(
+    `/api/sessions/${encodeURIComponent(sessionId)}/state?${query.toString()}`
+  );
 }
 
 export function getExecuteJob(jobId: string): Promise<ExecuteJob> {

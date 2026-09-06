@@ -278,6 +278,8 @@ export interface ExecuteStart {
   status?: string;
   job_id?: string;
   engine?: string;
+  /** Session this run belongs to; reuse it with `resume_from` to re-run one node. */
+  session_id?: string;
 }
 
 export interface ApprovalGateMetadata {
@@ -303,6 +305,7 @@ export interface ExecuteStage {
 
 export interface ExecuteResult {
   status?: string;
+  session_id?: string;
   project_dir?: string;
   stages?: ExecuteStage[];
 }
@@ -312,6 +315,28 @@ export interface ExecuteJob {
   status?: string;
   result?: ExecuteResult;
   error?: string;
+}
+
+/** One recorded stage of a previous run; the basis for node-level rework. */
+export interface SessionStageState {
+  name?: string;
+  status?: string;
+  detail?: string;
+  artifacts?: string[];
+  logs?: string[];
+  finished_at?: string;
+}
+
+export interface SessionState {
+  session_id?: string;
+  engine?: string;
+  found?: boolean;
+  project_dir?: string;
+  updated_at?: string;
+  stage_order?: string[];
+  stages?: SessionStageState[];
+  done?: string[];
+  failed?: string[];
 }
 
 export interface JobCancelResponse {
