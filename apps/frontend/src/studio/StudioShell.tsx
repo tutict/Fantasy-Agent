@@ -365,6 +365,7 @@ function ApiSettingsPanel({ t }: { t: Translator }) {
           <select id="api-provider" value={provider} onChange={(event) => setProvider(event.target.value)}>
             <option value="anthropic">anthropic</option>
             <option value="openai_compatible">openai_compatible</option>
+            <option value="openai_responses">openai_responses (GPT-6 / tool calling)</option>
           </select>
         </div>
 

@@ -1080,6 +1080,48 @@ def execute_cancel(job_id: str) -> dict[str, Any]:
     return _EXECUTE_JOB_REGISTRY.cancel(job_id)
 
 
+class AgentRunRequest(BaseModel):
+    goal: str
+    max_turns: int = 8
+    allow_write: bool = False
+    allow_execute: bool = False
+
+
+@app.post("/api/agent/run")
+def run_planning_agent(req: AgentRunRequest) -> dict[str, Any]:
+    """Run the bounded planning loop over the configured model.
+
+    Never raises: a loop failure is reported as a status so the caller can fall
+    back to the deterministic pipeline instead of showing an error screen.
+    """
+
+    from fantasy_agent.agent_loop import DEFAULT_MAX_TURNS, run_agent
+
+    if not req.goal.strip():
+        return {"status": "error", "error": "empty goal", "answer": ""}
+
+    try:
+        result = run_agent(
+            req.goal,
+            max_turns=max(1, min(req.max_turns, DEFAULT_MAX_TURNS * 2)),
+            allow_write=req.allow_write,
+            allow_execute=req.allow_execute,
+        )
+    except Exception as exc:  # noqa: BLE001 - the endpoint must not 500
+        return {"status": "error", "error": f"{type(exc).__name__}: {exc}", "answer": ""}
+
+    return {
+        "status": result.status,
+        "answer": result.answer,
+        "tool_calls": result.tool_calls,
+        "refusals": result.refusals,
+        "error": result.error,
+        "steps": [
+            {"text": step.text, "calls": step.calls} for step in result.steps
+        ],
+    }
+
+
 @app.get("/api/sessions/{session_id}/state")
 def session_state(session_id: str, engine: str = "godot") -> dict[str, Any]:
     """Stage state of a previous run, so the UI can offer node-level re-runs."""

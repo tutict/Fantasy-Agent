@@ -75,6 +75,25 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 
 `POST /api/execute` 返回 `session_id`，流程控制台据此在每次跑完后拉取 `GET /api/sessions/{id}/state`，列出各节点状态，每个节点一个「从此节点续跑」按钮。普通「生成 demo」永远开新 session，只有显式续跑才复用——避免节点级返工意外继承旧产物。
 
+## Agent Loop（可选层，不是替代品）
+
+确定性流水线答不了开放式规划问题（"比较这两个方向""还缺什么才能可玩"）。这类问题交给 `fantasy_agent/agent_loop.py` 的有界循环：让模型自己决定调哪个规划工具、调几次。
+
+**三条不可逾越的边界**（任何改动都不得破坏）：
+
+1. **模型不能决定"能不能做"。** 每个工具有 permission 分级（`read_only` / `write` / `execute`），闸门在 `tool_registry.py`，在循环之外。模型只能"尝试"，永远不能"提权"。被拒的工具以 refused 结果回传给模型，循环继续而不是崩掉。
+2. **跑多久不由模型决定。** `max_turns` 是硬上限（默认 8）。没有它，一个跑偏的模型会在 1M 上下文里空转。
+3. **失败不传染。** 任何 `LLMError` 返回 `status="error"`，调用方回退确定性流水线——和 `complete_json` 现有契约一致。循环是**增量**，不是替代；"demo 一定建得出来"这条保证仍由底下的确定性路径兜底。
+
+**GPT-6 硬约束**：Astra 的 tool calling 只在 Responses API（`/v1/responses`）上提供，Chat Completions 会拒；且它**不接受 `temperature` / `top_p` / `logprobs`**，传了是硬报错而非忽略。所以：
+
+- 用 GPT-6 跑循环必须选 provider `openai_responses`，默认模型 `gpt-6-astra`。
+- `api_settings.supports_sampling_params(model)` 在构造 payload 前判断，gpt-6 / o 系列一律不带采样参数。
+
+**接入方式**：CLI `--agent "目标" [--agent-max-turns N]`；Studio `POST /api/agent/run`（永不抛异常，失败以 status 返回）。
+
+**工具注册表**：`fantasy_agent/tool_registry.py` 是唯一真相——工具在此声明 schema + permission + handler，同一份记录同时喂给模型、权限闸门和 UI。`validate_contract_refs()` 守卫 `MCPToolContract` 的 34 个 `schema_ref` 全部能在 `mcp/*.yaml` 解析（有测试守着，此前这些引用从无代码解析）。
+
 ## Director Agent
 
 职责：

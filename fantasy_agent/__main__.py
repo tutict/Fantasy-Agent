@@ -108,6 +108,22 @@ def _build_parser() -> argparse.ArgumentParser:
         help="ComfyUI endpoint override (defaults to auto-detection).",
     )
     parser.add_argument(
+        "--agent",
+        default=None,
+        metavar="GOAL",
+        help=(
+            "Run the bounded planning agent loop on this goal instead of the "
+            "fixed pipeline. Needs the openai_responses provider: GPT-6 tool "
+            "calling is only served on the Responses API."
+        ),
+    )
+    parser.add_argument(
+        "--agent-max-turns",
+        type=int,
+        default=8,
+        help="Hard ceiling on agent round-trips (default 8).",
+    )
+    parser.add_argument(
         "--session-id",
         default=None,
         help="Reuse an existing session id instead of starting a new one.",
@@ -128,6 +144,29 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Path to UnrealEditor-Cmd (defaults to auto-detection) for --engine UE5.",
     )
     return parser
+
+
+def _run_agent(args) -> int:
+    """Run the bounded planning loop and print what it did."""
+
+    from fantasy_agent.agent_loop import run_agent
+
+    result = run_agent(args.agent, max_turns=max(1, args.agent_max_turns))
+
+    print(f"[{result.status}] {result.tool_calls} tool call(s)")
+    for step in result.steps:
+        for call in step.calls:
+            marker = "!" if call["status"] != "ok" else "-"
+            print(f"  {marker} {call['name']}: {call['status']}")
+            if call["status"] != "ok":
+                print(f"      {call['content']}")
+    if result.refusals:
+        print(f"  refused (needs confirmation): {', '.join(result.refusals)}")
+    if result.error:
+        print(f"  error: {result.error}", file=sys.stderr)
+    print()
+    print(result.answer or "(no answer)")
+    return 0 if result.ok else 1
 
 
 def _print_summary(plan) -> None:
@@ -153,6 +192,9 @@ def _print_summary(plan) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
+
+    if args.agent:
+        return _run_agent(args)
 
     if args.spec_file:
         from fantasy_agent.production_spec_runtime import (

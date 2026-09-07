@@ -26,17 +26,38 @@ from pydantic import BaseModel, Field
 
 ANTHROPIC = "anthropic"
 OPENAI_COMPATIBLE = "openai_compatible"
-PROVIDERS = (ANTHROPIC, OPENAI_COMPATIBLE)
+# GPT-6 Astra only exposes tool calling over the Responses API
+# (/v1/responses). Chat Completions tool calls are rejected, so a model that
+# must call tools needs this provider rather than openai_compatible.
+OPENAI_RESPONSES = "openai_responses"
+PROVIDERS = (ANTHROPIC, OPENAI_COMPATIBLE, OPENAI_RESPONSES)
 
 DEFAULT_BASE_URLS: dict[str, str] = {
     ANTHROPIC: "https://api.anthropic.com",
     OPENAI_COMPATIBLE: "https://api.openai.com/v1",
+    OPENAI_RESPONSES: "https://api.openai.com/v1",
 }
 
 DEFAULT_MODELS: dict[str, str] = {
     ANTHROPIC: "claude-opus-4-8",
     OPENAI_COMPATIBLE: "gpt-4o-mini",
+    OPENAI_RESPONSES: "gpt-6-astra",
 }
+
+# Models that reject temperature / top_p / logprobs outright. Sending any of
+# them makes the request fail instead of being ignored, so they must be omitted
+# rather than defaulted.
+UNSAMPLED_MODEL_PREFIXES: tuple[str, ...] = ("gpt-6", "o1", "o3", "o4")
+
+
+def supports_sampling_params(model: str) -> bool:
+    """Whether the model accepts temperature / top_p.
+
+    GPT-6 Astra and the o-series reject them: the request errors out instead of
+    ignoring the field, which is why this is checked before building a payload.
+    """
+
+    return not str(model or "").casefold().startswith(UNSAMPLED_MODEL_PREFIXES)
 
 # Probe prompt kept tiny on purpose: a connection test should cost almost nothing.
 PROBE_PROMPT = 'Reply with the single word "ok" and nothing else.'
@@ -253,6 +274,10 @@ def endpoint_url(provider: str, base_url: str) -> str:
         return f"{root}/v1/messages"
     if root.endswith("/chat/completions"):
         return root
+    if provider == OPENAI_RESPONSES:
+        if root.endswith("/responses"):
+            return root
+        return f"{root}/responses"
     return f"{root}/chat/completions"
 
 
@@ -275,6 +300,8 @@ def extract_reply(provider: str, payload: dict[str, Any]) -> str:
         blocks = payload.get("content") or []
         texts = [block.get("text", "") for block in blocks if isinstance(block, dict)]
         return "".join(texts).strip()
+    if provider == OPENAI_RESPONSES:
+        return _extract_responses_text(payload)
     choices = payload.get("choices") or []
     if choices:
         message = choices[0].get("message") or {}
@@ -282,9 +309,44 @@ def extract_reply(provider: str, payload: dict[str, Any]) -> str:
     return ""
 
 
-def _probe_payload(model: str) -> dict[str, Any]:
-    """The two provider wire formats happen to share this minimal shape."""
+def _extract_responses_text(payload: dict[str, Any]) -> str:
+    """Pull assistant text out of a Responses API body.
 
+    ``output_text`` is the convenience field; ``output`` is the authoritative
+    array and is what carries message blocks alongside function calls.
+    """
+
+    convenience = payload.get("output_text")
+    if isinstance(convenience, str) and convenience.strip():
+        return convenience.strip()
+    return "".join(
+        _responses_block_text(block) for block in payload.get("output") or []
+    ).strip()
+
+
+def _responses_block_text(block: Any) -> str:
+    if not isinstance(block, dict) or block.get("type") != "message":
+        return ""
+    return "".join(
+        str(part.get("text", ""))
+        for part in block.get("content") or []
+        if isinstance(part, dict) and part.get("type") in ("output_text", "text")
+    )
+
+
+def _probe_payload(provider: str, model: str) -> dict[str, Any]:
+    """Minimal probe body per wire format.
+
+    The Responses API takes ``input`` and ``max_output_tokens`` rather than
+    ``messages`` and ``max_tokens``, so the two shapes cannot be shared.
+    """
+
+    if provider == OPENAI_RESPONSES:
+        return {
+            "model": model,
+            "max_output_tokens": PROBE_MAX_TOKENS,
+            "input": [{"role": "user", "content": PROBE_PROMPT}],
+        }
     return {
         "model": model,
         "max_tokens": PROBE_MAX_TOKENS,
@@ -316,7 +378,7 @@ def test_connection(settings: LLMApiSettings | None = None) -> ApiTestResult:
         )
 
     url = endpoint_url(provider, resolved["base_url"])
-    body = json.dumps(_probe_payload(model)).encode("utf-8")
+    body = json.dumps(_probe_payload(provider, model)).encode("utf-8")
     http_request = request.Request(
         url,
         data=body,

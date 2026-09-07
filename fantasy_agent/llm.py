@@ -21,14 +21,17 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass, field
 from typing import Any
 
 from fantasy_agent.api_settings import (
     ANTHROPIC,
     OPENAI_COMPATIBLE,
+    OPENAI_RESPONSES,
     endpoint_url,
     request_headers,
     resolve_credentials,
+    supports_sampling_params,
 )
 
 DEFAULT_MODEL = "claude-opus-4-8"
@@ -92,6 +95,118 @@ def get_client() -> Any:
 
     _client = Anthropic(**kwargs)
     return _client
+
+
+@dataclass
+class ToolCallRequest:
+    """One tool invocation the model asked for."""
+
+    id: str
+    name: str
+    arguments: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ModelReply:
+    """A model turn: free text plus zero or more tool calls."""
+
+    text: str
+    tool_calls: list[ToolCallRequest] = field(default_factory=list)
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
+def complete_with_tools(
+    *,
+    instructions: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    max_tokens: int = 4000,
+    model: str | None = None,
+) -> ModelReply:
+    """One agent turn over the Responses API.
+
+    Only ``openai_responses`` supports this: GPT-6 Astra rejects tool calls on
+    Chat Completions, and the Anthropic path here is the plain messages API
+    without a tool schema. Anything else raises, and the caller is expected to
+    fall back to the deterministic pipeline rather than retry.
+    """
+
+    resolved = resolve_credentials()
+    if resolved["provider"] != OPENAI_RESPONSES:
+        raise LLMError(
+            "tool calling needs the openai_responses provider "
+            f"(configured: {resolved['provider']})"
+        )
+
+    effective_model = model or str(resolved["model"])
+    payload: dict[str, Any] = {
+        "model": effective_model,
+        "instructions": instructions,
+        "input": messages,
+        "tools": tools,
+        "max_output_tokens": max_tokens,
+    }
+    # GPT-6 rejects temperature outright; sending it is a hard error, not a
+    # silently ignored field.
+    if supports_sampling_params(effective_model):
+        payload["temperature"] = 0.2
+
+    decoded = _post_json(
+        endpoint_url(OPENAI_RESPONSES, str(resolved["base_url"])),
+        payload=payload,
+        headers=request_headers(OPENAI_RESPONSES, str(resolved["api_key"])),
+        timeout=float(resolved["timeout_seconds"]),
+    )
+    return _parse_responses_reply(decoded)
+
+
+def _parse_responses_reply(payload: dict[str, Any]) -> ModelReply:
+    """Split a Responses body into text plus function calls.
+
+    ``output`` is an ordered array: ``message`` blocks carry assistant text,
+    ``function_call`` blocks carry one call each with a ``call_id`` that the
+    matching ``function_call_output`` must reference.
+    """
+
+    blocks = payload.get("output") or []
+    texts: list[str] = []
+    calls: list[ToolCallRequest] = []
+
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        kind = block.get("type")
+        if kind == "message":
+            texts.extend(
+                str(part.get("text", ""))
+                for part in block.get("content") or []
+                if isinstance(part, dict)
+            )
+        elif kind == "function_call":
+            calls.append(
+                ToolCallRequest(
+                    id=str(block.get("call_id") or block.get("id") or ""),
+                    name=str(block.get("name") or ""),
+                    arguments=_parse_arguments(block.get("arguments")),
+                )
+            )
+
+    text = "".join(texts).strip() or str(payload.get("output_text") or "").strip()
+    return ModelReply(text=text, tool_calls=calls, raw=payload)
+
+
+def _parse_arguments(raw: Any) -> dict[str, Any]:
+    """Function call arguments arrive as a JSON *string*, not an object."""
+
+    if isinstance(raw, dict):
+        return raw
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(str(raw))
+    except ValueError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
 
 
 def complete_json(
