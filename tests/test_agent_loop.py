@@ -17,7 +17,11 @@ from fantasy_agent.tool_registry import (
     WRITE,
     ToolRegistry,
     ToolSpec,
+    combined_registry,
     default_registry,
+    engine_registry,
+    permission_from_annotations,
+    unimplemented_contracts,
     validate_contract_refs,
 )
 
@@ -299,3 +303,175 @@ def test_result_exposes_what_happened_for_the_ui():
     result = AgentRunResult(status="done", answer="x")
     assert result.ok
     assert AgentRunResult(status="error").ok is False
+
+
+# ── engine tools ─────────────────────────────────────────────────────────────
+
+
+def test_engine_registry_covers_every_implemented_contract():
+    """Every MCP contract with a bridge behind it must be callable."""
+
+    names = engine_registry().names()
+    assert len(names) == 16
+    assert "run_godot_import" in names
+    assert "publish_prototype_branch" not in names
+
+
+def test_only_the_github_contract_is_left_unimplemented():
+    """Pin the known gap, so implementing it (or deleting it) fails loudly."""
+
+    assert unimplemented_contracts() == ["publish_prototype_branch"]
+
+
+def test_permission_tier_follows_the_mcp_annotations():
+    """Validate/probe stay free; prepare writes; only run_* launches."""
+
+    registry = engine_registry()
+    for name in ("validate_godot_project", "validate_asset_ingest", "probe_comfyui_capabilities"):
+        assert registry.get(name).permission == READ_ONLY, name
+    for name in ("create_godot_project_structure", "prepare_asset_ingest"):
+        assert registry.get(name).permission == WRITE, name
+    for name in ("run_godot_import", "run_asset_ingest", "generate_asset_batch"):
+        assert registry.get(name).permission == EXECUTE, name
+
+
+def test_annotations_map_onto_tiers_the_way_the_gate_expects():
+    assert permission_from_annotations({"readOnlyHint": True}) == READ_ONLY
+    assert permission_from_annotations({"readOnlyHint": False, "idempotentHint": True}) == WRITE
+    assert permission_from_annotations({"readOnlyHint": False, "idempotentHint": False}) == EXECUTE
+
+
+def test_plan_is_hidden_from_the_model_and_injected_from_the_run():
+    """The model asks for the work; it must not invent a GodotProjectPlan."""
+
+    registry = engine_registry()
+    spec = registry.get("create_godot_project_structure")
+    assert spec.plan_key == "godot_plan"
+    assert "plan" not in spec.model_schema()["parameters"]["properties"]
+    assert "plan" not in spec.model_schema()["parameters"].get("required", [])
+
+    seen: dict = {}
+
+    def spy(arguments):
+        seen.update(arguments)
+        return "ok"
+
+    spec.handler = spy
+    registry.artifacts["godot_plan"] = {"project_name": "rooftop"}
+
+    registry.call("create_godot_project_structure", {}, allow_write=True)
+    assert seen["plan"] == {"project_name": "rooftop"}
+
+
+def test_hiding_the_plan_shrinks_the_schema_dramatically():
+    """Otherwise the Godot tool alone would ship ~19KB of unreachable $defs."""
+
+    import json
+
+    spec = engine_registry().get("create_godot_project_structure")
+    assert len(json.dumps(spec.model_schema())) < 4000
+
+
+def test_an_engine_tool_without_a_plan_names_the_missing_step():
+    registry = engine_registry()
+
+    outcome = registry.call("create_godot_project_structure", {}, allow_write=True)
+
+    assert outcome.status == "error"
+    assert "generate_game_production_plan" in outcome.content
+
+
+def test_confirmation_is_injected_only_when_granted():
+    """A grant must actually unlock the tool; without one it stays refused."""
+
+    seen: list[dict] = []
+    registry = ToolRegistry()
+    registry.register(
+        ToolSpec(
+            "save",
+            "d",
+            {"type": "object", "properties": {"write_files": {"type": "boolean"}}},
+            lambda a: seen.append(a) or "ok",
+            WRITE,
+            confirm_field="write_files",
+        )
+    )
+
+    assert registry.call("save", {}).status == "refused"
+    assert registry.call("save", {}, allow_write=True).status == "ok"
+    assert seen == [{"write_files": True}]
+
+
+def test_an_explicit_false_stays_a_dry_run():
+    """A model asking for a plan must get a plan, even inside a granted run."""
+
+    seen: list[dict] = []
+    registry = ToolRegistry()
+    registry.register(
+        ToolSpec(
+            "save",
+            "d",
+            {"type": "object", "properties": {"write_files": {"type": "boolean"}}},
+            lambda a: seen.append(a) or "ok",
+            WRITE,
+            confirm_field="write_files",
+        )
+    )
+
+    registry.call("save", {"write_files": False}, allow_execute=True)
+    assert seen == [{"write_files": False}]
+
+
+def test_a_blocked_mcp_call_is_reported_as_a_refusal_not_a_failure():
+    """'Not confirmed' and 'crashed' are different; the loop treats them so."""
+
+    from fantasy_agent.tool_registry import _mcp_handler
+
+    def dispatch(name, arguments):
+        if name == "launch":
+            return {
+                "structuredContent": {"status": "blocked"},
+                "content": [{"type": "text", "text": "not confirmed"}],
+            }
+        return {"isError": True, "content": [{"type": "text", "text": "crashed"}]}
+
+    registry = ToolRegistry()
+    registry.register(
+        ToolSpec("launch", "d", {"type": "object"}, _mcp_handler(dispatch, "launch", None), EXECUTE)
+    )
+    registry.register(
+        ToolSpec("boom", "d", {"type": "object"}, _mcp_handler(dispatch, "boom", None), EXECUTE)
+    )
+
+    assert registry.call("launch", {}, allow_execute=True).status == "refused"
+    assert registry.call("boom", {}, allow_execute=True).status == "error"
+
+
+def test_loop_harvests_the_plan_for_later_engine_calls(fake_complete):
+    """An engine tool can only run if a planning result reached the store."""
+
+    registry = combined_registry()
+    fake_complete(
+        [
+            _call("generate_game_production_plan", prompt="rooftop parkour chase with guards"),
+            llm.ModelReply(text="done"),
+        ]
+    )
+
+    assert run_agent("build it", registry=registry).ok
+    assert set(registry.artifacts) >= {"godot_plan", "blender_plan", "comfyui_plan", "unreal_plan"}
+
+
+def test_engine_tools_appear_only_at_the_granted_tier(fake_complete):
+    """Read-only checks are always offered; launching one needs a grant."""
+
+    fake = fake_complete([llm.ModelReply(text="ok")])
+    run_agent("check the project", include_engine_tools=True)
+    names = [t["name"] for t in fake.payloads[0]["tools"]]
+    assert "validate_godot_project" in names
+    assert "run_godot_import" not in names
+
+    fake = fake_complete([llm.ModelReply(text="ok")])
+    run_agent("run the import", include_engine_tools=True, allow_execute=True)
+    names = [t["name"] for t in fake.payloads[0]["tools"]]
+    assert "run_godot_import" in names

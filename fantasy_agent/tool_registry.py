@@ -21,6 +21,7 @@ therefore never decides *whether* it may act -- only *what* to attempt.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 
 READ_ONLY = "read_only"  # computes and returns a plan; never writes or launches
@@ -45,14 +46,31 @@ class ToolSpec:
     permission: str = READ_ONLY
     server: str = "fantasy-agent"
 
+    # Argument that unlocks the tool's real side effect, e.g. `write_files`
+    # or `confirmed_side_effects`. MCP tools default it to false, so a
+    # granted run would otherwise still do nothing; see ToolRegistry.call.
+    confirm_field: str | None = None
+
+    # Which sub-plan of a DirectorBuildPlan this tool's `plan` argument comes
+    # from. A model cannot invent a GodotProjectPlan, and it does not have to:
+    # the planning tools already produced an authoritative one for this run.
+    plan_key: str | None = None
+
+    # Arguments hidden from the model because the pipeline supplies them.
+    hidden_args: tuple[str, ...] = ()
+
     def model_schema(self) -> dict[str, Any]:
         """The shape handed to the model (Responses API function tool)."""
+
+        hidden = set(self.hidden_args)
+        if self.plan_key:
+            hidden.add("plan")
 
         return {
             "type": "function",
             "name": self.name,
             "description": self.description,
-            "parameters": self.input_schema,
+            "parameters": _without_args(self.input_schema, hidden),
         }
 
 
@@ -79,6 +97,23 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, ToolSpec] = {}
+        # Sub-plans harvested from this run's planning calls, keyed by name
+        # ("godot_plan", "blender_plan", ...). Engine tools read them here
+        # instead of asking the model to reconstruct them.
+        self.artifacts: dict[str, Any] = {}
+
+    def remember_plan(self, payload: Any) -> None:
+        """Store any sub-plans found in a planning tool's result."""
+
+        if not isinstance(payload, dict):
+            return
+        source = payload.get("summary")
+        if not isinstance(source, dict):
+            source = payload
+        for key in set(PLAN_KEYS.values()):
+            value = source.get(key)
+            if isinstance(value, dict) and value:
+                self.artifacts[key] = value
 
     def register(self, spec: ToolSpec) -> ToolSpec:
         if spec.permission not in PERMISSIONS:
@@ -138,8 +173,18 @@ class ToolRegistry:
                 f"{name} writes files and requires write confirmation; it was not run.",
             )
 
+        if spec.plan_key and not (arguments or {}).get("plan"):
+            plan = self.artifacts.get(spec.plan_key)
+            if plan is None:
+                return ToolOutcome(
+                    name,
+                    "error",
+                    f"{name} needs a {spec.plan_key}, but this run has not produced "
+                    "one yet; call generate_game_production_plan first.",
+                )
+
         try:
-            payload = spec.handler(arguments or {})
+            payload = spec.handler(self._call_arguments(spec, arguments, allow_write, allow_execute))
         except Exception as exc:  # noqa: BLE001 - a bad tool call must not kill the loop
             return ToolOutcome(name, "error", f"{type(exc).__name__}: {exc}")
 
@@ -147,6 +192,38 @@ class ToolRegistry:
             return payload
         text, data = _split_result(payload)
         return ToolOutcome(name, "ok", text, data)
+
+    def _call_arguments(
+        self,
+        spec: ToolSpec,
+        arguments: dict[str, Any] | None,
+        allow_write: bool,
+        allow_execute: bool,
+    ) -> dict[str, Any]:
+        """Fill in what the model must not be trusted with, or need not supply.
+
+        Two things are injected here, both outside the model's reach:
+
+        - the plan, from this run's planning result, so the model asks for the
+          work rather than reconstructing a nested object it cannot get right;
+        - the confirmation flag, reflecting the grant the *caller* made. An
+          explicit ``false`` from the model is left alone: that is a
+          deliberate dry run.
+        """
+
+        args = dict(arguments or {})
+
+        if spec.plan_key and not args.get("plan"):
+            plan = self.artifacts.get(spec.plan_key)
+            if plan is not None:
+                args["plan"] = plan
+
+        if spec.confirm_field and spec.confirm_field not in args:
+            granted = allow_execute if spec.permission == EXECUTE else (allow_write or allow_execute)
+            if granted:
+                args[spec.confirm_field] = True
+
+        return args
 
 
 def _split_result(payload: Any) -> tuple[str, dict[str, Any]]:
@@ -202,8 +279,13 @@ _SEED_SCHEMA: dict[str, Any] = {
 }
 
 
-def default_registry() -> ToolRegistry:
-    """The planning tools, wired to the deterministic workflows."""
+def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
+    """The planning tools, wired to the deterministic workflows.
+
+    Pass ``target`` to add them to an existing registry so both sets share one
+    artifact store -- which is what lets an engine tool read the plan a
+    planning tool just produced.
+    """
 
     from fantasy_agent.idea_discovery import extract_idea_seed
     from fantasy_agent.workflows import (
@@ -212,7 +294,7 @@ def default_registry() -> ToolRegistry:
     )
     from fantasy_agent.contracts import IdeaDiscoveryRequest, PromptRequest
 
-    registry = ToolRegistry()
+    registry = target or ToolRegistry()
 
     def _seed(arguments: dict[str, Any]) -> dict[str, Any]:
         request = IdeaDiscoveryRequest.model_validate(arguments)
@@ -295,6 +377,237 @@ def default_registry() -> ToolRegistry:
     return registry
 
 
+# Which sub-plan of a DirectorBuildPlan each engine tool consumes. The model
+# never supplies these: it asks for the work, the registry supplies the plan
+# that the planning tools already produced for this same run.
+PLAN_KEYS: dict[str, str] = {
+    "create_godot_project_structure": "godot_plan",
+    "create_project_structure": "unreal_plan",
+    "generate_blender_script": "blender_plan",
+    "generate_asset_batch": "blender_plan",
+    "prepare_visual_reference_workflows": "comfyui_plan",
+    "run_visual_reference_workflow": "comfyui_plan",
+}
+
+# Arguments the model must not fill in even though Pydantic accepts them.
+# They are pipeline outputs; letting the model supply them would both bloat
+# the schema and let it diverge from the plan everything else is built on.
+_ENGINE_HIDDEN_ARGS: dict[str, tuple[str, ...]] = {
+    "create_godot_project_structure": (
+        "gameplay_spec",
+        "gameplay_scripts",
+        "production_spec_bundle",
+    ),
+}
+
+# The argument that unlocks a tool's real side effect. Both default to false,
+# so without injection a granted run would still be a dry run.
+CONFIRM_FIELDS: tuple[str, ...] = ("write_files", "confirmed_side_effects")
+
+
+def permission_from_annotations(annotations: dict[str, Any]) -> str:
+    """Map MCP tool annotations onto a permission tier.
+
+    MCP has no permission field, but its three hints line up with exactly what
+    the gate needs: a read-only tool can be exposed freely, an idempotent
+    non-read-only one writes files, and a non-idempotent one launches a
+    process.
+    """
+
+    if annotations.get("readOnlyHint"):
+        return READ_ONLY
+    if annotations.get("idempotentHint"):
+        return WRITE
+    return EXECUTE
+
+
+def engine_registry(workspace_root: Path | str | None = None) -> ToolRegistry:
+    """Every implemented MCP engine tool, built from its own descriptors.
+
+    Nothing here is hand-written: the schema, description and annotations
+    come from the bridge that also executes the tool, so a bridge cannot
+    change shape without the model's tool list changing with it.
+    """
+
+    from fantasy_agent import blender_mcp, comfyui_mcp, godot_mcp, unreal_mcp
+
+    registry = ToolRegistry()
+    for server, module, dispatch in (
+        ("godot-mcp", godot_mcp, godot_mcp.call_godot_mcp_tool),
+        ("unreal-mcp", unreal_mcp, unreal_mcp.call_unreal_mcp_tool),
+        ("blender-mcp", blender_mcp, blender_mcp.call_blender_mcp_tool),
+        ("comfyui-mcp", comfyui_mcp, comfyui_mcp.call_comfyui_mcp_tool),
+    ):
+        _register_engine_server(registry, server, module, dispatch, workspace_root)
+    return registry
+
+
+def _register_engine_server(
+    registry: ToolRegistry,
+    server: str,
+    module: Any,
+    dispatch: Callable[..., dict[str, Any]],
+    workspace_root: Path | str | None,
+) -> None:
+    for descriptor in module.tool_descriptors():
+        name = str(descriptor.get("name") or "")
+        if not name:
+            continue
+        schema = descriptor.get("inputSchema") or {"type": "object", "properties": {}}
+        description = str(descriptor.get("description") or name)
+        if PLAN_KEYS.get(name):
+            description = (
+                f"{description} The plan is supplied from this run's production "
+                "plan; do not construct one."
+            )
+        registry.register(
+            ToolSpec(
+                name=name,
+                description=description,
+                input_schema=schema,
+                handler=_mcp_handler(dispatch, name, workspace_root),
+                permission=permission_from_annotations(descriptor.get("annotations") or {}),
+                server=server,
+                confirm_field=_confirm_field(schema),
+                plan_key=PLAN_KEYS.get(name),
+                hidden_args=_ENGINE_HIDDEN_ARGS.get(name, ()),
+            )
+        )
+
+
+def combined_registry(workspace_root: Path | str | None = None) -> ToolRegistry:
+    """Planning tools and engine tools sharing one artifact store."""
+
+    return default_registry(engine_registry(workspace_root))
+
+
+def _confirm_field(schema: dict[str, Any]) -> str | None:
+    properties = schema.get("properties") or {}
+    for candidate in CONFIRM_FIELDS:
+        if candidate in properties:
+            return candidate
+    return None
+
+
+def _mcp_handler(
+    dispatch: Callable[..., dict[str, Any]],
+    name: str,
+    workspace_root: Path | str | None,
+) -> Callable[[dict[str, Any]], ToolOutcome]:
+    def handler(arguments: dict[str, Any]) -> ToolOutcome:
+        if workspace_root is None:
+            payload = dispatch(name, arguments)
+        else:
+            payload = dispatch(name, arguments, workspace_root)
+        return _mcp_outcome(name, payload)
+
+    return handler
+
+
+def _mcp_outcome(name: str, payload: dict[str, Any]) -> ToolOutcome:
+    """Translate an MCP envelope into a ToolOutcome.
+
+    ``blocked`` becomes a refusal, not an error: the tool declined to act for
+    want of confirmation, which is the same situation as the registry gate
+    refusing, and the loop should treat it the same way -- report it and carry
+    on rather than abandon the run.
+    """
+
+    structured = payload.get("structuredContent") or {}
+    if payload.get("isError"):
+        return ToolOutcome(name, "error", _first_text(payload), structured)
+
+    status = str(structured.get("status") or "")
+    if status == "blocked":
+        return ToolOutcome(
+            name, "refused", _first_text(payload) or f"{name} was not run.", structured
+        )
+    if status == "failed":
+        return ToolOutcome(name, "error", _first_text(payload), structured)
+    return ToolOutcome(name, "ok", _first_text(payload), structured)
+
+
+def _first_text(payload: dict[str, Any]) -> str:
+    for block in payload.get("content") or []:
+        if isinstance(block, dict) and block.get("type") == "text":
+            return str(block.get("text") or "")
+    return ""
+
+
+def _without_args(schema: dict[str, Any], hidden: set[str]) -> dict[str, Any]:
+    """Remove hidden arguments, then prune definitions nothing references."""
+
+    if not hidden:
+        return schema
+
+    result = {k: v for k, v in schema.items() if k not in ("properties", "required")}
+    properties = {k: v for k, v in (schema.get("properties") or {}).items() if k not in hidden}
+    required = [r for r in (schema.get("required") or []) if r not in hidden]
+    if properties:
+        result["properties"] = properties
+    if required:
+        result["required"] = required
+    return _prune_defs(result)
+
+
+def _prune_defs(schema: dict[str, Any]) -> dict[str, Any]:
+    """Drop ``$defs`` entries nothing can reach any more.
+
+    Pydantic inlines every reachable model, so hiding ``plan`` would otherwise
+    leave tens of kilobytes of unreachable definitions in the tool list --
+    most of the Godot tool's 19KB is definitions reachable only from ``plan``.
+    """
+
+    defs = schema.get("$defs")
+    if not isinstance(defs, dict):
+        return schema
+
+    reachable = _refs_in({k: v for k, v in schema.items() if k != "$defs"})
+    frontier = list(reachable)
+    while frontier:
+        name = frontier.pop()
+        for ref in _refs_in(defs.get(name) or {}):
+            if ref not in reachable:
+                reachable.add(ref)
+                frontier.append(ref)
+
+    pruned = {n: body for n, body in defs.items() if n in reachable}
+    if not pruned:
+        return {k: v for k, v in schema.items() if k != "$defs"}
+    return {**schema, "$defs": pruned}
+
+
+def _refs_in(node: Any) -> set[str]:
+    found: set[str] = set()
+    frontier: list[Any] = [node]
+    while frontier:
+        item = frontier.pop()
+        if isinstance(item, dict):
+            for key, value in item.items():
+                if key == "$ref" and isinstance(value, str):
+                    found.add(value.rsplit("/", 1)[-1])
+                elif isinstance(value, (dict, list)):
+                    frontier.append(value)
+        elif isinstance(item, list):
+            frontier.extend(x for x in item if isinstance(x, (dict, list)))
+    return found
+
+
+def unimplemented_contracts() -> list[str]:
+    """MCP contracts that declare a tool no bridge implements.
+
+    ``publish_prototype_branch`` is the known gap: it is declared and served
+    to the UI but nothing implements it. Pinning the gap here means either
+    implementing it without wiring it up, or deleting the contract and
+    forgetting this test, fails loudly.
+    """
+
+    from fantasy_agent.mcp import initial_mcp_contracts
+
+    registered = set(engine_registry().names())
+    return sorted(c.name for c in initial_mcp_contracts() if c.name not in registered)
+
+
 def validate_contract_refs() -> list[str]:
     """Return contract refs that do not resolve in ``mcp/*.yaml``.
 
@@ -324,7 +637,5 @@ def validate_contract_refs() -> list[str]:
     return problems
 
 
-def _mcp_root() -> "Path":  # noqa: F821 - local import keeps this module light
-    from pathlib import Path
-
+def _mcp_root() -> Path:
     return Path(__file__).resolve().parents[1]

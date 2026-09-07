@@ -124,6 +124,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Hard ceiling on agent round-trips (default 8).",
     )
     parser.add_argument(
+        "--agent-engine-tools",
+        action="store_true",
+        help=(
+            "Also expose the Godot/Unreal/Blender/ComfyUI tools. Read-only "
+            "checks are offered either way; writing or launching needs the "
+            "matching grant below."
+        ),
+    )
+    parser.add_argument(
+        "--agent-allow-write",
+        action="store_true",
+        help="Let the agent write generated files (WRITE-tier tools).",
+    )
+    parser.add_argument(
+        "--agent-allow-execute",
+        action="store_true",
+        help="Let the agent launch Godot/Unreal/Blender/ComfyUI (EXECUTE tier).",
+    )
+    parser.add_argument(
         "--session-id",
         default=None,
         help="Reuse an existing session id instead of starting a new one.",
@@ -151,7 +170,13 @@ def _run_agent(args) -> int:
 
     from fantasy_agent.agent_loop import run_agent
 
-    result = run_agent(args.agent, max_turns=max(1, args.agent_max_turns))
+    result = run_agent(
+        args.agent,
+        max_turns=max(1, args.agent_max_turns),
+        include_engine_tools=args.agent_engine_tools,
+        allow_write=args.agent_allow_write,
+        allow_execute=args.agent_allow_execute,
+    )
 
     print(f"[{result.status}] {result.tool_calls} tool call(s)")
     for step in result.steps:

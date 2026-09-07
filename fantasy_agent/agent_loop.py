@@ -24,10 +24,19 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from fantasy_agent.llm import LLMError, complete_with_tools
-from fantasy_agent.tool_registry import READ_ONLY, ToolOutcome, ToolRegistry, default_registry
+from fantasy_agent.tool_registry import (
+    EXECUTE,
+    READ_ONLY,
+    WRITE,
+    ToolOutcome,
+    ToolRegistry,
+    combined_registry,
+    default_registry,
+)
 
 DEFAULT_MAX_TURNS = 8
 
@@ -72,7 +81,9 @@ def run_agent(
     allow_write: bool = False,
     allow_execute: bool = False,
     instructions: str = SYSTEM_PROMPT,
-    permission_ceiling: str = READ_ONLY,
+    permission_ceiling: str | None = None,
+    include_engine_tools: bool = False,
+    workspace_root: "Path | str | None" = None,
 ) -> AgentRunResult:
     """Run the loop until the model stops calling tools or the ceiling hits.
 
@@ -83,10 +94,23 @@ def run_agent(
         allow_write: Grant WRITE-tier tools. Still off unless a human confirmed.
         allow_execute: Grant EXECUTE-tier tools (launching Blender/Godot/UE).
         instructions: System prompt for the run.
-        permission_ceiling: Highest tier to even *show* the model.
+        permission_ceiling: Highest tier to even *show* the model. Defaults to
+            following the grants: no grant means read-only tools only.
+        include_engine_tools: Add the MCP engine tools (Godot/Unreal/Blender/
+            ComfyUI) alongside the planning tools.
+        workspace_root: Directory engine tools write under. Defaults to the
+            project root; pass a temporary one to keep a run contained.
     """
 
-    tools = registry or default_registry()
+    if registry is not None:
+        tools = registry
+    elif include_engine_tools:
+        tools = combined_registry(workspace_root)
+    else:
+        tools = default_registry()
+
+    if permission_ceiling is None:
+        permission_ceiling = EXECUTE if allow_execute else (WRITE if allow_write else READ_ONLY)
     schemas = tools.schemas(up_to=permission_ceiling)
     messages: list[dict[str, Any]] = [{"role": "user", "content": goal}]
 
@@ -123,6 +147,9 @@ def run_agent(
                 allow_execute=allow_execute,
             )
             result.tool_calls += 1
+            # A plan produced here is what the engine tools will consume, so
+            # it goes into the shared store rather than only back to the model.
+            tools.remember_plan(outcome.data)
             step.calls.append(
                 {
                     "name": call.name,

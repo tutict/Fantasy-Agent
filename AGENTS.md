@@ -90,9 +90,23 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - 用 GPT-6 跑循环必须选 provider `openai_responses`，默认模型 `gpt-6-astra`。
 - `api_settings.supports_sampling_params(model)` 在构造 payload 前判断，gpt-6 / o 系列一律不带采样参数。
 
-**接入方式**：CLI `--agent "目标" [--agent-max-turns N]`；Studio `POST /api/agent/run`（永不抛异常，失败以 status 返回）。
+**接入方式**：CLI `--agent "目标" [--agent-max-turns N] [--agent-engine-tools] [--agent-allow-write] [--agent-allow-execute]`；Studio `POST /api/agent/run`（永不抛异常，失败以 status 返回）。
 
 **工具注册表**：`fantasy_agent/tool_registry.py` 是唯一真相——工具在此声明 schema + permission + handler，同一份记录同时喂给模型、权限闸门和 UI。`validate_contract_refs()` 守卫 `MCPToolContract` 的 34 个 `schema_ref` 全部能在 `mcp/*.yaml` 解析（有测试守着，此前这些引用从无代码解析）。
+
+### 引擎工具（Godot / Unreal / Blender / ComfyUI）
+
+`engine_registry()` 把 16 个已实现的 MCP 工具接进循环。schema、描述、注解全部来自执行它的那个 bridge，所以 bridge 改形状，模型的工具列表必然跟着改——不存在第二份手写清单。
+
+三条规则是这次接线定下的，改之前先读：
+
+1. **权限从 MCP 注解推导，不手写。** `readOnlyHint` → `read_only`；非只读且 `idempotentHint` → `write`；非幂等 → `execute`（只有 `run_*` / `generate_asset_batch` 会启进程）。`permission_from_annotations()` 是唯一出处。
+2. **模型不造 plan。** `create_godot_project_structure` 这类工具要一个嵌套 `GodotProjectPlan`，模型造不出来也不该造。它们声明 `plan_key`，`plan` 参数从 schema 里**隐藏**，由注册表把本轮 `generate_game_production_plan` 的产物注入（`run_agent` 每次调用后调 `remember_plan`）。附带收益：Godot 那个工具的 schema 从 19.5KB 降到 1.5KB。
+3. **确认由闸门注入，不由模型声明。** `write_files` / `confirmed_side_effects` 默认都是 false，不注入的话"授权"等于什么都没发生。授权时注册表写入 true——但**模型显式传 false 时保留**，那是它主动要 dry run。
+
+**未接线的一个**：`publish_prototype_branch`（github-mcp）只有契约没有实现。`unimplemented_contracts()` + 测试把这个缺口钉住——实现了却没接线、或删了契约忘了测试，都会红。
+
+**暴露范围跟着授权走**：不给授权时循环只看到只读检查工具（`validate_*` / `probe_*`）；`allow_write` 放到 write 级；`allow_execute` 才放出 `run_*`。
 
 ## Director Agent
 

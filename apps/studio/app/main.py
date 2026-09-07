@@ -1106,6 +1106,7 @@ def run_planning_agent(req: AgentRunRequest) -> dict[str, Any]:
             max_turns=max(1, min(req.max_turns, DEFAULT_MAX_TURNS * 2)),
             allow_write=req.allow_write,
             allow_execute=req.allow_execute,
+            include_engine_tools=req.include_engine_tools,
         )
     except Exception as exc:  # noqa: BLE001 - the endpoint must not 500
         return {"status": "error", "error": f"{type(exc).__name__}: {exc}", "answer": ""}
