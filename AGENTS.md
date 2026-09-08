@@ -90,7 +90,13 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - 用 GPT-6 跑循环必须选 provider `openai_responses`，默认模型 `gpt-6-astra`。
 - `api_settings.supports_sampling_params(model)` 在构造 payload 前判断，gpt-6 / o 系列一律不带采样参数。
 
-**接入方式**：CLI `--agent "目标" [--agent-max-turns N] [--agent-engine-tools] [--agent-allow-write] [--agent-allow-execute]`；Studio `POST /api/agent/run`（永不抛异常，失败以 status 返回）。
+**接入方式**：
+
+- CLI：`--agent "目标" [--agent-max-turns N] [--agent-engine-tools] [--agent-allow-write] [--agent-allow-execute]`
+- Studio：`POST /api/agent/run`（永不抛异常，失败以 status 返回）
+- Studio 界面：策划工作台的**「Agent」面板**，可填目标、设 max_turns、勾选引擎工具与 write/execute 授权，跑完展示回答、工具调用明细和被拒清单。
+
+**工具调用需要 `openai_responses` provider**：`complete_with_tools` 只在该 provider 下发 function tools，用 anthropic / openai_compatible 调循环会得到明确报错而不是静默降级——规划类问题请先在「API 接入」面板把 provider 切成 `openai_responses`。
 
 **工具注册表**：`fantasy_agent/tool_registry.py` 是唯一真相——工具在此声明 schema + permission + handler，同一份记录同时喂给模型、权限闸门和 UI。`validate_contract_refs()` 守卫 `MCPToolContract` 的 34 个 `schema_ref` 全部能在 `mcp/*.yaml` 解析（有测试守着，此前这些引用从无代码解析）。
 

@@ -1,4 +1,6 @@
 import type {
+  AgentRunRequest,
+  AgentRunResult,
   ApprovalManifestResponse,
   AssetExecuteJob,
   AssetExecutePreview,
@@ -125,6 +127,18 @@ export function getExecuteJob(jobId: string): Promise<ExecuteJob> {
 export function cancelExecuteJob(jobId: string): Promise<JobCancelResponse> {
   return jsonRequest<JobCancelResponse>(`/api/execute/${encodeURIComponent(jobId)}/cancel`, {
     method: "POST"
+  });
+}
+
+/**
+ * The bounded loop. Unlike /api/execute this is synchronous -- a run is a
+ * handful of model round-trips, not a multi-minute build -- so the response
+ * is the whole result. Failures come back as status="error", never an HTTP 500.
+ */
+export function runAgent(request: AgentRunRequest): Promise<AgentRunResult> {
+  return jsonRequest<AgentRunResult>("/api/agent/run", {
+    method: "POST",
+    body: JSON.stringify(request)
   });
 }
 

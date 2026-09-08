@@ -1083,6 +1083,7 @@ def execute_cancel(job_id: str) -> dict[str, Any]:
 class AgentRunRequest(BaseModel):
     goal: str
     max_turns: int = 8
+    include_engine_tools: bool = False
     allow_write: bool = False
     allow_execute: bool = False
 

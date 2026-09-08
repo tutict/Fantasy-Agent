@@ -528,3 +528,60 @@ def test_frontend_includes_spec_bundle_panel():
     assert '["specs", "tabSpecs"]' in flow_source
     assert "SpecBundlePanel" in flow_source
     assert "spec-trace-list" in rendering_source
+
+
+def test_agent_run_forwards_the_permission_grants(monkeypatch):
+    """The panel's toggles must reach the loop.
+
+    Guards a real failure: the call site passed include_engine_tools while the
+    request model lacked the field, so Pydantic silently dropped it and every
+    run came back as an AttributeError instead of running.
+    """
+
+    module = _load_studio_app()
+    captured: dict = {}
+
+    def fake_run(goal, **kwargs):
+        captured["goal"] = goal
+        captured.update(kwargs)
+        from fantasy_agent.agent_loop import AgentRunResult
+
+        return AgentRunResult(status="done", answer="ok")
+
+    monkeypatch.setattr("fantasy_agent.agent_loop.run_agent", fake_run)
+
+    response = module.run_planning_agent(
+        module.AgentRunRequest(
+            goal="build it",
+            max_turns=3,
+            include_engine_tools=True,
+            allow_write=True,
+            allow_execute=True,
+        )
+    )
+
+    assert response["status"] == "done", response.get("error")
+    assert captured["include_engine_tools"] is True
+    assert captured["allow_write"] is True
+    assert captured["allow_execute"] is True
+
+
+def test_agent_run_rejects_an_empty_goal():
+    module = _load_studio_app()
+
+    response = module.run_planning_agent(module.AgentRunRequest(goal="   "))
+
+    assert response["status"] == "error"
+
+
+def test_frontend_includes_agent_panel():
+    module = _load_studio_app()
+    shell = module.REPO_ROOT.joinpath(
+        "apps/frontend/src/studio/StudioShell.tsx"
+    ).read_text(encoding="utf-8")
+    api = module.REPO_ROOT.joinpath("apps/frontend/src/shared/api.ts").read_text(encoding="utf-8")
+
+    assert "AgentPanel" in shell
+    assert 'data-panel="agent"' in shell
+    assert "runAgent" in api
+    assert "/api/agent/run" in api

@@ -403,3 +403,37 @@ export interface LlmApiSettingsInput {
   api_key: string;
   timeout_seconds: number;
 }
+
+/**
+ * Every grant defaults to off. The backend refuses tiers it was not given,
+ * and only reveals tools up to the granted tier, so the toggles here are the
+ * only way a run can write files or launch an engine.
+ */
+export interface AgentRunRequest {
+  goal: string;
+  max_turns?: number;
+  include_engine_tools?: boolean;
+  allow_write?: boolean;
+  allow_execute?: boolean;
+}
+
+export interface AgentStepCall {
+  name: string;
+  arguments?: Record<string, unknown>;
+  status: string;
+  content: string;
+}
+
+export interface AgentStep {
+  text: string;
+  calls: AgentStepCall[];
+}
+
+export interface AgentRunResult {
+  status?: string;
+  answer?: string;
+  tool_calls?: number;
+  refusals?: string[];
+  error?: string;
+  steps?: AgentStep[];
+}

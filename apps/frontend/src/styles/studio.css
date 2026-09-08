@@ -311,7 +311,8 @@ iframe:focus-visible {
 
 .studio-frame,
 .mcp-panel,
-.api-panel {
+.api-panel,
+.agent-panel {
   position: absolute;
   inset: 0;
   display: none;
@@ -322,12 +323,14 @@ iframe:focus-visible {
 
 .studio-frame.active,
 .mcp-panel.active,
-.api-panel.active {
+.api-panel.active,
+.agent-panel.active {
   display: block;
 }
 
 .mcp-panel,
-.api-panel {
+.api-panel,
+.agent-panel {
   overflow: auto;
   padding: 18px;
 }
@@ -533,6 +536,100 @@ iframe:focus-visible {
 
 .api-summary[data-state="error"] {
   color: var(--danger);
+}
+
+/* ── agent loop ─────────────────────────────────────────────────────────── */
+
+.api-field textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--field-bg, transparent);
+  color: inherit;
+  font: inherit;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.api-field textarea:focus {
+  outline: 2px solid var(--accent, #6ea8fe);
+  outline-offset: 1px;
+}
+
+.agent-note {
+  margin: -4px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.agent-note-danger {
+  color: var(--danger);
+}
+
+.agent-answer {
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent, #6ea8fe);
+  border-radius: 12px;
+  background: var(--chrome);
+  padding: 14px 16px;
+}
+
+.agent-answer p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+}
+
+.agent-calls {
+  margin-top: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.agent-call {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: 12px;
+  background: var(--chrome);
+  padding: 12px 14px;
+}
+
+.agent-call[data-status="ok"] {
+  border-left-color: var(--ok, #2f9e5f);
+}
+
+.agent-call[data-status="refused"] {
+  border-left-color: var(--warn, #c98a1b);
+}
+
+.agent-call[data-status="error"] {
+  border-left-color: var(--danger);
+}
+
+.agent-call-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agent-call-top code {
+  background: var(--code-bg);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+
+.agent-call-status {
+  color: var(--muted-strong);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.agent-call p {
+  margin: 8px 0 0;
+  color: var(--muted-strong);
+  word-break: break-word;
 }
 
 @media (max-width: 900px) {
