@@ -67,7 +67,11 @@ class StageResult:
     """Outcome of one orchestration stage."""
 
     name: str
-    status: str  # pending | running | done | failed | blocked
+    # `degraded` means the stage produced nothing but the run continues without
+    # it (a missing reference image set, a greybox instead of exported assets).
+    # It is deliberately not `done`, so a resumed run retries it, and not
+    # `failed`, so a reader does not report a broken run.
+    status: str  # pending | running | done | degraded | failed | blocked
     detail: str = ""
     artifacts: list[str] = field(default_factory=list)
     logs: list[str] = field(default_factory=list)
@@ -1545,7 +1549,12 @@ def _write_unreal_import_manifest(plan: DirectorBuildPlan, workspace_root: Path 
 
     manifest = build_unreal_import_manifest(plan.blender_plan)
     rel = "generated/import-manifest.yaml"
-    dest = Path(workspace_root) / rel
+    # `rel` is a literal, so this is not a traversal risk today -- but routing it
+    # through the shared resolver keeps it consistent with the other ten writers
+    # in this module, and keeps it safe if `rel` ever becomes an argument.
+    dest = resolve_workspace_path(
+        rel, workspace_root=workspace_root, required_prefix="generated"
+    )
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(
         yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False, allow_unicode=True),

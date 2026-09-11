@@ -53,10 +53,23 @@ RESUMABLE_STAGES: frozenset[str] = frozenset(
     {"comfyui", "blender", "approval_gate", "gameplay", "copy_assets", "copy_refs"}
 )
 
+# Execution order for the Unreal chain. This is the `order` argument
+# `stages_before` is meant to take for an Unreal session; it is pinned to what
+# `execute_unreal_demo` actually emits by
+# `test_unreal_stage_order_covers_every_stage_the_executor_emits`, so a stage
+# the executor emits cannot go missing from it (the Godot equivalent drifted
+# the same way once).
+#
+# Not wired to resume yet: unlike the Godot path, `execute_unreal_demo` never
+# calls `record_stage`, so no Unreal session writes `_pipeline_state.json` and
+# `--from-stage` does nothing for it. The tuple is here so that wiring resume
+# later starts from a list that matches reality.
 UNREAL_STAGE_ORDER: tuple[str, ...] = (
+    "spec_validation",
     "preflight",
     "create",
     "spec_compile",
+    "spec_qa",
     "prepare_ingest",
     "prepare_level",
     "validate",

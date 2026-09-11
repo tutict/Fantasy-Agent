@@ -86,6 +86,7 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - 只有**真的成功过**的阶段才会被跳过；失败阶段永远重跑，未知阶段名一律不跳过——续跑不能掩盖失败。
 - `create` 和 `validate` 不可跳过：它们便宜，且后续每个阶段都依赖其产出的 `project_file`。
 - `GODOT_STAGE_ORDER` 必须与 `execute_godot_demo` 的实际阶段保持同步，否则该节点永远不可续跑（有测试守着）。
+- `UNREAL_STAGE_ORDER` 同样被测试钉在 `execute_unreal_demo` 的实际阶段上（成员与顺序都查，因为 `stages_before` 按位置读）。**但 Unreal 续跑尚未接线**：`execute_unreal_demo` 不调 `record_stage`，不写 `_pipeline_state.json`，`--from-stage` 对它无效。加能力时从这份清单出发。
 
 **3. 界面纠偏闭环（Studio 流程控制台）**
 

@@ -681,6 +681,35 @@ def test_unreal_executes_stage_order(tmp_path: Path):
     assert result.project_dir.startswith("generated/unreal/sessions/u2/")
 
 
+def test_unreal_stage_order_covers_every_stage_the_executor_emits(tmp_path: Path):
+    """`UNREAL_STAGE_ORDER` must stay in sync with `execute_unreal_demo`.
+
+    It listed neither `spec_qa` nor `spec_validation`, and nothing referenced it
+    -- so the tuple was free to be wrong, and was. Membership alone is not
+    enough: `stages_before` reads it positionally, so the order has to match
+    what the executor emits too.
+    """
+
+    from fantasy_agent.executor import execute_unreal_demo
+    from fantasy_agent.pipeline_state import UNREAL_STAGE_ORDER
+
+    result = execute_unreal_demo(
+        _unreal_plan(),
+        session_id="u-order",
+        confirmed=True,
+        unreal_cmd="UnrealEditor-Cmd",
+        workspace_root=tmp_path,
+        bridge=_unreal_bridge(tmp_path),
+    )
+
+    assert result.ok
+    emitted = [stage.name for stage in result.stages]
+    for name in emitted:
+        assert name in UNREAL_STAGE_ORDER, f"{name} is not resumable"
+    positions = [UNREAL_STAGE_ORDER.index(name) for name in emitted]
+    assert positions == sorted(positions), f"{emitted} is out of order in UNREAL_STAGE_ORDER"
+
+
 def test_unreal_execution_writes_compiled_specs_and_executable_qa(tmp_path: Path):
     from fantasy_agent.executor import execute_unreal_demo
 

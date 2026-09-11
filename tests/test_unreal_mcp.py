@@ -511,13 +511,24 @@ LEVEL_ASSETS: tuple[tuple[str, str, str], ...] = (
 )
 
 
-def _write_level_source_manifests(root: Path) -> None:
+LevelAsset = tuple[str, str, str]
+
+# Every level asset except the enemy spawn marker, so a design that declares
+# enemies has nothing to place them with.
+ASSETS_WITHOUT_ENEMY_MARKER: tuple[LevelAsset, ...] = tuple(
+    entry for entry in LEVEL_ASSETS if entry[0] != "enemy_spawn_marker"
+)
+
+
+def _write_level_source_manifests(
+    root: Path, assets: tuple[LevelAsset, ...] = LEVEL_ASSETS
+) -> None:
     (root / "generated/assets").mkdir(parents=True, exist_ok=True)
-    assets: list[UnrealImportAsset] = []
-    for asset_name, asset_kind, gameplay_role in LEVEL_ASSETS:
+    assets_written: list[UnrealImportAsset] = []
+    for asset_name, asset_kind, gameplay_role in assets:
         source_file = f"generated/assets/{asset_name}.fbx"
         (root / source_file).write_text("fbx", encoding="utf-8")
-        assets.append(
+        assets_written.append(
             UnrealImportAsset(
                 asset_name=asset_name,
                 asset_kind=asset_kind,  # type: ignore[arg-type]
@@ -537,7 +548,7 @@ def _write_level_source_manifests(root: Path) -> None:
             "import_textures": False,
             "unit_scale": 1.0,
         },
-        assets=assets,
+        assets=assets_written,
     )
     (root / "generated/level-import-manifest.json").write_text(
         json.dumps(blender_manifest.model_dump(mode="json"), indent=2),
@@ -636,8 +647,13 @@ def _spec_with_beats(*beats: tuple[str, int], enemies=()):
     )
 
 
-def _assemble(tmp_path: Path, *, gameplay_spec=None):
-    _write_level_source_manifests(tmp_path)
+def _assemble(
+    tmp_path: Path,
+    *,
+    gameplay_spec=None,
+    assets: tuple[LevelAsset, ...] = LEVEL_ASSETS,
+):
+    _write_level_source_manifests(tmp_path, assets)
     bridge = UnrealMCPBridge(tmp_path)
     bridge.create_project_structure(
         UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True)
@@ -721,16 +737,25 @@ def test_enemies_reach_the_level(tmp_path: Path):
 
 
 def test_declared_enemies_without_an_asset_are_reported(tmp_path: Path):
-    """Silently dropping enemy pressure is worse than saying so."""
+    """Silently dropping enemy pressure is worse than saying so.
+
+    The old body asserted the *positive* case (`assert not any("enemy spawn" in
+    risk ...)`) against a fixture that did ship the spawn marker, so the risk
+    branch it is named after was never reached. Take the marker away and the
+    reported risk is what the design's enemies turn into.
+    """
 
     manifest = _assemble(
-        tmp_path, gameplay_spec=_spec_with_beats(("Approach", 10), enemies=(("Guard", 2),))
+        tmp_path,
+        gameplay_spec=_spec_with_beats(("Approach", 10), enemies=(("Guard", 2),)),
+        assets=ASSETS_WITHOUT_ENEMY_MARKER,
     )
 
-    # The fixture does ingest an enemy marker, so this path is exercised by
-    # removing it: assert the positive case held and the risk text exists.
-    assert any(p.gameplay_role == "enemy" for p in manifest.placements)
-    assert not any("enemy spawn" in risk.lower() for risk in manifest.risks)
+    assert not any(p.gameplay_role == "enemy" for p in manifest.placements)
+    reported = [risk for risk in manifest.risks if "enemy" in risk.lower()]
+    assert reported, manifest.risks
+    assert "no enemy spawn marker was ingested" in reported[0]
+    assert "1 enemy type(s)" in reported[0]
 
 
 def test_without_a_spec_the_hand_tuned_greybox_survives(tmp_path: Path):

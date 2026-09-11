@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  callWorkbenchTool,
   errorMessageFromPayload,
   getSessionState,
   openManualCorrectionTarget,
@@ -124,5 +125,33 @@ describe("session state lookups", () => {
 
     await getSessionState("session/../evil");
     expect(fetchMock.mock.calls[0][0]).toBe("/api/sessions/session%2F..%2Fevil/state?engine=godot");
+  });
+});
+
+describe("workbench tool calls", () => {
+  it("posts the payload to the tool's own endpoint and returns the envelope", async () => {
+    const shape = { structuredContent: { idea_seed: { premise: "rooftop" } } };
+    const fetchMock = jsonFetch(shape);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await callWorkbenchTool("extract_idea_seed", {
+      prompt: "rooftop parkour chase"
+    } as never);
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/tools/extract_idea_seed");
+    expect(fetchMock.mock.calls[0][1].method).toBe("POST");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body as string)).toEqual({
+      prompt: "rooftop parkour chase"
+    });
+    expect(result.structuredContent).toEqual(shape.structuredContent);
+  });
+
+  it("percent-encodes the tool name instead of letting it add path segments", async () => {
+    const fetchMock = jsonFetch({});
+    vi.stubGlobal("fetch", fetchMock);
+
+    await callWorkbenchTool("../../settings/llm", {} as never);
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/tools/..%2F..%2Fsettings%2Fllm");
   });
 });
