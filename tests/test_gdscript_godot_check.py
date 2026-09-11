@@ -11,7 +11,8 @@ scripts, instantiates them in a SceneTree, pumps frames, and fails on any
 SCRIPT ERROR / Parse Error / Invalid call in Godot's output.
 
 Skipped when no Godot binary is available; point ``FANTASY_AGENT_GODOT_EXE`` at
-one (or have ``godot`` on PATH) to run it.
+one, or rely on the project's own probe (``local_tools._find_godot``), which
+already knows the usual install locations.
 """
 
 from __future__ import annotations
@@ -19,9 +20,11 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+from pathlib import Path
 
 import pytest
 
+from fantasy_agent import local_tools
 from fantasy_agent.axis_templates import AXIS_TEMPLATES
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.gameplay_codegen import (
@@ -32,6 +35,7 @@ from fantasy_agent.gameplay_codegen import (
     deterministic_gameplay_scripts,
 )
 from fantasy_agent.generation import design_from_prompt_deterministic
+from fantasy_agent.tool_registry import combined_registry
 
 ALL_AXES = sorted(AXIS_TEMPLATES)
 
@@ -72,12 +76,26 @@ func _initialize() -> void:
 
 
 def _godot_exe() -> str | None:
-    candidates = [os.environ.get("FANTASY_AGENT_GODOT_EXE", ""), shutil.which("godot") or ""]
-    return next((c for c in candidates if c and os.path.exists(c)), None)
+    """The Godot to check with: explicit override, then PATH, then the probe.
+
+    ``local_tools._find_godot`` is the same resolver the engine tools use, and
+    it prefers the ``*_console`` build on Windows -- the only one whose output a
+    captured pipe actually receives. Without it this module skipped silently on
+    a machine with Godot installed outside PATH, which is exactly how a broken
+    generated script keeps passing.
+    """
+
+    candidates = [
+        os.environ.get("FANTASY_AGENT_GODOT_EXE", ""),
+        shutil.which("godot") or "",
+        local_tools._find_godot() or "",
+    ]
+    return next((c for c in candidates if c and Path(c).exists()), None)
 
 
 pytestmark = pytest.mark.skipif(
-    _godot_exe() is None, reason="no Godot binary (set FANTASY_AGENT_GODOT_EXE)"
+    _godot_exe() is None,
+    reason="no Godot binary found (checked FANTASY_AGENT_GODOT_EXE, PATH and the install probe)",
 )
 
 
@@ -163,3 +181,55 @@ def test_generated_scripts_load_and_run_in_godot(tmp_path, axis):
     output = result.stdout + result.stderr
     bad = [marker for marker in FAILURE_MARKERS if marker in output]
     assert not bad, f"{axis} runtime -> {bad}\n{output}"
+
+
+def test_the_registry_built_project_survives_a_real_godot(tmp_path):
+    """The project a *tool call* produces has to load in a real Godot.
+
+    This is the path a model takes. The registry hides ``gameplay_spec`` and
+    ``gameplay_scripts`` from the model, so the project is built with the plain
+    ``main.gd`` template and a manifest that carries no ``gameplay`` block.
+    That template used to read its const manifest as ``HANDOFF["gameplay"]``,
+    which Godot rejects as a *static* parse error -- the key is checked against
+    the literal while parsing, so even ``if HANDOFF.has(...)`` around it fails
+    to compile. Godot then refused to load the prototype at all, while
+    ``validate_godot_project`` reported ``issues: []``, because it only checks
+    that files exist.
+
+    Nothing caught it: ``test_godot_mcp`` never ran Godot, and this module
+    skipped whenever the binary was not on PATH.
+    """
+
+    registry = combined_registry(tmp_path)
+    planned = registry.call(
+        "generate_game_production_plan",
+        {"prompt": PROMPT_FOR_AXIS["parkour"], "target_minutes": 10},
+    )
+    registry.remember_plan(planned.data)
+
+    created = registry.call(
+        "create_godot_project_structure", {"write_files": True}, allow_write=True
+    )
+    assert created.status == "ok", created.content
+    project_file = (created.data.get("structuredContent") or created.data)["artifact"][
+        "project_file"
+    ]
+
+    imported = registry.call(
+        "run_godot_import",
+        {"project_file": project_file, "confirmed_side_effects": True, "timeout_seconds": 180},
+        allow_execute=True,
+    )
+    assert imported.status == "ok", imported.content
+    structured = imported.data.get("structuredContent") or imported.data
+    assert structured["return_code"] == 0, structured
+
+    # The tail is capped at 4000 chars, so read the log itself: a parse error
+    # printed early would otherwise be pushed out by later progress output.
+    log_dir = tmp_path / "generated" / "logs" / "godot"
+    logs = sorted(log_dir.glob("*"))
+    assert logs, f"no Godot logs under {log_dir} -- the engine never ran"
+    output = "".join(path.read_text(encoding="utf-8") for path in logs)
+    assert output.strip(), "Godot logged nothing, so the marker check would be vacuous"
+    bad = [marker for marker in FAILURE_MARKERS if marker in output]
+    assert not bad, f"registry-built project -> {bad}\n{output}"

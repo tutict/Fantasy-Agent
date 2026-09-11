@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import io
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -92,3 +93,44 @@ def test_a_run_without_a_report_never_claims_success() -> None:
         code = run_tests.main(["--basetemp-is-not-a-pytest-flag"])
     assert code == 2
     assert "No usable junit report" in captured.getvalue()
+
+
+def test_the_run_directory_is_outside_the_repo_and_under_the_os_temp_root() -> None:
+    """The suite must not delete files inside the repo while it runs.
+
+    The host's safe-delete shim trashes -- and counts, against a per-turn budget
+    -- every delete outside the OS temp root. When the budget runs out it raises
+    ``SystemExit`` from inside ``Path.unlink``, and because that escapes while
+    pytest is finalising a fixture, ``_pytest/fixtures.py`` then fails every
+    remaining test on ``assert not self._finalizers``. One trip becomes ~150
+    "failed on setup" errors, burying whatever actually broke.
+
+    Both halves matter, so both are asserted: the run directory has to be under
+    the exempt root, *and* out of the repo where the shim does apply. The report
+    is the opposite -- it has to stay in the repo to be readable afterwards.
+    """
+
+    temp_root = Path(tempfile.gettempdir()).resolve()
+    run_dir, report = run_tests._run_paths("20260101-000000")
+
+    assert run_dir.resolve().is_relative_to(temp_root)
+    assert not run_dir.resolve().is_relative_to(run_tests.REPO_ROOT.resolve())
+    assert report.parent == run_tests.REPORT_ROOT
+
+
+def test_main_creates_the_run_directory_parent(monkeypatch, tmp_path: Path) -> None:
+    """pytest creates the basetemp with ``mkdir(mode=0o700)`` -- no ``parents``.
+
+    A missing parent therefore surfaces as a ``FileNotFoundError`` raised from
+    the ``tmp_path`` fixture of every test that uses it, which reads as a broken
+    suite rather than a missing directory. The runner has to create it.
+    """
+
+    fresh = tmp_path / "not" / "created" / "yet"
+    monkeypatch.setattr(run_tests, "TEMP_ROOT", fresh)
+    assert not fresh.exists()
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        run_tests.main(["--basetemp-is-not-a-pytest-flag"])
+
+    assert fresh.is_dir()

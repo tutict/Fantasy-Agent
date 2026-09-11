@@ -1,6 +1,9 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from fantasy_agent import local_tools
 from fantasy_agent.contracts import (
     GodotMCPCreateProjectRequest,
     GodotMCPRunImportRequest,
@@ -169,3 +172,84 @@ def test_create_with_gameplay_scripts_writes_enemy_controller(tmp_path: Path):
     assert "move_speed_value" in main
     assert "_spawn_enemies(gm)" in main
     assert 'player.add_to_group("player")' in main
+
+
+def _main_gd_text(workspace: Path, spec=None, scripts=None) -> str:
+    GodotMCPBridge(workspace).create_godot_project_structure(
+        GodotMCPCreateProjectRequest(
+            plan=_plan(),
+            write_files=True,
+            gameplay_spec=spec,
+            gameplay_scripts=scripts or {},
+        )
+    )
+    return (workspace / "generated/godot/mcpprototype/scripts/main.gd").read_text(encoding="utf-8")
+
+
+def test_generated_main_script_never_indexes_the_handoff_literal(tmp_path: Path):
+    """``HANDOFF["k"]`` is a *static* parse error in Godot, guard or no guard.
+
+    ``HANDOFF`` is a ``const`` dictionary literal, so Godot resolves its keys
+    while parsing. Indexing a key the literal does not carry fails to compile
+    *even behind* ``if HANDOFF.has("k")`` -- the guard is itself the thing that
+    cannot be parsed, which is why ``.get()`` is the only safe read.
+
+    The no-gameplay variant is the one that shipped broken: it is also the only
+    variant a model-driven tool call can produce, because the registry hides
+    ``gameplay_spec``/``gameplay_scripts`` from the model. It handed Godot a
+    main.gd that refused to load, and no test noticed, because the Godot-side
+    check skipped whenever the binary was not on PATH.
+    """
+
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.gameplay_codegen import deterministic_gameplay_scripts
+    from fantasy_agent.generation import design_from_prompt_deterministic
+
+    spec = design_from_prompt_deterministic(PromptRequest(prompt="rooftop parkour chase"))
+    texts = {
+        "without gameplay": _main_gd_text(tmp_path / "plain"),
+        "with gameplay": _main_gd_text(
+            tmp_path / "gameplay", spec, deterministic_gameplay_scripts(spec)
+        ),
+    }
+
+    for label, main in texts.items():
+        assert "HANDOFF[" not in main, f"{label}: indexing the const literal cannot be parsed"
+        assert 'HANDOFF.get("gameplay", {})' in main, label
+
+    # Only the gameplay variant's manifest carries a gameplay block. Match the
+    # JSON key (with the colon) so the `.get("gameplay", ...)` read above does
+    # not make the two variants look alike.
+    assert '"gameplay":' in texts["with gameplay"]
+    assert '"gameplay":' not in texts["without gameplay"]
+
+
+def test_the_godot_guard_module_does_not_silently_skip_here():
+    """A guard that skips is indistinguishable from a guard that passed.
+
+    ``test_gdscript_godot_check.py`` skips when it cannot find a Godot binary:
+    correct on a machine without one, and a silent no-op on a machine with one.
+    That is precisely how the ``HANDOFF["gameplay"]`` static parse error shipped
+    -- the Godot-side guard had been skipping on this machine (it only looked on
+    ``PATH``), so nothing noticed that Godot refused to load the ``main.gd`` the
+    bridge had just generated.
+
+    This module never skips for that reason, so a discovery regression that is
+    *not* "no engine installed" fails here instead of hiding. The project's own
+    resolver is the reference: if it can see Godot, the guard has to see it too.
+    """
+
+    from test_gdscript_godot_check import _godot_exe
+
+    installed = local_tools._find_godot()
+    if installed is None:
+        pytest.skip("no Godot on this machine; there is nothing to disagree about")
+    if not Path(installed).exists():  # a stale glob hit, not an installed engine
+        pytest.skip(f"Godot candidate {installed} no longer exists")
+
+    assert _godot_exe() is not None, (
+        f"Godot is installed at {installed} and the project's own resolver finds it, "
+        "but the Godot guard module cannot -- so it skips, and generated GDScript that "
+        "Godot refuses to parse would pass unnoticed."
+    )
+

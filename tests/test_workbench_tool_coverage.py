@@ -59,6 +59,53 @@ def test_every_frontend_tool_exists_in_the_backend():
     assert frontend - backend == set()
 
 
+def test_every_tool_the_engine_probe_addresses_is_registered():
+    """``scripts/verify_engine_links.py`` names its tools by hand.
+
+    The registry is the single source of truth for tool names, so a rename would
+    leave the probe addressing a tool that no longer exists -- and nothing would
+    notice until somebody next ran it against a real engine, which is exactly
+    the situation the probe exists to make rare.
+    """
+
+    from fantasy_agent.tool_registry import combined_registry
+    from scripts import verify_engine_links
+
+    registered = set(combined_registry().names())
+    unknown = sorted(set(verify_engine_links.TOOLS) - registered)
+    assert not unknown, (
+        f"scripts/verify_engine_links.py addresses unregistered tools: {unknown}. "
+        "Update its TOOLS so the probe still covers every link."
+    )
+
+
+def test_the_engine_probe_reports_every_link_without_any_engine_installed(
+    monkeypatch, tmp_path
+):
+    """The degraded path is the one that actually runs on most machines.
+
+    Unreal is not installed here and ComfyUI is not running, so "the probe still
+    produces a result for every link" is the behaviour that gets exercised --
+    and the one worth pinning, because a probe that raises on the first missing
+    engine cannot tell you which links are fine. All three lookups are stubbed
+    to ``None``; the bridges then fall back to their own defaults and report a
+    failed launch instead of raising.
+    """
+
+    from fantasy_agent import local_tools
+    from scripts import verify_engine_links
+
+    for engine in ("_find_godot", "_find_blender", "_find_unreal"):
+        monkeypatch.setattr(local_tools, engine, lambda: None)
+
+    steps = verify_engine_links.probe(tmp_path)
+
+    assert [step.label for step in steps] == list(verify_engine_links.TOOLS)
+    # Nothing crashed on the way, and the links that need no engine still work.
+    assert {step.status for step in steps} <= {"ok", "refused", "error"}
+    assert next(s for s in steps if s.label == "create_project_structure").status == "ok"
+
+
 def test_backend_tools_are_reachable_from_the_ui():
     """New backend planning tools need a button, or a reason not to have one."""
 

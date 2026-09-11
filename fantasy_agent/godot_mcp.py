@@ -698,12 +698,13 @@ func _spawn_gameplay() -> void:
 
 
 func _spawn_enemies(gm: Node) -> void:
-    if not HANDOFF.has("gameplay"):
+    var gameplay := HANDOFF.get("gameplay", {}) as Dictionary
+    if gameplay.is_empty():
         return
-    var enemies: Array = HANDOFF["gameplay"].get("enemies", [])
+    var enemies: Array = gameplay.get("enemies", [])
     if enemies.is_empty():
         return
-    var tuning: Dictionary = HANDOFF["gameplay"].get("enemy_tuning", {})
+    var tuning: Dictionary = gameplay.get("enemy_tuning", {})
     var count_multiplier := float(tuning.get("enemy_count_multiplier", 1.0))
     var speed_multiplier := float(tuning.get("move_speed_multiplier", 1.0))
     var detection_multiplier := float(tuning.get("detection_radius_multiplier", 1.0))
@@ -869,11 +870,17 @@ func _ready() -> void:
 
 func _report_objective() -> void:
     # Win/fail intent is derived from the GameplaySpec so the slice reflects the idea.
+    # Reach the block through .get(): indexing a dictionary *literal* with a key
+    # it does not contain is a static parse error in Godot 4, so `has()` cannot
+    # guard it -- the guard itself fails to compile when the key is absent.
     print("[FantasyAgent] objective: ", {objective_literal})
-    if HANDOFF.has("gameplay"):
-        print("[FantasyAgent] win_state: ", HANDOFF["gameplay"]["win_state"])
-        for failure in HANDOFF["gameplay"]["failure_states"]:
-            print("[FantasyAgent] failure_state: ", failure)
+    var gameplay := HANDOFF.get("gameplay", {{}}) as Dictionary
+    if gameplay.is_empty():
+        return
+    print("[FantasyAgent] win_state: ", gameplay.get("win_state", ""))
+    var failures: Array = gameplay.get("failure_states", [])
+    for failure in failures:
+        print("[FantasyAgent] failure_state: ", failure)
 
 
 func _build_lighting() -> void:

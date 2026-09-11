@@ -3,24 +3,39 @@
 
 Why this exists
 ---------------
-pytest's default temp scheme keeps numbered base directories under the OS temp
-root (``pytest-of-<user>/pytest-<n>``) and garbage-collects the older ones by
-deleting whole trees. On this machine a host guardrail intercepts bulk deletes:
-the delete is refused, pytest dies during interpreter shutdown, and the summary
-line is replaced by a guardrail notice. The suite may have passed, but neither
-the exit code nor stdout can be trusted any more -- which is exactly the
-situation where a green run gets reported as a failure, or worse, a red one gets
-missed.
+Two different guardrails corrupt a plain ``pytest`` run on this machine, and
+they need different fixes.
+
+**1. pytest's own temp GC.** The default scheme keeps numbered base directories
+under the OS temp root (``pytest-of-<user>/pytest-<n>``) and garbage-collects
+the older ones by deleting whole trees. A bulk delete can be refused, and
+pytest then dies during interpreter shutdown: the summary line is replaced by a
+guardrail notice. The suite may have passed, but neither the exit code nor
+stdout can be trusted any more -- which is exactly the situation where a green
+run gets reported as a failure, or worse, a red one gets missed.
+
+**2. The host's safe-delete shim, which fires *during* the run.** Every
+``Path.unlink`` outside the OS temp root is intercepted, trashed and counted
+against a per-turn budget. Once the budget (50) is exhausted the shim raises
+``SystemExit`` from inside ``unlink()``. That does not just fail one test: the
+exception escapes while pytest is finalising a fixture, so
+``_pytest/fixtures.py`` hits ``assert not self._finalizers`` for every
+subsequent test. One trip turns into ~150 bogus "failed on setup" errors that
+bury whatever actually broke. Measured here: a suite with ~63 in-repo deletes
+trips it roughly two times in three, so the suite was *intermittently* red for
+reasons that had nothing to do with the code.
 
 How it is fixed
 ---------------
-1. Every run gets a *fresh* ``--basetemp`` under ``generated/test-tmp/``. pytest
-   never has an older numbered base dir to garbage-collect, so it never needs a
-   bulk delete. Nothing is removed at the end either, which is why stale run
-   directories accumulate -- they are gitignored, and this script reports the
-   count rather than deleting them (deleting is the very thing that breaks).
-2. The machine-readable report goes to a file, and the verdict is read back from
-   that file. pytest's own exit code is kept only as a cross-check, so a
+1. The run directory is created under the **OS temp root**, not in the repo.
+   The shim exempts that root, so the deletes tests do for themselves never
+   reach it -- the failure mode disappears rather than being retried around.
+   Reports stay in ``generated/test-tmp/`` (a write, never guarded) so the
+   verdict is still readable after the fact.
+2. Every run still gets a *fresh* basetemp, so pytest never has an older
+   numbered base dir to garbage-collect and never needs a bulk delete at all.
+3. The machine-readable report goes to a file, and the verdict is read back
+   from that file. pytest's own exit code is kept only as a cross-check, so a
    corrupted shutdown cannot turn a passing run into a failure.
 
 Usage
@@ -37,13 +52,30 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
+import tempfile
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-# `generated/*` is gitignored, so run directories never show up in git status.
-RUN_ROOT = REPO_ROOT / "generated" / "test-tmp"
+# Reports are tiny, gitignored, and worth keeping: the verdict is read from them.
+REPORT_ROOT = REPO_ROOT / "generated" / "test-tmp"
+# Run directories deliberately live outside the repo -- see "How it is fixed".
+# `tempfile.gettempdir()` is the same root the shim's own exemption is built
+# from, so keeping the two in one place is what makes the exemption apply.
+TEMP_ROOT = Path(tempfile.gettempdir()) / "fantasy-agent-pytest"
+
+
+
+def _run_paths(stamp: str) -> tuple[Path, Path]:
+    """Where this run's pytest directory and junit report go.
+
+    Split out because the two paths have opposite requirements and mixing them
+    up is silent: the run directory must be inside the guard-exempt temp root,
+    the report must be inside the repo.
+    """
+
+    return TEMP_ROOT / f"pytest-{stamp}", REPORT_ROOT / f"pytest-{stamp}.xml"
 
 
 def _read_report(xml_path: Path) -> dict[str, int] | None:
@@ -103,9 +135,14 @@ def main(argv: list[str] | None = None) -> int:
     _, pytest_args = parser.parse_known_args(argv)
 
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    base_temp = RUN_ROOT / f"pytest-{stamp}"
-    xml_path = RUN_ROOT / f"pytest-{stamp}.xml"
-    RUN_ROOT.mkdir(parents=True, exist_ok=True)
+    base_temp, xml_path = _run_paths(stamp)
+    # Both parents must exist before pytest starts. `TempPathFactory` does
+    # `basetemp.mkdir(mode=0o700)` -- no `parents=True` -- so a missing
+    # TEMP_ROOT surfaces as a FileNotFoundError from inside the `tmp_path`
+    # fixture, for every test that uses it. That is a confusing way to learn
+    # that a parent directory is missing.
+    TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+    REPORT_ROOT.mkdir(parents=True, exist_ok=True)
 
     command = [
         sys.executable,
@@ -116,7 +153,8 @@ def main(argv: list[str] | None = None) -> int:
         f"--junit-xml={xml_path}",
         *pytest_args,
     ]
-    print(f"basetemp: {base_temp.relative_to(REPO_ROOT)}", flush=True)
+    print(f"basetemp: {base_temp}", flush=True)
+    print(f"report:   {xml_path.relative_to(REPO_ROOT)}", flush=True)
     completed = subprocess.run(command, cwd=REPO_ROOT, check=False)
 
     counts = _read_report(xml_path)
@@ -149,11 +187,13 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
 
-    stale = sorted(RUN_ROOT.glob("pytest-*"))
+    reports = sorted(REPORT_ROOT.glob("pytest-*.xml"))
     print(
-        f"\nkept {len(stale)} run dir/report(s) under generated/test-tmp. They are "
-        "gitignored and deliberately not pruned here: deleting them is the bulk-"
-        "delete operation this script exists to avoid."
+        f"\nkept {len(reports)} report(s) under generated/test-tmp (gitignored, not "
+        "pruned: a report from an earlier run is the only record of it). Run "
+        f"directories went to {TEMP_ROOT}, outside the repo, so the harness never "
+        "has to delete anything it just wrote -- which is what the host's "
+        "safe-delete shim punishes."
     )
 
     return _verdict(counts)

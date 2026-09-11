@@ -24,6 +24,7 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 ## 测试与校验
 
 - 后端测试用 `python scripts/run_tests.py` 跑（pytest 参数照常追加，如 `-k unreal -x`），**不要直接 `python -m pytest`**。原因：pytest 默认的临时目录方案会回收旧的编号 base 目录，回收方式是一次批量删除；本机护栏会拦下批量删除，于是 pytest 在退出阶段崩掉、汇总行被替换成护栏提示、退出码失真——测试可能是通过的，却报不出来。该脚本每次给一个全新的 `--basetemp`（没有旧目录可回收，因此根本不产生批量删除），并把结果写进 junit XML 再读回来，退出码由报告推导；收集到 0 个测试按失败处理（退出码 2）。
+- **`--basetemp` 必须落在 OS 临时根目录下**（`tempfile.gettempdir()`，脚本里的 `TEMP_ROOT`），别挪回仓库内。护栏的放行条件是「路径在 OS 临时根之下」，`generated/test-tmp/` 不满足——实测把 base 目录放仓库里跑一次就会触发 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`，`SystemExit` 从 fixture 收尾里逃出来，`_pytest/fixtures.py` 的 `assert not self._finalizers` 接着让后面 156 条测试集体 `failed on setup`，真正坏掉的那条被淹没在里面。挪到 OS 临时根之后 3 连跑全绿、零护栏命中。`tests/test_run_tests_runner.py` 钉着这两条（目录在豁免根下、且不在仓库里）。
 - `tests/test_dependency_guards.py` 守住几件「人工复核会过、之后会悄悄回归」的事：lock 的 `resolved` 必须全指向官方源（挡镜像污染）、每个包必须有 `integrity`、父包声明的依赖必须都记进 lock（挡平台二进制缺失——本地装得好好的，换 CI 的 runner 就 `npm ci` 找不到可执行文件）、依赖范围不得写 `latest`、`[tool.ruff.lint]` 不得出现 `select` 白名单。
 - lint 跟随 ruff 默认规则集，不设 `select` 白名单：新版本启用新规则时 CI 变红，规则会被读到并采纳，而不是被 pin 掉。单条规则确实不适用就就地写 `# noqa: CODE - 理由`——`fantasy_agent/` 里 20 处 `except Exception` 都是这么标的。
 
@@ -110,7 +111,7 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 
 **GPT-6 硬约束**：Astra 的 tool calling 只在 Responses API（`/v1/responses`）上提供，Chat Completions 会拒；且它**不接受 `temperature` / `top_p` / `logprobs`**，传了是硬报错而非忽略。所以：
 
-- 用 GPT-6 跑循环必须选 provider `openai_responses`，默认模型 `gpt-6-astra`。
+- 用 GPT-6 跑循环必须选 provider `openai_responses`，默认模型 `gpt-6-astra`。这是**模型**的限制，不是代码闸门——换别的模型时 `anthropic` / `openai_compatible` 一样能跑循环。
 - `api_settings.supports_sampling_params(model)` 在构造 payload 前判断，gpt-6 / o 系列一律不带采样参数。
 
 **接入方式**：
@@ -119,7 +120,11 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - Studio：`POST /api/agent/run`（永不抛异常，失败以 status 返回）
 - Studio 界面：策划工作台的**「Agent」面板**，可填目标、设 max_turns、勾选引擎工具与 write/execute 授权，跑完展示回答、工具调用明细和被拒清单。
 
-**工具调用需要 `openai_responses` provider**：`complete_with_tools` 只在该 provider 下发 function tools，用 anthropic / openai_compatible 调循环会得到明确报错而不是静默降级——规划类问题请先在「API 接入」面板把 provider 切成 `openai_responses`。
+**工具调用在三个 provider 上都可用**：`llm.complete_with_tools` 按当前 provider 分派——`openai_responses` 走 `/v1/responses`，`anthropic` 走 Messages API 的原生 `tool_use`，`openai_compatible` 走 `/chat/completions` 的 `tools`/`tool_calls`。
+
+- **循环只有一种对话格式**：`agent_loop` 的转录是 Responses 形状（`function_call` / `function_call_output` 块，call id 靠它对齐）。另外两个 provider 拿到的是**这份转录的投影**，回复也会被重新表达成同一形状再交回循环。所以循环不知道自己在跟哪种 wire format 说话，换 provider 不需要改循环。
+- 投影在 `llm.py` 里是四个纯函数：`_anthropic_transcript` / `_anthropic_tools`、`_openai_chat_transcript` / `_openai_chat_tools`（外加 `_parse_anthropic_tool_reply` / `_parse_openai_chat_tool_reply` 两个反方向解析）。加第四个 provider 就是加一对投影函数。
+- **没有 key 仍然是响亮失败**：任何 provider 缺 key 都抛 `LLMError`，循环返回 `status="error"`，调用方回退确定性流水线——不会静默降级成"模型没工具可用"。
 
 **工具注册表**：`fantasy_agent/tool_registry.py` 是唯一真相——工具在此声明 schema + permission + handler，同一份记录同时喂给模型、权限闸门和 UI。`validate_contract_refs()` 守卫 `MCPToolContract` 的 34 个 `schema_ref` 全部能在 `mcp/*.yaml` 解析（有测试守着，此前这些引用从无代码解析）。
 
@@ -136,6 +141,8 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 **未接线的一个**：`publish_prototype_branch`（github-mcp）只有契约没有实现。`unimplemented_contracts()` + 测试把这个缺口钉住——实现了却没接线、或删了契约忘了测试，都会红。
 
 **暴露范围跟着授权走**：不给授权时循环只看到只读检查工具（`validate_*` / `probe_*`）；`allow_write` 放到 write 级；`allow_execute` 才放出 `run_*`。
+
+**真机探针 `scripts/verify_engine_links.py`**（手动跑，不进 CI）：测试和探针各管一半——测试钉"代码路径对不对"，探针钉"本机的引擎真的应答"。它走的是同一个 `combined_registry`，所以权限闸门、可执行文件探测和模型 tool call 完全一致；每一步把引擎自己的命令行、`return_code`、stderr 打出来，于是"这条链路是通的"是可读的结论而不是信念。`python scripts/verify_engine_links.py [--workspace 目录]`。引擎会真的被拉起来，所以它会写 `generated/` 并占用引擎时间。**没装引擎的步骤照样报告，只是降级**——区分"Unreal 没装"和"Unreal 链路坏了"正是它存在的理由。探针里的工具名是手写的，`tests/test_workbench_tool_coverage.py` 守着它们仍在注册表里。
 
 ## Director Agent
 
@@ -210,7 +217,9 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - **只能按项目里存在的 InputMap 动作。** 动作名来自 `spec.core_verbs`（`workflows.prepare_godot_project` 注册），所以 `action_name()` 与 `godot_mcp._godot_identifier` 必须同源；按了一个没注册的动作，Godot 运行时报 `Request for nonexistent InputMap action`。
 - **敌人行为只有一个来源**：设计模板的 `enemies` 名册。轴里不再另存一份行为清单（曾经两份会漂移）。
 - **新增一条轴**：`AXIS_TEMPLATES` 加条目 → `_AXIS_MECHANICS` 加对应实现 → 跑 `tests/test_gameplay_codegen_axis.py`（键集不一致立刻红）。
-- **真机校验**：`tests/test_gdscript_godot_check.py` 给每条轴建临时工程，跑 `godot --check-only --script` 做语法检查，再用一个 SceneTree harness 实例化并推 20 帧，抓运行时错误。没有 Godot 二进制时自动跳过，设 `FANTASY_AGENT_GODOT_EXE` 开启。
+- **真机校验**：`tests/test_gdscript_godot_check.py` 给每条轴建临时工程，跑 `godot --check-only --script` 做语法检查，再用一个 SceneTree harness 实例化并推 20 帧，抓运行时错误。同一个文件还走一次 `combined_registry`（= tool call 同一条路径）生成工程并真跑 `run_godot_import`，断言 Godot 日志里没有任何 `Parse Error` / `SCRIPT ERROR` / `ERROR:`。
+  - **二进制发现用项目自己的探针**（`local_tools._find_godot`：环境变量 → PATH → 安装位置 glob），不再只看 PATH。之前它只看 PATH，本机 Godot 装在 `Downloads/` 下，于是整个文件静默 skip —— 这正是"生成的代码坏了却一路绿灯"的成因。探针优先 `*_console` 版本，因为 Windows 上只有它能把输出写进被捕获的管道。
+  - **`HANDOFF` 是 `const` 字典字面量，只能 `.get()` 读。** Godot 在解析期就拿字面量的已知键做静态检查，所以 `HANDOFF["gameplay"]` 在键不存在时是**静态解析错误**，`if HANDOFF.has("gameplay")` 挡不住——要挡的那行本身就编译不过。没有 gameplay 块的工程（也正是模型经注册表能产生的唯一形态）会整份 main.gd 加载失败，而 `validate_godot_project` 只查文件存在性，会报 `issues: []`。守卫分两层：`tests/test_godot_mcp.py` 断言源码里没有 `HANDOFF[`（CI 可跑），`test_gdscript_godot_check.py` 用真 Godot 复现（本地跑）。
 
 命令行入口：
 
