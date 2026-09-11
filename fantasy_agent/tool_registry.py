@@ -59,10 +59,18 @@ class ToolSpec:
     # Arguments hidden from the model because the pipeline supplies them.
     hidden_args: tuple[str, ...] = ()
 
+    # Arguments naming a local binary to launch. Hidden *and* overwritten on
+    # every call: hiding only removes them from the advertised schema, but a
+    # model can still send arguments that were never declared. Letting it
+    # choose the program turns a granted run into "run anything on this
+    # machine", so ToolRegistry.call replaces these with a probed path and
+    # discards whatever the model sent.
+    executable_args: tuple[str, ...] = ()
+
     def model_schema(self) -> dict[str, Any]:
         """The shape handed to the model (Responses API function tool)."""
 
-        hidden = set(self.hidden_args)
+        hidden = set(self.hidden_args) | set(self.executable_args)
         if self.plan_key:
             hidden.add("plan")
 
@@ -202,13 +210,18 @@ class ToolRegistry:
     ) -> dict[str, Any]:
         """Fill in what the model must not be trusted with, or need not supply.
 
-        Two things are injected here, both outside the model's reach:
+        Three things are injected here, all outside the model's reach:
 
         - the plan, from this run's planning result, so the model asks for the
           work rather than reconstructing a nested object it cannot get right;
         - the confirmation flag, reflecting the grant the *caller* made. An
           explicit ``false`` from the model is left alone: that is a
-          deliberate dry run.
+          deliberate dry run;
+        - the executable path, from a local probe. Unlike the other two this
+          one *overwrites* rather than fills in: hiding the argument from the
+          schema does not stop a model from sending it anyway, so whatever
+          arrives is discarded. When nothing is installed the key is dropped
+          and the bridge falls back to its own default.
         """
 
         args = dict(arguments or {})
@@ -222,6 +235,13 @@ class ToolRegistry:
             granted = allow_execute if spec.permission == EXECUTE else (allow_write or allow_execute)
             if granted:
                 args[spec.confirm_field] = True
+
+        for argument in spec.executable_args:
+            probed = _probe_executable(argument)
+            if probed:
+                args[argument] = probed
+            else:
+                args.pop(argument, None)
 
         return args
 
@@ -404,6 +424,41 @@ _ENGINE_HIDDEN_ARGS: dict[str, tuple[str, ...]] = {
 # so without injection a granted run would still be a dry run.
 CONFIRM_FIELDS: tuple[str, ...] = ("write_files", "confirmed_side_effects")
 
+# Arguments naming a local binary to launch. These are stripped from the
+# model's schema and replaced with a probed path on every call, because a
+# model that can name the executable can run any program on this machine --
+# the script it hands over is a fixed template, so the executable is the
+# only part of the command line it could ever control.
+EXECUTABLE_FIELDS: tuple[str, ...] = (
+    "blender_executable",
+    "godot_executable",
+    "unreal_editor_cmd",
+)
+
+
+def _probe_executable(field: str) -> str | None:
+    """Locate the engine binary a hidden executable argument refers to.
+
+    Returns None when nothing is installed, which leaves the bridge's own
+    default (a bare command name resolved through PATH) in place. That keeps
+    the degraded behaviour identical to running the tool by hand.
+    """
+
+    from fantasy_agent import local_tools
+
+    if field == "godot_executable":
+        return local_tools._find_godot()
+    if field == "blender_executable":
+        return local_tools._find_blender()
+    if field == "unreal_editor_cmd":
+        return local_tools._unreal_cmd_executable(local_tools._find_unreal())
+    return None
+
+
+def _executable_args(schema: dict[str, Any]) -> tuple[str, ...]:
+    properties = schema.get("properties") or {}
+    return tuple(field for field in EXECUTABLE_FIELDS if field in properties)
+
 
 def permission_from_annotations(annotations: dict[str, Any]) -> str:
     """Map MCP tool annotations onto a permission tier.
@@ -471,6 +526,7 @@ def _register_engine_server(
                 confirm_field=_confirm_field(schema),
                 plan_key=PLAN_KEYS.get(name),
                 hidden_args=_ENGINE_HIDDEN_ARGS.get(name, ()),
+                executable_args=_executable_args(schema),
             )
         )
 
@@ -606,6 +662,28 @@ def unimplemented_contracts() -> list[str]:
 
     registered = set(engine_registry().names())
     return sorted(c.name for c in initial_mcp_contracts() if c.name not in registered)
+
+
+def exposed_executable_args(registry: ToolRegistry | None = None) -> list[str]:
+    """Tools whose model-visible schema still lets the model name a binary.
+
+    A model that picks the executable picks the program, which is the one
+    part of an otherwise fixed command line it could control. New engine
+    tools arrive by being added to a bridge's descriptors, so this guard
+    catches one that smuggles an executable path back in.
+    """
+
+    tools = registry or engine_registry()
+    problems: list[str] = []
+    for name in tools.names():
+        spec = tools.get(name)
+        if spec is None:
+            continue
+        properties = spec.model_schema()["parameters"].get("properties") or {}
+        for argument in EXECUTABLE_FIELDS:
+            if argument in properties:
+                problems.append(f"{name} exposes {argument}")
+    return sorted(problems)
 
 
 def validate_contract_refs() -> list[str]:
