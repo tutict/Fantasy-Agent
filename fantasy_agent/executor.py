@@ -1496,6 +1496,9 @@ def execute_unreal_demo(
             project_file=project_file,
             ingest_manifest_path=ingest_manifest_path,
             write_files=True,
+            # Without this the Unreal level ignores the design entirely: fixed
+            # tile count, fixed prop coordinates, no enemies.
+            gameplay_spec=getattr(plan, "gameplay_spec", None),
         )
     )
     if level.status != "written":

@@ -20,6 +20,7 @@ from fantasy_agent.contracts import (
     UnrealAssetIngestManifest,
     UnrealAssetIngestValidationReport,
     UnrealContentManifest,
+    GameplaySpec,
     UnrealMCPEditorCommandletRequest,
     UnrealMCPCreateProjectRequest,
     UnrealMCPPrepareLevelAssemblyRequest,
@@ -46,6 +47,30 @@ COMMANDLET_DEFAULT_ARGS = {
     "DataValidation": ["-IncludeOnlyOnDiskAssets"],
 }
 UNREAL_DDC_ARGS = ["-DDC=InstalledNoZenLocalFallback"]
+
+# One greybox floor tile every this many centimetres. This is a tile dimension,
+# not a design parameter -- what the design controls is how many tiles the route
+# has (see `_beats_from_spec`).
+FLOOR_SPACING_CM = 650.0
+
+# Route length in floor tiles per minute of target session. 0.6 reproduces the
+# six-tile runway the hand-tuned layout used for a 10-minute slice.
+FLOOR_TILES_PER_MINUTE = 0.6
+
+
+def _beats_from_spec(gameplay_spec: GameplaySpec | None) -> list[tuple[str, int]]:
+    """Route sections as ``(beat name, minutes)`` from the design.
+
+    Falls back to a three-section teaching / mix / finale split so a level
+    assembled without a spec still looks like the old hand-tuned greybox.
+    """
+
+    if gameplay_spec is None or not gameplay_spec.level_beats:
+        return [("first minute", 2), ("midpoint combination", 5), ("final run", 3)]
+    return [
+        (beat.name.strip() or f"beat {index + 1}", max(1, int(beat.duration_minutes)))
+        for index, beat in enumerate(gameplay_spec.level_beats)
+    ]
 
 
 def tool_descriptors() -> list[dict[str, Any]]:
@@ -861,96 +886,103 @@ class UnrealMCPBridge(BaseMCPBridge):
                 )
             )
 
-        for index, x in enumerate((0.0, 650.0, 1300.0, 1950.0, 2600.0, 3250.0), start=1):
+        # --- route geometry, derived from the design ------------------------
+        # This used to be a fixed six-tile runway with props at hand-tuned
+        # centimetres: the same map came out for a 5-minute stealth slice and a
+        # 15-minute parkour chase, and nothing referenced level_beats at all.
+        # Now the beats decide how long the route is and how many sections it
+        # has, and every placement carries the beat it belongs to so a prop in
+        # the map can be traced back to a line in the GDD.
+        beats = _beats_from_spec(request.gameplay_spec)
+        total_minutes = sum(minutes for _, minutes in beats) or 10
+        floor_count = max(4, round(total_minutes * FLOOR_TILES_PER_MINUTE))
+        route_end = (floor_count - 1) * FLOOR_SPACING_CM
+
+        def beat_at(fraction: float) -> str:
+            """Name of the beat covering ``fraction`` of the route."""
+
+            acc = 0.0
+            for name, minutes in beats:
+                acc += minutes / total_minutes
+                if fraction <= acc + 1e-9:
+                    return name
+            return beats[-1][0]
+
+        for index in range(floor_count):
+            fraction = index / (floor_count - 1) if floor_count > 1 else 0.0
             add(
                 actor_name=f"FA_RouteFloor_{index:02d}",
                 asset_name=fallback_floor,
                 gameplay_role="route_floor",
-                location_cm=(x, 0.0, 0.0),
-                beat="primary route",
+                location_cm=(index * FLOOR_SPACING_CM, 0.0, 0.0),
+                beat=beat_at(fraction),
                 scale=(1.0, 1.0, 0.35),
                 notes="Continuous rooftop runway for greybox movement tuning.",
             )
-        add(
-            actor_name="FA_Ramp_Teach",
-            asset_name=ramp,
-            gameplay_role="traversal",
-            location_cm=(520.0, -110.0, 70.0),
-            beat="first minute",
-            rotation_deg=(0.0, 0.0, 0.0),
-            notes="Teaches vertical route reading before pressure is added.",
+
+        # Feature props are placed as a fraction of the route so the layout
+        # stretches or compresses with the design instead of sitting at fixed
+        # coordinates that only made sense for a 10-minute route.
+        features = (
+            (
+                "FA_Ramp_Teach", ramp, "traversal", 0.16, -110.0, 70.0,
+                (0.0, 0.0, 0.0), "Teaches vertical route reading before pressure is added.",
+            ),
+            (
+                "FA_Vault_Blocker", vault, "obstacle", 0.33, 0.0, 110.0,
+                (0.0, 0.0, 0.0), "Forces an early vault decision on the main route.",
+            ),
+            (
+                "FA_WallRun_Panel", wall, "traversal", 0.50, -260.0, 230.0,
+                (0.0, 0.0, 90.0), "Makes the midpoint combine speed with side-wall commitment.",
+            ),
+            (
+                "FA_Slide_Barrier", slide, "obstacle", 0.63, 0.0, 90.0,
+                (0.0, 0.0, 0.0), "Creates a low-profile timing gate after the wall-run section.",
+            ),
+            (
+                "FA_Boost_Pad", boost, "traversal", 0.73, 0.0, 40.0,
+                (0.0, 0.0, 0.0), "Marks the acceleration moment into the final run.",
+            ),
+            (
+                "FA_Checkpoint_Gate", checkpoint, "checkpoint", 0.81, 0.0, 120.0,
+                (0.0, 0.0, 0.0), "Visible recovery point before the final hazard read.",
+            ),
+            (
+                "FA_Objective_Prop", objective, "objective", 0.98, 0.0, 120.0,
+                (0.0, 0.0, 0.0), "Readable pickup/target before extraction.",
+            ),
         )
-        add(
-            actor_name="FA_Vault_Blocker",
-            asset_name=vault,
-            gameplay_role="obstacle",
-            location_cm=(1080.0, 0.0, 110.0),
-            beat="first minute",
-            notes="Forces an early vault decision on the main route.",
-        )
-        add(
-            actor_name="FA_WallRun_Panel",
-            asset_name=wall,
-            gameplay_role="traversal",
-            location_cm=(1620.0, -260.0, 230.0),
-            rotation_deg=(0.0, 0.0, 90.0),
-            beat="midpoint combination",
-            notes="Makes the midpoint combine speed with side-wall commitment.",
-        )
-        add(
-            actor_name="FA_Slide_Barrier",
-            asset_name=slide,
-            gameplay_role="obstacle",
-            location_cm=(2060.0, 0.0, 90.0),
-            beat="midpoint combination",
-            notes="Creates a low-profile timing gate after the wall-run section.",
-        )
-        add(
-            actor_name="FA_Boost_Pad",
-            asset_name=boost,
-            gameplay_role="traversal",
-            location_cm=(2360.0, 0.0, 40.0),
-            beat="midpoint combination",
-            notes="Marks the acceleration moment into the final run.",
-        )
-        add(
-            actor_name="FA_Checkpoint_Gate",
-            asset_name=checkpoint,
-            gameplay_role="checkpoint",
-            location_cm=(2620.0, 0.0, 120.0),
-            beat="checkpoint recovery",
-            notes="Visible recovery point before the final hazard read.",
-        )
-        add(
-            actor_name="FA_Fall_Hazard_Left",
-            asset_name=hazard,
-            gameplay_role="hazard",
-            location_cm=(2960.0, -260.0, 35.0),
-            beat="final run",
-            notes="Failure read on the left edge of the final route.",
-        )
-        add(
-            actor_name="FA_Fall_Hazard_Right",
-            asset_name=hazard,
-            gameplay_role="hazard",
-            location_cm=(2960.0, 260.0, 35.0),
-            beat="final run",
-            notes="Failure read on the right edge of the final route.",
-        )
-        add(
-            actor_name="FA_Objective_Prop",
-            asset_name=objective,
-            gameplay_role="objective",
-            location_cm=(3180.0, 0.0, 120.0),
-            beat="final run",
-            notes="Readable pickup/target before extraction.",
-        )
+        for actor_name, asset_name, role, fraction, lateral, height, rotation, note in features:
+            add(
+                actor_name=actor_name,
+                asset_name=asset_name,
+                gameplay_role=role,
+                location_cm=(route_end * fraction, lateral, height),
+                beat=beat_at(fraction),
+                rotation_deg=rotation,
+                notes=note,
+            )
+
+        # Hazards flank the late route so the failure read is symmetric.
+        for side, lateral in (("Left", -260.0), ("Right", 260.0)):
+            add(
+                actor_name=f"FA_Fall_Hazard_{side}",
+                asset_name=hazard,
+                gameplay_role="hazard",
+                location_cm=(route_end * 0.91, lateral, 35.0),
+                beat=beat_at(0.91),
+                notes=f"Failure read on the {'left' if lateral < 0 else 'right'} edge of the final route.",
+            )
+
+        # The exit deliberately sits past the last floor tile so the win-state
+        # affordance is never buried inside the route.
         add(
             actor_name="FA_Exit_Gate",
             asset_name=exit_gate,
             gameplay_role="exit",
-            location_cm=(3680.0, 0.0, 130.0),
-            beat="final run",
+            location_cm=(route_end + 430.0, 0.0, 130.0),
+            beat=beats[-1][0],
             notes="Final win-state affordance.",
         )
         add(
@@ -959,9 +991,42 @@ class UnrealMCPBridge(BaseMCPBridge):
             gameplay_role="ui",
             location_cm=(-250.0, -260.0, 170.0),
             rotation_deg=(0.0, 0.0, 12.0),
-            beat="first minute",
+            beat=beats[0][0],
             notes="World-space objective and timer proxy near player start.",
         )
+
+        # --- enemies ---------------------------------------------------------
+        # `spec.enemies` never reached the Unreal level before, so a design that
+        # asked for pressure produced a completely empty route. Spawn markers
+        # are spread from the midpoint onwards so pressure ramps with the
+        # design instead of appearing all at once.
+        enemy_asset = pick("enemy_spawn_marker", contains=("enemy", "spawn"))
+        spec = request.gameplay_spec
+        enemy_risk = ""
+        if spec is not None and enemy_asset:
+            spawns: list[str] = []
+            for enemy in spec.enemies:
+                spawns.extend([enemy.name] * min(enemy.count, 6))
+            for index, enemy_name in enumerate(spawns):
+                spread = index / max(len(spawns) - 1, 1)
+                fraction = 0.35 + spread * 0.55
+                add(
+                    actor_name=f"FA_Enemy_{index:02d}_{_slug(enemy_name) or 'enemy'}",
+                    asset_name=enemy_asset,
+                    gameplay_role="enemy",
+                    location_cm=(
+                        route_end * fraction,
+                        -180.0 if index % 2 else 180.0,
+                        90.0,
+                    ),
+                    beat=beat_at(fraction),
+                    notes=f"Spawn marker for {enemy_name}.",
+                )
+        elif spec is not None and spec.enemies:
+            enemy_risk = (
+                f"Design declares {len(spec.enemies)} enemy type(s) but no enemy spawn "
+                "marker was ingested; enemy pressure is absent from this level."
+            )
 
         risks = [
             "Generated map assembly is a greybox route for playability tuning, not final art.",
@@ -971,6 +1036,8 @@ class UnrealMCPBridge(BaseMCPBridge):
             risks.append("No dedicated floor asset was found; the first static mesh is reused.")
         if not objective or not exit_gate:
             risks.append("Objective or exit asset was not found; route completion may be incomplete.")
+        if enemy_risk:
+            risks.append(enemy_risk)
 
         map_path = f"/Game/Maps/{request.map_name}"
         playtest_report_path = (
@@ -1272,6 +1339,7 @@ class UnrealMCPBridge(BaseMCPBridge):
         with log_path.open("r", encoding="utf-8", errors="replace") as handle:
             handle.seek(start)
             return handle.read()[-limit:]
+
 
 
 def call_unreal_mcp_tool(
