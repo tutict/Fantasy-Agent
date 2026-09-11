@@ -123,21 +123,63 @@ def complete_with_tools(
     max_tokens: int = 4000,
     model: str | None = None,
 ) -> ModelReply:
-    """One agent turn over the Responses API.
+    """One agent turn, on whichever provider the user configured.
 
-    Only ``openai_responses`` supports this: GPT-6 Astra rejects tool calls on
-    Chat Completions, and the Anthropic path here is the plain messages API
-    without a tool schema. Anything else raises, and the caller is expected to
-    fall back to the deterministic pipeline rather than retry.
+    The transcript handed in is the Responses shape (``agent_loop`` builds it
+    and echoes ``function_call`` blocks back verbatim so call ids line up), and
+    every provider returns its reply normalized back into that same shape. That
+    keeps exactly one conversation format to maintain: ``anthropic`` and
+    ``openai_compatible`` receive a *projection* of it and hand back a reply
+    that was re-expressed in it, so the loop never learns which wire format it
+    is talking to.
+
+    Raises:
+        LLMError: when the provider has no key, the endpoint fails, or the
+            reply cannot be understood. Callers fall back to the deterministic
+            pipeline rather than retry.
     """
 
     resolved = resolve_credentials()
-    if resolved["provider"] != OPENAI_RESPONSES:
-        raise LLMError(
-            "tool calling needs the openai_responses provider "
-            f"(configured: {resolved['provider']})"
-        )
+    provider = resolved["provider"]
 
+    if provider == ANTHROPIC:
+        return _anthropic_tool_turn(
+            instructions=instructions,
+            messages=messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            model=model,
+        )
+    if provider == OPENAI_COMPATIBLE:
+        return _openai_chat_tool_turn(
+            instructions=instructions,
+            messages=messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            model=model,
+        )
+    if provider == OPENAI_RESPONSES:
+        return _responses_tool_turn(
+            instructions=instructions,
+            messages=messages,
+            tools=tools,
+            max_tokens=max_tokens,
+            model=model,
+        )
+    raise LLMError(f"tool calling is not implemented for provider {provider!r}")
+
+
+def _responses_tool_turn(
+    *,
+    instructions: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    max_tokens: int,
+    model: str | None,
+) -> ModelReply:
+    """``/v1/responses``: the transcript is already in this wire format."""
+
+    resolved = resolve_credentials()
     effective_model = model or str(resolved["model"])
     payload: dict[str, Any] = {
         "model": effective_model,
@@ -158,6 +200,351 @@ def complete_with_tools(
         timeout=float(resolved["timeout_seconds"]),
     )
     return _parse_responses_reply(decoded)
+
+
+def _anthropic_tool_turn(
+    *,
+    instructions: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    max_tokens: int,
+    model: str | None,
+) -> ModelReply:
+    """Anthropic Messages API with native ``tool_use`` blocks.
+
+    Three shape differences matter: the system prompt is a top-level field
+    rather than a message, tool schemas are ``input_schema`` rather than
+    ``parameters``, and a tool result is a ``tool_result`` block inside the
+    *following user turn* rather than a message of its own.
+    """
+
+    resolved = resolve_credentials()
+    api_key = str(resolved["api_key"])
+    if not api_key:
+        raise LLMError("No API key configured for the Anthropic provider.")
+
+    effective_model = model or model_name()
+    payload: dict[str, Any] = {
+        "model": effective_model,
+        "max_tokens": max_tokens,
+        "system": instructions,
+        "messages": _anthropic_transcript(messages),
+    }
+    if tools:
+        payload["tools"] = _anthropic_tools(tools)
+    if supports_sampling_params(effective_model):
+        payload["temperature"] = 0.2
+
+    decoded = _post_json(
+        endpoint_url(ANTHROPIC, str(resolved["base_url"])),
+        payload=payload,
+        headers=request_headers(ANTHROPIC, api_key),
+        timeout=float(resolved["timeout_seconds"]),
+    )
+    return _parse_anthropic_tool_reply(decoded)
+
+
+def _openai_chat_tool_turn(
+    *,
+    instructions: str,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]],
+    max_tokens: int,
+    model: str | None,
+) -> ModelReply:
+    """``/chat/completions`` with ``tools``/``tool_calls``.
+
+    Works for any OpenAI-compatible gateway. GPT-6 Astra is the known
+    exception -- it rejects tool calls on this endpoint, which is why
+    ``openai_responses`` exists and why the provider is the user's choice
+    rather than something guessed from the model name.
+    """
+
+    resolved = resolve_credentials()
+    api_key = str(resolved["api_key"])
+    if not api_key:
+        raise LLMError("No API key configured for the OpenAI-compatible provider.")
+
+    effective_model = model or str(resolved["model"])
+    payload: dict[str, Any] = {
+        "model": effective_model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": instructions},
+            *_openai_chat_transcript(messages),
+        ],
+    }
+    if tools:
+        payload["tools"] = _openai_chat_tools(tools)
+    if supports_sampling_params(effective_model):
+        payload["temperature"] = 0.2
+
+    decoded = _post_json(
+        endpoint_url(OPENAI_COMPATIBLE, str(resolved["base_url"])),
+        payload=payload,
+        headers=request_headers(OPENAI_COMPATIBLE, api_key),
+        timeout=float(resolved["timeout_seconds"]),
+    )
+    return _parse_openai_chat_tool_reply(decoded)
+
+
+def _parse_anthropic_tool_reply(payload: dict[str, Any]) -> ModelReply:
+    """Split an Anthropic body into text plus ``tool_use`` calls."""
+
+    texts: list[str] = []
+    calls: list[ToolCallRequest] = []
+    output: list[dict[str, Any]] = []
+
+    for block in payload.get("content") or []:
+        if not isinstance(block, dict):
+            continue
+        kind = block.get("type")
+        if kind == "text":
+            texts.append(str(block.get("text") or ""))
+        elif kind == "tool_use":
+            call_id = str(block.get("id") or "")
+            name = str(block.get("name") or "")
+            arguments = block.get("input") if isinstance(block.get("input"), dict) else {}
+            calls.append(ToolCallRequest(id=call_id, name=name, arguments=arguments))
+            output.append(_function_call_block(call_id, name, arguments))
+
+    text = "".join(texts).strip()
+    return ModelReply(text=text, tool_calls=calls, raw={"output": _with_text_block(output, text)})
+
+
+def _parse_openai_chat_tool_reply(payload: dict[str, Any]) -> ModelReply:
+    """Split a Chat Completions body into text plus function calls."""
+
+    choices = payload.get("choices") or []
+    if not choices:
+        raise LLMError("LLM response contained no choices.")
+    message = choices[0].get("message") or {}
+    text = str(message.get("content") or "").strip()
+
+    calls: list[ToolCallRequest] = []
+    output: list[dict[str, Any]] = []
+    for raw_call in message.get("tool_calls") or []:
+        if not isinstance(raw_call, dict):
+            continue
+        function = raw_call.get("function") or {}
+        call_id = str(raw_call.get("id") or "")
+        name = str(function.get("name") or "")
+        arguments = _parse_arguments(function.get("arguments"))
+        calls.append(ToolCallRequest(id=call_id, name=name, arguments=arguments))
+        output.append(_function_call_block(call_id, name, arguments))
+
+    return ModelReply(text=text, tool_calls=calls, raw={"output": _with_text_block(output, text)})
+
+
+def _function_call_block(call_id: str, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Re-express a provider tool call as a Responses ``function_call`` block.
+
+    The loop echoes these blocks back on the next turn, so the arguments have
+    to survive the round trip in the shape the next projection expects.
+    """
+
+    return {
+        "type": "function_call",
+        "call_id": call_id,
+        "name": name,
+        "arguments": json.dumps(arguments, ensure_ascii=False),
+    }
+
+
+def _with_text_block(output: list[dict[str, Any]], text: str) -> list[dict[str, Any]]:
+    if not text:
+        return output
+    return [
+        {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": text}]},
+        *output,
+    ]
+
+
+def _anthropic_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project Responses-shaped function tools onto Anthropic's ``tools``."""
+
+    projected: list[dict[str, Any]] = []
+    for tool in tools:
+        name = str(tool.get("name") or "")
+        if not name:
+            continue
+        entry: dict[str, Any] = {
+            "name": name,
+            "input_schema": tool.get("parameters") or {"type": "object", "properties": {}},
+        }
+        description = tool.get("description")
+        if description:
+            entry["description"] = str(description)
+        projected.append(entry)
+    return projected
+
+
+def _openai_chat_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project Responses-shaped function tools onto Chat Completions ``tools``.
+
+    The two differ only by the extra ``function`` nesting. A tool that already
+    carries it is passed through untouched so this cannot double-wrap.
+    """
+
+    projected: list[dict[str, Any]] = []
+    for tool in tools:
+        function = tool.get("function")
+        if isinstance(function, dict):
+            projected.append(tool)
+            continue
+        name = str(tool.get("name") or "")
+        if not name:
+            continue
+        body: dict[str, Any] = {
+            "name": name,
+            "parameters": tool.get("parameters") or {"type": "object", "properties": {}},
+        }
+        description = tool.get("description")
+        if description:
+            body["description"] = str(description)
+        projected.append({"type": "function", "function": body})
+    return projected
+
+
+def _anthropic_transcript(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project the loop's transcript onto Anthropic ``messages``.
+
+    Consecutive same-role list-content turns are merged so a turn's text and
+    its ``tool_use`` blocks land in one assistant message, and the tool results
+    that follow land in one user message -- which is the alternation the API
+    expects.
+    """
+
+    out: list[dict[str, Any]] = []
+    for item in messages:
+        kind = item.get("type")
+        if kind == "function_call":
+            _push_content_block(
+                out,
+                "assistant",
+                {
+                    "type": "tool_use",
+                    "id": _call_id(item),
+                    "name": str(item.get("name") or ""),
+                    "input": _tool_arguments(item.get("arguments")),
+                },
+            )
+            continue
+        if kind == "function_call_output":
+            _push_content_block(
+                out,
+                "user",
+                {
+                    "type": "tool_result",
+                    "tool_use_id": _call_id(item),
+                    "content": str(item.get("output") or ""),
+                },
+            )
+            continue
+        if kind == "message":
+            text = _message_block_text(item)
+            if text:
+                _push_content_block(out, "assistant", {"type": "text", "text": text})
+            continue
+        role = str(item.get("role") or "")
+        content = item.get("content")
+        if role in {"user", "assistant"} and not isinstance(content, list):
+            out.append({"role": role, "content": str(content or "")})
+    return out
+
+
+def _openai_chat_transcript(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project the loop's transcript onto Chat Completions ``messages``.
+
+    Tool calls are grouped into the assistant message that requested them
+    (``tool_calls``), and each result becomes a ``role: tool`` message keyed by
+    ``tool_call_id`` -- the shape this endpoint validates before it will accept
+    the results at all.
+    """
+
+    out: list[dict[str, Any]] = []
+    for item in messages:
+        kind = item.get("type")
+        if kind == "function_call":
+            call = {
+                "id": _call_id(item),
+                "type": "function",
+                "function": {
+                    "name": str(item.get("name") or ""),
+                    "arguments": _arguments_text(item.get("arguments")),
+                },
+            }
+            if out and out[-1].get("role") == "assistant":
+                out[-1].setdefault("tool_calls", []).append(call)
+            else:
+                out.append({"role": "assistant", "content": "", "tool_calls": [call]})
+            continue
+        if kind == "function_call_output":
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": _call_id(item),
+                    "content": str(item.get("output") or ""),
+                }
+            )
+            continue
+        if kind == "message":
+            text = _message_block_text(item)
+            if not text:
+                continue
+            if out and out[-1].get("role") == "assistant":
+                out[-1]["content"] = str(out[-1].get("content") or "") + text
+            else:
+                out.append({"role": "assistant", "content": text})
+            continue
+        role = str(item.get("role") or "")
+        if role in {"user", "assistant"} and not isinstance(item.get("content"), list):
+            out.append({"role": role, "content": str(item.get("content") or "")})
+    return out
+
+
+def _push_content_block(
+    out: list[dict[str, Any]],
+    role: str,
+    block: dict[str, Any],
+) -> None:
+    """Append ``block`` to the trailing message of the same role, else start one."""
+
+    if out and out[-1].get("role") == role and isinstance(out[-1].get("content"), list):
+        out[-1]["content"].append(block)
+        return
+    out.append({"role": role, "content": [block]})
+
+
+def _call_id(item: dict[str, Any]) -> str:
+    return str(item.get("call_id") or item.get("id") or "")
+
+
+def _message_block_text(block: dict[str, Any]) -> str:
+    parts = [
+        str(part.get("text") or "")
+        for part in block.get("content") or []
+        if isinstance(part, dict) and part.get("type") in ("output_text", "text")
+    ]
+    return "".join(parts)
+
+
+def _tool_arguments(raw: Any) -> dict[str, Any]:
+    """Return a tool call's arguments as an object, whatever shape they arrived in."""
+
+    parsed = _parse_arguments(raw)
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _arguments_text(raw: Any) -> str:
+    """Return a tool call's arguments as the JSON *string* Chat Completions wants."""
+
+    if isinstance(raw, str):
+        return raw
+    try:
+        return json.dumps(raw if isinstance(raw, dict) else {}, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return "{}"
 
 
 def _parse_responses_reply(payload: dict[str, Any]) -> ModelReply:

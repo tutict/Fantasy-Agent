@@ -117,8 +117,8 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="GOAL",
         help=(
             "Run the bounded planning agent loop on this goal instead of the "
-            "fixed pipeline. Needs the openai_responses provider: GPT-6 tool "
-            "calling is only served on the Responses API."
+            "fixed pipeline. Tool calling runs on whichever provider is "
+            "configured (anthropic, openai_compatible or openai_responses)."
         ),
     )
     parser.add_argument(
