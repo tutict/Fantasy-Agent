@@ -55,6 +55,10 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - `godot_plan`：引擎交接计划不合法（如工程名为空）。
 - `flags`：计划没问题，是运行开关错了（声明了资产需求但没开 Blender 等）。
 
+`rework_target` 说的是「改什么」，**执行阶段名说的是「从哪跑」**，这是两套词汇表。`pipeline_state.py` 的 `REWORK_TARGET_STAGES` 是两者之间唯一的翻译层，`normalize_resume_from()` 同时接受这两种写法，所以 `--from-stage spec` 和 `--from-stage blender` 都能用。有测试守着两个方向不漂移（新增 `REWORK_*` 常量必须同步加映射）。
+
+每个 issue 还带一个 `resume_stage` 字段（会进 JSON），就是 UI 那个「从此节点续跑」按钮要用的值。未知的续跑节点一律报错，不再静默退化成整条重跑——那正是这个模块要消灭的浪费。
+
 严重程度分两级，区分是关键：
 
 - `blocking`：下游节点不可能产出有意义的东西。立刻停在闸门，不烧时间。

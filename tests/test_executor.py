@@ -302,6 +302,43 @@ def test_with_assets_missing_approval_manifest_blocks_asset_copy(tmp_path: Path)
     assert not (tmp_path / result.project_dir / "assets" / "generated" / "start_marker.glb").exists()
 
 
+def test_unreadable_approval_manifest_blocks_the_run(tmp_path: Path):
+    """A corrupt manifest must stop the run, not silently drop approvals.
+
+    Previously the loader swallowed every exception, so a manifest that existed
+    but failed to parse looked identical to "nothing approved yet": the run
+    continued with approvals dropped and nobody was told.
+    """
+    manifest_path = tmp_path / "generated" / "asset-approval-manifest.yaml"
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text("decisions: not-a-list\n", encoding="utf-8")
+
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    blender = _FakeBlenderBridge(
+        status="executed", exported=["generated/assets/start_marker.glb"], root=tmp_path
+    )
+
+    result = execute_godot_demo(
+        _plan(),
+        session_id="m2corrupt",
+        confirmed=True,
+        godot_exe="godot",
+        with_assets=True,
+        approval_manifest_path="generated/asset-approval-manifest.yaml",
+        workspace_root=tmp_path,
+        bridge=bridge,
+        blender_bridge=blender,
+    )
+
+    assert result.status == "failed"
+    preflight = next(s for s in result.stages if s.name == "preflight")
+    assert preflight.status == "failed"
+    codes = [issue["code"] for issue in preflight.metadata["issues"]]
+    assert "approval_manifest_unreadable" in codes
+    # No stage after preflight ran: the run never reached Blender.
+    assert [s.name for s in result.stages] == ["preflight"]
+
+
 class _CreateFailedBridge(GodotMCPBridge):
     def create_godot_project_structure(self, request):
         return GodotMCPResult(status="failed", risks=["create boom"])

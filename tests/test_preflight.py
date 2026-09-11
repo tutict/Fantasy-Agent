@@ -11,6 +11,7 @@ import pytest
 
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.executor import execute_asset_pipeline, execute_godot_demo
+from fantasy_agent.pipeline_state import GODOT_STAGE_ORDER
 from fantasy_agent.preflight import BLOCKING, WARNING, preflight_plan
 from fantasy_agent.workflows import run_director_workflow
 
@@ -183,3 +184,58 @@ def test_every_blocking_issue_has_a_rework_target(field):
     assert report.blocked
     for issue in report.blocking_issues:
         assert issue.rework_target, "blocking issues must say where to return to"
+
+
+@pytest.mark.parametrize(
+    ("field", "empty_value"),
+    [("level_beats", []), ("win_state", ""), ("failure_states", [])],
+)
+def test_every_blocking_issue_names_a_real_resume_stage(field, empty_value):
+    """A hint is only actionable if it names a stage the runner accepts.
+
+    `rework_target` says *what* to fix; without `resume_stage` the user has to
+    guess which execution node that corresponds to.
+    """
+
+    report = preflight_plan(_plan_with_spec(**{field: empty_value}), engine="Godot 4")
+
+    assert report.blocked
+    for issue in report.blocking_issues:
+        assert issue.resume_stage, f"{issue.code} gives no stage to resume from"
+        assert issue.resume_stage in GODOT_STAGE_ORDER
+
+
+def test_resume_stage_reaches_the_api_payload():
+    """The console reads issue.resume_stage from JSON; a plain property would
+    not survive `model_dump` and the button would silently lose its target."""
+
+    report = preflight_plan(_plan_with_spec(level_beats=[]), engine="Godot 4")
+
+    payload = report.model_dump(mode="json")
+    assert payload["issues"][0]["resume_stage"]
+
+
+def test_summary_names_the_stage_not_just_the_target():
+    report = preflight_plan(_plan_with_spec(level_beats=[]), engine="Godot 4")
+
+    summary = report.summary()
+    assert "spec" in summary
+    assert "comfyui" in summary, "summary must tell the user where to resume"
+
+
+def test_flags_issues_map_to_the_stage_their_switch_gates():
+    """`flags` covers two unrelated switches; one blanket answer would either
+    waste a node or skip the one that needed to run."""
+
+    report = preflight_plan(_plan(), engine="Godot 4", with_assets=False)
+
+    assets_issue = next(
+        i for i in report.issues if i.code == "assets_declared_not_enabled"
+    )
+    assert assets_issue.resume_stage == "blender"
+
+    report2 = preflight_plan(_plan(), engine="Godot 4", with_gameplay=False)
+    enemy_issue = next(
+        i for i in report2.issues if i.code == "enemies_declared_not_generated"
+    )
+    assert enemy_issue.resume_stage == "gameplay"

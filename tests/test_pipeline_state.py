@@ -12,15 +12,19 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.executor import execute_godot_demo
 from fantasy_agent.godot_mcp import GodotMCPBridge
 from fantasy_agent.pipeline_state import (
     GODOT_STAGE_ORDER,
     RESUMABLE_STAGES,
+    REWORK_TARGET_STAGES,
     PipelineState,
     StageState,
     load_state,
+    normalize_resume_from,
     record_stage,
     stages_before,
 )
@@ -144,12 +148,85 @@ def test_failed_stage_is_never_treated_as_done(tmp_path: Path):
     assert "blender" not in {s.name for s in second.stages if s.status == "skipped"}
 
 
-def test_unknown_resume_target_skips_nothing(tmp_path: Path):
+def test_unknown_resume_target_is_rejected_loudly(tmp_path: Path):
+    """An unrecognised resume point must fail, not silently replay everything.
+
+    The old contract was "skip nothing", which is safe but degrades a typo into
+    a full replay of every minute-scale node -- the exact waste this module
+    exists to prevent. Entry points (CLI / Studio) validate before the run
+    starts, so this only guards programmatic callers.
+    """
+
     _run(tmp_path, "resume-unknown", with_gameplay=True)
 
-    second = _run(tmp_path, "resume-unknown", with_gameplay=True, resume_from="nope")
+    # The first run leaves real state, so the second one gets as far as
+    # resolving the resume point -- and fails there instead of replaying.
+    with pytest.raises(ValueError, match="未知的续跑节点"):
+        _run(tmp_path, "resume-unknown", with_gameplay=True, resume_from="nope")
+
+
+def test_resuming_from_a_rework_target_skips_real_work(tmp_path: Path):
+    """`godot_plan` fixes only touch the project structure.
+
+    Gameplay codegen does not depend on it, so a plan fix must reuse the
+    scripts already generated instead of running the LLM/codegen node again.
+    """
+
+    _run(tmp_path, "resume-plan", with_gameplay=True)
+
+    second = _run(tmp_path, "resume-plan", with_gameplay=True, resume_from="godot_plan")
+
+    skipped = {s.name for s in second.stages if s.status == "skipped"}
+    assert "gameplay" in skipped
+
+
+def test_resuming_from_spec_rebuilds_spec_derived_nodes(tmp_path: Path):
+    """A spec fix invalidates visuals, assets and gameplay, so nothing skips.
+
+    This is deliberately conservative: the cheaper alternative (skipping
+    ComfyUI/Blender) would reuse visuals generated from the *old* spec.
+    """
+
+    _run(tmp_path, "resume-spec", with_gameplay=True)
+
+    second = _run(tmp_path, "resume-spec", with_gameplay=True, resume_from="spec")
 
     assert not [s for s in second.stages if s.status == "skipped"]
+
+
+def test_rework_targets_are_valid_resume_points():
+    """A pre-flight hint must be usable as a resume point verbatim."""
+
+    # "spec" is not a stage, but following the hint has to land somewhere real.
+    assert normalize_resume_from("spec") in GODOT_STAGE_ORDER
+    assert normalize_resume_from("prompt") in GODOT_STAGE_ORDER
+    assert normalize_resume_from("godot_plan") in GODOT_STAGE_ORDER
+    assert normalize_resume_from("flags") in GODOT_STAGE_ORDER
+
+
+def test_stage_names_still_work_as_resume_points():
+    assert normalize_resume_from("blender") == "blender"
+    assert normalize_resume_from("  create  ") == "create"
+
+
+def test_every_rework_target_maps_to_a_real_stage():
+    from fantasy_agent.preflight import (
+        REWORK_FLAGS,
+        REWORK_PLAN,
+        REWORK_PROMPT,
+        REWORK_SPEC,
+    )
+
+    # Guards against drift between the two vocabularies: adding a REWORK_*
+    # constant without a mapping silently reintroduces the dead hint.
+    assert set(REWORK_TARGET_STAGES) == {
+        REWORK_PROMPT,
+        REWORK_SPEC,
+        REWORK_PLAN,
+        REWORK_FLAGS,
+    }
+    for target, stage in REWORK_TARGET_STAGES.items():
+        assert stage in GODOT_STAGE_ORDER, f"{target} maps to unknown stage {stage}"
 
 
 def test_resume_without_a_previous_run_skips_nothing(tmp_path: Path):

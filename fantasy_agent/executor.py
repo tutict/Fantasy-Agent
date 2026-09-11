@@ -50,10 +50,16 @@ from fantasy_agent.pipeline_state import (
     RESUMABLE_STAGES,
     StageState,
     load_state,
+    normalize_resume_from,
     record_stage,
     stages_before,
 )
-from fantasy_agent.preflight import preflight_plan
+from fantasy_agent.preflight import (
+    BLOCKING,
+    REWORK_FLAGS,
+    PreflightIssue,
+    preflight_plan,
+)
 
 
 @dataclass
@@ -99,12 +105,17 @@ def _resume_skip(
 
     if not resume_from:
         return set()
+    # Accept a re-work target ("spec") as well as a stage name ("comfyui"), so
+    # following a pre-flight hint does not silently replay the whole chain.
+    # Validated before the state lookup so a bad value fails the same way
+    # whether or not a previous run exists.
+    target = normalize_resume_from(resume_from)
     state = load_state(
         session_id, engine_key=engine_key, workspace_root=workspace_root
     )
     if state is None:
         return set()
-    return stages_before(resume_from) & state.done_stages() & RESUMABLE_STAGES
+    return stages_before(target) & state.done_stages() & RESUMABLE_STAGES
 
 
 def _persist_stages(
@@ -969,6 +980,11 @@ def _execute_godot_demo_inner(
                 )
             }
         )
+    # Set when the manifest exists but cannot be read or merged. A missing
+    # file is a normal "nothing approved yet" state and degrades to greybox;
+    # a corrupt one means approved assets would be dropped without a word,
+    # which is exactly the kind of thing that should stop the run.
+    approval_error: str | None = None
     if approval_manifest_path and plan.production_spec_bundle is not None:
         try:
             from fantasy_agent.production_spec_runtime import (
@@ -989,10 +1005,10 @@ def _execute_godot_demo_inner(
             )
         except ProcessCancelled:
             raise
-        except Exception:
-            # The approval_gate stage reports invalid manifests. Keep greybox
-            # execution available when no approved assets can be ingested.
+        except FileNotFoundError:
             pass
+        except Exception as exc:  # noqa: BLE001 - surfaced as a preflight issue
+            approval_error = f"{type(exc).__name__}: {exc}"
     # Pre-flight gate: cheap checks before ComfyUI/Blender, which are the most
     # expensive nodes in the chain. Blocking issues stop here instead of
     # burning minutes and only surfacing at the end.
@@ -1003,6 +1019,18 @@ def _execute_godot_demo_inner(
         with_visuals=with_visuals,
         with_gameplay=with_gameplay,
     )
+    if approval_error:
+        preflight.issues.insert(
+            0,
+            PreflightIssue(
+                code="approval_manifest_unreadable",
+                severity=BLOCKING,
+                field="approval_manifest_path",
+                message=f"审批清单无法加载或合并，已批准资产不会并入本次运行：{approval_error}",
+                rework_target=REWORK_FLAGS,
+            ),
+        )
+        preflight.status = "blocked"
     if preflight.blocked:
         stages.append(
             StageResult(

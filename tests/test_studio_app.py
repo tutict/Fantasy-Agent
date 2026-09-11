@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from fantasy_agent.contracts import PromptRequest
+from pydantic import BaseModel
 
 
 def _load_studio_app():
@@ -516,6 +517,26 @@ def test_cancel_endpoint_stops_a_running_job(monkeypatch):
     module._EXECUTE_POOL.shutdown(wait=True)
 
 
+def test_request_models_reject_unknown_fields():
+    """A lenient request model turns a misspelled field into a silent no-op.
+
+    FastAPI drops fields the model never declared without complaining, so a
+    caller that sends ``resume_from`` against a model lacking it gets a
+    successful response and no resume. That has bitten this project twice.
+    """
+
+    module = _load_studio_app()
+    models = [
+        obj
+        for name, obj in vars(module).items()
+        if name.endswith("Request") and isinstance(obj, type) and issubclass(obj, BaseModel)
+    ]
+
+    assert models, "no request models found -- the naming convention changed"
+    for model in models:
+        assert model.model_config.get("extra") == "forbid", f"{model.__name__} accepts extras"
+
+
 def test_frontend_includes_spec_bundle_panel():
     module = _load_studio_app()
     flow_source = module.REPO_ROOT.joinpath(
@@ -572,6 +593,97 @@ def test_agent_run_rejects_an_empty_goal():
     response = module.run_planning_agent(module.AgentRunRequest(goal="   "))
 
     assert response["status"] == "error"
+
+
+def test_execute_wires_the_whole_request_through_the_real_builder(monkeypatch):
+    """At least one test must run the real ``_build_execution_result``.
+
+    The other execute tests replace it wholesale, so a request field that never
+    reaches the executor would still be green. This one stubs only the
+    outermost seam and asserts every field actually arrives.
+    """
+    from fantasy_agent import executor, local_tools
+    from fantasy_agent.executor import ExecutionResult
+    from fantasy_agent.workflows import run_director_workflow
+
+    module = _load_studio_app()
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+    captured: dict = {}
+
+    def fake_execute_godot_demo(_plan, **kwargs):
+        captured.update(kwargs)
+        return ExecutionResult(status="done", session_id=kwargs["session_id"])
+
+    monkeypatch.setattr(local_tools, "_find_godot", lambda: "C:/fake/godot.exe")
+    monkeypatch.setattr(local_tools, "_find_blender", lambda: "C:/fake/blender.exe")
+    monkeypatch.setattr(executor, "execute_godot_demo", fake_execute_godot_demo)
+
+    started = module.execute_demo(
+        module.ExecuteDemoRequest(
+            plan=plan,
+            engine="Godot 4",
+            confirmed=True,
+            session_id="sess-99",
+            with_assets=True,
+            with_visuals=True,
+            with_gameplay=True,
+            approval_manifest_path="generated/asset-approval-manifest.yaml",
+            resume_from="create",
+        )
+    )
+    module._EXECUTE_POOL.shutdown(wait=True)
+
+    assert started["status"] == "running"
+    assert captured["confirmed"] is True
+    assert captured["session_id"] == "sess-99"
+    assert captured["godot_exe"] == "C:/fake/godot.exe"
+    assert captured["blender_exe"] == "C:/fake/blender.exe"
+    assert captured["with_assets"] is True
+    assert captured["with_visuals"] is True
+    assert captured["with_gameplay"] is True
+    assert captured["approval_manifest_path"] == "generated/asset-approval-manifest.yaml"
+    assert captured["resume_from"] == "create"
+
+
+def _offline_http_json(*_args, **_kwargs):
+    raise OSError("offline")
+
+
+def test_correction_targets_report_probe_results_not_just_ids(monkeypatch):
+    """correction_targets() must reflect what the probes actually found.
+
+    The previous assertion only checked target ids, so it stayed green while
+    the probes did real urlopen calls and real shutil.which/glob scans. Pinning
+    both the ready and the degraded outcome makes the status meaningful.
+    """
+    from fantasy_agent import local_tools
+
+    module = _load_studio_app()
+    monkeypatch.setattr(
+        local_tools,
+        "_http_json",
+        lambda url, timeout=0.45: {"system": {"comfyui_version": "1.2.3"}},
+    )
+    monkeypatch.setattr(local_tools, "_find_blender", lambda: "C:/blender.exe")
+    monkeypatch.setattr(local_tools, "_find_godot", lambda: "C:/godot.exe")
+
+    ready = module.correction_targets(engine="Godot 4")
+    ready_status = {target["id"]: target["status"] for target in ready["targets"]}
+    assert ready_status["comfyui"] == "ready"
+    assert ready_status["blender"] == "ready"
+    assert ready_status["godot"] == "ready"
+
+    monkeypatch.setattr(local_tools, "_http_json", _offline_http_json)
+    monkeypatch.setattr(local_tools, "_find_blender", lambda: None)
+    monkeypatch.setattr(local_tools, "_find_godot", lambda: None)
+
+    degraded = module.correction_targets(engine="Godot 4")
+    degraded_status = {target["id"]: target["status"] for target in degraded["targets"]}
+    assert degraded_status["comfyui"] != "ready"
+    assert degraded_status["blender"] == "unavailable"
+    assert degraded_status["godot"] == "unavailable"
 
 
 def test_frontend_includes_agent_panel():

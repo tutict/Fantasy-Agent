@@ -63,6 +63,81 @@ UNREAL_STAGE_ORDER: tuple[str, ...] = (
 )
 
 
+# Rework targets and execution stages are two different vocabularies. A
+# pre-flight issue names the *authoring* node to fix ("spec"); `--from-stage`
+# and `resume_from` name an *execution* stage ("comfyui"). Before this table
+# existed the two were never connected: a user who followed the hint and typed
+# "spec" hit `stages_before`, which treats unknown names as "skip nothing" and
+# silently degraded to a full replay of every expensive node.
+#
+# The value is the earliest stage that must re-run once the fix lands, so
+# anything derived from the fixed input is rebuilt and only genuinely
+# independent work is reused. Written as literals rather than importing
+# `preflight.REWORK_*` to avoid an import cycle; `test_preflight.py` asserts
+# the two stay in sync.
+REWORK_TARGET_STAGES: dict[str, str] = {
+    # A new idea regenerates the spec, the plan and every handoff, so nothing
+    # downstream survives.
+    "prompt": "spec_validation",
+    # The spec feeds ComfyUI notes, Blender notes, the Godot route and gameplay
+    # codegen. Rebuild all of them rather than risk stale artifacts.
+    "spec": "comfyui",
+    # A malformed handoff plan only affects the project structure; visuals,
+    # assets and gameplay scripts do not depend on it.
+    "godot_plan": "create",
+    # The plan itself is fine; only a run switch was wrong. Re-run the stage
+    # that switch gates and keep everything before it.
+    "flags": "blender",
+}
+
+# Per-issue overrides for cases where the rework target alone is too coarse.
+# `flags` covers two unrelated switches, and resuming from the wrong one either
+# wastes a node or skips the one that needed to run.
+REWORK_CODE_STAGES: dict[str, str] = {
+    "assets_declared_not_enabled": "blender",
+    "enemies_declared_not_generated": "gameplay",
+}
+
+
+def normalize_resume_from(
+    value: str,
+    order: tuple[str, ...] = GODOT_STAGE_ORDER,
+) -> str:
+    """Turn a user-supplied resume point into a real execution stage.
+
+    Accepts either an execution stage name or a re-work target, so both
+    `--from-stage blender` and `--from-stage spec` behave sensibly.
+
+    Raises:
+        ValueError: when the value is neither, instead of silently replaying
+            the whole chain. A typo must surface as an error, not as a slow run.
+    """
+
+    candidate = value.strip()
+    if candidate in order:
+        return candidate
+    mapped = REWORK_TARGET_STAGES.get(candidate) or REWORK_CODE_STAGES.get(candidate)
+    if mapped and mapped in order:
+        return mapped
+    known = ", ".join(sorted(order))
+    targets = ", ".join(sorted(REWORK_TARGET_STAGES))
+    raise ValueError(
+        f"未知的续跑节点 {value!r}；可用阶段：{known}；可用的返工目标：{targets}"
+    )
+
+
+def resume_stage_for(rework_target: str, code: str = "") -> str | None:
+    """Execution stage to resume from after fixing an issue.
+
+    Returns None for an unrecognised target so callers can fall back to the
+    existing behaviour instead of inventing a mapping.
+    """
+
+    if code and code in REWORK_CODE_STAGES:
+        return REWORK_CODE_STAGES[code]
+    return REWORK_TARGET_STAGES.get(rework_target)
+
+
 class StageState(StrictModel):
     """One finished (or skipped) stage, as persisted on disk."""
 

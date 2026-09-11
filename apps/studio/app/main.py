@@ -10,7 +10,7 @@ import shutil
 from typing import Any
 from urllib import error, request
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
@@ -40,6 +40,7 @@ from fantasy_agent.contracts import (
     QAPlan,
     SpecTraceRecord,
     SpecValidationReport,
+    StrictModel,
     UnrealProjectPlan,
     default_comfyui_endpoint_candidates,
 )
@@ -83,7 +84,7 @@ if FRONTEND_DIST_DIR.exists():
     app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIST_DIR)), name="frontend_assets")
 
 
-class ManualCorrectionOpenRequest(BaseModel):
+class ManualCorrectionOpenRequest(StrictModel):
     target_id: str
     engine: str = "UE5"
     confirmed_side_effects: bool = False
@@ -91,7 +92,7 @@ class ManualCorrectionOpenRequest(BaseModel):
 
 
 
-class ApprovalManifestRequest(BaseModel):
+class ApprovalManifestRequest(StrictModel):
     review: CreativeReviewReport
     decisions: dict[str, str] = Field(default_factory=dict)
     production_spec_bundle: ProductionSpecBundle | None = None
@@ -104,7 +105,7 @@ class ApprovalManifestResponse(BaseModel):
     production_spec_bundle: ProductionSpecBundle | None = None
 
 
-class SpecBundlePreviewRequest(BaseModel):
+class SpecBundlePreviewRequest(StrictModel):
     production_spec_bundle: ProductionSpecBundle
     target: str = "godot"
 
@@ -116,14 +117,14 @@ class SpecBundlePreviewResponse(BaseModel):
     executable_qa: ExecutableQAReport
 
 
-class AssetExecutionRequest(BaseModel):
+class AssetExecutionRequest(StrictModel):
     plan: DirectorBuildPlan
     with_assets: bool = False
     with_visuals: bool = False
     confirmed: bool = False
 
 
-class ExecuteDemoRequest(BaseModel):
+class ExecuteDemoRequest(StrictModel):
     plan: DirectorBuildPlan
     engine: str = ""  # inferred from plan when empty
     with_assets: bool = False
@@ -497,7 +498,7 @@ def get_llm_settings() -> dict[str, Any]:
     return public_settings()
 
 
-class LLMApiSettingsRequest(BaseModel):
+class LLMApiSettingsRequest(StrictModel):
     enabled: bool = False
     provider: str = api_settings.ANTHROPIC
     base_url: str = ""
@@ -944,6 +945,31 @@ def _build_execution_result(
     )
 
 
+def _validate_resume_request(req: ExecuteDemoRequest) -> None:
+    """Reject a resume that cannot actually resume.
+
+    Two silent-degradation traps: an unknown node name used to fall through to
+    "skip nothing" (a full replay of every expensive node), and resuming
+    without a session id silently started a brand-new session with no prior
+    state to reuse. Both now fail loudly at the boundary.
+    """
+
+    if not req.resume_from:
+        return
+    if not req.session_id:
+        raise HTTPException(
+            status_code=400,
+            detail="resume_from 需要同时提供 session_id，否则无法复用已完成的节点",
+        )
+    from fantasy_agent.pipeline_state import normalize_resume_from
+
+    try:
+        # Accept a re-work target ("spec") as well as a stage name ("blender").
+        req.resume_from = normalize_resume_from(req.resume_from)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _approval_manifest_path() -> Path:
     path = REPO_ROOT / "generated" / "asset-approval-manifest.yaml"
     resolved = path.resolve()
@@ -1059,6 +1085,7 @@ def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
     # Own the session id here so the caller gets it back immediately and can
     # resume this exact run later instead of starting a new one.
     session_id = req.session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    _validate_resume_request(req)
     if not req.confirmed:
         # Confirmation gate: report side effects without writing or executing.
         preview = _build_execution_result(req, confirmed=False, session_id=session_id)
@@ -1080,7 +1107,7 @@ def execute_cancel(job_id: str) -> dict[str, Any]:
     return _EXECUTE_JOB_REGISTRY.cancel(job_id)
 
 
-class AgentRunRequest(BaseModel):
+class AgentRunRequest(StrictModel):
     goal: str
     max_turns: int = 8
     include_engine_tools: bool = False

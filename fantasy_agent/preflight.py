@@ -21,9 +21,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, computed_field
 
 from fantasy_agent.contracts import DirectorBuildPlan, StrictModel
+from fantasy_agent.pipeline_state import resume_stage_for
 
 BLOCKING = "blocking"
 WARNING = "warning"
@@ -44,6 +45,18 @@ class PreflightIssue(StrictModel):
     field: str
     message: str
     rework_target: str
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def resume_stage(self) -> str | None:
+        """Execution stage to resume from once this issue is fixed.
+
+        ``rework_target`` names what to fix; this names where to continue. The
+        console shows it as the "resume from here" button, and it is also a
+        valid ``resume_from`` value. None when the target has no mapping.
+        """
+
+        return resume_stage_for(self.rework_target, self.code)
 
 
 class PreflightReport(StrictModel):
@@ -72,10 +85,16 @@ class PreflightReport(StrictModel):
 
         if not self.issues:
             return "preflight 通过，无阻断性问题"
-        return "; ".join(
-            f"[{issue.severity}] {issue.field}: {issue.message}（回到 {issue.rework_target}）"
-            for issue in self.issues
-        )
+
+        parts = []
+        for issue in self.issues:
+            # Name both vocabularies: what to fix, and where to resume. Without
+            # the stage the hint is not actionable -- "spec" is not a stage.
+            where = f"回到 {issue.rework_target}"
+            if issue.resume_stage:
+                where += f"（续跑节点 {issue.resume_stage}）"
+            parts.append(f"[{issue.severity}] {issue.field}: {issue.message}（{where}）")
+        return "; ".join(parts)
 
 
 def preflight_plan(

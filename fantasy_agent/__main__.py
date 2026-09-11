@@ -22,7 +22,11 @@ from pathlib import Path
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.gdd import render_gdd
-from fantasy_agent.pipeline_state import GODOT_STAGE_ORDER
+from fantasy_agent.pipeline_state import (
+    GODOT_STAGE_ORDER,
+    REWORK_TARGET_STAGES,
+    normalize_resume_from,
+)
 from fantasy_agent.workflows import run_director_workflow
 
 
@@ -152,9 +156,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "With --execute and --session-id, resume the Godot chain at this node and "
-            "skip the earlier ones that already succeeded. One of: "
+            "skip the earlier ones that already succeeded. Accepts a stage ("
             + ", ".join(GODOT_STAGE_ORDER)
-            + "."
+            + ") or a re-work target from the pre-flight gate ("
+            + ", ".join(sorted(REWORK_TARGET_STAGES))
+            + ")."
         ),
     )
     parser.add_argument(
@@ -370,12 +376,14 @@ def _run_godot_executor(plan, args) -> int:
     if args.from_stage and not args.session_id:
         print("--from-stage needs --session-id to know which run to resume.", file=sys.stderr)
         return 2
-    if args.from_stage and args.from_stage not in GODOT_STAGE_ORDER:
-        print(
-            f"Unknown stage {args.from_stage!r}. Options: {', '.join(GODOT_STAGE_ORDER)}.",
-            file=sys.stderr,
-        )
-        return 2
+    # Accept a re-work target ("spec") as well as a stage name ("blender") so
+    # following a pre-flight hint works instead of being rejected.
+    if args.from_stage:
+        try:
+            args.from_stage = normalize_resume_from(args.from_stage)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
 
     session_id = args.session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
     result = execute_godot_demo(
