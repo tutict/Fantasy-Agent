@@ -177,6 +177,38 @@ def test_run_visual_reference_workflow_queues_with_fake_client(tmp_path: Path):
     assert result.manifest.jobs[0].workflow["1"]["inputs"]["ckpt_name"] == "fake-model.safetensors"
 
 
+class BrokenComfyUIClient(FakeComfyUIClient):
+    def queue_prompt(self, workflow: dict, client_id: str = "fantasy-agent") -> dict:
+        raise OSError("ComfyUI refused the prompt")
+
+
+def test_run_visual_reference_workflow_failure_still_writes_manifest(tmp_path: Path):
+    """The failure path must not blow up on its own.
+
+    It used to hand a relative string to the manifest writer, which then did
+    ``path.parent.mkdir`` on a str. The AttributeError happened *inside* the
+    except block, so it masked the real ComfyUI error entirely.
+    """
+    _template(tmp_path)
+    bridge = ComfyUIMCPBridge(tmp_path, client_factory=BrokenComfyUIClient)
+
+    result = bridge.run_visual_reference_workflow(
+        ComfyUIMCPExecuteRequest(plan=_plan(), confirmed_side_effects=True)
+    )
+
+    assert result.status == "failed"
+    assert "ComfyUI refused the prompt" in result.stderr_tail
+    assert (tmp_path / "generated" / "comfyui" / "run-manifest.json").exists()
+    written = json.loads(
+        (tmp_path / "generated" / "comfyui" / "run-manifest.json").read_text(encoding="utf-8")
+    )
+    # The queue died on the first job, so no prompt id was recorded, but the
+    # manifest itself must still be on disk and parseable.
+    assert written["plan_name"] == "Comfy MCP Smoke"
+    assert written["prompt_ids"] == []
+    assert len(written["jobs"]) == 1
+
+
 def test_probe_comfyui_capabilities_reports_checkpoint(tmp_path: Path):
     bridge = ComfyUIMCPBridge(tmp_path, client_factory=FakeComfyUIClient)
 

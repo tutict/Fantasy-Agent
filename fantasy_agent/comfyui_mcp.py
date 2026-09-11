@@ -9,6 +9,7 @@ from urllib import parse
 
 from pydantic import ValidationError
 
+from fantasy_agent.mcp_bridge import BaseMCPBridge, DEFAULT_WORKSPACE_ROOT
 from fantasy_agent.comfyui_client import ComfyUIClient
 from fantasy_agent.contracts import (
     ComfyUICapabilityProbeRequest,
@@ -24,7 +25,6 @@ from fantasy_agent.contracts import (
 
 SERVER_NAME = "fantasy-agent-comfyui-mcp"
 SERVER_VERSION = "0.1.0"
-DEFAULT_WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def tool_descriptors() -> list[dict[str, Any]]:
@@ -83,13 +83,15 @@ class ComfyUIMCPSafetyError(ValueError):
     pass
 
 
-class ComfyUIMCPBridge:
+class ComfyUIMCPBridge(BaseMCPBridge):
+    safety_error = ComfyUIMCPSafetyError
+
     def __init__(
         self,
         workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
         client_factory: Callable[[str], Any] | None = None,
     ) -> None:
-        self.workspace_root = Path(workspace_root).resolve()
+        super().__init__(workspace_root)
         self.client_factory = client_factory or (lambda endpoint: ComfyUIClient(endpoint))
 
     def prepare_visual_reference_workflows(
@@ -126,6 +128,7 @@ class ComfyUIMCPBridge:
         manifest = self._manifest(request.plan, request.output_dir, configured_checkpoint)
         risks = self._validate_manifest(manifest, request.allow_remote_endpoint)
         manifest_path = self._manifest_path(request.output_dir)
+        resolved_manifest_path = self._resolve_workspace_path(manifest_path)
         if not request.confirmed_side_effects:
             return ComfyUIMCPResult(
                 status="blocked",
@@ -189,7 +192,7 @@ class ComfyUIMCPBridge:
             self._write_text(stdout_path, "\n".join(stdout_events))
             self._write_text(stderr_path, str(exc))
             failed_manifest = manifest.model_copy(update={"prompt_ids": prompt_ids})
-            self._write_run_manifest(failed_manifest, manifest_path)
+            self._write_run_manifest(failed_manifest, resolved_manifest_path)
             return ComfyUIMCPResult(
                 status="failed",
                 manifest=failed_manifest,
@@ -207,7 +210,7 @@ class ComfyUIMCPBridge:
         executed_manifest = manifest.model_copy(
             update={"prompt_ids": prompt_ids, "generated_images": generated_images}
         )
-        self._write_run_manifest(executed_manifest, manifest_path)
+        self._write_run_manifest(executed_manifest, resolved_manifest_path)
         self._write_text(stdout_path, "\n".join(stdout_events))
         self._write_text(stderr_path, "")
         return ComfyUIMCPResult(
@@ -396,13 +399,14 @@ class ComfyUIMCPBridge:
             self._write_text(path, json.dumps(job.workflow, indent=2))
             written.append(self._display_path(path))
         manifest_path = self._resolve_workspace_path(self._manifest_path(output_dir))
-        self._write_run_manifest(manifest, manifest_path.as_posix())
+        self._write_run_manifest(manifest, manifest_path)
         written.append(self._display_path(manifest_path))
         return written
 
-    def _write_run_manifest(self, manifest: ComfyUIRunManifest, manifest_path: str) -> None:
-        path = self._resolve_workspace_path(manifest_path)
-        self._write_text(path, json.dumps(manifest.model_dump(mode="json"), indent=2))
+    def _write_run_manifest(self, manifest: ComfyUIRunManifest, manifest_path: Path) -> None:
+        # Takes an already-resolved path: resolving twice fed an absolute path
+        # back into the resolver, which rejects absolute paths outright.
+        self._write_text(manifest_path, json.dumps(manifest.model_dump(mode="json"), indent=2))
 
     def _wait_for_outputs(
         self,
@@ -456,35 +460,14 @@ class ComfyUIMCPBridge:
         return resolved
 
     def _assert_relative_under(self, path: str, required_prefix: str) -> None:
-        if Path(path).is_absolute():
-            raise ComfyUIMCPSafetyError(f"Absolute paths are not allowed: {path}")
-        normalized = Path(path.replace("\\", "/"))
-        if ".." in normalized.parts:
-            raise ComfyUIMCPSafetyError(f"Parent traversal is not allowed: {path}")
-        prefix = Path(required_prefix)
-        if normalized.parts[: len(prefix.parts)] != prefix.parts:
-            raise ComfyUIMCPSafetyError(f"Path must stay under {required_prefix}: {path}")
-        self._resolve_workspace_path(path)
-
-    def _resolve_workspace_path(self, path: str) -> Path:
-        resolved = (self.workspace_root / path).resolve()
-        try:
-            resolved.relative_to(self.workspace_root)
-        except ValueError as exc:
-            raise ComfyUIMCPSafetyError(f"Path escapes workspace: {path}") from exc
-        return resolved
+        # Delegates to the shared resolver so absolute paths, ".." segments and
+        # prefix violations all get the same messages as every other bridge.
+        self._resolve_workspace_path(path, required_prefix=required_prefix)
 
     def _log_paths(self, plan_name: str) -> tuple[Path, Path]:
         safe_name = _slug(plan_name)
         log_dir = self.workspace_root / "generated" / "logs" / "comfyui"
         return log_dir / f"{safe_name}.stdout.log", log_dir / f"{safe_name}.stderr.log"
-
-    def _write_text(self, path: Path, text: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-
-    def _display_path(self, path: Path) -> str:
-        return path.relative_to(self.workspace_root).as_posix()
 
 
 def call_comfyui_mcp_tool(
