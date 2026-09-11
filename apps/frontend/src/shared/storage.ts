@@ -3,6 +3,8 @@ import type { DirectorBuildPlan, Locale, PlanningHandoff, Theme } from "./types"
 export const HANDOFF_KEY = "fantasy-agent-planning-handoff";
 export const THEME_KEY = "fantasy-agent-theme";
 export const CONSOLE_LOCALE_KEY = "fantasy-agent-web-console-locale";
+/** Kept identical to the retired static workbench so the choice survives. */
+export const WORKBENCH_LOCALE_KEY = "fantasy-agent-planning-workbench-locale";
 export const STUDIO_LOCALE_KEY = "fantasy-agent-studio-locale";
 export const STUDIO_SIDEBAR_WIDTH_KEY = "fantasy-agent-studio-sidebar-width";
 export const STUDIO_SIDEBAR_COLLAPSED_KEY = "fantasy-agent-studio-sidebar-collapsed";

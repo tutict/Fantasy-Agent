@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { FlowConsole } from "./console/FlowConsole";
 import { StudioShell } from "./studio/StudioShell";
+import { PlanningWorkbench } from "./workbench/PlanningWorkbench";
 
 function normalizedPathname() {
   const base = import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -13,8 +14,12 @@ function normalizedPathname() {
 }
 
 function App() {
-  if (normalizedPathname().startsWith("/web-console")) {
+  const pathname = normalizedPathname();
+  if (pathname.startsWith("/web-console")) {
     return <FlowConsole />;
+  }
+  if (pathname.startsWith("/workbench")) {
+    return <PlanningWorkbench />;
   }
   return <StudioShell />;
 }
