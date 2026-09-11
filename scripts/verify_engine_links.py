@@ -48,6 +48,8 @@ TOOLS = (
     "generate_blender_script",
     "generate_asset_batch",
     "probe_comfyui_capabilities",
+    "prepare_visual_reference_workflows",
+    "run_visual_reference_workflow",
     "create_project_structure",
 )
 
@@ -85,6 +87,36 @@ def _show(step: Step) -> None:
 def _pick(outcome: ToolOutcome, *names: str) -> dict[str, Any]:
     structured = _structured(outcome)
     return {name: structured.get(name) for name in names}
+
+
+def _seed_templates(workspace: Path) -> None:
+    """Copy the shipped ComfyUI templates into the workspace.
+
+    The bridge resolves ``templates/comfyui/*.json`` against the *workspace*,
+    not the repo, so a probe run in a throwaway directory would otherwise fail
+    on a missing template -- an artefact of where the probe writes, not
+    anything about the ComfyUI link.
+    """
+
+    source = REPO_ROOT / "templates" / "comfyui"
+    target = workspace / "templates" / "comfyui"
+    target.mkdir(parents=True, exist_ok=True)
+    for path in sorted(source.glob("*.json")):
+        (target / path.name).write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _resolve(workspace: Path, path: str) -> Path:
+    """Bridges report workspace-relative paths; resolve them against the workspace.
+
+    Checking them against the current directory instead judges *this* run by
+    whatever an older run left in the repo: the Blender step once reported
+    ``exists=True`` for .fbx files four months old, while the run's own output
+    sat untouched under the workspace. A false green is the worst thing a probe
+    can print.
+    """
+
+    candidate = Path(path)
+    return candidate if candidate.is_absolute() else workspace / candidate
 
 
 def _engine_paths() -> dict[str, str | None]:
@@ -161,11 +193,44 @@ def probe(workspace: Path) -> list[Step]:
     exported = blender["exported_assets"] or []
     print(f"blender exported   : {len(exported)} asset(s)")
     for asset in exported:
-        path = Path(asset)
-        print(f"  {asset}  exists={path.exists()}")
+        print(f"  {asset}  exists={_resolve(workspace, asset).exists()}")
 
-    # ── ComfyUI / Unreal: expected degraded, reported either way ─────────────
-    call("probe_comfyui_capabilities", "probe_comfyui_capabilities", {})
+    # ── ComfyUI ──────────────────────────────────────────────────────────────
+    # Unlike the engines above, ComfyUI is a long-running local service rather
+    # than a binary to launch. There is nothing to auto-start: if it is not
+    # already listening, the probe reports it as unavailable and every step
+    # below degrades on its own.
+    _seed_templates(workspace)
+    probe = call("probe_comfyui_capabilities", "probe_comfyui_capabilities", {})
+    comfy = _structured(probe.outcome)
+    print("comfyui status    :", comfy.get("status"))
+    print("comfyui endpoint  :", comfy.get("endpoint"))
+    print("comfyui checkpoint:", comfy.get("selected_checkpoint"))
+    print("comfyui blockers  :", comfy.get("blockers"))
+
+    call(
+        "prepare_visual_reference_workflows",
+        "prepare_visual_reference_workflows",
+        {"write_files": True},
+        allow_write=True,
+    )
+    run = call(
+        "run_visual_reference_workflow",
+        "run_visual_reference_workflow",
+        {
+            "confirmed_side_effects": True,
+            "wait_for_completion": True,
+            "timeout_seconds": 300,
+        },
+        allow_execute=True,
+    )
+    images = _pick(run.outcome, "prompt_ids", "generated_images", "stderr_tail")
+    print("comfyui prompt_ids:", images["prompt_ids"])
+    print("comfyui stderr    :", repr((images["stderr_tail"] or "")[-600:]))
+    for path in images["generated_images"] or []:
+        print(f"  {path}  exists={_resolve(workspace, path).exists()}")
+
+    # ── Unreal: expected degraded, reported either way ───────────────────────
     call(
         "create_project_structure",
         "create_project_structure",

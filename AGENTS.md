@@ -144,6 +144,21 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 
 **真机探针 `scripts/verify_engine_links.py`**（手动跑，不进 CI）：测试和探针各管一半——测试钉"代码路径对不对"，探针钉"本机的引擎真的应答"。它走的是同一个 `combined_registry`，所以权限闸门、可执行文件探测和模型 tool call 完全一致；每一步把引擎自己的命令行、`return_code`、stderr 打出来，于是"这条链路是通的"是可读的结论而不是信念。`python scripts/verify_engine_links.py [--workspace 目录]`。引擎会真的被拉起来，所以它会写 `generated/` 并占用引擎时间。**没装引擎的步骤照样报告，只是降级**——区分"Unreal 没装"和"Unreal 链路坏了"正是它存在的理由。探针里的工具名是手写的，`tests/test_workbench_tool_coverage.py` 守着它们仍在注册表里。
 
+**ComfyUI 是服务，不是二进制**：Godot / Blender / Unreal 是拉起来就跑，ComfyUI 得先有一个在 `127.0.0.1:8188` 上监听的服务，探针不会替你起。本机已验证的一条路（ComfyUI Desktop 装在 `D:\Comfy-Desktop`）：
+
+```
+"D:\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\.venv\Scripts\python.exe" ^
+  "D:\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\main.py" ^
+  --listen 127.0.0.1 --port 8188 ^
+  --models-directory "D:\Comfy-Desktop\ComfyUI-Shared\models" ^
+  --output-directory "D:\Comfy-Desktop\ComfyUI-Shared\output" ^
+  --input-directory "D:\Comfy-Desktop\ComfyUI-Shared\input"
+```
+
+两个坑：`--base-directory` 会要求 `custom_nodes` 目录存在，用 `--models-directory` 分别挂更省事；带 torch 的解释器在 `ComfyUI/ComfyUI/.venv`，外层 `standalone-env` **没有 torch**（manifest 声称有，实际没装）。**底模要自己备**：`models/checkpoints` 原本是空的，验证时下的是 `v1-5-pruned-emaonly.safetensors`（SD1.5 fp32，4.27GB）。ComfyUI 在启动时缓存模型清单，加了底模要**重启服务**才看得到。
+
+**探针报告的路径按 workspace 解析，不按 cwd**：各 bridge 报的都是 workspace 相对路径，直接 `Path(p).exists()` 会用 cwd 去查，于是拿仓库里几个月前的旧文件给本轮打勾（Blender 那段曾经把 5 月的 fbx 报成刚导出的）。`_resolve()` 是唯一出处，有测试钉着。
+
 ## Director Agent
 
 职责：

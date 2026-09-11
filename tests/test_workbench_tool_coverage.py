@@ -84,19 +84,33 @@ def test_the_engine_probe_reports_every_link_without_any_engine_installed(
 ):
     """The degraded path is the one that actually runs on most machines.
 
-    Unreal is not installed here and ComfyUI is not running, so "the probe still
-    produces a result for every link" is the behaviour that gets exercised --
-    and the one worth pinning, because a probe that raises on the first missing
-    engine cannot tell you which links are fine. All three lookups are stubbed
-    to ``None``; the bridges then fall back to their own defaults and report a
-    failed launch instead of raising.
+    Unreal is not installed here and ComfyUI is usually not running, so "the
+    probe still produces a result for every link" is the behaviour that gets
+    exercised -- and the one worth pinning, because a probe that raises on the
+    first missing engine cannot tell you which links are fine. All three engine
+    lookups are stubbed to ``None`` and the ComfyUI client is stubbed to refuse;
+    the bridges then fall back to their own defaults and report a failed launch
+    instead of raising.
     """
 
+    from urllib import error
+
     from fantasy_agent import local_tools
+    from fantasy_agent.comfyui_client import ComfyUIClient
     from scripts import verify_engine_links
 
     for engine in ("_find_godot", "_find_blender", "_find_unreal"):
         monkeypatch.setattr(local_tools, engine, lambda: None)
+
+    # ComfyUI is a *service*, not a binary, so there is nothing for the lookup
+    # stub to disable. Without this the probe would drive a real GPU generation
+    # on any machine that happens to have a server up, and the test would pass
+    # for the wrong reason while quietly doing minutes of work.
+    def no_server(*_args: object, **_kwargs: object) -> None:
+        raise error.URLError("no ComfyUI server in this test")
+
+    monkeypatch.setattr(ComfyUIClient, "get_json", no_server)
+    monkeypatch.setattr(ComfyUIClient, "queue_prompt", no_server)
 
     steps = verify_engine_links.probe(tmp_path)
 
@@ -104,6 +118,29 @@ def test_the_engine_probe_reports_every_link_without_any_engine_installed(
     # Nothing crashed on the way, and the links that need no engine still work.
     assert {step.status for step in steps} <= {"ok", "refused", "error"}
     assert next(s for s in steps if s.label == "create_project_structure").status == "ok"
+    # A missing service is a report, not an exception: the probe's whole job is
+    # telling "not running" apart from "broken".
+    probe = next(s for s in steps if s.label == "probe_comfyui_capabilities")
+    assert verify_engine_links._structured(probe.outcome)["status"] == "unavailable"
+
+
+def test_the_probe_resolves_reported_paths_against_its_own_workspace(tmp_path):
+    """Bridges report workspace-relative paths, and the cwd is not the workspace.
+
+    Checking them against the cwd judges *this* run by whatever an older run
+    left in the repo: the Blender step once printed ``exists=True`` for .fbx
+    files that were four months old, while the run's real output sat untouched
+    under the workspace. A probe that confirms success from stale files is worse
+    than one that reports nothing.
+    """
+
+    from scripts import verify_engine_links
+
+    relative = verify_engine_links._resolve(tmp_path, "generated/assets/a.fbx")
+    assert relative == tmp_path / "generated" / "assets" / "a.fbx"
+
+    absolute = verify_engine_links._resolve(tmp_path, "D:/elsewhere/a.fbx")
+    assert absolute == Path("D:/elsewhere/a.fbx")
 
 
 def test_backend_tools_are_reachable_from_the_ui():
