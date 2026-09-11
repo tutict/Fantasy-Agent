@@ -28,7 +28,6 @@ from fantasy_agent.tool_registry import (
     validate_contract_refs,
 )
 
-
 # ── registry ─────────────────────────────────────────────────────────────────
 
 

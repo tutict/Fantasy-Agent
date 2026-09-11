@@ -1,6 +1,5 @@
-from fantasy_agent.contracts import PromptRequest
+from fantasy_agent.contracts import IdeaDiscoveryRequest, PromptRequest
 from fantasy_agent.idea_discovery import extract_idea_seed, prompt_request_from_seed
-from fantasy_agent.contracts import IdeaDiscoveryRequest
 from fantasy_agent.workflows import run_director_workflow
 
 

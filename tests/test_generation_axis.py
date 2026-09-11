@@ -194,7 +194,7 @@ def test_chinese_beat_names_differ_between_axes():
     English specialisation is invisible to the audience the docs target."""
 
     names = set()
-    for axis, prompt in PROMPT_FOR_AXIS.items():
+    for prompt in PROMPT_FOR_AXIS.values():
         spec = design_from_prompt_deterministic(
             PromptRequest(prompt=prompt, target_minutes=10, output_locales=["zh-CN"])
         )

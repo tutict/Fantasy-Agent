@@ -20,9 +20,10 @@ therefore never decides *whether* it may act -- only *what* to attempt.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 READ_ONLY = "read_only"  # computes and returns a plan; never writes or launches
 WRITE = "write"  # writes under generated/
@@ -307,12 +308,12 @@ def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
     planning tool just produced.
     """
 
+    from fantasy_agent.contracts import IdeaDiscoveryRequest, PromptRequest
     from fantasy_agent.idea_discovery import extract_idea_seed
     from fantasy_agent.workflows import (
         decompose_production_tasks,
         run_director_workflow,
     )
-    from fantasy_agent.contracts import IdeaDiscoveryRequest, PromptRequest
 
     registry = target or ToolRegistry()
 

@@ -9,11 +9,6 @@ from typing import Any
 from pydantic import ValidationError
 
 from fantasy_agent.config_table_compiler import config_table_artifact_name
-from fantasy_agent.mcp_bridge import BaseMCPBridge, DEFAULT_WORKSPACE_ROOT
-from fantasy_agent.process_runner import (
-    current_cancel_event,
-    is_streaming_runner,
-)
 from fantasy_agent.contracts import (
     EnemyPressureTuning,
     GameplaySpec,
@@ -23,8 +18,13 @@ from fantasy_agent.contracts import (
     GodotMCPValidateProjectRequest,
     GodotProjectArtifact,
     GodotProjectPlan,
-    ProductionSpecBundle,
     GodotProjectValidationReport,
+    ProductionSpecBundle,
+)
+from fantasy_agent.mcp_bridge import DEFAULT_WORKSPACE_ROOT, BaseMCPBridge
+from fantasy_agent.process_runner import (
+    current_cancel_event,
+    is_streaming_runner,
 )
 
 SERVER_NAME = "fantasy-agent-godot-mcp"
@@ -236,7 +236,7 @@ class GodotMCPBridge(BaseMCPBridge):
         asset_dirs = [
             _join_project_path(base, folder)
             for folder in plan.folders
-            if folder.startswith("assets") or folder.startswith("references")
+            if folder.startswith(("assets", "references"))
         ]
         main_scene = scenes[0] if scenes else (base / "scenes" / "main.tscn").as_posix()
         return GodotProjectArtifact(
@@ -492,17 +492,13 @@ def _project_godot(plan: GodotProjectPlan) -> str:
 
 
 def _main_scene() -> str:
-    return "\n".join(
-        [
-            "[gd_scene load_steps=2 format=3]",
-            "",
-            '[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]',
-            "",
-            '[node name="FantasyAgentPrototype" type="Node3D"]',
-            'script = ExtResource("1_main")',
-            "",
-        ]
-    )
+    return """[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_main"]
+
+[node name="FantasyAgentPrototype" type="Node3D"]
+script = ExtResource("1_main")
+"""
 
 
 def _default_route_body() -> str:

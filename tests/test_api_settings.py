@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import io
 import json
-import unittest.mock as mock
 from pathlib import Path
+from unittest import mock
 from urllib import error
 
 import pytest
@@ -23,13 +23,15 @@ from fantasy_agent.api_settings import (
     OPENAI_COMPATIBLE,
     LLMApiSettings,
     clear_settings,
-    load_settings,
     llm_enabled,
+    load_settings,
     mask_secret,
     normalize_provider,
     public_settings,
     resolve_credentials,
     save_settings,
+)
+from fantasy_agent.api_settings import (
     test_connection as probe_connection,
 )
 

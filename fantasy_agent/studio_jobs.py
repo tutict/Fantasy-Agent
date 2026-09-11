@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from concurrent.futures import Executor
 from dataclasses import asdict
-from datetime import datetime
-from typing import Any, Callable
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from fantasy_agent.process_runner import ProcessCancelled, cancel_scope
@@ -90,4 +91,4 @@ class InMemoryJobRegistry:
 
     @staticmethod
     def _new_job_id() -> str:
-        return f"{datetime.now().strftime('%Y%m%d_%H%M%S')}-{uuid4().hex[:8]}"
+        return f"{datetime.now(UTC).strftime('%Y%m%d_%H%M%S')}-{uuid4().hex[:8]}"

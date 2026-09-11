@@ -8,6 +8,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from fantasy_agent import process_runner
 from fantasy_agent.studio_jobs import InMemoryJobRegistry
@@ -130,7 +131,7 @@ def test_preview_shape_is_unchanged():
     registry = InMemoryJobRegistry(ThreadPoolExecutor(max_workers=1))
 
     class _Planned:
-        planned_side_effects = ["write project", "run import"]
+        planned_side_effects: ClassVar[list[str]] = ["write project", "run import"]
 
     assert registry.preview(_Planned(), engine="Godot 4") == {
         "status": "confirmation_required",

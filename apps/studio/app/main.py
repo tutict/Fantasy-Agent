@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError, as_completed
-from glob import glob
-from pathlib import Path
 import re
 import shutil
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from glob import glob
+from pathlib import Path
 from typing import Any
 from urllib import error, request
 
@@ -30,13 +31,13 @@ from fantasy_agent.contracts import (
     DirectorTaskBreakdown,
     EnemyPressureTuning,
     ExecutableQAReport,
-    GDDDocument,
     GameplaySpec,
+    GDDDocument,
     GodotProjectPlan,
     IdeaDiscoveryRequest,
     IdeaSeed,
-    PromptRequest,
     ProductionSpecBundle,
+    PromptRequest,
     QAPlan,
     SpecTraceRecord,
     SpecValidationReport,
@@ -927,7 +928,12 @@ def _build_execution_result(
 ):
     """Call the right executor; returns an ExecutionResult."""
     from fantasy_agent.executor import execute_godot_demo, execute_unreal_demo
-    from fantasy_agent.local_tools import _find_blender, _find_godot, _find_unreal, _unreal_cmd_executable
+    from fantasy_agent.local_tools import (
+        _find_blender,
+        _find_godot,
+        _find_unreal,
+        _unreal_cmd_executable,
+    )
 
     engine = _infer_engine(req.plan, req.engine)
     if engine == "unreal":
@@ -1047,12 +1053,12 @@ def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestRes
 
 
 def _build_asset_execution_result(req: AssetExecutionRequest, *, confirmed: bool):
+    from datetime import UTC, datetime
+
     from fantasy_agent.executor import execute_asset_pipeline
     from fantasy_agent.local_tools import _find_blender
 
-    from datetime import datetime
-
-    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_id = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     return execute_asset_pipeline(
         req.plan,
         session_id=session_id,
@@ -1086,12 +1092,12 @@ def asset_execute_cancel(job_id: str) -> dict[str, Any]:
 
 @app.post("/api/execute")
 def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
-    from datetime import datetime
+    from datetime import UTC, datetime
 
     engine = _infer_engine(req.plan, req.engine)
     # Own the session id here so the caller gets it back immediately and can
     # resume this exact run later instead of starting a new one.
-    session_id = req.session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_id = req.session_id or datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     _validate_resume_request(req)
     if not req.confirmed:
         # Confirmation gate: report side effects without writing or executing.

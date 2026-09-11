@@ -87,7 +87,7 @@ def _write(project_dir, relative: str, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def _build_project(tmp_path, axis: str, spec) -> "object":
+def _build_project(tmp_path, axis: str, spec) -> object:
     project = tmp_path / f"axis_{axis}"
     scripts = deterministic_gameplay_scripts(spec)
     actions = "\n".join(
@@ -135,6 +135,7 @@ def test_generated_scripts_load_and_run_in_godot(tmp_path, axis):
                 "--script",
                 f"res://{name}",
             ],
+            check=False,  # failures are asserted through FAILURE_MARKERS below
             capture_output=True,
             text=True,
             timeout=120,
@@ -154,6 +155,7 @@ def test_generated_scripts_load_and_run_in_godot(tmp_path, axis):
             "--script",
             "res://scripts/verify_harness.gd",
         ],
+        check=False,  # the harness reports through markers, not the exit code
         capture_output=True,
         text=True,
         timeout=180,

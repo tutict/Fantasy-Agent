@@ -13,8 +13,8 @@ node instead of starting over.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import Field
@@ -184,7 +184,7 @@ class PipelineState(StrictModel):
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def state_path(

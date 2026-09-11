@@ -5,8 +5,9 @@ import threading
 import time
 from pathlib import Path
 
-from fantasy_agent.contracts import PromptRequest
 from pydantic import BaseModel
+
+from fantasy_agent.contracts import PromptRequest
 
 
 def _load_studio_app():

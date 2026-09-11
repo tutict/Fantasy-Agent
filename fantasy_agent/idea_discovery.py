@@ -4,7 +4,6 @@ import re
 
 from fantasy_agent.contracts import IdeaDiscoveryRequest, IdeaSeed, PromptRequest
 
-
 ANSWER_ALIASES: dict[str, tuple[str, ...]] = {
     "player_fantasy": ("player_fantasy", "fantasy", "role"),
     "emotional_target": ("emotional_target", "mood", "feeling", "emotion"),

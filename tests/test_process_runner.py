@@ -148,13 +148,12 @@ def test_cancel_is_picked_up_from_the_context(tmp_path: Path):
     event = threading.Event()
     threading.Timer(1.0, event.set).start()
 
-    with pytest.raises(process_runner.ProcessCancelled):
-        with process_runner.cancel_scope(event):
-            process_runner.run_streaming(
-                [sys.executable, "-c", _slow_script()],
-                stdout_path=tmp_path / "out.log",
-                timeout=120,
-            )
+    with pytest.raises(process_runner.ProcessCancelled), process_runner.cancel_scope(event):
+        process_runner.run_streaming(
+            [sys.executable, "-c", _slow_script()],
+            stdout_path=tmp_path / "out.log",
+            timeout=120,
+        )
 
 
 def test_cancel_scope_restores_the_previous_binding():
@@ -185,7 +184,7 @@ def test_terminate_process_tree_kills_children():
 
 
 def test_is_streaming_runner_detects_the_streaming_flag():
-    def fake(*args, **kwargs):  # noqa: ARG001 - shape of a test double
+    def fake(*args, **kwargs):
         return subprocess.CompletedProcess(args=args[0] if args else [], returncode=0)
 
     assert process_runner.is_streaming_runner(process_runner.run_streaming)

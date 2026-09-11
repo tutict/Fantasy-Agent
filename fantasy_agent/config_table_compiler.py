@@ -15,7 +15,6 @@ from fantasy_agent.contracts import (
     SpecTraceRecord,
 )
 
-
 _FORMAT_SUFFIXES = {"yaml": ".yaml", "json": ".json", "csv-ready": ".csv"}
 
 

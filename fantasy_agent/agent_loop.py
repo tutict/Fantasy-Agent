@@ -83,7 +83,7 @@ def run_agent(
     instructions: str = SYSTEM_PROMPT,
     permission_ceiling: str | None = None,
     include_engine_tools: bool = False,
-    workspace_root: "Path | str | None" = None,
+    workspace_root: Path | str | None = None,
 ) -> AgentRunResult:
     """Run the loop until the model stops calling tools or the ceiling hits.
 
@@ -180,10 +180,10 @@ def _last_text(steps: list[AgentStep]) -> str:
 
 
 __all__ = [
-    "AgentRunResult",
-    "AgentStep",
     "DEFAULT_MAX_TURNS",
     "SYSTEM_PROMPT",
+    "AgentRunResult",
+    "AgentStep",
     "ToolOutcome",
     "run_agent",
 ]

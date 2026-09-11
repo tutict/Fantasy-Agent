@@ -129,6 +129,11 @@ def director_plan_from_production_spec_bundle(
         SystemSpec,
     )
     from fantasy_agent.gdd import render_gdd
+    from fantasy_agent.spec_validation import (
+        enemy_default_hp,
+        enemy_rows_from_bundle,
+        enemy_spec_from_row,
+    )
     from fantasy_agent.workflows import (
         prepare_blender_assets,
         prepare_comfyui_visuals,
@@ -136,12 +141,6 @@ def director_plan_from_production_spec_bundle(
         prepare_godot_project,
         prepare_qa_plan,
         prepare_unreal_project,
-    )
-
-    from fantasy_agent.spec_validation import (
-        enemy_default_hp,
-        enemy_rows_from_bundle,
-        enemy_spec_from_row,
     )
 
     segments = [

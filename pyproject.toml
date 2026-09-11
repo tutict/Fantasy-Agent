@@ -30,13 +30,15 @@ fantasy-agent = "fantasy_agent.__main__:main"
 line-length = 100
 target-version = "py311"
 
-# ruff 0.16 起默认规则集大幅扩张（新增 I001 / DTZ005 / S110 / PLR0402 / UP03x /
-# BLE001 等 20 余条），仓库会在零代码改动的情况下由全绿变 63 条告警。这里显式
-# 声明规则集，让 lint 结果只随代码变化、不随 ruff 版本漂移；要采纳新规则请单独
-# 开一轮并逐条修（其中 DTZ005 / S110 / BLE001 与项目"拒绝静默降级"的约定相关）。
-[tool.ruff.lint]
-select = ["E4", "E7", "E9", "F"]
-
+# Lint deliberately follows ruff's default rule set instead of pinning a
+# whitelist: when a new ruff release enables a rule, CI goes red and the rule
+# gets read and adopted. An earlier `select = ["E4", "E7", "E9", "F"]` pin was
+# removed after it turned a 63-warning tree green while silently skipping those
+# rules -- that is the failure mode this comment exists to prevent.
+#
+# A rule that genuinely does not apply gets ignored at the site with a reason
+# (`# noqa: CODE - why`), the way the broad `except Exception` handlers in
+# fantasy_agent/ already carry `# noqa: BLE001 - <reason>`.
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

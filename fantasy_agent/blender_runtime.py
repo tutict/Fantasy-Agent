@@ -10,7 +10,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 MATERIALS: dict[str, tuple[float, float, float, float]] = {
     "neutral": (0.55, 0.58, 0.54, 1.0),
     "safe": (0.22, 0.58, 0.52, 1.0),
@@ -316,7 +315,7 @@ def _sockets_for_kind(
     collection: str,
 ) -> list[Any]:
     """Per-kind interaction sockets (Empties). Empty list for kinds without one."""
-    x, y, z = dims
+    x, _y, z = dims
     bx, by, _bz = base
     if kind == "door":
         return [_add_socket(bpy, f"SOCKET_{asset_name}_lock", (bx + x * 0.32, by, z * 0.5), collection)]
@@ -374,7 +373,7 @@ def _bevel_edges(bpy: Any, obj: Any, width: float = 2.5, segments: int = 2) -> N
         try:
             if obj.modifiers.get("FA_Bevel") is not None:
                 obj.modifiers.remove(obj.modifiers["FA_Bevel"])
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110 - best-effort rollback, must not block export
             pass
 
 
@@ -391,7 +390,7 @@ def _smart_uv_unwrap(bpy: Any, obj: Any) -> None:
     except Exception:  # noqa: BLE001 - UV is best-effort; never block export
         try:
             bpy.ops.object.mode_set(mode="OBJECT")
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110 - best-effort rollback, must not block export
             pass
 
 

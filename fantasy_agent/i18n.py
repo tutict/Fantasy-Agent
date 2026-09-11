@@ -5,7 +5,6 @@ import re
 from fantasy_agent.axis_templates import AXIS_TEMPLATES, verb_fields
 from fantasy_agent.contracts import GameplaySpec, I18nBundle, LocaleCode, PromptRequest
 
-
 SUPPORTED_LOCALES: tuple[LocaleCode, ...] = ("en", "zh-CN")
 
 # Derived from the axis templates: one place knows what an axis is called.

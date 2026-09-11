@@ -139,9 +139,9 @@ def test_godot_mcp_rejects_paths_outside_generated_godot(tmp_path: Path):
 
 
 def test_create_with_gameplay_scripts_writes_enemy_controller(tmp_path: Path):
-    from fantasy_agent.generation import design_from_prompt_deterministic
     from fantasy_agent.contracts import EnemyPressureTuning, PromptRequest
     from fantasy_agent.gameplay_codegen import deterministic_gameplay_scripts
+    from fantasy_agent.generation import design_from_prompt_deterministic
 
     spec = design_from_prompt_deterministic(PromptRequest(prompt="rooftop parkour chase"))
     scripts = deterministic_gameplay_scripts(spec)

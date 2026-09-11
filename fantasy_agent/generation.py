@@ -5,6 +5,7 @@ import logging
 import os
 import re
 
+from fantasy_agent.axis_templates import AXIS_TEMPLATES, verb_fields
 from fantasy_agent.contracts import (
     EnemySpec,
     GameplaySpec,
@@ -14,7 +15,6 @@ from fantasy_agent.contracts import (
     PromptRequest,
     SystemSpec,
 )
-from fantasy_agent.axis_templates import AXIS_TEMPLATES, verb_fields
 from fantasy_agent.i18n import VERB_ZH, build_i18n_bundle, contains_cjk
 
 logger = logging.getLogger(__name__)

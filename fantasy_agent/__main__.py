@@ -16,12 +16,12 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fantasy_agent.contracts import PromptRequest
-from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.gdd import render_gdd
+from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.pipeline_state import (
     GODOT_STAGE_ORDER,
     REWORK_TARGET_STAGES,
@@ -337,7 +337,7 @@ def _run_unreal_executor(plan, args) -> int:
         )
         return 2
 
-    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_id = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     result = execute_unreal_demo(
         plan,
         session_id=session_id,
@@ -385,7 +385,7 @@ def _run_godot_executor(plan, args) -> int:
             print(str(exc), file=sys.stderr)
             return 2
 
-    session_id = args.session_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+    session_id = args.session_id or datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     result = execute_godot_demo(
         plan,
         session_id=session_id,

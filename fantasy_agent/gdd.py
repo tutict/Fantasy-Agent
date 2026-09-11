@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from fantasy_agent.contracts import GDDDocument, GameplaySpec, LocaleCode
+from fantasy_agent.contracts import GameplaySpec, GDDDocument, LocaleCode
 from fantasy_agent.i18n import normalize_locales, translate_field
-
 
 SECTION_TITLES: dict[str, dict[LocaleCode, str]] = {
     "summary": {"en": "Summary", "zh-CN": "概要"},

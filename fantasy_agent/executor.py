@@ -15,11 +15,16 @@ Safety model (matches AGENTS.md):
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
-import json
 from typing import Any
 
+from fantasy_agent.approval_manifest import (
+    DEFAULT_APPROVAL_MANIFEST_PATH,
+    filter_approved_blender_assets,
+    load_asset_approval_manifest,
+)
 from fantasy_agent.contracts import (
     BlenderMCPExecuteRequest,
     ComfyUIMCPExecuteRequest,
@@ -34,12 +39,6 @@ from fantasy_agent.contracts import (
     UnrealMCPPrepareAssetIngestRequest,
     UnrealMCPPrepareLevelAssemblyRequest,
 )
-from fantasy_agent.approval_manifest import (
-    DEFAULT_APPROVAL_MANIFEST_PATH,
-    filter_approved_blender_assets,
-    load_asset_approval_manifest,
-)
-from fantasy_agent.process_runner import ProcessCancelled
 from fantasy_agent.godot_mcp import (
     DEFAULT_WORKSPACE_ROOT,
     GodotMCPBridge,
@@ -60,6 +59,7 @@ from fantasy_agent.preflight import (
     PreflightIssue,
     preflight_plan,
 )
+from fantasy_agent.process_runner import ProcessCancelled
 
 
 @dataclass
@@ -194,8 +194,10 @@ def _planned_side_effects(
         effects.append(f"Copy exported glb assets approved by manifest into {project_dir}/assets/generated/")
     effects.extend(
         [
-            f"Write Godot project files under {project_dir}/ "
-            f"(project.godot, scenes, scripts, manifest)",
+            (
+                f"Write Godot project files under {project_dir}/ "
+                f"(project.godot, scenes, scripts, manifest)"
+            ),
             f"Validate the generated project at {project_dir}/project.godot",
             f"Run headless import: {godot_exe} --headless --path {project_dir} --import",
         ]

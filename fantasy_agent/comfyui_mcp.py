@@ -9,7 +9,6 @@ from urllib import parse
 
 from pydantic import ValidationError
 
-from fantasy_agent.mcp_bridge import BaseMCPBridge, DEFAULT_WORKSPACE_ROOT
 from fantasy_agent.comfyui_client import ComfyUIClient
 from fantasy_agent.contracts import (
     ComfyUICapabilityProbeRequest,
@@ -22,6 +21,7 @@ from fantasy_agent.contracts import (
     ComfyUIVisualPlan,
     ComfyUIWorkflowArtifact,
 )
+from fantasy_agent.mcp_bridge import DEFAULT_WORKSPACE_ROOT, BaseMCPBridge
 
 SERVER_NAME = "fantasy-agent-comfyui-mcp"
 SERVER_VERSION = "0.1.0"
@@ -385,7 +385,8 @@ class ComfyUIMCPBridge(BaseMCPBridge):
             try:
                 client = self.client_factory(endpoint)
                 client.system_stats()
-            except Exception:
+            except Exception:  # noqa: BLE001 - a failing probe just disqualifies this endpoint
+                warnings.append(f"ComfyUI endpoint probe failed: {endpoint}")
                 continue
             if endpoint != request.endpoint:
                 warnings.append(f"Auto-discovered active ComfyUI endpoint: {endpoint}")

@@ -2,10 +2,10 @@
 
 __all__ = [
     "contracts",
-    "generation",
     "gdd",
+    "generation",
     "i18n",
     "llm",
-    "workflows",
     "mcp",
+    "workflows",
 ]

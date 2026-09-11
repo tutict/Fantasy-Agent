@@ -141,9 +141,8 @@ def test_complete_json_strips_code_fence(anthropic_credentials):
 def test_complete_json_raises_on_non_object(anthropic_credentials):
     with mock.patch(
         "urllib.request.urlopen", return_value=_anthropic_response("[1, 2, 3]")
-    ):
-        with pytest.raises(llm.LLMError):
-            llm.complete_json(system="s", user="u")
+    ), pytest.raises(llm.LLMError):
+        llm.complete_json(system="s", user="u")
 
 
 def test_complete_json_posts_to_anthropic_messages_api(anthropic_credentials):
@@ -182,6 +181,8 @@ def test_complete_json_normalizes_http_error(anthropic_credentials):
         io.BytesIO(b'{"error":"rate limited"}'),
     )
 
-    with mock.patch("urllib.request.urlopen", side_effect=http_error):
-        with pytest.raises(llm.LLMError, match="HTTP 429"):
-            llm.complete_json(system="s", user="u")
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=http_error),
+        pytest.raises(llm.LLMError, match="HTTP 429"),
+    ):
+        llm.complete_json(system="s", user="u")

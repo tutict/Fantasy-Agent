@@ -1,32 +1,31 @@
 from __future__ import annotations
 
+from fantasy_agent.blender_codegen import enrich_blender_plan, slugify
 from fantasy_agent.contracts import (
+    ArtDirectionBrief,
     AssetApprovalDecision,
     AssetApprovalManifest,
     BlenderAssetJob,
-    BlenderAssetPlan,
     BlenderAssetKind,
-    ArtDirectionBrief,
-    CreativeReviewItem,
-    CreativeReviewReport,
+    BlenderAssetPlan,
     ComfyUIPromptJob,
     ComfyUIVisualPlan,
+    CreativeReviewItem,
+    CreativeReviewReport,
     DirectorBuildPlan,
     DirectorTaskBreakdown,
     GameplaySpec,
     GodotProjectPlan,
-    PromptRequest,
     ProductionPipeline,
     ProductionPipelineStage,
     ProductionTask,
+    PromptRequest,
     QAPlan,
     UnrealProjectPlan,
 )
-from fantasy_agent.blender_codegen import enrich_blender_plan, slugify
 from fantasy_agent.gdd import render_gdd
 from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.production_specs import build_production_spec_bundle
-
 
 BLENDER_KIT_JOBS: tuple[tuple[str, str, BlenderAssetKind], ...] = (
     (

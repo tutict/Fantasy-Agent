@@ -3,7 +3,6 @@ from fantasy_agent.blender_runtime import build_import_manifest
 from fantasy_agent.contracts import BlenderAssetJob, BlenderAssetPlan, PromptRequest
 from fantasy_agent.workflows import prepare_blender_assets, run_director_workflow
 
-
 EXPECTED_KINDS = {
     "modular_wall",
     "door",

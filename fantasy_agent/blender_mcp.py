@@ -9,17 +9,17 @@ from typing import Any
 from pydantic import ValidationError
 
 from fantasy_agent.blender_codegen import build_blender_script_artifact
-from fantasy_agent.mcp_bridge import BaseMCPBridge, DEFAULT_WORKSPACE_ROOT
-from fantasy_agent.process_runner import (
-    current_cancel_event,
-    is_streaming_runner,
-)
 from fantasy_agent.contracts import (
     BlenderAssetPlan,
     BlenderMCPExecuteRequest,
     BlenderMCPGenerateScriptRequest,
     BlenderMCPResult,
     BlenderScriptArtifact,
+)
+from fantasy_agent.mcp_bridge import DEFAULT_WORKSPACE_ROOT, BaseMCPBridge
+from fantasy_agent.process_runner import (
+    current_cancel_event,
+    is_streaming_runner,
 )
 
 SERVER_NAME = "fantasy-agent-blender-mcp"

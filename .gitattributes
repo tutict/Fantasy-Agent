@@ -1,0 +1,19 @@
+# Pin line-ending behaviour so it no longer depends on each machine's
+# core.autocrlf. The index already stores LF for every tracked file, so this
+# only makes the existing behaviour explicit and testable.
+* text=auto
+
+# Batch files must keep CRLF: cmd.exe misparses labels and multi-line blocks
+# when a .bat file is LF-only.
+*.bat text eol=crlf
+
+# Shell scripts and CI scripts must be LF so they run on Linux and macOS.
+*.sh text eol=lf
+
+# Lockfiles and config are compared and hashed byte-wise. Pin them to LF
+# everywhere so a Windows checkout cannot turn a one-line change into a
+# whole-file diff, and so `npm ci` sees identical bytes on every runner.
+package-lock.json text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf

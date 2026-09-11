@@ -21,6 +21,12 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - 策划工作台是交互式计划入口，由 Studio 以本地 REST 端点提供；没有明确确认时不得执行生产实际操作。
 - 前端不得替用户做执行确认：`confirmed_side_effects` / `confirmed` 这类标记必须由界面上的用户动作产生，不得在调用点写死 `true`。后端闸门（`local_tools.py`）只在没有该标记时拦得住，写死等于把闸门拆了。
 
+## 测试与校验
+
+- 后端测试用 `python scripts/run_tests.py` 跑（pytest 参数照常追加，如 `-k unreal -x`），**不要直接 `python -m pytest`**。原因：pytest 默认的临时目录方案会回收旧的编号 base 目录，回收方式是一次批量删除；本机护栏会拦下批量删除，于是 pytest 在退出阶段崩掉、汇总行被替换成护栏提示、退出码失真——测试可能是通过的，却报不出来。该脚本每次给一个全新的 `--basetemp`（没有旧目录可回收，因此根本不产生批量删除），并把结果写进 junit XML 再读回来，退出码由报告推导；收集到 0 个测试按失败处理（退出码 2）。
+- `tests/test_dependency_guards.py` 守住几件「人工复核会过、之后会悄悄回归」的事：lock 的 `resolved` 必须全指向官方源（挡镜像污染）、每个包必须有 `integrity`、父包声明的依赖必须都记进 lock（挡平台二进制缺失——本地装得好好的，换 CI 的 runner 就 `npm ci` 找不到可执行文件）、依赖范围不得写 `latest`、`[tool.ruff.lint]` 不得出现 `select` 白名单。
+- lint 跟随 ruff 默认规则集，不设 `select` 白名单：新版本启用新规则时 CI 变红，规则会被读到并采纳，而不是被 pin 掉。单条规则确实不适用就就地写 `# noqa: CODE - 理由`——`fantasy_agent/` 里 20 处 `except Exception` 都是这么标的。
+
 ## 前端（apps/frontend + apps/studio/static）
 
 - 策划工作台在 `apps/frontend/src/workbench/`（`PlanningWorkbench` 主组件 + `workbenchModel` 纯函数 + `PlanPanels` 八个面板）。旧静态页 `planning-workbench.html` 已删除，`/workbench` 与其它路由一样走 dist 优先。
@@ -30,7 +36,7 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - i18n 的中英字典必须同步加 key：`npm run frontend:test` 里的字典一致性测试会抓单边缺失和空文案。
 - 仍在用的静态页（`apps/studio/static/index.html`、`apps/studio/static/web-console/app.js`）往 DOM 里插后端字符串一律走 `escapeHtml()`；`list()` 已内置转义，不要绕过它自己拼 `<li>`。React 侧插值默认转义，别用 `dangerouslySetInnerHTML`。
 - 提交前跑：`npm run frontend:typecheck`、`npm run frontend:test`、`npm run frontend:build`（CI 会跑同样的三条加后端 pytest + ruff）。
-- 依赖不要写 `latest`；锁版本靠 `package-lock.json`，新增依赖后确认 lock 已同步。
+- 依赖不要写 `latest`；锁版本靠 `package-lock.json`，新增依赖后确认 lock 已同步（`tests/test_dependency_guards.py` 会检查，见上方「测试与校验」）。
 
 ## 语言规则
 

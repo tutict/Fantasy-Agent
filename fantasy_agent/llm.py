@@ -361,7 +361,7 @@ def _post_json(
         except Exception:  # noqa: BLE001 - body may already be consumed
             snippet = ""
         raise LLMError(f"LLM request failed: HTTP {exc.code} {snippet or exc.reason}") from exc
-    except Exception as exc:  # noqa: BLE001 - normalize transport errors
+    except Exception as exc:
         raise LLMError(f"LLM request failed: {exc}") from exc
 
     try:

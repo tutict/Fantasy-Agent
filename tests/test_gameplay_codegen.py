@@ -89,7 +89,7 @@ def test_generate_falls_back_when_llm_returns_invalid():
 
 def test_generate_falls_back_when_llm_raises():
     spec = _parkour_spec()
-    import fantasy_agent.llm as llm
+    from fantasy_agent import llm
 
     with mock.patch("fantasy_agent.llm.complete_json", side_effect=llm.LLMError("boom")):
         scripts = generate_gameplay_scripts(spec, use_llm=True)

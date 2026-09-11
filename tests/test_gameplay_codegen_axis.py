@@ -21,10 +21,10 @@ import pytest
 from fantasy_agent.axis_templates import AXIS_TEMPLATES
 from fantasy_agent.contracts import PromptRequest
 from fantasy_agent.gameplay_codegen import (
+    _AXIS_MECHANICS,
     ENEMY_SCRIPT,
     GAME_MANAGER_SCRIPT,
     PLAYER_SCRIPT,
-    _AXIS_MECHANICS,
     _axis_from_verbs,
     declared_input_actions,
     deterministic_gameplay_scripts,

@@ -146,7 +146,7 @@ def clear_settings() -> LLMApiSettings:
     save_settings(defaults)
     try:
         settings_path().unlink()
-    except Exception:  # noqa: BLE001 - deletion is best-effort after the wipe
+    except Exception:  # noqa: BLE001, S110 - best-effort; the wipe already ran
         pass
     return defaults
 

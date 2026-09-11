@@ -12,11 +12,10 @@ import re
 import subprocess
 from pathlib import Path
 
-from fantasy_agent.contracts import PromptRequest
+from fantasy_agent.contracts import GodotMCPResult, PromptRequest
 from fantasy_agent.executor import execute_godot_demo, format_execution_report
 from fantasy_agent.generation import design_from_prompt_deterministic
 from fantasy_agent.godot_mcp import GodotMCPBridge, _main_gd, _slug
-from fantasy_agent.contracts import GodotMCPResult
 from fantasy_agent.workflows import prepare_godot_project, run_director_workflow
 
 
@@ -818,7 +817,7 @@ def test_with_gameplay_generates_scripts_and_imports(tmp_path: Path):
 def test_with_gameplay_degrades_to_deterministic_when_llm_unavailable(tmp_path: Path):
     from unittest import mock
 
-    import fantasy_agent.llm as llm
+    from fantasy_agent import llm
 
     bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
     legacy_plan = _plan().model_copy(update={"production_spec_bundle": None})
