@@ -7,6 +7,8 @@ cannot run forever, and cannot take the deterministic fallback down with it.
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 from fantasy_agent import llm
@@ -20,6 +22,7 @@ from fantasy_agent.tool_registry import (
     combined_registry,
     default_registry,
     engine_registry,
+    exposed_executable_args,
     permission_from_annotations,
     unimplemented_contracts,
     validate_contract_refs,
@@ -475,3 +478,67 @@ def test_engine_tools_appear_only_at_the_granted_tier(fake_complete):
     run_agent("run the import", include_engine_tools=True, allow_execute=True)
     names = [t["name"] for t in fake.payloads[0]["tools"]]
     assert "run_godot_import" in names
+
+
+# ── executable arguments ─────────────────────────────────────────────────────
+
+
+def test_no_engine_tool_lets_the_model_name_an_executable():
+    """Naming the binary is naming the program. That is not the model's call."""
+
+    assert exposed_executable_args() == []
+
+
+def _executable_probe_registry(probe, seen):
+    registry = ToolRegistry()
+    registry.register(
+        ToolSpec(
+            "run_godot_import",
+            "d",
+            {
+                "type": "object",
+                "properties": {
+                    "project_file": {"type": "string"},
+                    "godot_executable": {"type": "string"},
+                },
+            },
+            lambda args: seen.update(args) or {"status": "ok"},
+            EXECUTE,
+            executable_args=("godot_executable",),
+        )
+    )
+    return registry
+
+
+def test_a_model_supplied_executable_is_overwritten(monkeypatch):
+    """Hiding the arg only removes it from the schema, not from the wire.
+
+    A model can send arguments it was never shown, so the gate has to
+    overwrite rather than merely fill in.
+    """
+
+    import fantasy_agent.tool_registry as registry_module
+
+    monkeypatch.setattr(registry_module, "_probe_executable", lambda _f: "C:/probed/godot.exe")
+    seen: dict[str, Any] = {}
+
+    _executable_probe_registry(None, seen).call(
+        "run_godot_import", {"godot_executable": "C:/evil/pwn.exe"}, allow_execute=True
+    )
+
+    assert seen["godot_executable"] == "C:/probed/godot.exe"
+
+
+def test_executable_is_dropped_when_nothing_is_installed(monkeypatch):
+    """No probe result means the bridge default applies -- not the model's."""
+
+    import fantasy_agent.tool_registry as registry_module
+
+    monkeypatch.setattr(registry_module, "_probe_executable", lambda _f: None)
+    seen: dict[str, Any] = {}
+
+    _executable_probe_registry(None, seen).call(
+        "run_godot_import", {"godot_executable": "C:/evil/pwn.exe"}, allow_execute=True
+    )
+
+    assert "godot_executable" not in seen
