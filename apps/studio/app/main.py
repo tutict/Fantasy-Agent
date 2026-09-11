@@ -70,7 +70,6 @@ STATIC_DIR = APP_DIR / "static"
 WEB_CONSOLE_STATIC_DIR = STATIC_DIR / "web-console"
 FRONTEND_DIST_DIR = REPO_ROOT / "apps" / "frontend" / "dist"
 FRONTEND_INDEX_PATH = FRONTEND_DIST_DIR / "index.html"
-WORKBENCH_PATH = STATIC_DIR / "planning-workbench.html"
 
 app = FastAPI(
     title="Fantasy Agent Studio",
@@ -887,7 +886,15 @@ def _workbench_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
 
 @app.get("/workbench")
 def workbench() -> FileResponse:
-    return FileResponse(WORKBENCH_PATH)
+    """Serve the React planning workbench.
+
+    ``/workbench`` used to be an unconditional ``FileResponse`` around a
+    hand-written static page. That page is gone; the workbench now lives in
+    ``apps/frontend/src/workbench`` and is routed by pathname inside the SPA
+    bundle, exactly like ``/web-console``.
+    """
+
+    return _frontend_index_or(STATIC_DIR / "index.html")
 
 
 @app.post("/api/tools/{tool_name}")

@@ -19,6 +19,18 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - ComfyUI 与 Blender 输出必须先通过 Creative Review，再进入 Unreal 或 Godot 导入。
 - Godot 是快速可玩验证目标，不替代 Unreal 主线生产导入。
 - 策划工作台是交互式计划入口，由 Studio 以本地 REST 端点提供；没有明确确认时不得执行生产实际操作。
+- 前端不得替用户做执行确认：`confirmed_side_effects` / `confirmed` 这类标记必须由界面上的用户动作产生，不得在调用点写死 `true`。后端闸门（`local_tools.py`）只在没有该标记时拦得住，写死等于把闸门拆了。
+
+## 前端（apps/frontend + apps/studio/static）
+
+- 策划工作台在 `apps/frontend/src/workbench/`（`PlanningWorkbench` 主组件 + `workbenchModel` 纯函数 + `PlanPanels` 八个面板）。旧静态页 `planning-workbench.html` 已删除，`/workbench` 与其它路由一样走 dist 优先。
+- 工作台通过 `POST /api/tools/{name}` 调后端策划工具。工具名是跨端契约：改动任一侧后跑 `tests/test_workbench_tool_coverage.py`，前端引用不存在的工具、或后端新增未接 UI 的工具都会红。
+- 工作台只做策划，不写文件、不起进程 —— 执行一律在流程控制台。所以这里没有 `confirmed_side_effects` 之类的审批标记，唯一闸门是「点子确认后才能跑计划工具」。
+- 新增/改名后端端点后，跑 `tests/test_frontend_endpoint_coverage.py`：前端引用了不存在的端点会红；后端新增了前端没接的端点必须登记进 `KNOWN_WITHOUT_UI` 并写明原因。
+- i18n 的中英字典必须同步加 key：`npm run frontend:test` 里的字典一致性测试会抓单边缺失和空文案。
+- 仍在用的静态页（`apps/studio/static/index.html`、`apps/studio/static/web-console/app.js`）往 DOM 里插后端字符串一律走 `escapeHtml()`；`list()` 已内置转义，不要绕过它自己拼 `<li>`。React 侧插值默认转义，别用 `dangerouslySetInnerHTML`。
+- 提交前跑：`npm run frontend:typecheck`、`npm run frontend:test`、`npm run frontend:build`（CI 会跑同样的三条加后端 pytest + ruff）。
+- 依赖不要写 `latest`；锁版本靠 `package-lock.json`，新增依赖后确认 lock 已同步。
 
 ## 语言规则
 

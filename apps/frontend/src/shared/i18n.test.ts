@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { consoleI18n, makeTranslator, studioI18n } from "./i18n";
+import { consoleI18n, makeTranslator, studioI18n, workbenchI18n } from "./i18n";
 
-const DICTIONARIES = { consoleI18n, studioI18n };
+const DICTIONARIES = { consoleI18n, studioI18n, workbenchI18n };
 
 /**
  * The dictionaries are hand-maintained per locale, so a key added to `en` and

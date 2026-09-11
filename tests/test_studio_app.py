@@ -51,12 +51,11 @@ def test_studio_serves_combined_desktop_panel():
     # The standalone workbench must not expose an inbound MCP endpoint.
     assert "/mcp" not in paths
     assert "/debug/tool/{tool_name}" not in paths
+    # The retired planning-workbench.html is gone; the React workbench replaced it.
+    assert not module.STATIC_DIR.joinpath("planning-workbench.html").exists()
+    assert module.REPO_ROOT.joinpath("apps/frontend/src/workbench/PlanningWorkbench.tsx").exists()
     assert module.STATIC_DIR.joinpath("index.html").exists()
-    assert module.STATIC_DIR.joinpath("planning-workbench.html").exists()
     assert module.WEB_CONSOLE_STATIC_DIR.joinpath("index.html").exists()
-    assert module.FRONTEND_DIST_DIR.name == "dist"
-    assert module.FRONTEND_INDEX_PATH.name == "index.html"
-    assert module.WORKBENCH_PATH.exists()
     status = module.mcp_status()
     assert status["engine_kind"] == "unreal"
     assert status["required_total"] >= 3
@@ -117,7 +116,9 @@ def test_studio_shell_includes_bilingual_ui_controls():
     html = module.STATIC_DIR.joinpath("index.html").read_text(encoding="utf-8")
     frontend_source = module.REPO_ROOT.joinpath("apps/frontend/src/studio/StudioShell.tsx").read_text(encoding="utf-8")
     frontend_i18n = module.REPO_ROOT.joinpath("apps/frontend/src/shared/i18n.ts").read_text(encoding="utf-8")
-    workbench_html = module.WORKBENCH_PATH.read_text(encoding="utf-8")
+    workbench_source = module.REPO_ROOT.joinpath(
+        "apps/frontend/src/workbench/PlanningWorkbench.tsx"
+    ).read_text(encoding="utf-8")
 
     assert 'data-locale="en"' in html or 'data-locale="en"' in frontend_source
     assert 'data-locale="zh-CN"' in html or 'data-locale="zh-CN"' in frontend_source
@@ -135,7 +136,8 @@ def test_studio_shell_includes_bilingual_ui_controls():
     assert "Planning Workbench" in html or "workbenchFrameTitle" in frontend_i18n
     assert "\u7b56\u5212\u5de5\u4f5c\u53f0" in html or "\u7b56\u5212\u5de5\u4f5c\u53f0" in frontend_i18n
     assert "fantasy-agent-studio-locale" in html or "fantasy-agent-studio-locale" in frontend_source
-    assert "fantasy-agent-planning-handoff" in workbench_html
+    # The workbench hands its plan to the console through this localStorage key.
+    assert "savePlanningHandoff" in workbench_source
 
 
 def test_studio_prefers_vite_frontend_dist_when_available(monkeypatch):
@@ -145,6 +147,34 @@ def test_studio_prefers_vite_frontend_dist_when_available(monkeypatch):
 
     assert Path(module.index().path) == frontend_index
     assert Path(module.web_console().path) == frontend_index
+
+
+def test_workbench_serves_the_react_app_when_dist_exists(monkeypatch):
+    """``/workbench`` no longer points at a hand-written page.
+
+    It used to be an unconditional ``FileResponse`` around the 2359-line
+    ``planning-workbench.html`` -- the one legacy page that was genuinely
+    alive. The workbench is now a React route inside the SPA bundle, so this
+    pins the routing change rather than the old behaviour: whoever reverts
+    ``apps/studio/app/main.py::workbench`` to a bare ``FileResponse`` will see
+    this fail.
+    """
+
+    module = _load_studio_app()
+    frontend_index = module.STATIC_DIR / "index.html"
+    monkeypatch.setattr(module, "FRONTEND_INDEX_PATH", frontend_index)
+
+    assert Path(module.workbench().path) == frontend_index
+
+
+def test_workbench_route_is_not_a_legacy_page():
+    """Guards the retirement: the old page must not come back."""
+
+    module = _load_studio_app()
+    source = Path(module.__file__).read_text(encoding="utf-8")
+
+    assert "WORKBENCH_PATH" not in source
+    assert "planning-workbench.html" not in source
 
 
 def test_studio_routes_plan_and_workbench_tools_through_one_server():
