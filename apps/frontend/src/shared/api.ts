@@ -9,6 +9,7 @@ import type {
   ExecuteJob,
   ExecutePreview,
   ExecuteStart,
+  IdeaDiscoveryRequest,
   JobCancelResponse,
   LlmApiSettings,
   LlmApiSettingsInput,
@@ -16,10 +17,48 @@ import type {
   ManualTargetsPayload,
   McpStatus,
   ProductionSpecBundle,
+  PromptRequest,
   SessionState,
-  SpecBundlePreviewResponse
+  SpecBundlePreviewResponse,
+  WorkbenchToolResult
 } from "./types";
 import type { DirectorBuildPlan, EnemyPressureTuning } from "./types";
+
+/**
+ * FastAPI answers failures with ``{"detail": ...}``. ``detail`` is a plain
+ * string for ``HTTPException`` (the backend writes its messages in Chinese,
+ * e.g. "resume_from 需要同时提供 session_id") but a list of
+ * ``{loc, msg, type}`` entries for 422 validation errors, so both shapes are
+ * unwrapped here. Without this the user only ever sees "HTTP 400".
+ */
+export function errorMessageFromPayload(payload: unknown, status: number): string {
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    const detail = record.detail ?? record.error;
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((entry) => {
+          if (entry && typeof entry === "object") {
+            const item = entry as Record<string, unknown>;
+            const location = Array.isArray(item.loc) ? item.loc.join(".") : "";
+            return location ? `${location}: ${String(item.msg ?? "")}` : String(item.msg ?? "");
+          }
+          return String(entry);
+        })
+        .filter(Boolean);
+      if (messages.length) {
+        return messages.join("; ");
+      }
+    }
+    if (typeof record.message === "string" && record.message.trim()) {
+      return record.message;
+    }
+  }
+  return `HTTP ${status}`;
+}
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
@@ -31,7 +70,13 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
     ...init
   });
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+    let payload: unknown = null;
+    try {
+      payload = await response.json();
+    } catch {
+      payload = null;
+    }
+    throw new Error(errorMessageFromPayload(payload, response.status));
   }
   return (await response.json()) as T;
 }
@@ -41,14 +86,40 @@ export function getManualCorrectionTargets(engine: string): Promise<ManualTarget
   return jsonRequest<ManualTargetsPayload>(`/api/manual-correction/targets?${query.toString()}`);
 }
 
-export function openManualCorrectionTarget(targetId: string, engine: string): Promise<Record<string, string>> {
+/**
+ * Opening a target spawns a local editor/Explorer process, so the backend
+ * refuses unless ``confirmed_side_effects`` is true. That flag is the approval
+ * gate -- it is never hardcoded here. The caller has to ask the human first.
+ */
+export function openManualCorrectionTarget(
+  targetId: string,
+  engine: string,
+  confirmedSideEffects: boolean
+): Promise<Record<string, string>> {
   return jsonRequest<Record<string, string>>("/api/manual-correction/open", {
     method: "POST",
     body: JSON.stringify({
       target_id: targetId,
       engine,
-      confirmed_side_effects: true
+      confirmed_side_effects: confirmedSideEffects
     })
+  });
+}
+
+/**
+ * Run a planning tool on the local Studio server.
+ *
+ * The workbench tools are pure planning calls: they never write files or spawn
+ * processes, so unlike ``openManualCorrectionTarget`` there is no approval flag
+ * to thread through. Execution stays in the flow console.
+ */
+export function callWorkbenchTool(
+  toolName: string,
+  payload: IdeaDiscoveryRequest | PromptRequest
+): Promise<WorkbenchToolResult> {
+  return jsonRequest<WorkbenchToolResult>(`/api/tools/${encodeURIComponent(toolName)}`, {
+    method: "POST",
+    body: JSON.stringify(payload)
   });
 }
 

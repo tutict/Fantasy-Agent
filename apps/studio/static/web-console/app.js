@@ -1128,14 +1128,14 @@ function renderGenerateStages(result) {
           : stage.status === "failed"
           ? "unavailable"
           : "degraded";
-      return `<article class="mcp-status-card" data-state="${state}">
-        <div class="mcp-status-top"><h4>${stage.name}</h4><span class="mcp-state">${stage.status}</span></div>
-        <p>${stage.detail || ""}</p>
+      return `<article class="mcp-status-card" data-state="${escapeHtml(state)}">
+        <div class="mcp-status-top"><h4>${escapeHtml(stage.name)}</h4><span class="mcp-state">${escapeHtml(stage.status)}</span></div>
+        <p>${escapeHtml(stage.detail || "")}</p>
       </article>`;
     })
     .join("");
   if (result?.project_dir) {
-    generateStagesBox.innerHTML += `<p class="handoff-note">${t("generateArtifact")}: <code>${result.project_dir}</code></p>`;
+    generateStagesBox.innerHTML += `<p class="handoff-note">${escapeHtml(t("generateArtifact"))}: <code>${escapeHtml(result.project_dir)}</code></p>`;
   }
 }
 
@@ -1186,7 +1186,7 @@ async function onGenerateClick() {
   generateConfirmBox.innerHTML = `
     <strong>${t("generateConfirmTitle")}</strong>
     <p>${t("generateConfirmIntro")}</p>
-    <ul>${effects.map((e) => `<li>${e}</li>`).join("")}</ul>
+    <ul>${effects.map((e) => `<li>${escapeHtml(e)}</li>`).join("")}</ul>
     <div class="handoff-actions">
       <button class="primary-action" type="button" id="generate-proceed">${t("generateConfirmProceed")}</button>
       <button class="ghost-action" type="button" id="generate-cancel">${t("generateConfirmCancel")}</button>
