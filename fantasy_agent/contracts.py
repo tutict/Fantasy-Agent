@@ -37,6 +37,7 @@ UnrealLevelPlacementRole = Literal[
     "checkpoint",
     "objective",
     "exit",
+    "enemy",
     "ui",
     "lighting",
 ]
@@ -636,6 +637,11 @@ class UnrealMCPPrepareLevelAssemblyRequest(StrictModel):
     assembly_script_path: str | None = None
     level_manifest_path: str | None = None
     write_files: bool = False
+    # Without this the level is a fixed greybox: the same six floor tiles and
+    # the same hand-placed props regardless of what the design actually asked
+    # for. Supplying it makes route length, section count, beat names and enemy
+    # spawns follow the spec, mirroring what the Godot route already does.
+    gameplay_spec: GameplaySpec | None = None
 
 
 class UnrealMCPValidateLevelAssemblyRequest(StrictModel):
