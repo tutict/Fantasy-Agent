@@ -14,7 +14,8 @@ from fantasy_agent.contracts import (
     PromptRequest,
     SystemSpec,
 )
-from fantasy_agent.i18n import build_i18n_bundle, contains_cjk
+from fantasy_agent.axis_templates import AXIS_TEMPLATES, verb_fields
+from fantasy_agent.i18n import VERB_ZH, build_i18n_bundle, contains_cjk
 
 logger = logging.getLogger(__name__)
 
@@ -104,215 +105,71 @@ def _detect_axis(prompt: str) -> str:
         return "combat"
     if any(
         term in text
-        for term in ["race", "speed", "chase", "竞速", "赛车", "追逐", "竞赛"]
+        for term in [
+            # "racing" does not contain the substring "race", so both forms are
+            # listed — the obvious spelling is also the easiest one to miss.
+            "race",
+            "racing",
+            "racer",
+            "time trial",
+            "lap time",
+            "speed",
+            "chase",
+            "竞速",
+            "赛车",
+            "追逐",
+            "竞赛",
+            "跑圈",
+            "计时赛",
+        ]
     ):
         return "mobility"
     return "systems"
 
 
 def _verbs_for_axis(axis: str) -> list[str]:
-    table = {
-        "parkour": ["sprint", "vault", "wall-run", "slide"],
-        "stealth": ["scout", "hide", "distract", "extract"],
-        "survival": ["gather", "craft", "route", "endure"],
-        "puzzle": ["observe", "combine", "trigger", "solve"],
-        "combat": ["position", "attack", "evade", "recover"],
-        "mobility": ["dash", "steer", "boost", "risk"],
-        "career": ["discern", "choose", "compose", "support"],
-        "systems": ["explore", "interact", "adapt", "complete"],
-    }
-    return table[axis]
+    return list(AXIS_TEMPLATES[axis].verbs)
 
 
 def _loop_for_axis(axis: str, verbs: list[str]) -> list[LoopStep]:
-    if axis == "parkour":
-        return [
-            LoopStep(
-                order=1,
-                action="Sprint toward the next checkpoint gate",
-                player_decision="Choose the fast exposed lane or the safer recovery lane before momentum drops.",
-                feedback="Speed lines, footstep cadence, and checkpoint color show whether momentum is active.",
-            ),
-            LoopStep(
-                order=2,
-                action="Vault low blockers to keep the chain alive",
-                player_decision="Commit to a vault timing window or slow down and route around the obstacle.",
-                feedback="A clean vault extends the combo meter; a late vault costs time but keeps the run recoverable.",
-            ),
-            LoopStep(
-                order=3,
-                action="Wall-run across marked panels under timer pressure",
-                player_decision="Spend boost for a risky wall-run shortcut or stay on the longer rooftop path.",
-                feedback="Wall panels glow while valid, and the pressure timer pulses when the shortcut is missed.",
-            ),
-            LoopStep(
-                order=4,
-                action="Slide under hazards and exit through the final gate",
-                player_decision="Preserve enough momentum for the final slide or take a checkpoint reset.",
-                feedback="The finish gate reports time, broken chain count, best route, and restart affordance.",
-            ),
-        ]
-    if axis == "career":
-        return [
-            LoopStep(
-                order=1,
-                action="Discern evaluation noise inside a memory room",
-                player_decision="Keep moving toward a clear self-owned goal or follow a loud external judgment marker.",
-                feedback="Fog thins around self-owned choices and thickens around borrowed evaluation routes.",
-            ),
-            LoopStep(
-                order=2,
-                action="Choose between borrowed plans and a personal route",
-                player_decision="Take a safe-looking plan card for short-term time relief or reject it to preserve agency.",
-                feedback="Plan cards show immediate comfort but reduce the self-route meter when overused.",
-            ),
-            LoopStep(
-                order=3,
-                action="Compose experience fragments into a design board",
-                player_decision="Place fragments as mechanics, constraints, or emotional beats before the interview timer ends.",
-                feedback="The board converts lived moments into playable objectives, hazards, and support actions.",
-            ),
-            LoopStep(
-                order=4,
-                action="Support the team crisis and open the interview gate",
-                player_decision="Spend limited focus to patch the weakest team need instead of chasing the flashiest role.",
-                feedback="A final score reports clarity, fit, support timing, and which borrowed plans were rejected.",
-            ),
-        ]
+    """Build the core loop from the axis template.
+
+    Steps may contain ``{verb_N}`` placeholders (the generic ``systems`` axis
+    relies on them); specialised axes name their actions outright and simply
+    have nothing to substitute.
+    """
+    fields = verb_fields(verbs, [VERB_ZH.get(verb, verb) for verb in verbs])
     return [
         LoopStep(
-            order=1,
-            action=f"{verbs[0].title()} the immediate play space",
-            player_decision="Choose a route, target, or interaction before pressure escalates.",
-            feedback="Camera framing, UI markers, and audio cues confirm available options.",
-        ),
-        LoopStep(
-            order=2,
-            action=f"{verbs[1].title()} to create an opening",
-            player_decision="Spend time or a limited resource to improve the next move.",
-            feedback="State changes are visible in the level and reflected in the objective tracker.",
-        ),
-        LoopStep(
-            order=3,
-            action=f"{verbs[2].title()} under rising pressure",
-            player_decision="Commit to the risky play or reset to a safer position.",
-            feedback="Enemies, timers, hazards, or resource meters show the consequence quickly.",
-        ),
-        LoopStep(
-            order=4,
-            action=f"{verbs[3].title()} the objective and bank progress",
-            player_decision="Exit with partial gains or push for a better completion grade.",
-            feedback="End screen reports time, failures, optional goals, and restart affordance.",
-        ),
+            order=index,
+            action=step.action.format(**fields),
+            player_decision=step.player_decision.format(**fields),
+            feedback=step.feedback.format(**fields),
+        )
+        for index, step in enumerate(AXIS_TEMPLATES[axis].loop, start=1)
     ]
 
 
 def _systems_for_axis(axis: str) -> list[SystemSpec]:
-    if axis == "parkour":
-        return [
-            SystemSpec(
-                name="Momentum Chain",
-                purpose="Rewards clean traversal while keeping failed routes recoverable.",
-                inputs=["player velocity", "vault timing", "wall-run duration", "slide windows"],
-                outputs=["combo multiplier", "boost charge", "speed feedback"],
-                failure_pressure="Dropped momentum costs time and closes optional shortcuts.",
-            ),
-            SystemSpec(
-                name="Checkpoint Route Timer",
-                purpose="Keeps the rooftop loop short, readable, and replayable.",
-                inputs=["checkpoint overlaps", "elapsed time", "missed gates"],
-                outputs=["active gate", "route grade", "restart point"],
-                failure_pressure="Missing too many gates forces a checkpoint reset instead of aimless wandering.",
-            ),
-            SystemSpec(
-                name="Traversal Readability Layer",
-                purpose="Makes usable ledges, walls, ramps, hazards, and exits legible at speed.",
-                inputs=["surface tags", "player approach angle", "hazard proximity"],
-                outputs=["affordance color", "valid-move prompts", "failure feedback"],
-                failure_pressure="Unreadable surfaces slow the player and break the score chain.",
-            ),
-        ]
-    if axis == "career":
-        return [
-            SystemSpec(
-                name="Evaluation Fog",
-                purpose="Turns other people's judgments into readable pressure without making the space aimless.",
-                inputs=["player proximity", "borrowed plan count", "self-route meter"],
-                outputs=["fog density", "objective clarity", "confidence feedback"],
-                failure_pressure="Following too much evaluation noise hides the personal route and forces a restart.",
-            ),
-            SystemSpec(
-                name="Plan Card Tradeoff",
-                purpose="Makes external advice useful but risky, so choosing a path is an actual gameplay decision.",
-                inputs=["plan card type", "interview timer", "player choice history"],
-                outputs=["time relief", "agency cost", "route branch"],
-                failure_pressure="Stacking mismatched plans drains agency and locks the applicant out of the final board.",
-            ),
-            SystemSpec(
-                name="Design Board Translation",
-                purpose="Converts personal experience fragments into mechanics, constraints, and team support actions.",
-                inputs=["memory fragments", "board slots", "team crisis needs"],
-                outputs=["prototype pitch score", "support action", "interview gate state"],
-                failure_pressure="Fragments placed as decoration do not open the gate; they must change a playable decision.",
-            ),
-        ]
     return [
         SystemSpec(
-            name="Objective State",
-            purpose="Keeps the prototype finishable and prevents aimless play.",
-            inputs=["player location", "interaction events", "objective triggers"],
-            outputs=["active objective", "completion state", "restart state"],
-            failure_pressure="The player loses if the primary objective becomes unreachable.",
-        ),
-        SystemSpec(
-            name="Pressure Clock",
-            purpose="Creates urgency inside a short vertical slice.",
-            inputs=["elapsed time", "alert level", "mistake count"],
-            outputs=["hazard intensity", "enemy aggression", "score modifier"],
-            failure_pressure="Pressure reaches a cap and forces extraction, defeat, or reset.",
-        ),
-        SystemSpec(
-            name="Readable Interaction Layer",
-            purpose="Makes every useful object obvious enough for game-jam iteration.",
-            inputs=["overlap events", "line traces", "player inventory"],
-            outputs=["interaction prompts", "state changes", "audio/visual feedback"],
-            failure_pressure="Bad reads cost time or resources rather than hiding progress.",
-        ),
+            name=system.name,
+            purpose=system.purpose,
+            inputs=list(system.inputs),
+            outputs=list(system.outputs),
+            failure_pressure=system.failure_pressure,
+        )
+        for system in AXIS_TEMPLATES[axis].systems
     ]
 
 
 def _progression_for_axis(axis: str) -> ProgressionSpec:
-    if axis == "parkour":
-        return ProgressionSpec(
-            first_minute="Teach sprint, vault, and checkpoint gates on a flat rooftop with no lethal failure.",
-            midpoint_shift="Combine wall-run panels, slide barriers, and optional boost shortcuts.",
-            final_minutes="Ask the player to chain sprint, vault, wall-run, slide, and extraction under one timer.",
-            unlocks=[
-                "Boost shortcut after the first clean checkpoint chain",
-                "Wall-run route after the first vault section",
-                "End-state route grade after reaching the extraction gate",
-            ],
-        )
-    if axis == "career":
-        return ProgressionSpec(
-            first_minute="Teach movement, fog readability, and the first choice between a judgment marker and a self-route marker.",
-            midpoint_shift="Introduce plan cards that reduce the timer but weaken agency if they do not fit the player's route.",
-            final_minutes="Ask the player to assemble a design board from memory fragments and support a team crisis before the interview gate closes.",
-            unlocks=[
-                "Self-route meter after rejecting the first mismatched plan",
-                "Design board after collecting three experience fragments",
-                "Team support action after the board forms a coherent prototype pitch",
-            ],
-        )
+    progression = AXIS_TEMPLATES[axis].progression
     return ProgressionSpec(
-        first_minute="Teach movement, camera, and the first objective without punishment.",
-        midpoint_shift="Combine the main verb with pressure so the player must plan ahead.",
-        final_minutes="Ask the player to execute the full loop with a clear win/fail result.",
-        unlocks=[
-            "Optional shortcut after first objective",
-            "Second interaction type after midpoint",
-            "End-state scoring after completion",
-        ],
+        first_minute=progression.first_minute,
+        midpoint_shift=progression.midpoint_shift,
+        final_minutes=progression.final_minutes,
+        unlocks=list(progression.unlocks),
     )
 
 
@@ -371,112 +228,29 @@ def _fit_level_beats_to_target(beats: list[LevelBeat], target_minutes: int) -> l
 
 
 def _level_beats_for_axis(axis: str, target_minutes: int) -> list[LevelBeat]:
+    """Build the beats from the axis template, sized to the target session.
+
+    Every template carries exactly three beats (teaching / mix / finale) — a
+    test asserts that, because this function maps them onto the three durations
+    from :func:`_beat_durations` positionally.
+    """
     teaching_minutes, mid_minutes, final_minutes = _beat_durations(target_minutes)
-    if axis == "parkour":
-        return [
-            LevelBeat(
-                name="Warmup Rooftop",
-                duration_minutes=teaching_minutes,
-                gameplay_focus="Teach sprinting, vault timing, and checkpoint gate language.",
-                required_assets=["start marker", "checkpoint gate", "low vault blockers"],
-                success_condition="Player reaches the second gate without losing the route.",
-            ),
-            LevelBeat(
-                name="Momentum Mix",
-                duration_minutes=mid_minutes,
-                gameplay_focus="Chain vaults, wall-runs, slides, and one boost shortcut.",
-                required_assets=["wall-run panels", "slide barriers", "boost pad", "fall hazard markers"],
-                success_condition="Player keeps enough momentum to open the final rooftop line.",
-            ),
-            LevelBeat(
-                name="Extraction Sprint",
-                duration_minutes=final_minutes,
-                gameplay_focus="Run the full chain under pressure and choose speed versus recovery.",
-                required_assets=["final gap ramp", "pressure timer UI", "extraction gate"],
-                success_condition="Player exits before the timer expires and receives a route grade.",
-            ),
-        ]
-    if axis == "career":
-        return [
-            LevelBeat(
-                name="Fog of Evaluation",
-                duration_minutes=teaching_minutes,
-                gameplay_focus="Teach the player to read judgment noise, self-route markers, and recoverable wrong turns.",
-                required_assets=["fog corridor", "judgment marker", "self-route marker", "confidence UI"],
-                success_condition="Player reaches the first clear route marker without losing all confidence.",
-            ),
-            LevelBeat(
-                name="Borrowed Plan Crossroads",
-                duration_minutes=mid_minutes,
-                gameplay_focus="Choose, reject, or revise plan cards while collecting experience fragments for the design board.",
-                required_assets=["plan card kiosks", "memory fragment props", "design board", "timer UI"],
-                success_condition="Player fills the board with fragments that change mechanics instead of decoration.",
-            ),
-            LevelBeat(
-                name="Interview Gate Triage",
-                duration_minutes=final_minutes,
-                gameplay_focus="Use the completed design board to support the team need that matters most under time pressure.",
-                required_assets=["team crisis stations", "support action prompt", "interview gate", "fit score UI"],
-                success_condition="Player resolves one critical team need and opens the interview gate with a readable score.",
-            ),
-        ]
+    durations = (teaching_minutes, mid_minutes, final_minutes)
+    beats = AXIS_TEMPLATES[axis].beats
     return [
         LevelBeat(
-            name="Onboarding Pocket",
-            duration_minutes=teaching_minutes,
-            gameplay_focus="Learn controls and identify the objective language.",
-            required_assets=["start marker", "objective prop", "interaction prompt"],
-            success_condition="Player completes the first low-risk interaction.",
-        ),
-        LevelBeat(
-            name="System Mix",
-            duration_minutes=mid_minutes,
-            gameplay_focus="Use the core verbs while pressure changes the route.",
-            required_assets=["arena blockers", "hazard markers", "feedback props"],
-            success_condition="Player completes the central objective chain.",
-        ),
-        LevelBeat(
-            name="Final Push",
-            duration_minutes=final_minutes,
-            gameplay_focus="Resolve the complete loop with win/fail stakes.",
-            required_assets=["exit gate", "final hazard", "score trigger"],
-            success_condition="Player reaches the exit and receives performance feedback.",
-        ),
+            name=beat.name,
+            duration_minutes=durations[index],
+            gameplay_focus=beat.gameplay_focus,
+            required_assets=list(beat.required_assets),
+            success_condition=beat.success_condition,
+        )
+        for index, beat in enumerate(beats)
     ]
 
 
 def _asset_needs_for_axis(axis: str) -> list[str]:
-    if axis == "parkour":
-        return [
-            "Modular rooftop floor kit",
-            "Low vault blocker set",
-            "Wall-run panel set",
-            "Slide barrier set",
-            "Boost pad marker",
-            "Checkpoint gate",
-            "Fall hazard marker set",
-            "Extraction gate",
-            "Route timer UI proxy",
-        ]
-    if axis == "career":
-        return [
-            "Fog corridor greybox kit",
-            "Judgment marker set",
-            "Self-route marker set",
-            "Borrowed plan card kiosk",
-            "Memory fragment pickup set",
-            "Design board UI proxy",
-            "Team crisis station set",
-            "Interview gate",
-            "Fit score UI proxy",
-        ]
-    return [
-        "Greybox arena kit",
-        "Objective prop set",
-        "Hazard marker set",
-        "Readable exit gate",
-        "Simple UI objective tracker",
-    ]
+    return list(AXIS_TEMPLATES[axis].assets)
 
 
 def _prompt_mentions_enemy(prompt: str) -> bool:
@@ -502,23 +276,17 @@ def _prompt_mentions_enemy(prompt: str) -> bool:
 
 
 def _enemies_for_axis(axis: str, prompt: str = "") -> list[EnemySpec]:
-    """Default enemy roster per mechanic axis. Empty where enemies don't fit."""
-    if axis == "stealth":
+    """Default enemy roster per mechanic axis, taken from the axis template.
+
+    Empty where enemies do not fit. Axes with no roster still honour an
+    explicit request for hostile pressure in the prompt.
+    """
+    roster = AXIS_TEMPLATES[axis].enemies
+    if roster:
         return [
-            EnemySpec(name="Patrol Guard", behavior="patrol", hp=3, count=3),
-            EnemySpec(name="Watch Sentry", behavior="stationary", hp=2, count=2),
+            EnemySpec(name=name, behavior=behavior, hp=hp, count=count)
+            for name, behavior, hp, count in roster
         ]
-    if axis == "combat":
-        return [
-            EnemySpec(name="Charger", behavior="chase", hp=4, count=3),
-            EnemySpec(name="Turret", behavior="ranged", hp=3, count=1),
-        ]
-    if axis == "survival":
-        return [EnemySpec(name="Stalker", behavior="chase", hp=3, count=2)]
-    if axis == "parkour":
-        return [EnemySpec(name="Pursuer Drone", behavior="chase", hp=2, count=1)]
-    # puzzle / mobility / career / systems: no combat enemies by default, unless
-    # the prompt explicitly asks for hostile pressure.
     if _prompt_mentions_enemy(prompt):
         return [EnemySpec(name="Pressure Drone", behavior="chase", hp=2, count=1)]
     return []
@@ -536,55 +304,25 @@ def design_from_prompt_deterministic(request: PromptRequest) -> GameplaySpec:
     title = _clean_title(request.prompt)
     verbs = _verbs_for_axis(axis)
     target_minutes = request.target_minutes
+    template = AXIS_TEMPLATES[axis]
+    narrative = template.narrative
     if axis == "career":
+        # The logline is the one field that stays prompt-shaped rather than
+        # axis-shaped: it has to name the applicant story, not the mechanic.
         logline = (
             f"A {target_minutes}-minute Godot-friendly portfolio prototype about turning personal "
             "fog, borrowed plans, and a game-design career pivot into a playable proof of fit."
         )
-        player_fantasy = (
-            "Prove value as a game design applicant by transforming personal experience into "
-            "clear mechanics and supporting a team at the right moment."
-        )
-        design_pillars = [
-            "Personal history becomes playable decisions",
-            "Borrowed plans help only when they fit the player's route",
-            "Failure clarifies the next self-owned choice",
-            "Support actions matter more than flashy power",
-        ]
-        win_state = "Open the interview gate by building a coherent design board and resolving one critical team need."
-        failure_states = [
-            "Evaluation fog hides the self-route after too many mismatched plans",
-            "Interview timer expires before the design board becomes actionable",
-            "Team crisis is ignored in favor of decorative or unfocused choices",
-        ]
-        notes_for_comfyui = [
-            "Generate original visual metaphors for fog, plan cards, design boards, and interview gates; do not copy named game IP.",
-            "Prioritize icon-like readability for judgment noise, self-route markers, and support prompts.",
-            "Use references as portfolio mood boards only after the greybox loop proves readable.",
-        ]
     else:
         logline = (
             f"A {target_minutes}-minute playable prototype about {request.prompt.strip()} "
             "built around readable decisions, fast feedback, and a finishable objective."
         )
-        player_fantasy = f"Master a compact {axis}-driven challenge through repeatable skill."
-        design_pillars = [
-            "One readable objective at all times",
-            "Every mechanic changes a player decision",
-            "Failure teaches the next attempt",
-            "Assets exist to clarify play space",
-        ]
-        win_state = "Complete the primary objective and reach the exit before pressure caps out."
-        failure_states = [
-            "Pressure clock reaches maximum",
-            "Player health or critical resource reaches zero",
-            "Required objective actor is destroyed or abandoned",
-        ]
-        notes_for_comfyui = [
-            "Generate visual references only after gameplay readability needs are known.",
-            "Prioritize objective, hazard, route, material, and UI clarity over style exploration.",
-            "Treat generated images as reviewed references, not direct proof of playable progress.",
-        ]
+    player_fantasy = narrative.player_fantasy
+    design_pillars = list(narrative.design_pillars)
+    win_state = narrative.win_state
+    failure_states = list(narrative.failure_states)
+    notes_for_comfyui = list(narrative.notes_for_comfyui)
 
     spec = GameplaySpec(
         title=title,

@@ -12,14 +12,37 @@ The executor validates LLM output via a real Godot headless import and falls
 back to the deterministic scripts if the import reports script errors.
 
 M6b scope: declared enemies get simple greybox behavior and fail-state pressure.
+
+Axis coverage
+-------------
+
+The deterministic path used to specialise only ``parkour``; every other axis
+fell through to the same WASD+jump body, so a stealth design shipped a script
+that could not crouch. :data:`_AXIS_MECHANICS` closes that: one record per
+mechanic axis with the GDScript it owns.
+
+Two invariants keep the table honest, both asserted in
+``tests/test_gameplay_codegen.py``:
+
+1. ``_AXIS_MECHANICS`` and ``axis_templates.AXIS_TEMPLATES`` have the same keys,
+   so adding a design axis without mechanics fails the suite.
+2. Every input action a mechanics block reads exists in the generated
+   ``project.godot`` — actions come from ``spec.core_verbs`` via
+   ``workflows.prepare_godot_project``, so a block that presses an action the
+   project never declares would raise "Request for nonexistent InputMap action"
+   the moment the prototype runs.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
+from dataclasses import dataclass
 
+from fantasy_agent.axis_templates import AXIS_TEMPLATES
 from fantasy_agent.contracts import GameplaySpec, ProductionSpecBundle
+from fantasy_agent.godot_mcp import _godot_identifier
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +50,26 @@ logger = logging.getLogger(__name__)
 PLAYER_SCRIPT = "scripts/player_controller.gd"
 GAME_MANAGER_SCRIPT = "scripts/game_manager.gd"
 ENEMY_SCRIPT = "scripts/enemy_controller.gd"
+
+#: Actions every generated project declares regardless of axis
+#: (see ``workflows.prepare_godot_project``).
+BASE_INPUT_ACTIONS = (
+    "move_forward",
+    "move_back",
+    "move_left",
+    "move_right",
+    "jump",
+    "restart_run",
+)
+
+
+def action_name(verb: str) -> str:
+    """InputMap action name for a core verb.
+
+    Mirrors what ``workflows.prepare_godot_project`` registers so the generated
+    GDScript only ever presses actions the project actually declares.
+    """
+    return _godot_identifier(verb.lower())
 
 
 def generate_gameplay_scripts(
@@ -70,15 +113,20 @@ def generate_gameplay_scripts(
 # ──────────────────────────────────────────────────────────────────────────
 
 def _axis_from_verbs(spec: GameplaySpec) -> str:
-    """Infer the mechanic family from core_verbs (matches generation.py axes)."""
-    verbs = {v.lower() for v in spec.core_verbs}
-    if {"wall-run", "vault", "slide", "sprint"} & verbs:
-        return "parkour"
-    if {"scout", "hide", "distract", "extract"} & verbs:
-        return "stealth"
-    if {"dash", "steer", "boost"} & verbs:
-        return "mobility"
-    return "generic"
+    """Infer the mechanic family from core_verbs.
+
+    Scores every axis in ``AXIS_TEMPLATES`` by how many of its verbs the spec
+    declares, so a new axis is picked up without touching this function.
+    """
+    verbs = {v.strip().lower() for v in spec.core_verbs}
+    best_axis = "generic"
+    best_score = 0
+    for axis, template in AXIS_TEMPLATES.items():
+        score = len({v.lower() for v in template.verbs} & verbs)
+        if score > best_score:
+            best_axis = axis
+            best_score = score
+    return best_axis
 
 
 def deterministic_gameplay_scripts(
@@ -100,16 +148,53 @@ def deterministic_gameplay_scripts(
     )
     return {
         PLAYER_SCRIPT: _player_controller(axis, move_speed=move_speed, player_hp=player_hp),
-        GAME_MANAGER_SCRIPT: _game_manager(spec, production_spec_bundle=production_spec_bundle),
-        ENEMY_SCRIPT: _enemy_controller(),
+        GAME_MANAGER_SCRIPT: _game_manager(
+            spec, axis=axis, production_spec_bundle=production_spec_bundle
+        ),
+        ENEMY_SCRIPT: _enemy_controller(axis),
     }
 
 
-def _player_controller(axis: str, *, move_speed: float = 8.0, player_hp: int = 5) -> str:
-    # Parkour adds sprint + wall-run + slide on top of the base WASD+jump.
-    parkour_extras = ""
-    if axis == "parkour":
-        parkour_extras = """
+@dataclass(frozen=True)
+class AxisMechanics:
+    """The GDScript one mechanic axis contributes to the player controller.
+
+    ``physics`` is spliced into ``_physics_process`` before the gravity/jump
+    block, so it may rewrite ``velocity.x/z`` (parkour does) or add state.
+    ``helpers`` is appended after it at column 0.
+
+    ``enemy_contact`` is the failure text the enemy script reports, so a
+    playtest can tell which axis just killed the player.
+
+    Enemy *behaviors* are deliberately not here: they come from
+    ``AxisTemplate.enemies``, which is the one place a design declares its
+    roster. An axis that declares none gets a patrol-only guard so the script
+    still compiles.
+    """
+
+    exports: str = ""
+    state: str = ""
+    physics: str = ""
+    helpers: str = ""
+    enemy_contact: str = "Enemy contact"
+
+
+def _notify_helper(extra: str = "") -> str:
+    """GDScript plumbing: call a method on the game_manager group."""
+    return '''
+
+func _notify_game_manager(method: String, arg: Variant = null) -> void:
+    var manager := get_tree().get_first_node_in_group("game_manager")
+    if manager == null or not manager.has_method(method):
+        return
+    if arg == null:
+        manager.call(method)
+    else:
+        manager.call(method, arg)
+''' + extra
+
+
+_PARKOUR_PHYSICS = '''
     # [SPRINT] hold to accelerate
     var speed := move_speed
     if Input.is_action_pressed("sprint"):
@@ -119,33 +204,362 @@ def _player_controller(axis: str, *, move_speed: float = 8.0, player_hp: int = 5
 
     # [WALL_RUN] cling + glide along a wall while airborne and moving into it
     if not is_on_floor() and is_on_wall() and direction.length() > 0.1:
-        velocity.y = max(velocity.y, -wall_run_fall)
+        velocity.y = maxf(velocity.y, -wall_run_fall)
         _wall_running = true
     else:
         _wall_running = false
+
+    # [VAULT] hop a low blocker while keeping forward momentum
+    if is_on_floor() and Input.is_action_just_pressed("vault"):
+        velocity.y = vault_velocity
+        _vaulting = true
+    elif is_on_floor():
+        _vaulting = false
 
     # [SLIDE] crouch-slide on the ground gives a forward burst
     if is_on_floor() and Input.is_action_just_pressed("slide"):
         velocity.x += direction.x * slide_boost
         velocity.z += direction.z * slide_boost
-"""
-    extra_exports = ""
-    extra_state = ""
-    if axis == "parkour":
-        extra_exports = (
-            "@export var sprint_multiplier := 1.6  # [SPRINT_MULTIPLIER]\n"
-            "@export var wall_run_fall := 1.5      # [WALL_RUN_FALL]\n"
-            "@export var slide_boost := 6.0        # [SLIDE_BOOST]\n"
-        )
-        extra_state = "var _wall_running := false\n"
+'''
+
+_STEALTH_PHYSICS = '''
+    # [HIDE] hold to move slowly and shrink the noise profile
+    var speed := move_speed
+    if Input.is_action_pressed("hide"):
+        speed *= hide_speed_multiplier
+        noise = maxf(0.0, noise - hide_quiet_rate * delta)
+    else:
+        noise = minf(1.0, noise + (noise_gain if direction.length() > 0.1 else 0.0) * delta)
+    velocity.x = direction.x * speed
+    velocity.z = direction.z * speed
+
+    # [SCOUT] hold to mark nearby threats before committing to a lane
+    _scouting = Input.is_action_pressed("scout")
+
+    # [DISTRACT] throw a decoy that pulls attention off the runner
+    if Input.is_action_just_pressed("distract") and decoys > 0:
+        decoys -= 1
+        _decoy_timer = decoy_duration
+    if _decoy_timer > 0.0:
+        _decoy_timer -= delta
+        noise = maxf(0.0, noise - decoy_pull * delta)
+
+    # [EXTRACT] the exit only opens while the runner is quiet
+    if Input.is_action_just_pressed("extract"):
+        if noise <= extract_noise_limit:
+            _notify_game_manager("reach_exit")
+        else:
+            _notify_game_manager("fail_from_enemy", "Extraction was called while exposed")
+'''
+
+_COMBAT_PHYSICS = '''
+    # [POSITION] hold to brace: slower movement, steadier footing
+    var speed := move_speed
+    if Input.is_action_pressed("position"):
+        speed *= brace_speed_multiplier
+        _bracing = true
+    else:
+        _bracing = false
+    velocity.x = direction.x * speed
+    velocity.z = direction.z * speed
+
+    # [EVADE] a short burst dash on a cooldown
+    _evade_cooldown = maxf(0.0, _evade_cooldown - delta)
+    if Input.is_action_just_pressed("evade") and _evade_cooldown <= 0.0:
+        _evade_cooldown = evade_cooldown
+        velocity.x += direction.x * evade_impulse
+        velocity.z += direction.z * evade_impulse
+
+    # [ATTACK] strike the closest enemy inside reach on a cooldown
+    _attack_cooldown = maxf(0.0, _attack_cooldown - delta)
+    if Input.is_action_just_pressed("attack") and _attack_cooldown <= 0.0:
+        _attack_cooldown = attack_cooldown
+        _strike_closest_enemy()
+
+    # [RECOVER] stand still to regain stamina between exchanges
+    if Input.is_action_pressed("recover") and direction.length() <= 0.1:
+        _stamina = minf(1.0, _stamina + recover_rate * delta)
+'''
+
+_STRIKE_HELPER = '''
+
+func _strike_closest_enemy() -> void:
+    var closest: Node3D = null
+    var closest_distance := attack_reach
+    for node in get_tree().get_nodes_in_group("enemy"):
+        if not node is Node3D:
+            continue
+        var distance := global_position.distance_to(node.global_position)
+        if distance <= closest_distance:
+            closest = node
+            closest_distance = distance
+    if closest != null and closest.has_method("take_damage"):
+        closest.take_damage(attack_damage)
+'''
+
+_SURVIVAL_PHYSICS = '''
+    # [ROUTE] hold to travel light: faster, but the drain bites harder
+    var speed := move_speed
+    if Input.is_action_pressed("route"):
+        speed *= route_speed_multiplier
+    velocity.x = direction.x * speed
+    velocity.z = direction.z * speed
+
+    # [GATHER] pull in supplies while standing still
+    if Input.is_action_pressed("gather") and direction.length() <= 0.1:
+        supplies = minf(max_supplies, supplies + gather_rate * delta)
+
+    # [ENDURE] sheltering slows the drain but stops the repair
+    var drain := supply_drain
+    if Input.is_action_pressed("endure"):
+        drain *= endure_drain_multiplier
+    supplies = maxf(0.0, supplies - drain * delta)
+    if supplies <= 0.0:
+        _notify_game_manager("fail_from_enemy", "Supplies ran out before the route was secure")
+
+    # [CRAFT] spend supplies to restore warmth
+    if Input.is_action_just_pressed("craft") and supplies >= craft_cost:
+        supplies -= craft_cost
+        _warmth = minf(1.0, _warmth + craft_restore)
+'''
+
+_PUZZLE_PHYSICS = '''
+    # [OBSERVE] hold to scan: a full sweep yields one fragment
+    _scanning = Input.is_action_pressed("observe")
+    if _scanning:
+        _scan_progress += scan_rate * delta
+        if _scan_progress >= 1.0:
+            _scan_progress = 0.0
+            _fragments += 1
+
+    # [COMBINE] merge two fragments into one usable key
+    if Input.is_action_just_pressed("combine") and _fragments >= 2:
+        _fragments -= 2
+        _keys += 1
+
+    # [TRIGGER] fire the linked device in front of the player
+    if Input.is_action_just_pressed("trigger"):
+        _trigger_count += 1
+        _notify_game_manager("register_trigger")
+
+    # [SOLVE] submit the solution once enough keys are held
+    if Input.is_action_just_pressed("solve"):
+        if _keys >= required_keys:
+            _notify_game_manager("reach_exit")
+        else:
+            _notify_game_manager("fail_from_enemy", "Solution submitted with too few keys")
+'''
+
+_MOBILITY_PHYSICS = '''
+    # [STEER] rotate the facing with left/right input
+    if absf(input_dir.x) > 0.1:
+        rotate_y(-input_dir.x * steer_rate * delta)
+
+    # [DASH] instant burst along the current facing
+    _dash_cooldown = maxf(0.0, _dash_cooldown - delta)
+    if Input.is_action_just_pressed("dash") and _dash_cooldown <= 0.0:
+        _dash_cooldown = dash_cooldown
+        velocity += -transform.basis.z * dash_impulse
+
+    # [BOOST] hold to spend the boost meter for sustained speed
+    var speed := move_speed
+    if Input.is_action_pressed("boost") and _boost > 0.0:
+        _boost = maxf(0.0, _boost - boost_drain * delta)
+        speed *= boost_multiplier
+    velocity.x = direction.x * speed
+    velocity.z = direction.z * speed
+
+    # [RISK] hold to run hot: faster, but contact ends the run
+    _risking = Input.is_action_pressed("risk")
+    if _risking:
+        velocity.x *= risk_multiplier
+        velocity.z *= risk_multiplier
+'''
+
+_CAREER_PHYSICS = '''
+    # [DISCERN] hold to study the options in front of the player
+    if Input.is_action_pressed("discern"):
+        _insight = minf(1.0, _insight + insight_rate * delta)
+
+    # [CHOOSE] commit to the studied option
+    if Input.is_action_just_pressed("choose") and _insight >= 0.5:
+        _insight = 0.0
+        _choices += 1
+        _notify_game_manager("register_progress", 1)
+
+    # [COMPOSE] turn two committed choices into one portfolio piece
+    if Input.is_action_just_pressed("compose") and _choices >= 2:
+        _choices -= 2
+        _portfolio += 1
+
+    # [SUPPORT] spend a portfolio piece to steady the run
+    if Input.is_action_just_pressed("support") and _portfolio >= 1:
+        _portfolio -= 1
+        _confidence = minf(1.0, _confidence + support_gain)
+'''
+
+_SYSTEMS_PHYSICS = '''
+    # [EXPLORE] walking a new area marks it as surveyed
+    if direction.length() > 0.1:
+        _surveyed = minf(1.0, _surveyed + survey_rate * delta)
+
+    # [INTERACT] engage the nearest system node
+    if Input.is_action_just_pressed("interact"):
+        _interactions += 1
+        _notify_game_manager("register_progress", 1)
+
+    # [ADAPT] cycle the active response mode and retune the baseline speed
+    if Input.is_action_just_pressed("adapt"):
+        _mode = (_mode + 1) % 3
+        move_speed = base_move_speed + float(_mode) * adapt_speed_step
+
+    # [COMPLETE] close the loop once enough nodes are engaged
+    if Input.is_action_just_pressed("complete"):
+        if _interactions >= required_interactions:
+            _notify_game_manager("reach_exit")
+        else:
+            _notify_game_manager("fail_from_enemy", "Loop closed before the systems were stable")
+'''
+
+
+_AXIS_MECHANICS: dict[str, AxisMechanics] = {
+    "parkour": AxisMechanics(
+        exports=(
+            "@export var sprint_multiplier := 1.6   # [SPRINT_MULTIPLIER]\n"
+            "@export var wall_run_fall := 1.5       # [WALL_RUN_FALL]\n"
+            "@export var vault_velocity := 7.5      # [VAULT_VELOCITY]\n"
+            "@export var slide_boost := 6.0         # [SLIDE_BOOST]\n"
+        ),
+        state="var _wall_running := false\nvar _vaulting := false\n",
+        physics=_PARKOUR_PHYSICS,
+        enemy_contact="Pursuer drone clipped the runner",
+    ),
+    "stealth": AxisMechanics(
+        exports=(
+            "@export var hide_speed_multiplier := 0.45  # [HIDE_SPEED_MULTIPLIER]\n"
+            "@export var hide_quiet_rate := 0.8         # [HIDE_QUIET_RATE]\n"
+            "@export var noise_gain := 0.35             # [NOISE_GAIN]\n"
+            "@export var decoys := 3                    # [DECOYS]\n"
+            "@export var decoy_duration := 2.5          # [DECOY_DURATION]\n"
+            "@export var decoy_pull := 0.9              # [DECOY_PULL]\n"
+            "@export var extract_noise_limit := 0.35    # [EXTRACT_NOISE_LIMIT]\n"
+        ),
+        state="var noise := 0.0\nvar _scouting := false\nvar _decoy_timer := 0.0\n",
+        physics=_STEALTH_PHYSICS,
+        helpers=_notify_helper(),
+        enemy_contact="A guard spotted the runner",
+    ),
+    "combat": AxisMechanics(
+        exports=(
+            "@export var attack_damage := 1          # [ATTACK_DAMAGE]\n"
+            "@export var attack_reach := 2.4         # [ATTACK_REACH]\n"
+            "@export var attack_cooldown := 0.55     # [ATTACK_COOLDOWN]\n"
+            "@export var evade_impulse := 7.0        # [EVADE_IMPULSE]\n"
+            "@export var evade_cooldown := 1.1       # [EVADE_COOLDOWN]\n"
+            "@export var brace_speed_multiplier := 0.6  # [BRACE_SPEED_MULTIPLIER]\n"
+            "@export var recover_rate := 0.5         # [RECOVER_RATE]\n"
+        ),
+        state=(
+            "var _attack_cooldown := 0.0\n"
+            "var _evade_cooldown := 0.0\n"
+            "var _bracing := false\n"
+            "var _stamina := 1.0\n"
+        ),
+        physics=_COMBAT_PHYSICS,
+        helpers=_notify_helper(_STRIKE_HELPER),
+        enemy_contact="Combat contact cost the player footing",
+    ),
+    "survival": AxisMechanics(
+        exports=(
+            "@export var max_supplies := 10.0           # [MAX_SUPPLIES]\n"
+            "@export var gather_rate := 2.5             # [GATHER_RATE]\n"
+            "@export var supply_drain := 0.6            # [SUPPLY_DRAIN]\n"
+            "@export var route_speed_multiplier := 1.35 # [ROUTE_SPEED_MULTIPLIER]\n"
+            "@export var endure_drain_multiplier := 0.5 # [ENDURE_DRAIN_MULTIPLIER]\n"
+            "@export var craft_cost := 3.0              # [CRAFT_COST]\n"
+            "@export var craft_restore := 0.4           # [CRAFT_RESTORE]\n"
+        ),
+        state="var supplies := 6.0\nvar _warmth := 1.0\n",
+        physics=_SURVIVAL_PHYSICS,
+        helpers=_notify_helper(),
+        enemy_contact="The stalker caught the player in the open",
+    ),
+    "puzzle": AxisMechanics(
+        exports=(
+            "@export var scan_rate := 0.7          # [SCAN_RATE]\n"
+            "@export var required_keys := 2        # [REQUIRED_KEYS]\n"
+        ),
+        state=(
+            "var _scanning := false\n"
+            "var _scan_progress := 0.0\n"
+            "var _fragments := 0\n"
+            "var _keys := 0\n"
+            "var _trigger_count := 0\n"
+        ),
+        physics=_PUZZLE_PHYSICS,
+        helpers=_notify_helper(),
+        enemy_contact="A patrol interrupted the solution",
+    ),
+    "mobility": AxisMechanics(
+        exports=(
+            "@export var steer_rate := 2.4       # [STEER_RATE]\n"
+            "@export var dash_impulse := 9.0     # [DASH_IMPULSE]\n"
+            "@export var dash_cooldown := 1.2    # [DASH_COOLDOWN]\n"
+            "@export var boost_multiplier := 1.5 # [BOOST_MULTIPLIER]\n"
+            "@export var boost_drain := 0.4      # [BOOST_DRAIN]\n"
+            "@export var risk_multiplier := 1.25 # [RISK_MULTIPLIER]\n"
+        ),
+        state="var _boost := 1.0\nvar _dash_cooldown := 0.0\nvar _risking := false\n",
+        physics=_MOBILITY_PHYSICS,
+        enemy_contact="A barrier clipped the racer at speed",
+    ),
+    "career": AxisMechanics(
+        exports=(
+            "@export var insight_rate := 0.8   # [INSIGHT_RATE]\n"
+            "@export var support_gain := 0.35  # [SUPPORT_GAIN]\n"
+        ),
+        state=(
+            "var _insight := 0.0\n"
+            "var _choices := 0\n"
+            "var _portfolio := 0\n"
+            "var _confidence := 0.5\n"
+        ),
+        physics=_CAREER_PHYSICS,
+        helpers=_notify_helper(),
+        enemy_contact="Borrowed plans collapsed under review",
+    ),
+    "systems": AxisMechanics(
+        exports=(
+            "@export var survey_rate := 0.25         # [SURVEY_RATE]\n"
+            "@export var adapt_speed_step := 1.5     # [ADAPT_SPEED_STEP]\n"
+            "@export var required_interactions := 3  # [REQUIRED_INTERACTIONS]\n"
+        ),
+        state=(
+            "var _surveyed := 0.0\n"
+            "var _interactions := 0\n"
+            "var _mode := 0\n"
+            "var base_move_speed := move_speed\n"
+        ),
+        physics=_SYSTEMS_PHYSICS,
+        helpers=_notify_helper(),
+        enemy_contact="A system hazard caught the player",
+    ),
+}
+
+
+def _player_controller(axis: str, *, move_speed: float = 8.0, player_hp: int = 5) -> str:
+    mechanics = _AXIS_MECHANICS.get(axis)
+    exports = mechanics.exports if mechanics else ""
+    state = mechanics.state if mechanics else ""
+    physics = mechanics.physics if mechanics else ""
+    helpers = mechanics.helpers if mechanics else ""
     return f'''extends CharacterBody3D
 
 @export var move_speed := {move_speed}        # [MOVE_SPEED]
 @export var max_hp := {player_hp}              # [PLAYER_HP]
 @export var jump_velocity := 6.0     # [JUMP_VELOCITY]
 @export var gravity := 18.0          # [GRAVITY]
-{extra_exports}{extra_state}
-
+{exports}{state}
 func _physics_process(delta: float) -> void:
     var input_dir := Vector2.ZERO
     input_dir.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
@@ -153,18 +567,20 @@ func _physics_process(delta: float) -> void:
     var direction := Vector3(input_dir.x, 0.0, input_dir.y).normalized()
     velocity.x = direction.x * move_speed
     velocity.z = direction.z * move_speed
-{parkour_extras}
+{physics}
     if not is_on_floor():
         velocity.y -= gravity * delta
     elif Input.is_action_just_pressed("jump"):
         velocity.y = jump_velocity
     move_and_slide()
+{helpers}
 '''
 
 
 def _game_manager(
     spec: GameplaySpec,
     *,
+    axis: str = "generic",
     production_spec_bundle: ProductionSpecBundle | None = None,
 ) -> str:
     if production_spec_bundle is not None:
@@ -177,7 +593,7 @@ def _game_manager(
         win = spec.win_state.replace('"', "'")
         fails = spec.failure_states or ["Pressure reached maximum"]
         title = spec.title.replace('"', "'")
-        pressure_limit = 60.0
+        pressure_limit = float(spec.target_session_minutes * 60)
     fail0 = fails[0].replace('"', "'")
     return f'''extends Node
 
@@ -187,10 +603,12 @@ def _game_manager(
 
 var _elapsed := 0.0
 var _ended := false
+var _progress := 0
 var _hud: Label
 
 
 func _ready() -> void:
+    add_to_group("game_manager")
     _hud = Label.new()
     _hud.name = "FA_HUD"
     _hud.position = Vector2(24, 24)
@@ -206,7 +624,7 @@ func _process(delta: float) -> void:
         return
     _elapsed += delta
     var remaining := maxf(0.0, pressure_limit - _elapsed)
-    _update_hud("Time left: %0.1fs" % remaining)
+    _update_hud("Time left: %0.1fs  |  progress: %d" % [remaining, _progress])
     if remaining <= 0.0:
         _fail("{fail0}")
 
@@ -222,6 +640,20 @@ func fail_from_enemy(reason: String) -> void:
     if _ended:
         return
     _fail(reason)
+
+
+func register_progress(amount: int) -> void:
+    # Axis mechanics (career choices, system interactions) bank progress here.
+    if _ended:
+        return
+    _progress += amount
+
+
+func register_trigger() -> void:
+    # Puzzle-style axes count device triggers as one step of progress.
+    if _ended:
+        return
+    _progress += 1
 
 
 func _win() -> void:
@@ -247,11 +679,33 @@ func _update_hud(text: String) -> void:
 '''
 
 
-def _enemy_controller() -> str:
-    return """extends Area3D
+def _enemy_controller(axis: str) -> str:
+    """Enemy script scoped to the axis: only its declared behaviors, its own
+    contact text, and a damage hook the combat axis can actually call."""
+    mechanics = _AXIS_MECHANICS.get(axis)
+    template = AXIS_TEMPLATES.get(axis)
+    declared = [behavior for _name, behavior, _hp, _count in getattr(template, "enemies", [])]
+    # One source of truth: the roster the design template declares. An axis
+    # with no enemies still gets a patrol guard so the script stays valid.
+    behaviors = list(dict.fromkeys(declared or ["patrol"]))
+    if "patrol" not in behaviors:
+        # patrol is also the ``match`` default branch, so its function has to
+        # exist even on an axis that never declares a patrolling enemy.
+        behaviors.append("patrol")
+    default_behavior = behaviors[0]
+    enemy_hp = template.enemies[0][2] if template and template.enemies else 3
+    enemy_name = template.enemies[0][0] if template and template.enemies else "Patrol Guard"
+    contact = (mechanics.enemy_contact if mechanics else "Enemy contact").replace('"', "'")
+    branches = "\n".join(
+        f'        "{behavior}":\n            _{behavior}(delta)' for behavior in behaviors
+    )
+    body_funcs = "\n".join(
+        _ENEMY_BEHAVIOR_FUNCS[behavior](contact) for behavior in behaviors
+    )
+    return f'''extends Area3D
 
-@export var behavior := "patrol"      # [ENEMY_BEHAVIOR]
-@export var hp := 3                   # [ENEMY_HP]
+@export var behavior := "{default_behavior}"      # [ENEMY_BEHAVIOR]
+@export var hp := {enemy_hp}                   # [ENEMY_HP]
 @export var move_speed := 2.4         # [ENEMY_MOVE_SPEED]
 @export var patrol_radius := 2.5      # [PATROL_RADIUS]
 @export var detection_radius := 6.0   # [DETECTION_RADIUS]
@@ -262,7 +716,7 @@ var _direction := 1.0
 var _ranged_timer := 0.0
 var _player: Node3D
 var _game_manager: Node
-var _label := ""
+var _label := "{enemy_name}"
 
 
 func setup(enemy_name: String, enemy_behavior: String, enemy_hp: int, game_manager: Node) -> void:
@@ -275,31 +729,56 @@ func setup(enemy_name: String, enemy_behavior: String, enemy_hp: int, game_manag
 func _ready() -> void:
     _origin = global_position
     monitoring = true
+    add_to_group("enemy")
     body_entered.connect(_on_body_entered)
+
+
+func take_damage(amount: int) -> void:
+    # Called by the combat axis player controller when a strike lands.
+    hp -= amount
+    if hp <= 0:
+        queue_free()
 
 
 func _physics_process(delta: float) -> void:
     if _player == null:
         _player = get_tree().get_first_node_in_group("player")
     match behavior:
-        "chase":
-            _chase(delta)
-        "patrol":
-            _patrol(delta)
-        "ranged":
-            _ranged(delta)
-        "stationary":
-            _stationary()
+{branches}
         _:
             _patrol(delta)
 
+{body_funcs}
+
+func _fail_if_player_close(reason: String) -> void:
+    if _player != null and global_position.distance_to(_player.global_position) <= 1.15:
+        _notify_failure(reason)
+
+
+func _on_body_entered(body: Node) -> void:
+    if body.is_in_group("player") or body.name == "FA_Player":
+        _notify_failure("{contact}")
+
+
+func _notify_failure(reason: String) -> void:
+    if _game_manager != null and _game_manager.has_method("fail_from_enemy"):
+        _game_manager.fail_from_enemy(reason)
+'''
+
+
+def _patrol_func(contact: str) -> str:
+    return f'''
 
 func _patrol(delta: float) -> void:
     position.x += _direction * move_speed * delta
     if abs(position.x - _origin.x) >= patrol_radius:
         _direction *= -1.0
-    _fail_if_player_close("Patrol caught the player")
+    _fail_if_player_close("{contact}")
+'''
 
+
+def _chase_func(contact: str) -> str:
+    return f'''
 
 func _chase(delta: float) -> void:
     if _player == null:
@@ -307,12 +786,20 @@ func _chase(delta: float) -> void:
     var offset := _player.global_position - global_position
     if offset.length() <= detection_radius:
         global_position += offset.normalized() * move_speed * delta
-    _fail_if_player_close("Chaser reached the player")
+    _fail_if_player_close("{contact}")
+'''
 
 
-func _stationary() -> void:
-    _fail_if_player_close("Sentry zone was breached")
+def _stationary_func(contact: str) -> str:
+    return f'''
 
+func _stationary(_delta: float) -> void:
+    _fail_if_player_close("{contact}")
+'''
+
+
+def _ranged_func(contact: str) -> str:
+    return f'''
 
 func _ranged(delta: float) -> void:
     if _player == null:
@@ -323,24 +810,28 @@ func _ranged(delta: float) -> void:
     _ranged_timer += delta
     if _ranged_timer >= ranged_interval:
         _ranged_timer = 0.0
-        _notify_failure("Ranged pressure pinned the player")
+        _notify_failure("{contact}")
+'''
 
 
-func _fail_if_player_close(reason: String) -> void:
-    if _player != null and global_position.distance_to(_player.global_position) <= 1.15:
-        _notify_failure(reason)
+_ENEMY_BEHAVIOR_FUNCS: dict[str, object] = {
+    "patrol": _patrol_func,
+    "chase": _chase_func,
+    "stationary": _stationary_func,
+    "ranged": _ranged_func,
+}
 
 
-func _on_body_entered(body: Node) -> void:
-    if body.is_in_group("player") or body.name == "FA_Player":
-        _notify_failure("Enemy contact: " + _label)
+def declared_input_actions(spec: GameplaySpec) -> set[str]:
+    """The InputMap actions the generated project will register for this spec."""
+    actions = {action_name(a) for a in BASE_INPUT_ACTIONS}
+    actions |= {action_name(verb) for verb in spec.core_verbs[:4]}
+    return actions
 
 
-func _notify_failure(reason: String) -> void:
-    if _game_manager != null and _game_manager.has_method("fail_from_enemy"):
-        _game_manager.fail_from_enemy(reason)
-"""
-
+def referenced_input_actions(script: str) -> set[str]:
+    """Every InputMap action a GDScript reads — used by the contract tests."""
+    return set(re.findall(r'Input\.is_action_(?:pressed|just_pressed)\("([^"]+)"\)', script))
 
 
 # ──────────────────────────────────────────────────────────────────────────

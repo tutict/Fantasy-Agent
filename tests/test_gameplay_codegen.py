@@ -46,10 +46,23 @@ def test_deterministic_enemy_controller_has_m6b_behaviors():
     scripts = deterministic_gameplay_scripts(_parkour_spec())
     enemy = scripts[ENEMY_SCRIPT]
     assert enemy.startswith("extends Area3D")
-    for behavior in ["patrol", "chase", "stationary", "ranged"]:
+    # Parkour declares one chaser, so the script ships chase + the patrol
+    # fallback and nothing it can never instantiate.
+    for behavior in ["patrol", "chase"]:
         assert behavior in enemy
+    # (``ranged_interval`` still ships as a tunable; the behavior branch does not.)
+    for behavior in ("stationary", "ranged"):
+        assert f'"{behavior}":' not in enemy
+        assert f"func _{behavior}(" not in enemy
     assert "fail_from_enemy" in enemy
     assert 'get_first_node_in_group("player")' in enemy
+    assert "func take_damage" in enemy
+
+
+def test_deterministic_pressure_limit_follows_session_minutes():
+    scripts = deterministic_gameplay_scripts(_parkour_spec())
+    # 10-minute spec -> 600s clock, not a hardcoded 60s.
+    assert "@export var pressure_limit := 600.0" in scripts[GAME_MANAGER_SCRIPT]
 
 
 def test_generate_uses_llm_when_available():
