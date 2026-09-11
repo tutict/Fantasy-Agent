@@ -235,8 +235,16 @@ export function FlowConsole() {
       return;
     }
     const target = targetId === "engine" ? recommendedManualTargetId() : targetId;
+    // The backend gate (local_tools.open_manual_correction_target) refuses
+    // without this confirmation, and spawning an editor is a real side effect.
+    // Ask first instead of passing `true` blindly.
+    const label = t(manualTargetKeys[target]?.label || "manualTargetPlanning");
+    if (!window.confirm(t("manualOpenConfirm", { target: label }))) {
+      addActivity(t("manualOpenCancelled"), target);
+      return;
+    }
     try {
-      const result = await openManualCorrectionTargetApi(target, selectedEngineVersion(currentPlan));
+      const result = await openManualCorrectionTargetApi(target, selectedEngineVersion(currentPlan), true);
       const label = result.detail_key ? t(result.detail_key) : result.detail || result.status || "";
       if (result.status === "started" || result.status === "client_route") {
         addActivity(t("manualOpenStarted"), `${target}: ${result.target || label}`);
@@ -843,7 +851,9 @@ export function FlowConsole() {
   );
 }
 
-function ExecutionStageCard({ stage, t }: { stage: ExecuteStage; t: (key: string) => string }) {
+// Exported so the stage rendering (including the logs list) can be unit tested
+// without mounting the whole console.
+export function ExecutionStageCard({ stage, t }: { stage: ExecuteStage; t: (key: string) => string }) {
   const metadata = stage.metadata || {};
   const approved = metadata.approved_assets || [];
   const skipped = metadata.skipped_assets || [];
@@ -860,6 +870,16 @@ function ExecutionStageCard({ stage, t }: { stage: ExecuteStage; t: (key: string
       </div>
       <p>{stage.detail}</p>
       {stage.artifacts?.length ? <code>{stage.artifacts.join(", ")}</code> : null}
+      {stage.logs?.length ? (
+        <div className="approval-assets">
+          <span>{t("stageLogs")}</span>
+          <ul>
+            {stage.logs.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {hasApprovalPreview ? (
         <div className="approval-preview">
           <div className="approval-summary">

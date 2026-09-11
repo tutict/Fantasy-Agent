@@ -24,12 +24,36 @@ export interface EnemyPressureTuning {
 
 export interface GameplaySpec {
   title?: string;
+  logline?: string;
   target_session_minutes?: number;
+  player_fantasy?: string;
   design_pillars?: string[];
+  core_verbs?: string[];
   win_state?: string;
   failure_states?: string[];
-  core_loop?: Array<{ action?: string; player_decision?: string }>;
-  systems?: Array<{ name?: string; purpose?: string }>;
+  core_loop?: Array<{ order?: number; action?: string; player_decision?: string; feedback?: string }>;
+  systems?: Array<{
+    name?: string;
+    purpose?: string;
+    inputs?: string[];
+    outputs?: string[];
+    failure_pressure?: string;
+  }>;
+  progression?: {
+    first_minute?: string;
+    midpoint_shift?: string;
+    final_minutes?: string;
+    unlocks?: string[];
+  };
+  level_beats?: Array<{
+    name?: string;
+    duration_minutes?: number;
+    gameplay_focus?: string;
+    required_assets?: string[];
+    success_condition?: string;
+  }>;
+  asset_needs?: string[];
+  qa_focus?: string[];
   enemies?: EnemySpec[];
   i18n?: {
     field_translations?: {
@@ -436,4 +460,136 @@ export interface AgentRunResult {
   refusals?: string[];
   error?: string;
   steps?: AgentStep[];
+}
+
+/**
+ * Planning workbench types.
+ *
+ * The workbench calls ``POST /api/tools/{tool_name}`` (see
+ * ``apps/studio/app/main.py::_workbench_tool``). Every tool answers with the
+ * same envelope: a flat ``{structuredContent, content, _meta}`` object when
+ * called over REST, though an embedding host may wrap it under ``result``.
+ */
+
+export type WorkbenchToolName =
+  | "extract_idea_seed"
+  | "decompose_production_tasks"
+  | "generate_game_production_plan"
+  | "render_gdd"
+  | "prepare_production_pipeline"
+  | "prepare_unreal_plan"
+  | "prepare_godot_plan"
+  | "prepare_blender_plan"
+  | "prepare_comfyui_plan"
+  | "prepare_creative_review_plan"
+  | "prepare_qa_plan";
+
+export type WorkbenchPanelKey =
+  | "overview"
+  | "pipeline"
+  | "tasks"
+  | "build"
+  | "visuals"
+  | "gdd"
+  | "qa"
+  | "dsl";
+
+export interface InterviewAnswer {
+  question_id: string;
+  question: string;
+  answer: string;
+}
+
+export interface IdeaSeed {
+  source?: string;
+  schema_version?: string;
+  raw_idea?: string;
+  player_fantasy?: string;
+  emotional_target?: string;
+  core_action?: string;
+  tension_source?: string;
+  must_keep?: string[];
+  can_cut?: string[];
+  reference_feel?: string;
+  playable_loop_candidate?: string;
+  constraints?: string[];
+  open_questions?: string[];
+  next_prompt?: string;
+}
+
+/** Editable configuration shared by every plan tool payload. */
+export interface WorkbenchConfig {
+  targetMinutes: number;
+  engineVersion: string;
+  platform: string;
+  sourceLocale: Locale;
+  constraints: string[];
+}
+
+/** Payload for ``extract_idea_seed``. Mirrors ``IdeaDiscoveryRequest``. */
+export interface IdeaDiscoveryRequest {
+  raw_idea: string;
+  answers?: InterviewAnswer[];
+  target_minutes?: number;
+  engine_version?: string;
+  platforms?: string[];
+  constraints?: string[];
+  source_locale?: Locale;
+  output_locales?: Locale[];
+}
+
+/** Payload for every plan-building tool. Mirrors ``PromptRequest``. */
+export interface PromptRequest {
+  prompt: string;
+  target_minutes?: number;
+  engine_version?: string;
+  platforms?: string[];
+  jam_scope?: boolean;
+  constraints?: string[];
+  source_locale?: Locale;
+  output_locales?: Locale[];
+}
+
+export interface WorkbenchStructured {
+  kind?: string;
+  summary?: Record<string, unknown>;
+  idea_seed?: IdeaSeed;
+  prompt_request?: PromptRequest;
+  plan?: DirectorBuildPlan;
+  task_breakdown?: TaskBreakdown;
+  production_pipeline?: ProductionPipeline;
+  gdd?: GddDocument;
+  unreal_plan?: UnrealPlan;
+  godot_plan?: GodotPlan;
+  blender_plan?: BlenderPlan;
+  comfyui_plan?: ComfyPlan;
+  creative_review?: CreativeReview;
+  qa_plan?: QaPlan;
+  gameplay_title?: string;
+}
+
+export interface WorkbenchMeta {
+  toolName?: string;
+  activePanel?: WorkbenchPanelKey;
+  ideaSeed?: IdeaSeed;
+  promptRequest?: PromptRequest;
+  plan?: DirectorBuildPlan;
+  taskBreakdown?: TaskBreakdown;
+  productionPipeline?: ProductionPipeline;
+  gdd?: GddDocument;
+  unrealPlan?: UnrealPlan;
+  godotPlan?: GodotPlan;
+  blenderPlan?: BlenderPlan;
+  comfyuiPlan?: ComfyPlan;
+  creativeReview?: CreativeReview;
+  qaPlan?: QaPlan;
+}
+
+export interface WorkbenchToolResult {
+  isError?: boolean;
+  structuredContent?: WorkbenchStructured;
+  content?: Array<{ type?: string; text?: string }>;
+  _meta?: WorkbenchMeta;
+  /** Present only when an embedding host wraps the envelope. */
+  result?: Omit<WorkbenchToolResult, "result">;
 }
