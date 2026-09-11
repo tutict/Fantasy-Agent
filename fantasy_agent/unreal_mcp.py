@@ -3,17 +3,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import yaml
 from pydantic import ValidationError
 
+from fantasy_agent.mcp_bridge import BaseMCPBridge, DEFAULT_WORKSPACE_ROOT
 from fantasy_agent.process_runner import (
     current_cancel_event,
     is_streaming_runner,
-    run_streaming,
 )
 from fantasy_agent.contracts import (
     ComfyUIRunManifest,
@@ -41,7 +40,6 @@ from fantasy_agent.contracts import (
 
 SERVER_NAME = "fantasy-agent-unreal-mcp"
 SERVER_VERSION = "0.1.0"
-DEFAULT_WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 ALLOWED_COMMANDLETS = {"DataValidation"}
 BUILTIN_MODULE_NAMES = {"GameplayTags"}
 COMMANDLET_DEFAULT_ARGS = {
@@ -183,14 +181,8 @@ class UnrealMCPSafetyError(ValueError):
     pass
 
 
-class UnrealMCPBridge:
-    def __init__(
-        self,
-        workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
-        runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
-    ) -> None:
-        self.workspace_root = Path(workspace_root).resolve()
-        self.runner = runner or run_streaming
+class UnrealMCPBridge(BaseMCPBridge):
+    safety_error = UnrealMCPSafetyError
 
     def create_project_structure(self, request: UnrealMCPCreateProjectRequest) -> UnrealMCPResult:
         plan = self._load_plan(request)
@@ -1213,23 +1205,9 @@ class UnrealMCPBridge:
         return project_file
 
     def _assert_relative_under(self, path: str, required_prefix: str) -> None:
-        if Path(path).is_absolute():
-            raise UnrealMCPSafetyError(f"Absolute paths are not allowed: {path}")
-        normalized = Path(path.replace("\\", "/"))
-        if ".." in normalized.parts:
-            raise UnrealMCPSafetyError(f"Parent traversal is not allowed: {path}")
-        prefix = Path(required_prefix)
-        if normalized.parts[: len(prefix.parts)] != prefix.parts:
-            raise UnrealMCPSafetyError(f"Path must stay under {required_prefix}: {path}")
-        self._resolve_workspace_path(path)
-
-    def _resolve_workspace_path(self, path: str) -> Path:
-        resolved = (self.workspace_root / path).resolve()
-        try:
-            resolved.relative_to(self.workspace_root)
-        except ValueError as exc:
-            raise UnrealMCPSafetyError(f"Path escapes workspace: {path}") from exc
-        return resolved
+        # Delegates to the shared resolver so absolute paths, ".." segments and
+        # prefix violations all get the same messages as every other bridge.
+        self._resolve_workspace_path(path, required_prefix=required_prefix)
 
     def _run_tool(
         self,
@@ -1294,13 +1272,6 @@ class UnrealMCPBridge:
         with log_path.open("r", encoding="utf-8", errors="replace") as handle:
             handle.seek(start)
             return handle.read()[-limit:]
-
-    def _write_text(self, path: Path, text: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-
-    def _display_path(self, path: Path) -> str:
-        return path.relative_to(self.workspace_root).as_posix()
 
 
 def call_unreal_mcp_tool(

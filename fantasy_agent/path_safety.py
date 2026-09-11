@@ -26,6 +26,19 @@ def assert_under(path: Path, root: Path | str) -> None:
         raise WorkspacePathError(f"Path escapes workspace: {path}") from exc
 
 
+def is_absolute_path(path: str) -> bool:
+    """True for paths that escape relative joining, drive or no drive.
+
+    ``Path("/etc/passwd").is_absolute()`` is **False on Windows** — a path needs
+    both a root and a drive to count as absolute there. Such a path is still
+    dangerous: joining it onto the workspace silently discards the workspace
+    prefix and lands at the drive root. Treating any rooted path as absolute
+    keeps the check honest on both platforms.
+    """
+    candidate = Path(path)
+    return candidate.is_absolute() or bool(candidate.root)
+
+
 def resolve_workspace_path(
     path: str,
     *,
@@ -35,7 +48,7 @@ def resolve_workspace_path(
 ) -> Path:
     """Resolve a workspace path after optional relative-prefix validation."""
 
-    if not allow_absolute and Path(path).is_absolute():
+    if not allow_absolute and is_absolute_path(path):
         raise WorkspacePathError(f"Absolute paths are not allowed: {path}")
     normalized = Path(path.replace("\\", "/"))
     if ".." in normalized.parts:

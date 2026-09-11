@@ -3,17 +3,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
 from fantasy_agent.blender_codegen import build_blender_script_artifact
+from fantasy_agent.mcp_bridge import BaseMCPBridge, DEFAULT_WORKSPACE_ROOT
 from fantasy_agent.process_runner import (
     current_cancel_event,
     is_streaming_runner,
-    run_streaming,
 )
 from fantasy_agent.contracts import (
     BlenderAssetPlan,
@@ -25,7 +24,6 @@ from fantasy_agent.contracts import (
 
 SERVER_NAME = "fantasy-agent-blender-mcp"
 SERVER_VERSION = "0.1.0"
-DEFAULT_WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def tool_descriptors() -> list[dict[str, Any]]:
@@ -69,14 +67,8 @@ class BlenderMCPSafetyError(ValueError):
     pass
 
 
-class BlenderMCPBridge:
-    def __init__(
-        self,
-        workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
-        runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
-    ) -> None:
-        self.workspace_root = Path(workspace_root).resolve()
-        self.runner = runner or run_streaming
+class BlenderMCPBridge(BaseMCPBridge):
+    safety_error = BlenderMCPSafetyError
 
     def generate_blender_script(self, request: BlenderMCPGenerateScriptRequest) -> BlenderMCPResult:
         artifact = self._artifact(
@@ -223,23 +215,9 @@ class BlenderMCPBridge:
         return [self._display_path(script_path), self._display_path(manifest_path)]
 
     def _assert_relative_under(self, path: str, required_prefix: str) -> None:
-        if Path(path).is_absolute():
-            raise BlenderMCPSafetyError(f"Absolute paths are not allowed: {path}")
-        normalized = Path(path.replace("\\", "/"))
-        if ".." in normalized.parts:
-            raise BlenderMCPSafetyError(f"Parent traversal is not allowed: {path}")
-        prefix = Path(required_prefix)
-        if normalized.parts[: len(prefix.parts)] != prefix.parts:
-            raise BlenderMCPSafetyError(f"Path must stay under {required_prefix}: {path}")
-        self._resolve_workspace_path(path)
-
-    def _resolve_workspace_path(self, path: str) -> Path:
-        resolved = (self.workspace_root / path).resolve()
-        try:
-            resolved.relative_to(self.workspace_root)
-        except ValueError as exc:
-            raise BlenderMCPSafetyError(f"Path escapes workspace: {path}") from exc
-        return resolved
+        # Delegates to the shared resolver so absolute paths, ".." segments and
+        # prefix violations all get the same messages as every other bridge.
+        self._resolve_workspace_path(path, required_prefix=required_prefix)
 
     def _run_tool(
         self,
@@ -281,13 +259,6 @@ class BlenderMCPBridge:
         safe_name = "".join(ch.lower() if ch.isalnum() else "_" for ch in plan_name).strip("_")
         log_dir = self.workspace_root / "generated" / "logs" / "blender"
         return log_dir / f"{safe_name}.stdout.log", log_dir / f"{safe_name}.stderr.log"
-
-    def _write_text(self, path: Path, text: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-
-    def _display_path(self, path: Path) -> str:
-        return path.relative_to(self.workspace_root).as_posix()
 
 
 def call_blender_mcp_tool(

@@ -3,22 +3,16 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
 from fantasy_agent.config_table_compiler import config_table_artifact_name
-from fantasy_agent.path_safety import (
-    WorkspacePathError,
-    display_workspace_path,
-    resolve_workspace_path,
-)
+from fantasy_agent.mcp_bridge import BaseMCPBridge, DEFAULT_WORKSPACE_ROOT
 from fantasy_agent.process_runner import (
     current_cancel_event,
     is_streaming_runner,
-    run_streaming,
 )
 from fantasy_agent.contracts import (
     EnemyPressureTuning,
@@ -35,7 +29,6 @@ from fantasy_agent.contracts import (
 
 SERVER_NAME = "fantasy-agent-godot-mcp"
 SERVER_VERSION = "0.1.0"
-DEFAULT_WORKSPACE_ROOT = Path(__file__).resolve().parents[1]
 
 
 def tool_descriptors() -> list[dict[str, Any]]:
@@ -93,14 +86,8 @@ class GodotMCPSafetyError(ValueError):
     pass
 
 
-class GodotMCPBridge:
-    def __init__(
-        self,
-        workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
-        runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
-    ) -> None:
-        self.workspace_root = Path(workspace_root).resolve()
-        self.runner = runner or run_streaming
+class GodotMCPBridge(BaseMCPBridge):
+    safety_error = GodotMCPSafetyError
 
     def create_godot_project_structure(
         self,
@@ -388,20 +375,9 @@ class GodotMCPBridge:
         return resolved
 
     def _assert_relative_under(self, path: str, required_prefix: str) -> None:
-        try:
-            resolve_workspace_path(
-                path,
-                workspace_root=self.workspace_root,
-                required_prefix=required_prefix,
-            )
-        except WorkspacePathError as exc:
-            raise GodotMCPSafetyError(str(exc)) from exc
-
-    def _resolve_workspace_path(self, path: str) -> Path:
-        try:
-            return resolve_workspace_path(path, workspace_root=self.workspace_root)
-        except WorkspacePathError as exc:
-            raise GodotMCPSafetyError(str(exc)) from exc
+        # Delegates to the shared resolver so absolute paths, ".." segments and
+        # prefix violations all get the same messages as every other bridge.
+        self._resolve_workspace_path(path, required_prefix=required_prefix)
 
     def _run_tool(
         self,
@@ -444,12 +420,6 @@ class GodotMCPBridge:
         log_dir = self.workspace_root / "generated" / "logs" / "godot"
         return log_dir / f"{safe_name}_{operation}.stdout.log", log_dir / f"{safe_name}_{operation}.stderr.log"
 
-    def _write_text(self, path: Path, text: str) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-
-    def _display_path(self, path: Path) -> str:
-        return display_workspace_path(path, workspace_root=self.workspace_root)
 
 
 def call_godot_mcp_tool(
