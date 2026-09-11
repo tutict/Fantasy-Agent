@@ -82,7 +82,7 @@
 | 4 | P2 | **已修** | `jsonRequest` 失败时解析 `{"detail": ...}`，支持字符串与 422 的 `loc/msg` 列表两种形状，无可用信息才 fallback `HTTP {status}`。抽成 `errorMessageFromPayload` 并单测 |
 | 5 | P2 | **改为守卫** | 15 个端点不硬写 UI（产品决策）。新增 `tests/test_frontend_endpoint_coverage.py`：前端引用必须是后端真实端点；后端无 UI 端点必须登记在 `KNOWN_WITHOUT_UI` 白名单并写明原因；白名单项若已接通 UI 或已被后端删除，测试也会红 |
 | 6 | P2 | **已修** | `web-console/app.js` 的 `renderGenerateStages` 与预览确认框两处 `innerHTML` 插值改走既有 `escapeHtml`。全量扫过三个旧页：其余插值要么是数字格式化、要么已在 `list()` / `escapeHtml()` 内处理，无新的真实向量 |
-| 7 | P2 | **已修** | `package.json` 依赖从 `latest` 钉到 `^实际版本`（vite 8.1.3 / react 19.2.7 / @types 19.2.x）。`typescript` 从 `7.0.1-rc` 降到 `^5.9.3` 并移到 devDependencies —— 实测 typecheck / test / build 全绿，理由见文末「TypeScript 降版」 |
+| 7 | P2 | **已修** | `package.json` 依赖从 `latest` 钉到 `^实际版本`（vite 8.1.3 / react 19.2.7 / @types 19.2.x）。`typescript` 从 `7.0.1-rc` 降到 `^5.9.3` 并移到 devDependencies —— 实测 typecheck / test / build 全绿，理由见文末「TypeScript 降版」。（**注：2026-09-11 已升回 `^7.0.2`**，降版前提仅对 RC 成立，见文末「后续变更」；「钉到 `^实际版本` + 移出 devDependencies」这两条仍然有效） |
 | 8 | P2 | **已修** | 策划工作台已用 React 重写（详见下方「P2-8 已闭环」），旧 `planning-workbench.html` 已删除。剩余两份旧静态页仅作 dist 缺失兜底 |
 | 9 | P2 | **已修** | `ExecutionStageCard` 渲染 `stage.logs`（i18n `stageLogs`），组件已 export 并补 4 例测试 |
 
@@ -144,7 +144,35 @@ static/index.html sha a1f222f8…  61088 bytes
 | `frontend:test` | 26 passed |
 | `frontend:build` | ✓ built in 1.41s |
 
-顺带把它从 `dependencies` 移到 `devDependencies`（构建工具不该是运行时依赖）。**要回退**：`npm install -D typescript@7.0.1-rc`。
+顺带把它从 `dependencies` 移到 `devDependencies`（构建工具不该是运行时依赖）。~~**要回退**：`npm install -D typescript@7.0.1-rc`~~ —— **此回退指令已于 2026-09-11 作废**（TS 7 已转正，见下方「后续变更」小节；勿再据此装回 RC 或降版）。
+
+### 后续变更（2026-09-11）：TS 7 已转正，重新升回 `^7.0.2`
+
+上一节的降版理由只有一条：`7.0.1-rc` 是**预发布版**，可能被 npm 撤下导致 CI 构建挂。**该理由只对 RC 成立**——2026-09-11 时 `typescript@latest` 已是稳定的 `7.0.2`（Go 原生编译器），风险消失，因此升回 7。上面"要回退到 5.9.3"的结论作废，勿再据此降版。
+
+升级后实测（`npm run` 三关全绿）：
+
+| 项 | 结果 |
+|---|---|
+| `tsc --version` | 7.0.2（原生 `@typescript/typescript-win32-x64/lib/tsc.exe`，24.5 MB） |
+| `frontend:typecheck` | 0 错（纳入 133 个文件） |
+| `frontend:test` | 67 passed / 6 files |
+| `frontend:build` | ✓ built in 302ms |
+| 编译开关探活 | `strict`→TS18047、`isolatedModules`→TS1205、实参→TS2345、`readonly`→TS2540 均按预期报错 |
+
+**跨平台注意**：`typescript@7` 把各平台二进制作为 optionalDependency 分发。lock 中 20 个平台包**必须齐全**（已验证含 `typescript-linux-x64`），否则 CI 的 `npm ci` 在 ubuntu runner 上会找不到可执行文件。
+
+**性能注意**：本项目仅 133 个文件，两份编译器的编译工作量都远小于进程启动开销，因此 TS7 的吞吐优势体现不出来。实测（6 次取区间）：
+
+| 调用方式 | 耗时 |
+|---|---|
+| `node` 空启动基线 | ~630 ms |
+| TS 5.9.3 `node bin/tsc` | ~640 ms |
+| TS 7.0.2 原生 `tsc.exe` 直调 | ~730 ms |
+| TS 7.0.2 `node bin/tsc`（win32 走 shim） | ~1255 ms |
+| `npm run frontend:typecheck` | ~4700 ms（其中 npm 自身开销 ~4150 ms） |
+
+即 TS7 相比 TS5 **净增约 0.6 s**，全部来自 `lib/tsc.js` 在 win32 上无法 `process.execve`（仅非 win32 且 node > 22.15 才走 execve 原地替换），只能 `execFileSync` 再起一个进程。Linux/macOS 的 CI 不受影响。**结论：按此规模不值得为省这 0.6 s 去改脚本直调 exe，保持可移植的 `tsc` 调用即可。**
 
 ### P2-8 决策材料：旧静态页的精确边界
 
