@@ -185,6 +185,26 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - 模型默认 `claude-opus-4-8`，可通过 `FANTASY_AGENT_MODEL` 覆盖；凭据走标准的 `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`。界面配置的优先级高于环境变量。
 - 任何 LLM 失败（未配置、无 key、API 错误、输出非法或未通过 `GameplaySpec` 校验）都会自动回退到确定性生成，绝不中断流程。无论走哪条路径，返回的都是同一套 `GameplaySpec` 契约，下游 Unreal/Godot/Blender/ComfyUI/QA 编排无需改动。
 
+**机制轴模板（`fantasy_agent/axis_templates.py`）**
+
+确定性路径按 `_detect_axis()` 识别的机制轴取模板，目前 8 条：`parkour` / `career` / `stealth` / `combat` / `survival` / `puzzle` / `mobility` / `systems`。每条轴自带核心动词、四步循环、三个系统、三段曲线、三个关卡节拍、资产需求和叙事包装（win/fail、设计支柱、ComfyUI 备注）。
+
+- **`systems` 是兜底轴**，文案刻意通用：它描述"一个可玩切片的形状"，不假装有具体题材。某个题材反复落到这里，正确做法是加一条轴，而不是把通用文案改得更好听。
+- **中文文案与英文写在同一条记录里。** `i18n.py` 按位置把英文字段和 zh-CN 配对，所以两者分开存放必然漂移——曾经所有非 career 轴的中文 GDD 都写着"教学口袋区 / 系统混合区"，而英文已经是"Warmup Rooftop"。
+- **新增一条轴**：在 `AXIS_TEMPLATES` 加条目 → 让 `_detect_axis` 能返回该键 → 跑 `tests/test_generation_axis.py`。该测试断言每条轴都能被真实 prompt 触发、任意两轴不共用节拍名/系统名/动词组、每轴中英文条目数一致，复制粘贴忘了改会立刻红。
+- 关键词表要覆盖最常见词形：`"racing"` 里并不包含子串 `"race"`，只写 `"race"` 会让整条 mobility 轴在英语里不可达。
+
+**GDScript 跟着轴走（`fantasy_agent/gameplay_codegen.py`）**
+
+设计模板只决定"说什么"，`_AXIS_MECHANICS` 决定"生成什么代码"：每条轴一份 `AxisMechanics`（@export 参数、状态变量、`_physics_process` 里的动作块、辅助函数、敌人接触文案）。过去只有 `parkour` 有实现，其余 7 条轴共用同一个 WASD+jump —— 潜行设计生成的代码不能蹲下，解谜设计生成的代码不能交互。
+
+- **轴判定查表，不写死分支。** `_axis_from_verbs()` 用 `AXIS_TEMPLATES` 的动词集给每条轴打分，新增轴不用改判定函数。
+- **每个核心动词必须落成实现块。** 生成的代码里每个动词有一个 `# [VERB]` 锚点，测试逐轴断言"设计声明的动词都在代码里"，动词只写进文案会立刻红。
+- **只能按项目里存在的 InputMap 动作。** 动作名来自 `spec.core_verbs`（`workflows.prepare_godot_project` 注册），所以 `action_name()` 与 `godot_mcp._godot_identifier` 必须同源；按了一个没注册的动作，Godot 运行时报 `Request for nonexistent InputMap action`。
+- **敌人行为只有一个来源**：设计模板的 `enemies` 名册。轴里不再另存一份行为清单（曾经两份会漂移）。
+- **新增一条轴**：`AXIS_TEMPLATES` 加条目 → `_AXIS_MECHANICS` 加对应实现 → 跑 `tests/test_gameplay_codegen_axis.py`（键集不一致立刻红）。
+- **真机校验**：`tests/test_gdscript_godot_check.py` 给每条轴建临时工程，跑 `godot --check-only --script` 做语法检查，再用一个 SceneTree harness 实例化并推 20 帧，抓运行时错误。没有 Godot 二进制时自动跳过，设 `FANTASY_AGENT_GODOT_EXE` 开启。
+
 命令行入口：
 
 - `python -m fantasy_agent --prompt "游戏创意" [--llm] [--minutes 10] [--engine "Godot 4"] [--format summary|json|gdd]`
