@@ -120,7 +120,7 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - Studio：`POST /api/agent/run`（永不抛异常，失败以 status 返回）
 - Studio 界面：策划工作台的**「Agent」面板**，可填目标、设 max_turns、勾选引擎工具与 write/execute 授权，跑完展示回答、工具调用明细和被拒清单。
 
-**工具调用在三个 provider 上都可用**：`llm.complete_with_tools` 按当前 provider 分派——`openai_responses` 走 `/v1/responses`，`anthropic` 走 Messages API 的原生 `tool_use`，`openai_compatible` 走 `/chat/completions` 的 `tools`/`tool_calls`。
+**工具调用在三个 provider 上都可用**：`llm.complete_with_tools` 按当前 provider 分派——`openai_responses` 走 `/v1/responses`，`anthropic` 走 Messages API 的原生 `tool_use`，`openai_compatible` 走 `/chat/completions` 的 `tools`/`tool_calls`。（范围仅限**工具调用**：生成路径 `complete_json` 只有 anthropic / openai_compatible 两个分支，配 `openai_responses` 跑生成会明确报错，见上方「可选 LLM 后端」。）
 
 - **循环只有一种对话格式**：`agent_loop` 的转录是 Responses 形状（`function_call` / `function_call_output` 块，call id 靠它对齐）。另外两个 provider 拿到的是**这份转录的投影**，回复也会被重新表达成同一形状再交回循环。所以循环不知道自己在跟哪种 wire format 说话，换 provider 不需要改循环。
 - 投影在 `llm.py` 里是四个纯函数：`_anthropic_transcript` / `_anthropic_tools`、`_openai_chat_transcript` / `_openai_chat_tools`（外加 `_parse_anthropic_tool_reply` / `_parse_openai_chat_tool_reply` 两个反方向解析）。加第四个 provider 就是加一对投影函数。
@@ -144,7 +144,7 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 
 **真机探针 `scripts/verify_engine_links.py`**（手动跑，不进 CI）：测试和探针各管一半——测试钉"代码路径对不对"，探针钉"本机的引擎真的应答"。它走的是同一个 `combined_registry`，所以权限闸门、可执行文件探测和模型 tool call 完全一致；每一步把引擎自己的命令行、`return_code`、stderr 打出来，于是"这条链路是通的"是可读的结论而不是信念。`python scripts/verify_engine_links.py [--workspace 目录]`。引擎会真的被拉起来，所以它会写 `generated/` 并占用引擎时间。**没装引擎的步骤照样报告，只是降级**——区分"Unreal 没装"和"Unreal 链路坏了"正是它存在的理由。探针里的工具名是手写的，`tests/test_workbench_tool_coverage.py` 守着它们仍在注册表里。
 
-**ComfyUI 是服务，不是二进制**：Godot / Blender / Unreal 是拉起来就跑，ComfyUI 得先有一个在 `127.0.0.1:8188` 上监听的服务，探针不会替你起。本机已验证的一条路（ComfyUI Desktop 装在 `D:\Comfy-Desktop`）：
+**ComfyUI 是服务，不是二进制**：Godot / Blender / Unreal 是拉起来就跑，ComfyUI 得先有一个在 `127.0.0.1:8188` 上监听的服务，探针不会替你起。下面这条是本机（Windows）验证过的路，**路径全是这台机器的，换机要按自己的安装位置改**（ComfyUI Desktop 装在 `D:\Comfy-Desktop`）：
 
 ```
 "D:\Comfy-Desktop\ComfyUI-Installs\ComfyUI\ComfyUI\.venv\Scripts\python.exe" ^
@@ -210,8 +210,8 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - 默认使用确定性生成（`design_from_prompt_deterministic`），基于关键词与模板，无需任何外部依赖或 API key。
 - 设置环境变量 `FANTASY_AGENT_USE_LLM=1`（或在 CLI 传 `--llm`）可启用 LLM 后端，由 `fantasy_agent/llm.py` 统一生成 `GameplaySpec`。
 - Studio 的「API 接入」面板可在界面上配置 provider、base URL、model、key 和 timeout，写入 `generated/config/llm-api.json`；`fantasy_agent/api_settings.py` 是唯一的配置读写入口，凭据只存本机且对外只返回掩码。
-- provider 支持 `anthropic` 与 `openai_compatible`（含本地网关）；两条路径都用标准库发 HTTP，**不强制安装 SDK**，`pip install fantasy-agent[llm]` 只是可选的 SDK 逃生通道。
-- 模型默认 `claude-opus-4-8`，可通过 `FANTASY_AGENT_MODEL` 覆盖；凭据走标准的 `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`。界面配置的优先级高于环境变量。
+- provider 有三个：`anthropic`、`openai_compatible`（含本地网关）、`openai_responses`。**生成路径（`llm.complete_json`）只实现了前两个**，两条都走标准库发 HTTP，**不强制安装 SDK**，`pip install fantasy-agent[llm]` 只是可选的 SDK 逃生通道；`openai_responses` 只实现了 tool calling（见「Agent Loop」），把它配成当前 provider 再开 LLM 生成会拿到明确报错并回退确定性路径——不会静默把 Anthropic 形状的请求体连 `x-api-key` 一起发到 `api.openai.com/v1/messages`。
+- 模型默认按 provider 取：`anthropic` → `claude-opus-4-8`，`openai_compatible` → `gpt-4o-mini`，`openai_responses` → `gpt-6-astra`（见 `api_settings.DEFAULT_MODELS`）；可用 `FANTASY_AGENT_MODEL` 覆盖。凭据走标准的 `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`。界面配置的优先级高于环境变量。
 - 任何 LLM 失败（未配置、无 key、API 错误、输出非法或未通过 `GameplaySpec` 校验）都会自动回退到确定性生成，绝不中断流程。无论走哪条路径，返回的都是同一套 `GameplaySpec` 契约，下游 Unreal/Godot/Blender/ComfyUI/QA 编排无需改动。
 
 **机制轴模板（`fantasy_agent/axis_templates.py`）**

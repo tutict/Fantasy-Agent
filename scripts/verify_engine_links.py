@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """Probe the engine links on this machine and print what they actually did.
 
-The test suite pins the *code paths*; it cannot tell you whether Godot, Blender
-or ComfyUI actually answer on the machine in front of you. This can. Every call
-goes through ``combined_registry`` -- the same registry, permission gate and
+The test suite pins the *code paths*; it cannot tell you whether Godot, Blender,
+Unreal or ComfyUI actually answer on the machine in front of you. This can. Every
+call goes through ``combined_registry`` -- the same registry, permission gate and
 executable probe a model tool call goes through -- and each step prints the
 engine's own status, command line and output, so "the link works" is something
 you can read instead of something you have to believe.
