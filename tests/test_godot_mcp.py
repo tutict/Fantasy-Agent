@@ -252,4 +252,3 @@ def test_the_godot_guard_module_does_not_silently_skip_here():
         "but the Godot guard module cannot -- so it skips, and generated GDScript that "
         "Godot refuses to parse would pass unnoticed."
     )
-

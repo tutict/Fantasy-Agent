@@ -109,8 +109,14 @@ def test_the_engine_probe_reports_every_link_without_any_engine_installed(
     def no_server(*_args: object, **_kwargs: object) -> None:
         raise error.URLError("no ComfyUI server in this test")
 
-    monkeypatch.setattr(ComfyUIClient, "get_json", no_server)
-    monkeypatch.setattr(ComfyUIClient, "queue_prompt", no_server)
+    # `history` and `download_image` do not route through `get_json`, and today
+    # they are unreachable here -- `queue_prompt` raises before the run step
+    # gets to them. They are stubbed anyway because "unreachable" is a property
+    # of the current call order, not of this test: a later edit that reads
+    # history first would put a live ComfyUI back in the loop. Necessity here is
+    # not provable, which is stated rather than dressed up.
+    for method in ("get_json", "queue_prompt", "history", "download_image"):
+        monkeypatch.setattr(ComfyUIClient, method, no_server)
 
     steps = verify_engine_links.probe(tmp_path)
 

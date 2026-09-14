@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -116,6 +118,26 @@ def test_the_run_directory_is_outside_the_repo_and_under_the_os_temp_root() -> N
     assert run_dir.resolve().is_relative_to(temp_root)
     assert not run_dir.resolve().is_relative_to(run_tests.REPO_ROOT.resolve())
     assert report.parent == run_tests.REPORT_ROOT
+
+
+def test_two_runs_cannot_be_handed_the_same_directory() -> None:
+    """A name two runs can agree on is a name one run can delete out from under another.
+
+    ``TempPathFactory.getbasetemp`` calls ``rm_rf(basetemp)`` when the path
+    already exists, so the run id has to be unique across processes -- a
+    seconds-resolution timestamp alone is not. What makes this worth a test
+    rather than a comment: the run directory now sits under the OS temp root,
+    which the safe-delete shim exempts, so a collision would silently delete a
+    running suite's directory instead of failing loudly the way it would have
+    inside the repo.
+    """
+
+    ids = {run_tests._run_id() for _ in range(64)}
+
+    assert len(ids) == 64, "run ids collide"
+    assert all(re.fullmatch(r"\d{8}-\d{6}-\d+-[0-9a-f]{8}", value) for value in ids), sorted(ids)
+    # The readable part stays readable, and the pid is in there for debugging.
+    assert all(str(os.getpid()) in value for value in ids)
 
 
 def test_main_creates_the_run_directory_parent(monkeypatch, tmp_path: Path) -> None:

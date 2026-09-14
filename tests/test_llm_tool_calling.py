@@ -308,13 +308,53 @@ def test_sampling_params_follow_the_model_not_the_provider(transport):
 # ── failure modes ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("provider", [ANTHROPIC, OPENAI_COMPATIBLE])
+@pytest.mark.parametrize("provider", sorted(PROVIDERS))
 def test_a_missing_key_is_a_loud_failure_not_a_degraded_run(transport, provider):
+    """Every provider, not the two that happened to be written first.
+
+    Parametrising over two of three is how "a missing key fails loudly on every
+    provider" becomes a claim the suite never checks: the third provider put the
+    request on the wire with an empty credential and only failed once the
+    endpoint answered.
+    """
+
     t = transport(provider, [], api_key="")
 
     with pytest.raises(llm.LLMError, match="No API key configured"):
         _turn(provider, t, messages=[{"role": "user", "content": GOAL}])
     assert t.calls == []
+
+
+def test_json_generation_refuses_the_responses_provider(transport):
+    """``complete_json`` speaks two wire formats; the third must say so.
+
+    Letting it fall into the Anthropic branch posted
+    ``{"model": "gpt-6-astra", "system": ...}`` with an ``x-api-key`` header to
+    ``https://api.openai.com/v1/messages`` -- a 404 that reads as a generic LLM
+    failure, so the caller silently fell back to deterministic generation and
+    the misconfiguration stayed invisible.
+    """
+
+    t = transport(OPENAI_RESPONSES, [{"content": [{"type": "text", "text": "{}"}]}], model="gpt-6-astra")
+
+    with pytest.raises(llm.LLMError, match="tool calling only"):
+        llm.complete_json(system=INSTRUCTIONS, user=GOAL)
+    assert t.calls == [], "no request should reach the wire"
+
+
+@pytest.mark.parametrize("provider", [ANTHROPIC, OPENAI_COMPATIBLE])
+def test_json_generation_still_speaks_the_two_plain_message_formats(transport, provider):
+    """The refusal above must not have narrowed what already worked."""
+
+    reply = (
+        {"content": [{"type": "text", "text": '{"ok": true}'}]}
+        if provider == ANTHROPIC
+        else {"choices": [{"message": {"content": '{"ok": true}'}}]}
+    )
+    t = transport(provider, [reply])
+
+    assert llm.complete_json(system=INSTRUCTIONS, user=GOAL) == {"ok": True}
+    assert len(t.calls) == 1
 
 
 def test_an_unmapped_provider_raises_instead_of_guessing_a_wire_format(monkeypatch):

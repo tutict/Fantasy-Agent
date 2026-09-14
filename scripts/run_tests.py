@@ -50,12 +50,14 @@ Exit codes: 0 all passed, 1 failures or errors, 2 no report was produced.
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
+from secrets import token_hex
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # Reports are tiny, gitignored, and worth keeping: the verdict is read from them.
@@ -65,6 +67,22 @@ REPORT_ROOT = REPO_ROOT / "generated" / "test-tmp"
 # from, so keeping the two in one place is what makes the exemption apply.
 TEMP_ROOT = Path(tempfile.gettempdir()) / "fantasy-agent-pytest"
 
+
+def _run_id() -> str:
+    """A run identifier two concurrent runs cannot agree on.
+
+    pytest's ``TempPathFactory.getbasetemp`` does ``rm_rf(basetemp)`` whenever
+    the path it was handed already exists. A readable seconds-resolution stamp
+    alone is enough for two runs started in the same second to be handed the
+    same path -- and the second one then deletes the first one's directory
+    mid-run. That delete used to be refused (the directory was in the repo,
+    where the safe-delete shim applies); now that it lives under the OS temp
+    root the shim exempts it, so the collision would *succeed*. The timestamp
+    keeps the name readable, the pid and a random suffix keep it unique.
+    """
+
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    return f"{stamp}-{os.getpid()}-{token_hex(4)}"
 
 
 def _run_paths(stamp: str) -> tuple[Path, Path]:
@@ -134,8 +152,8 @@ def main(argv: list[str] | None = None) -> int:
     # argparse's hands, so they reach pytest instead of being rejected here.
     _, pytest_args = parser.parse_known_args(argv)
 
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-    base_temp, xml_path = _run_paths(stamp)
+    run_id = _run_id()
+    base_temp, xml_path = _run_paths(run_id)
     # Both parents must exist before pytest starts. `TempPathFactory` does
     # `basetemp.mkdir(mode=0o700)` -- no `parents=True` -- so a missing
     # TEMP_ROOT surfaces as a FileNotFoundError from inside the `tmp_path`

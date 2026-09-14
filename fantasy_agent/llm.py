@@ -180,6 +180,15 @@ def _responses_tool_turn(
     """``/v1/responses``: the transcript is already in this wire format."""
 
     resolved = resolve_credentials()
+    api_key = str(resolved["api_key"])
+    if not api_key:
+        # The other two providers check this before building a payload; doing it
+        # here too is what makes "a missing key is a loud failure on every
+        # provider" true rather than approximately true. Without it the request
+        # goes out as `Authorization: Bearer ` and only fails once the endpoint
+        # answers -- which is a wasted round trip and a misleading message.
+        raise LLMError("No API key configured for the OpenAI Responses provider.")
+
     effective_model = model or str(resolved["model"])
     payload: dict[str, Any] = {
         "model": effective_model,
@@ -608,12 +617,29 @@ def complete_json(
 
     Strips a leading/trailing markdown code fence if present, then parses.
 
+    Speaks the plain-messages wire format of ``anthropic`` and
+    ``openai_compatible``. ``openai_responses`` serves tool calling only, so
+    configuring it here raises rather than quietly posting an Anthropic body to
+    an OpenAI host.
+
     Raises:
         LLMError: on missing package, API failure, or unparseable / non-object
             output. Callers should treat this as a signal to fall back.
     """
 
     resolved = resolve_credentials()
+
+    if resolved["provider"] == OPENAI_RESPONSES:
+        # The Responses API is wired up for tool calling only. Falling through to
+        # the Anthropic branch would POST an Anthropic-shaped body with an
+        # `x-api-key` header to `<openai-base>/messages` -- a 404 the caller
+        # would read as a generic LLM failure and quietly fall back from, which
+        # hides a misconfiguration that is trivial to state out loud.
+        raise LLMError(
+            "the openai_responses provider serves tool calling only; plain JSON "
+            "generation is not implemented for it. Configure anthropic or "
+            "openai_compatible in the API access panel to use the LLM backend."
+        )
 
     if resolved["provider"] == OPENAI_COMPATIBLE:
         raw = _complete_openai_compatible(
