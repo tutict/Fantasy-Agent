@@ -150,6 +150,8 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 
 **状态面板也走这套解析**：`apps/studio/app/main.py` 的 `_probe_executable` 接受一个 resolver，不再自己复制一份 glob/PATH 搜索——它复制过，于是执行器认得出自定义根目录的引擎、而 `/api/tool-status` 报 `unavailable`，面板和它要启动的进程各说各话。`tests/test_studio_app.py` 用打桩的 resolver 钉住"面板没有第二份实现"；Unreal 那一格显示的是真正会启动的 `-Cmd` 二进制，不是磁盘上那个 `UnrealEditor.exe`。
 
+**ComfyUI 那格同理**：`_probe_comfyui` 曾自建候选端点，且跳过 `_is_local_http_endpoint` 这道本地限定——`COMFYUI_ENDPOINT` 指到远程时面板报 `ready`，而每个 run 都拒绝同一个端点（`comfyui_mcp` 的 `allow_remote_endpoint` 默认 false），顺带把设计上要显式授权的对外请求发出去了。现在它直接读 `local_tools._comfyui_target()`，与 Unreal 那格同一个套路。两条守卫钉住它：一条打桩 resolver、要求面板只复述 resolver 的答案（自建探测读不到桩，两条分支都会红），一条记录 resolver 实际拨的 URL、要求非本机端点从未被请求。`scripts/mutation_check_all_guards.py` 的 `C1`/`C2` 证明这两条守卫承重。
+
 **ComfyUI 是服务，不是二进制**：Godot / Blender / Unreal 是拉起来就跑，ComfyUI 得先有一个在 `127.0.0.1:8188` 上监听的服务，探针不会替你起。下面这条是本机（Windows）验证过的路，**路径全是这台机器的，换机要按自己的安装位置改**（ComfyUI Desktop 装在 `D:\Comfy-Desktop`）：
 
 ```
@@ -161,7 +163,7 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
   --input-directory "D:\Comfy-Desktop\ComfyUI-Shared\input"
 ```
 
-两个坑：`--base-directory` 会要求 `custom_nodes` 目录存在，用 `--models-directory` 分别挂更省事；带 torch 的解释器在 `ComfyUI/ComfyUI/.venv`，外层 `standalone-env` **没有 torch**（manifest 声称有，实际没装）。**底模要自己备**：`models/checkpoints` 原本是空的，验证时下的是 `v1-5-pruned-emaonly.safetensors`（SD1.5 fp32，4.27GB）。ComfyUI 在启动时缓存模型清单，加了底模要**重启服务**才看得到。
+三个坑：`--base-directory` 会要求 `custom_nodes` 目录存在，用 `--models-directory` 分别挂更省事；带 torch 的解释器在 `ComfyUI/ComfyUI/.venv`，外层 `standalone-env` **没有 torch**（manifest 声称有，实际没装）；上面这条命令行是给 cmd / PowerShell 写的（`D:\...`），**从 Git Bash 直接跑会被 python 收到字面量 `/d/Comfy-Desktop/...`**，报 `argument --models-directory: The path ... does not exist`——在 Bash 里要把路径写成 `D:/...`。**底模要自己备**：`models/checkpoints` 原本是空的，验证时下的是 `v1-5-pruned-emaonly.safetensors`（SD1.5 fp32，4.27GB）。ComfyUI 在启动时缓存模型清单，加了底模要**重启服务**才看得到。
 
 **探针报告的路径按 workspace 解析，不按 cwd**：各 bridge 报的都是 workspace 相对路径，直接 `Path(p).exists()` 会用 cwd 去查，于是拿仓库里几个月前的旧文件给本轮打勾（Blender 那段曾经把 5 月的 fbx 报成刚导出的）。`_resolve()` 是唯一出处，有测试钉着。
 

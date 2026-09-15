@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import json
-import os
 import shutil
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from concurrent.futures import TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
-from urllib import error, request
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -42,7 +38,6 @@ from fantasy_agent.contracts import (
     SpecValidationReport,
     StrictModel,
     UnrealProjectPlan,
-    default_comfyui_endpoint_candidates,
 )
 from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.idea_discovery import extract_idea_seed, prompt_request_from_seed
@@ -190,72 +185,47 @@ def _mcp_status_item(
     }
 
 
-def _http_json(url: str, timeout: float = 0.75) -> dict[str, Any] | list[Any]:
-    req = request.Request(url, method="GET")
-    with request.urlopen(req, timeout=timeout) as response:
-        payload = response.read().decode("utf-8")
-    return json.loads(payload) if payload else {}
-
-
 def _probe_comfyui() -> dict[str, Any]:
-    env_candidates = [
-        value
-        for value in [os.environ.get("COMFYUI_URL"), os.environ.get("COMFYUI_ENDPOINT")]
-        if value
-    ]
-    candidates = [*env_candidates, *default_comfyui_endpoint_candidates()]
-    failures: list[str] = []
-    executor = ThreadPoolExecutor(max_workers=max(1, len(candidates)))
-    futures = {
-        executor.submit(_http_json, f"{endpoint.rstrip('/')}/system_stats"): endpoint
-        for endpoint in candidates
-    }
-    handled_futures = set()
-    try:
-        completed = as_completed(futures, timeout=1.25)
-        for future in completed:
-            handled_futures.add(future)
-            endpoint = futures[future]
-            try:
-                stats = future.result()
-            except (OSError, TimeoutError, error.URLError, json.JSONDecodeError) as exc:
-                failures.append(f"{endpoint}: {exc}")
-                continue
-            system = stats.get("system", {}) if isinstance(stats, dict) else {}
-            version = system.get("comfyui_version") or "reachable"
-            return _mcp_status_item(
-                service_id="comfyui",
-                label="ComfyUI",
-                status="ready",
-                target=endpoint,
-                detail=f"Connected to ComfyUI ({version}).",
-                next_action="Run capability probe before submitting visual reference jobs.",
-                detail_key="mcpDetailComfyReady",
-                detail_args={"version": version},
-                next_action_key="mcpNextComfyReady",
-                metadata={"version": version},
-            )
-    except FutureTimeoutError:
-        failures.append("Timed out probing local ComfyUI endpoints.")
-    finally:
-        executor.shutdown(wait=False, cancel_futures=True)
-    for future, endpoint in futures.items():
-        if future in handled_futures or not future.done():
-            continue
-        try:
-            future.result()
-        except (OSError, TimeoutError, error.URLError, json.JSONDecodeError) as exc:
-            failures.append(f"{endpoint}: {exc}")
+    """Report the ComfyUI service a run would actually talk to.
+
+    Resolved through ``local_tools._comfyui_target()`` rather than probed
+    again here. ComfyUI was the last target still probed twice: this module
+    built its own candidate list from ``COMFYUI_URL`` / ``COMFYUI_ENDPOINT``
+    without the local-only check ``_comfyui_target`` applies, so a panel
+    pointed at a remote endpoint reported ``ready`` while every run refused
+    the same endpoint -- the drift ``_probe_executable`` exists to prevent,
+    and the reason its resolver is passed in instead of searched for again.
+
+    The vocabulary stays the panel's (``ready`` / ``unavailable``); the
+    resolver reports ``degraded`` because it also serves callers that need to
+    distinguish "missing" from "broken".
+    """
+
+    target = local_tools._comfyui_target()
+    if target["status"] == "ready":
+        version = str(target["metadata"].get("version") or "reachable")
+        return _mcp_status_item(
+            service_id="comfyui",
+            label="ComfyUI",
+            status="ready",
+            target=str(target["target"]),
+            detail=f"Connected to ComfyUI ({version}).",
+            next_action="Run capability probe before submitting visual reference jobs.",
+            detail_key="mcpDetailComfyReady",
+            detail_args={"version": version},
+            next_action_key="mcpNextComfyReady",
+            metadata={"version": version},
+        )
     return _mcp_status_item(
         service_id="comfyui",
         label="ComfyUI",
         status="unavailable",
-        target=", ".join(candidates),
+        target=str(target["target"]),
         detail="No local ComfyUI endpoint responded.",
         next_action="Start ComfyUI and confirm it is listening on 127.0.0.1:8188.",
         detail_key="mcpDetailComfyMissing",
         next_action_key="mcpNextComfyMissing",
-        metadata={"failures": failures[-3:]},
+        metadata={"failures": target["metadata"].get("failures", [])},
     )
 
 

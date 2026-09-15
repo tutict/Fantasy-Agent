@@ -160,6 +160,93 @@ def test_a_missing_engine_is_reported_unavailable(monkeypatch):
     assert status["required_ready"] < status["required_total"]
 
 
+def test_the_comfyui_panel_asks_the_shared_resolver_instead_of_probing_again(monkeypatch):
+    """ComfyUI was the last target the panel probed a second time.
+
+    The panel built its own candidate list from ``COMFYUI_URL`` /
+    ``COMFYUI_ENDPOINT`` and skipped the local-only check
+    ``local_tools._comfyui_target`` applies, so pointed at a remote endpoint
+    it reported ``ready`` while every run refused the same endpoint -- the
+    drift ``_probe_executable`` takes a resolver to prevent.
+
+    Stubbing the resolver is what makes this load-bearing: a panel that probes
+    on its own never reads the stub, so both verdicts below go red.
+    """
+
+    module = _load_studio_app()
+
+    monkeypatch.setattr(
+        module.local_tools,
+        "_comfyui_target",
+        lambda: {
+            "id": "comfyui",
+            "status": "ready",
+            "target": "http://127.0.0.1:9999",
+            "openable": True,
+            "detail_key": "manualComfyReady",
+            "metadata": {"version": "9.9.9"},
+        },
+    )
+    services = {s["id"]: s for s in module.mcp_status("UE5")["services"]}
+
+    assert services["comfyui"]["status"] == "ready"
+    assert services["comfyui"]["target"] == "http://127.0.0.1:9999"
+    assert services["comfyui"]["metadata"]["version"] == "9.9.9"
+    assert services["comfyui"]["detail_args"] == {"version": "9.9.9"}
+
+    monkeypatch.setattr(
+        module.local_tools,
+        "_comfyui_target",
+        lambda: {
+            "id": "comfyui",
+            "status": "degraded",
+            "target": "http://127.0.0.1:8188",
+            "openable": True,
+            "detail_key": "manualComfyMissing",
+            "metadata": {"failures": ["http://127.0.0.1:8188: timed out"]},
+        },
+    )
+    services = {s["id"]: s for s in module.mcp_status("UE5")["services"]}
+
+    assert services["comfyui"]["status"] == "unavailable"
+    assert services["comfyui"]["next_action_key"] == "mcpNextComfyMissing"
+    assert services["comfyui"]["metadata"]["failures"] == ["http://127.0.0.1:8188: timed out"]
+
+
+def test_a_remote_comfyui_endpoint_is_never_probed_by_the_panel(monkeypatch):
+    """A non-local ``COMFYUI_ENDPOINT`` must not reach the panel's sockets.
+
+    Runs refuse remote endpoints unless ``allow_remote_endpoint`` is set, so a
+    panel that probes one advertises a service no run will use -- and makes an
+    outbound request the design gates behind that flag. Recording what the
+    shared resolver actually dials pins both halves: the panel consulted the
+    resolver at all, and the only hosts it touched were local ones.
+    """
+
+    module = _load_studio_app()
+    monkeypatch.setenv("COMFYUI_ENDPOINT", "http://comfyui.remote.invalid:8188")
+
+    seen: list[str] = []
+
+    def recording_http_json(url, timeout=0.45):
+        seen.append(url)
+        raise OSError("offline for the test")
+
+    monkeypatch.setattr(module.local_tools, "_http_json", recording_http_json)
+
+    services = {s["id"]: s for s in module.mcp_status("UE5")["services"]}
+    comfyui = services["comfyui"]
+
+    assert seen, "the panel never asked the shared resolver to find ComfyUI"
+    for url in seen:
+        assert "remote.invalid" not in url, url
+        assert "127.0.0.1" in url or "localhost" in url, url
+    assert comfyui["status"] == "unavailable"
+    assert all(
+        "remote.invalid" not in failure for failure in comfyui["metadata"]["failures"]
+    ), comfyui["metadata"]["failures"]
+
+
 def test_studio_shell_includes_bilingual_ui_controls():
     module = _load_studio_app()
     html = module.STATIC_DIR.joinpath("index.html").read_text(encoding="utf-8")

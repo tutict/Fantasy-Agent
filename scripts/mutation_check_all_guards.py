@@ -183,6 +183,31 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "tests/test_studio_app.py::test_the_unreal_panel_reports_the_binary_a_run_would_launch",
     ),
     (
+        "C1 the ComfyUI panel answers for itself instead of asking the resolver",
+        "apps/studio/app/main.py",
+        b"    target = local_tools._comfyui_target()\n",
+        (
+            b'    target = {"status": "ready", "target": "http://127.0.0.1:8188",'
+            b' "metadata": {}}\n'
+        ),
+        "tests/test_studio_app.py::test_the_comfyui_panel_asks_the_shared_resolver_instead_of_probing_again",
+    ),
+    (
+        "C2 the local-endpoint check stops rejecting non-local hosts",
+        "fantasy_agent/local_tools.py",
+        (
+            b"def _is_local_http_endpoint(endpoint: str) -> bool:\n"
+            b"    parsed = parse.urlparse(endpoint)\n"
+            b'    return parsed.scheme in {"http", "https"} and parsed.hostname in {\n'
+            b'        "127.0.0.1",\n'
+            b'        "localhost",\n'
+            b'        "::1",\n'
+            b"    }\n"
+        ),
+        b"def _is_local_http_endpoint(endpoint: str) -> bool:\n    return True\n",
+        "tests/test_studio_app.py::test_a_remote_comfyui_endpoint_is_never_probed_by_the_panel",
+    ),
+    (
         "U3 the manifest reader stops tolerating a truncated file",
         "fantasy_agent/local_tools.py",
         (
