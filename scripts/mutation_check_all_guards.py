@@ -112,6 +112,28 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "tests/test_llm_tool_calling.py::test_a_missing_key_is_a_loud_failure_not_a_degraded_run",
     ),
     (
+        "L3 the openai_compatible tool turn stops being dispatched",
+        "fantasy_agent/llm.py",
+        (
+            b"    if provider == OPENAI_COMPATIBLE:\n"
+            b"        return _openai_chat_tool_turn(\n"
+            b"            instructions=instructions,"
+        ),
+        (
+            b'    if provider == "never":\n'
+            b"        return _openai_chat_tool_turn(\n"
+            b"            instructions=instructions,"
+        ),
+        "tests/test_llm_tool_calling.py::test_the_loop_accepts_a_tool_call_on_every_provider",
+    ),
+    (
+        "L4 the chat transcript relabels a tool result as an assistant turn",
+        "fantasy_agent/llm.py",
+        b'                    "role": "tool",\n                    "tool_call_id": _call_id(item),',
+        b'                    "role": "assistant",\n                    "tool_call_id": _call_id(item),',
+        "tests/test_llm_tool_calling.py::test_openai_chat_nests_tools_under_function_and_keys_results_by_call_id",
+    ),
+    (
         "R3 run id loses its uniqueness",
         "scripts/run_tests.py",
         b'return f"{stamp}-{os.getpid()}-{token_hex(4)}"\n',
