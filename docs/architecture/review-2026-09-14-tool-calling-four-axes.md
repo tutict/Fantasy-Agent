@@ -62,7 +62,7 @@
 
 ## 变异验证（确认守卫真会红，不是假绿）
 
-`generated/mutation_check_all_guards.py` 扩到 11 条，**11/11 全红，每个源文件逐字节还原**：
+`generated/mutation_check_all_guards.py` 扩到 11 条，**11/11 全红，每个源文件逐字节还原**（该脚本此后迁至 `scripts/mutation_check_all_guards.py` 并接进 CI，见 2026-09-15 报告的"后续"）：
 
 | 编号 | 变异 | 结果 |
 |---|---|---|

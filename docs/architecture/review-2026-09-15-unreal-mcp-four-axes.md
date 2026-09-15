@@ -28,10 +28,10 @@
 | C7 | 正确性 | 空 `project_file` 会怎样 | — | 已核对，无问题：`_assert_unreal_project_file` 抛 `UnrealMCPSafetyError`，响亮失败 |
 | S1 | 安全性 | `_program_data_dir()` 不校验 `PROGRAMDATA` 是否绝对路径；相对值按 cwd 解析，可让 cwd 里的伪造 manifest 指定任意 exe 当引擎 | P2→P3 | 采纳（降级）：威胁模型下本机用户本就能直接设 `UNREAL_EDITOR`，并非新增攻击面；但校验零成本，**已加 `is_absolute()` + 测试 + mutation** |
 | S2 | 安全性 | manifest 内容被视为可信输入 | P2→P3 | 与 S1 同源，随 S1 一并收敛 |
-| S5 | 安全性 | 探针用 `confirmed_side_effects=True` + `allow_execute=True` 是否绕过闸门 | — | 已核对，无问题：走同一 `combined_registry().call`，`EXECUTE` 权限与 handler 内确认检查都在。（附带发现：注册表在 `allow_execute=True` 时总会注入 `confirmed_side_effects=True`，故 handler 内那层检查经注册表路径不可达——设计冗余，P3，未动） |
+| S5 | 安全性 | 探针用 `confirmed_side_effects=True` + `allow_execute=True` 是否绕过闸门 | — | 已核对，无问题：走同一 `combined_registry().call`，`EXECUTE` 权限与 handler 内确认检查都在。（附带发现经**复核为误判**，见文末"后续"：注册表只在模型未提供该字段时注入，模型显式发 `false` 时 handler 内那层检查**照样命中**） |
 | S3 / S4 / S6 / S7 | 安全性 | 路径穿越 / 共享 TEMP / 日志含本地路径 / 硬编码密钥 | — | 已核对，无问题：hash 只含 `[0-9a-f]` 跳不出 temp 根；TEMP 按用户隔离；输出含本机绝对路径但无凭据；`grep` 无任何密钥模式 |
-| M2 | 可维护性 | 实测记录文档的「改动」表列了 `generated/mutation_check_all_guards.py`，而它被 gitignore | P2→P3 | 部分成立（该文件确实被改，只是不入库），**已加脚注**说明它不在版本控制内 |
-| M5 | 可维护性 | S1/S2 等 mutation 守卫位于 gitignored 文件，CI 永不执行 | P2 | **交你定**（见下） |
+| M2 | 可维护性 | 实测记录文档的「改动」表列了 `generated/mutation_check_all_guards.py`，而它被 gitignore | P2→P3 | 部分成立（该文件确实被改，只是不入库），已加脚注；**后续已迁到 `scripts/` 并进版本控制** |
+| M5 | 可维护性 | S1/S2 等 mutation 守卫位于 gitignored 文件，CI 永不执行 | P2 | **已处理**（见文末"后续"） |
 | M1 / M3 / M6 | 可维护性 | 文档与代码一致性 / 是否存在第三份引擎搜索 / 行尾 | — | 已核对，无问题：无残留的"预期 degraded"表述；所有调用方都复用 `local_tools._find_*`；`i/lf` 无 churn |
 | M4 / M7 | 可维护性 | 测试硬编码 `DerivedDataCache`；`_find_blender` / `_find_godot` / `_find_unreal` 三种风格 | P3 | 驳回：风格偏好，非代价 |
 | T1 | 测试覆盖 | `test_unreal_discovery_reports_nothing_rather_than_raising` 是"静默通过" | P1→P3 | 驳回：它对**自己的声称**（坏 manifest 不抛异常）承重——补 U3 变异守卫后确认会红；它不覆盖"manifest 特性整体缺失"，而那是另一条测试的职责 |
@@ -57,9 +57,32 @@
 | `tests/test_unreal_mcp.py` | 新增：版本排序不受路径无关数字影响、无版本段排在其后、相对 `PROGRAMDATA` 不跟随；改 `test_unreal_is_found_through_the_launcher_manifest` 的 plugin fixture（R1） |
 | `apps/frontend/src/shared/types.ts` | `McpService` 补 `metadata`（T6） |
 | `docs/architecture/mcp-connectivity-2026-09-15.md` | 改动表加脚注：mutation 脚本不入版本控制（M2） |
-| `generated/mutation_check_all_guards.py` | 新增 U3（manifest 容错被删）、U4（版本键退回全数字）、U5（相对 PROGRAMDATA 被跟随） |
+| `generated/mutation_check_all_guards.py` | 新增 U3（manifest 容错被删）、U4（版本键退回全数字）、U5（相对 PROGRAMDATA 被跟随）。该文件随后迁至 `scripts/mutation_check_all_guards.py` |
 
-## 交给你的两件事
+## 后续（本轮之后的一次提交）
 
-1. **mutation 守卫仍在 gitignore 里**（`generated/*`，M5/T5）。它们是本仓库最防回归的一层，却只存在于本机、CI 不跑。挪进 `scripts/` 并提交是显而易见的修法，但跑一轮约 55 秒、而且要决定是否接进 CI——这个取舍该你定，我没动（上一轮已提过一次）。
-2. **S5 的附带发现**：注册表在 `allow_execute=True` 时无条件注入 `confirmed_side_effects=True`，于是 bridge 里的 `if not request.confirmed_side_effects` 检查经注册表路径永远不会命中。当前无害（权限闸门在前面拦着），但这是"看起来有两道锁、其实只有一道"的结构，改动闸门时容易误判。
+上面两条都已处理。
+
+**1. mutation 守卫进版本控制并接进 CI（M5/T5）**
+
+`generated/mutation_check_all_guards.py` → `scripts/mutation_check_all_guards.py`。原处它被 `generated/*` gitignore，所以永远不会进仓库、也永远不会在 CI 里跑。搬家后立刻暴露三件事：
+
+- **原文件从未被 lint 过**（`ruff check` 只覆盖 `fantasy_agent tests apps scripts`，不含 `generated/`），当场 3 处报错，都修了。
+- **没有引擎的机器跑不完它**。G2/G3 两条守卫在无 Godot 时被 `pytest.mark.skipif` 跳过 → runner 退出 0 → 旧判定 `caught = exit_code != 0` 会报 `GREEN (MISSED!)`，也就是**在 CI 上必然假红**。现在这两条在 `ENGINE_REQUIREMENTS` 里声明所需引擎，缺失时报 `N/A`（单独计数、显式打印）而不是失败。
+- **退出码两个方向都会骗人**。节点名失效时 pytest 收集到 0 条、runner 退出 2，`exit_code != 0` 会把它读成"抓住了"——死守卫看起来是活的。判定改为读 runner 自己的计数行，`NO RUN`（收集到 0 条）与 `SKIPPED`（守卫自己跳过）都单独报为**未证明**。
+
+**2. S5 的"第二道锁不可达"经复核不成立**
+
+`confirmed_side_effects` 不在 `_ENGINE_HIDDEN_ARGS` 里（那里只有 `create_godot_project_structure` 的几个 spec 字段），模型看得到它、也能显式发 `false`；注册表的注入条件是 `spec.confirm_field not in args`，显式 `false` 会被原样保留，handler 里那层检查照样命中。实测：
+
+```
+A) 显式 false + allow_execute=True  -> refused  Unreal MCP blocked execution because the operation was not confirmed.
+B) 省略字段 + allow_execute=True    -> error    （注入 true，真的走到 bridge 了）
+C) 省略字段 + 无授权                -> refused  （权限闸门拦下）
+```
+
+`tests/test_agent_loop.py::test_an_explicit_false_stays_a_dry_run` 本来就钉着这条语义（用 `write_files`，机制相同）。所以这是**两道都活着的锁**，不是"看起来两道、实际一道"。结论：不改代码，只把记录改对。
+
+**3. 新增 `tests/test_mutation_harness.py`**
+
+harness 自己的失效是隐形的（针点漂了打印 SKIP、守卫改名让退出码看起来像抓住了）。8 条静态守卫在 CI 里校验它的输入，不跑任何变异。同时 harness 长出 5 条**自变异**用例（H1–H5），把这些守卫本身也钉住——用同一个机制证明它们真会红。

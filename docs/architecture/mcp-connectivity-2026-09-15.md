@@ -46,7 +46,7 @@ MCP tool contracts -> 17 个
 |---|---|
 | `apps/studio/app/main.py` | 删掉复制的 `_candidate_paths` / `_existing_env_path` / `_find_executable` / `_godot_candidate_key` / `_find_godot_executable`；`_probe_executable` 改为接受 `resolver`；新增 `_probe_unreal`，target 解析到真正会启动的 `-Cmd` 二进制；Blender / Godot / Unreal 全部改走 `local_tools` |
 | `tests/test_studio_app.py` | 原 `test_studio_detects_downloaded_godot_install` 打桩已删的函数，改写为"打桩 resolver、断言面板跟随"；新增 Unreal `-Cmd` 显示与"引擎缺失仍报 unavailable"两条守卫 |
-| `generated/mutation_check_all_guards.py` | 新增 S1（面板不再询问共享 resolver）、S2（面板报编辑器而非 `-Cmd`）。该文件被 `generated/*` 规则 gitignore，**不入版本控制**——只存在于本机，CI 不会执行它 |
+| `generated/mutation_check_all_guards.py` | 新增 S1（面板不再询问共享 resolver）、S2（面板报编辑器而非 `-Cmd`）。本轮当时它仍在 `generated/*`（被 gitignore，不入版本控制）——随后已迁到 `scripts/mutation_check_all_guards.py` 并接进 CI，见下文"后续" |
 | `AGENTS.md` | 在"引擎装在哪由 `local_tools` 解析"下补"状态面板也走这套解析" |
 
 `unreal` target 现在显示 `-Cmd` 版，因为 headless commandlet 走的是它；只报 `UnrealEditor.exe` 会让"面板 ready"和"实际启动的进程"继续不一致。
@@ -65,4 +65,8 @@ MCP tool contracts -> 17 个
 
 - **前端三道门没重跑**：本次只改后端与文档，前端源码与 API 字段形状都未变。
 - **ComfyUI 未在本次复验**：其 `unavailable` 是"服务没起"的正确报告，链路此前已用真实服务验证。
+
+## 后续（本轮之后的一次提交）
+
+这条 review 提出的"mutation 守卫只在 `generated/` 里、CI 永不执行"已处理：harness 迁到 `scripts/mutation_check_all_guards.py`（进版本控制）、接进 CI，并补齐了它自身的三处弱点——引擎缺失的用例报"不适用"而非失败、判定改读 runner 的计数而非退出码（节点名失效时退出码看起来像"抓住了"）、新增 `tests/test_mutation_harness.py` 在 CI 里静态校验针点与守卫名。
 - **`ruff format` 未执行**：该文件在 HEAD 上就有三处不符合 format（与本次改动无关），CI 只跑 `ruff check`，所以没有顺手 reformat 以免污染 diff。
