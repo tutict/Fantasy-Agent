@@ -142,7 +142,9 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 
 **暴露范围跟着授权走**：不给授权时循环只看到只读检查工具（`validate_*` / `probe_*`）；`allow_write` 放到 write 级；`allow_execute` 才放出 `run_*`。
 
-**真机探针 `scripts/verify_engine_links.py`**（手动跑，不进 CI）：测试和探针各管一半——测试钉"代码路径对不对"，探针钉"本机的引擎真的应答"。它走的是同一个 `combined_registry`，所以权限闸门、可执行文件探测和模型 tool call 完全一致；每一步把引擎自己的命令行、`return_code`、stderr 打出来，于是"这条链路是通的"是可读的结论而不是信念。`python scripts/verify_engine_links.py [--workspace 目录]`。引擎会真的被拉起来，所以它会写 `generated/` 并占用引擎时间。**没装引擎的步骤照样报告，只是降级**——区分"Unreal 没装"和"Unreal 链路坏了"正是它存在的理由。探针里的工具名是手写的，`tests/test_workbench_tool_coverage.py` 守着它们仍在注册表里。
+**真机探针 `scripts/verify_engine_links.py`**（手动跑，不进 CI）：测试和探针各管一半——测试钉"代码路径对不对"，探针钉"本机的引擎真的应答"。它走的是同一个 `combined_registry`，所以权限闸门、可执行文件探测和模型 tool call 完全一致；每一步把引擎自己的命令行、`return_code`、stderr 打出来，于是"这条链路是通的"是可读的结论而不是信念。`python scripts/verify_engine_links.py [--workspace 目录]`。引擎会真的被拉起来，所以它会写 `generated/` 并占用引擎时间。Unreal 那一步是真的起 headless editor（`DataValidation` commandlet）——只把 `.uproject` 写出来不算验证，因为"没装"和"坏了"在磁盘上看一模一样；asset ingest / level assembly 要脚本，探针不建，所以不用它们做启动测试。**没装引擎的步骤照样报告，只是降级**——区分"Unreal 没装"和"Unreal 链路坏了"正是它存在的理由。探针里的工具名是手写的，`tests/test_workbench_tool_coverage.py` 守着它们仍在注册表里。
+
+**引擎装在哪由 `local_tools` 解析，别写死路径**：`_find_unreal` 先读 Epic 自己的 `%PROGRAMDATA%\Epic\UnrealEngineLauncher\LauncherInstalled.dat`，再退回 `Program Files` 路径模式。原因是 Launcher 允许把引擎装到任意根目录——本机 `UE_5.8` 在 `C:\ue\UE_5.8`，而 `C:\Program Files\Epic Games\UE_5.8` 只剩一个空的 Launcher stub，所以只靠路径模式会对着装好的引擎报"未安装"。manifest 里插件行（`FabPlugin_5.8` / `QuixelBridge_5.7`）和引擎行同在一个目录，只认 `ArtifactId` 以 `UE_` 开头的那几条。`tests/test_unreal_mcp.py` 钉着"自定义根目录能发现""插件的版本号不算引擎版本""manifest 缺失或损坏读作未安装而不是抛异常"。
 
 **ComfyUI 是服务，不是二进制**：Godot / Blender / Unreal 是拉起来就跑，ComfyUI 得先有一个在 `127.0.0.1:8188` 上监听的服务，探针不会替你起。下面这条是本机（Windows）验证过的路，**路径全是这台机器的，换机要按自己的安装位置改**（ComfyUI Desktop 装在 `D:\Comfy-Desktop`）：
 
@@ -312,6 +314,7 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - 降级：DataValidation 失败标记 failed，但前面工程已生成（与 Godot import 失败一致）。
 - session 产物布局：`generated/unreal/sessions/<session_id>/<project>/`，保持在 `generated/unreal` 沙箱前缀内。
 - headless 用 `UnrealEditor-Cmd.exe`：`local_tools._unreal_cmd_executable()` 把探测到的 `UnrealEditor.exe` 映射到同目录 Cmd 版。
+- **本地 DDC 路径有 119 字符上限，别让它跟着工程目录长**：`_unreal_env()` 会把 `UE-LocalDataCachePath` 指到 `<工程目录>/DerivedDataCache`（让生成的 demo 自带缓存），但 Unreal 的 `FileSystemCacheStore` 在路径超过 `unreal_mcp.MAX_LOCAL_DDC_PATH`（119）时**在 commandlet 跑起来之前就直接 Fatal 退出**，退出码 3，报"缓存路径 ... 长于119个字符"。实测本机默认 workspace 的路径是 105（贴线），而探针多嵌一层 `--workspace` 就变成 133、当场炸——症状和"引擎坏了"完全一样。所以 `_local_ddc_dir()` 只在路径放得下时才留在工程内，放不下就按工程路径哈希挪到 OS 临时根下的 `fantasy-agent-ue-ddc/<hash>`；缓存丢了只损失编译时间，不损失产物。`tests/test_unreal_mcp.py` 钉着"长路径必须挪出去""短路径必须留在工程内""两个长路径工程不能共用缓存目录"。
 - 引擎路由：CLI 按 `--engine` 分派——含 godot 走 Godot 路径，含 ue/unreal 走 Unreal 路径。`--engine UE5 --execute [--yes] [--unreal-exe PATH] [--no-import]`。`--with-assets`/`--with-visuals` 在 Unreal 路径下 M4 暂不适用（传了会提示忽略）。
 
 ## Godot Builder

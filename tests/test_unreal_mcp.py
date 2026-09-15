@@ -1,6 +1,7 @@
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from fantasy_agent.contracts import (
     ComfyUIRunManifest,
@@ -20,7 +21,12 @@ from fantasy_agent.contracts import (
     UnrealMCPValidateLevelAssemblyRequest,
     UnrealProjectPlan,
 )
-from fantasy_agent.unreal_mcp import UnrealMCPBridge, call_unreal_mcp_tool, tool_descriptors
+from fantasy_agent.unreal_mcp import (
+    MAX_LOCAL_DDC_PATH,
+    UnrealMCPBridge,
+    call_unreal_mcp_tool,
+    tool_descriptors,
+)
 from fantasy_agent.workflows import run_director_workflow
 
 
@@ -778,4 +784,187 @@ def test_without_a_spec_the_hand_tuned_greybox_survives(tmp_path: Path):
     }
     # A spec-less level must not invent enemy pressure.
     assert not [p for p in manifest.placements if p.gameplay_role == "enemy"]
+
+
+# ── Unreal discovery ─────────────────────────────────────────────────────────
+# `scripts/verify_engine_links.py` and the engine tools all reach Unreal through
+# `local_tools._find_unreal`, so a resolver that cannot see the engine reports
+# "not installed" for a machine that has one -- the exact confusion the probe
+# exists to remove.
+
+
+def _fake_install(root: Path, folder: str, *, with_editor: bool = True) -> str:
+    """A fake engine root, optionally carrying an UnrealEditor.exe."""
+
+    install = root / folder
+    if with_editor:
+        editor = install / "Engine" / "Binaries" / "Win64" / "UnrealEditor.exe"
+        editor.parent.mkdir(parents=True, exist_ok=True)
+        editor.write_bytes(b"")
+    return str(install)
+
+
+def _isolate_unreal_discovery(
+    monkeypatch: Any, tmp_path: Path, installations: list[dict[str, Any]]
+) -> Path:
+    """Point `_find_unreal` at a fixture Launcher manifest, and nothing else.
+
+    The manifest is only one of several discovery sources, so the others are
+    closed off here: without that, a developer machine with a real engine under
+    ``Program Files`` answers for the fixture and the test quietly stops
+    covering the manifest. This is a deliberate narrowing, not an accident.
+    """
+
+    from fantasy_agent import local_tools
+
+    program_data = tmp_path / "ProgramData"
+    manifest_dir = program_data / "Epic" / "UnrealEngineLauncher"
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    (manifest_dir / "LauncherInstalled.dat").write_text(
+        json.dumps({"InstallationList": installations}), encoding="utf-8"
+    )
+
+    monkeypatch.setenv("PROGRAMDATA", str(program_data))
+    monkeypatch.delenv("UNREAL_EDITOR", raising=False)
+    monkeypatch.delenv("UE_EDITOR", raising=False)
+    monkeypatch.setattr(local_tools.shutil, "which", lambda _name: None)
+    monkeypatch.setattr(local_tools, "_candidate_paths", lambda _patterns: [])
+    return program_data
+
+
+def test_unreal_is_found_through_the_launcher_manifest(monkeypatch, tmp_path: Path):
+    """The engine can live outside ``Program Files``, and the manifest is the
+    only source that knows.
+
+    UE_5.8 on this machine sits at ``C:\\ue\\UE_5.8`` while ``Program Files\\
+    Epic Games\\UE_5.8`` holds nothing but an empty Launcher stub -- so a
+    resolver built from path patterns alone reports "not installed" on a
+    machine with a perfectly good engine. The fixture mirrors that shape.
+    """
+
+    from fantasy_agent import local_tools
+
+    engine_root = _fake_install(tmp_path / "custom", "UE_5.8")
+    # A plugin row pointing at a root that really does hold an editor. It must
+    # not answer for the engine: a plugin's version is not an engine version,
+    # and letting one win would silently resolve to the wrong UE build.
+    plugin_root = _fake_install(tmp_path / "custom", "QuixelBridge_5.9")
+    _isolate_unreal_discovery(
+        monkeypatch,
+        tmp_path,
+        [
+            {"ArtifactId": "QuixelBridge_5.9", "InstallLocation": plugin_root},
+            {"ArtifactId": "UE_5.8", "InstallLocation": engine_root},
+        ],
+    )
+
+    assert local_tools._find_unreal() == str(
+        Path(engine_root) / "Engine" / "Binaries" / "Win64" / "UnrealEditor.exe"
+    )
+
+
+def test_unreal_prefers_the_newest_engine_whichever_order_the_manifest_uses(
+    monkeypatch, tmp_path: Path
+):
+    """Two engines installed, and the manifest order is Epic's to choose."""
+
+    from fantasy_agent import local_tools
+
+    older = _fake_install(tmp_path / "custom", "UE_5.7")
+    newer = _fake_install(tmp_path / "custom", "UE_5.8")
+    expected = str(Path(newer) / "Engine" / "Binaries" / "Win64" / "UnrealEditor.exe")
+    rows = [
+        {"ArtifactId": "UE_5.7", "InstallLocation": older},
+        {"ArtifactId": "UE_5.8", "InstallLocation": newer},
+    ]
+
+    for installations in (rows, list(reversed(rows))):
+        _isolate_unreal_discovery(monkeypatch, tmp_path, installations)
+        assert local_tools._find_unreal() == expected
+
+
+def test_unreal_discovery_reports_nothing_rather_than_raising(monkeypatch, tmp_path: Path):
+    """The probe's promise is a report on any machine, never an exception.
+
+    A machine without the Launcher (a fresh CI runner) and a truncated
+    ``LauncherInstalled.dat`` (an interrupted install) both have to read as
+    "not installed" so the probe can print that instead of dying on the first
+    engine it asks about.
+    """
+
+    from fantasy_agent import local_tools
+
+    program_data = _isolate_unreal_discovery(monkeypatch, tmp_path, [])
+    assert local_tools._find_unreal() is None
+
+    manifest = program_data / "Epic" / "UnrealEngineLauncher" / "LauncherInstalled.dat"
+    assert manifest.exists()
+    manifest.write_text("{ this is not json", encoding="utf-8")
+    assert local_tools._find_unreal() is None
+
+
+# ── The local derived data cache path ────────────────────────────────────────
+# Paths here are synthetic rather than `tmp_path`, because pytest's own temp
+# directory is already deep enough on some machines to cross the limit under
+# test -- a fixture that is sometimes long and sometimes short would make these
+# assertions depend on where the machine put its temp folder.
+
+
+def test_a_long_workspace_moves_the_local_ddc_out_of_the_project():
+    """Unreal aborts at startup when the local DDC path is too long.
+
+    The failure mode is worth a guard because it looks like a broken engine:
+    ``FileSystemCacheStore`` refuses a path over ``MAX_LOCAL_DDC_PATH`` and the
+    editor dies before the commandlet runs, so every Unreal tool reports
+    failure on a machine whose engine is perfectly fine. Measured: a
+    133-character project path fails with "缓存路径 ... 长于119个字符", and the
+    same project with a short cache path exits 0.
+    """
+
+    project_dir = Path("C:/probe-deep") / ("d" * 40) / ("e" * 40) / "unreal" / "prototype"
+    assert len((project_dir / "DerivedDataCache").as_posix()) > MAX_LOCAL_DDC_PATH
+
+    ddc = UnrealMCPBridge("C:/probe-deep")._local_ddc_dir(project_dir / "Prototype.uproject")
+    configured = ddc.as_posix()
+
+    assert len(configured) <= MAX_LOCAL_DDC_PATH, configured
+    assert Path(configured).is_absolute()
+    # Not merely short -- outside the project, because the project is the part
+    # that got long. A cache written under the project would still be the same
+    # over-long path Unreal just refused.
+    assert project_dir not in Path(configured).parents
+    assert project_dir not in (Path(configured), *Path(configured).parents)
+
+
+def test_a_normal_workspace_keeps_the_cache_with_the_project():
+    """The relocation is a fallback, not a new default.
+
+    A generated demo is meant to carry its own cache, and moving it for every
+    project would silently slow down every run on a machine that never had the
+    problem.
+    """
+
+    project_dir = Path("C:/u/generated/unreal/prototype")
+    project_file = project_dir / "Prototype.uproject"
+    local = project_dir / "DerivedDataCache"
+    assert len(local.as_posix()) <= MAX_LOCAL_DDC_PATH
+
+    assert UnrealMCPBridge("C:/u")._local_ddc_dir(project_file) == local
+
+
+def test_two_long_path_projects_get_different_caches():
+    """Two long-path projects must not share one cache directory.
+
+    A shared directory would have each project's entries evicting the other's
+    on every run, which is slower than having no cache at all.
+    """
+
+    bridge = UnrealMCPBridge("C:/probe-deep")
+    deep = Path("C:/probe-deep") / ("x" * 60) / ("y" * 40) / "unreal"
+
+    first = bridge._local_ddc_dir(deep / "One" / "One.uproject")
+    second = bridge._local_ddc_dir(deep / "Two" / "Two.uproject")
+
+    assert first != second
+    assert first.parent == second.parent
 

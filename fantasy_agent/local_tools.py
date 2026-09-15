@@ -87,15 +87,106 @@ def _find_blender() -> str | None:
     )
 
 
+#: Where Epic's Launcher records what it installed. This is the only source
+#: that knows about a non-default install root: the engine on this machine
+#: lives at ``C:\ue\UE_5.8``, while the conventional ``Program Files`` folder
+#: holds nothing but empty Launcher stubs -- so the fixed path patterns below
+#: report "not installed" for a machine with a perfectly good engine on it.
+_UNREAL_LAUNCHER_MANIFEST = Path("Epic/UnrealEngineLauncher/LauncherInstalled.dat")
+_UNREAL_EDITOR_RELATIVE = Path("Engine/Binaries/Win64")
+
+
+def _program_data_dir() -> Path | None:
+    """The ProgramData root, wherever it actually is.
+
+    ``PROGRAMDATA`` is the authority because the folder can be relocated to
+    another drive; the conventional path is a fallback for the case where the
+    variable is absent from the environment.
+    """
+
+    value = os.environ.get("PROGRAMDATA")
+    if value:
+        return Path(value)
+    conventional = Path("C:/ProgramData")
+    return conventional if conventional.exists() else None
+
+
+def _unreal_launcher_installs() -> list[str]:
+    """Editor binaries from Epic's install manifest, in the order recorded.
+
+    ``LauncherInstalled.dat`` lists plugins next to engines, so an entry only
+    counts as an engine when its ``ArtifactId`` starts with ``UE_``:
+    ``UE_5.8`` is the engine, while ``FabPlugin_5.8`` and ``QuixelBridge_5.7``
+    share the same install folder and would otherwise be probed for an editor
+    that is not there.
+    """
+
+    program_data = _program_data_dir()
+    if program_data is None:
+        return []
+    manifest = program_data / _UNREAL_LAUNCHER_MANIFEST
+    if not manifest.exists():
+        return []
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+
+    installs: list[str] = []
+    for entry in payload.get("InstallationList") or []:
+        if not isinstance(entry, dict):
+            continue
+        if not str(entry.get("ArtifactId") or "").startswith("UE_"):
+            continue
+        location = entry.get("InstallLocation")
+        if location:
+            installs.append(str(location))
+    return [
+        str(candidate)
+        for location in installs
+        for candidate in [Path(location) / _UNREAL_EDITOR_RELATIVE / "UnrealEditor.exe"]
+        if candidate.exists()
+    ]
+
+
+def _unreal_candidate_key(path: str) -> tuple[tuple[int, ...], str]:
+    version = tuple(int(part) for part in re.findall(r"\d+", path))
+    return version, path.casefold()
+
+
 def _find_unreal() -> str | None:
-    return _find_executable(
-        env_names=["UNREAL_EDITOR", "UE_EDITOR"],
-        commands=["UnrealEditor.exe", "UnrealEditor-Cmd.exe"],
-        path_patterns=[
-            "C:/Program Files/Epic Games/UE_*/Engine/Binaries/Win64/UnrealEditor.exe",
-            "C:/Program Files/Epic Games/UE_*/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
-        ],
-    )
+    """Locate UnrealEditor, preferring the newest installed engine.
+
+    Every source is collected before one candidate is chosen, because they
+    cover different machines and neither is a superset: the Launcher manifest
+    finds an engine installed to a custom root, and the fixed patterns cover
+    one the Launcher never recorded. There is deliberately no sweep across
+    drives -- a hand-placed engine is what ``UNREAL_EDITOR`` is for, and the
+    CLI already tells the user to pass ``--unreal-exe PATH`` when this returns
+    nothing.
+    """
+
+    env_path = _existing_env_path(["UNREAL_EDITOR", "UE_EDITOR"])
+    if env_path:
+        return env_path
+    for command in ["UnrealEditor.exe", "UnrealEditor-Cmd.exe"]:
+        resolved = shutil.which(command)
+        if resolved:
+            return resolved
+    candidates = [
+        *_unreal_launcher_installs(),
+        *_candidate_paths(
+            [
+                "C:/Program Files/Epic Games/UE_*/Engine/Binaries/Win64/UnrealEditor.exe",
+                "C:/Program Files/Epic Games/UE_*/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
+            ]
+        ),
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=_unreal_candidate_key)
 
 
 def _unreal_cmd_executable(editor_path: str | None) -> str | None:

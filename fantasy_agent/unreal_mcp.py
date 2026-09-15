@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +49,14 @@ COMMANDLET_DEFAULT_ARGS = {
     "DataValidation": ["-IncludeOnlyOnDiskAssets"],
 }
 UNREAL_DDC_ARGS = ["-DDC=InstalledNoZenLocalFallback"]
+
+#: Longest project-local derived data cache path Unreal will start with.
+#: ``FileSystemCacheStore`` needs the leftover characters for cache keys and
+#: aborts the editor at startup when the path is longer. Measured, not guessed:
+#: a 133-character path fails with "缓存路径 ... 长于119个字符" before the
+#: commandlet ever runs, while the same project under the limit finishes with
+#: "Success - 0 error(s), 0 warning(s)".
+MAX_LOCAL_DDC_PATH = 119
 
 # One greybox floor tile every this many centimetres. This is a tile dimension,
 # not a design parameter -- what the design controls is how many tiles the route
@@ -1323,9 +1333,30 @@ class UnrealMCPBridge(BaseMCPBridge):
     def _shader_working_dir(self, project_file: Path) -> Path:
         return project_file.parent / "Intermediate" / "Shaders" / "WorkingDirectory"
 
+    def _local_ddc_dir(self, project_file: Path) -> Path:
+        """Where Unreal's local derived data cache goes.
+
+        The cache normally sits with the project, so a generated demo carries
+        its own cache. Unreal aborts at startup instead when that path exceeds
+        ``MAX_LOCAL_DDC_PATH`` -- and a workspace under a long repository path
+        does exactly that, which reads as "the Unreal link is broken" when the
+        link is fine. When the project-local path is too long the cache moves
+        to a short, stable directory under the OS temp root: it is a cache, so
+        relocating it costs compilation time and no work.
+        """
+
+        local_ddc = project_file.parent / "DerivedDataCache"
+        if len(local_ddc.as_posix()) <= MAX_LOCAL_DDC_PATH:
+            return local_ddc
+        # Keyed by project path so two projects neither share nor evict each
+        # other's cache, and short by construction: the temp root is a few
+        # dozen characters where a deep workspace can be over a hundred.
+        digest = hashlib.sha256(project_file.parent.as_posix().encode("utf-8")).hexdigest()
+        return Path(tempfile.gettempdir()) / "fantasy-agent-ue-ddc" / digest[:16]
+
     def _unreal_env(self, project_file: Path) -> dict[str, str]:
         env = dict(os.environ)
-        local_ddc = project_file.parent / "DerivedDataCache"
+        local_ddc = self._local_ddc_dir(project_file)
         local_ddc.mkdir(parents=True, exist_ok=True)
         env["UE-LocalDataCachePath"] = local_ddc.as_posix()
         env["UE-SharedDataCachePath"] = "None"

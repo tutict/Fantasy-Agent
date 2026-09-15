@@ -12,11 +12,14 @@ you can read instead of something you have to believe.
     python scripts/verify_engine_links.py --workspace generated/my-probe
 
 The engines are launched for real, so this is a manual probe, not a test: it
-writes under ``generated/`` and takes as long as the engines take. On a machine
-without an engine the step still reports, as *degraded* rather than broken --
-the plan and the generated files are produced either way, and only the launch
-half is missing. That distinction is the reason to run it: "Unreal is not
-installed" and "the Unreal link is broken" look identical from the outside.
+writes under ``generated/`` and takes as long as the engines take. Unreal's
+launch is a headless ``DataValidation`` commandlet -- the cheapest run that
+still starts the editor, where asset ingest and level assembly would need
+scripts this probe does not build. On a machine without an engine the step
+still reports, as *degraded* rather than broken -- the plan and the generated
+files are produced either way, and only the launch half is missing. That
+distinction is the reason to run it: "Unreal is not installed" and "the Unreal
+link is broken" look identical from the outside.
 
 Exit code is 0 as long as every step produced a result. A non-zero exit means
 the probe itself failed, not that an engine is missing.
@@ -51,6 +54,7 @@ TOOLS = (
     "prepare_visual_reference_workflows",
     "run_visual_reference_workflow",
     "create_project_structure",
+    "run_editor_commandlet",
 )
 
 PROMPT = "rooftop parkour chase across neon towers"
@@ -120,10 +124,20 @@ def _resolve(workspace: Path, path: str) -> Path:
 
 
 def _engine_paths() -> dict[str, str | None]:
+    """The binaries this probe will launch, resolved the way a tool call does.
+
+    ``unreal-cmd`` is listed separately because it is the one that actually
+    runs: a tool call goes through ``_unreal_cmd_executable`` to reach the
+    headless variant, so a machine with only ``UnrealEditor.exe`` would look
+    ready here and still fail at launch.
+    """
+
+    unreal = local_tools._find_unreal()
     return {
         "godot": local_tools._find_godot(),
         "blender": local_tools._find_blender(),
-        "unreal": local_tools._find_unreal(),
+        "unreal": unreal,
+        "unreal-cmd": local_tools._unreal_cmd_executable(unreal),
     }
 
 
@@ -230,13 +244,35 @@ def probe(workspace: Path) -> list[Step]:
     for path in images["generated_images"] or []:
         print(f"  {path}  exists={_resolve(workspace, path).exists()}")
 
-    # ── Unreal: expected degraded, reported either way ───────────────────────
-    call(
+    # ── Unreal ───────────────────────────────────────────────────────────────
+    # Unreal is a binary like Godot and Blender, so the launch half *is* the
+    # link. Generating the project proves only that a template got filled in:
+    # a missing engine and a broken one look identical from the files on disk.
+    structure = call(
         "create_project_structure",
         "create_project_structure",
         {"write_files": True},
         allow_write=True,
     )
+    artifact = _structured(structure.outcome).get("artifact") or {}
+    project_file = artifact.get("project_file") or ""
+    print("unreal project    :", project_file or "(none written)")
+    validation = call(
+        "run_editor_commandlet",
+        "run_editor_commandlet",
+        {
+            "project_file": project_file,
+            "commandlet": "DataValidation",
+            "timeout_seconds": 600,
+            "confirmed_side_effects": True,
+        },
+        allow_execute=True,
+    )
+    unreal = _pick(validation.outcome, "status", "command", "return_code", "stderr_tail")
+    print("unreal result     :", unreal["status"])
+    print("unreal command    :", unreal["command"])
+    print("unreal return_code:", unreal["return_code"])
+    print("unreal stderr     :", repr((unreal["stderr_tail"] or "")[-600:]))
     return steps
 
 
