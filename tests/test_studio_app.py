@@ -302,6 +302,70 @@ def test_the_comfyui_panel_opens_no_socket_of_its_own(monkeypatch):
     assert opened == [], f"the panel opened its own connection(s): {opened}"
 
 
+def test_the_comfyui_probe_queries_candidates_at_the_same_time(monkeypatch):
+    """A stalled endpoint must not cost one timeout per candidate.
+
+    Probing one candidate at a time means several stalled endpoints cost
+    several timeouts before the panel can say anything at all. A rendezvous
+    makes that structural rather than a timing assertion: every stub call
+    waits for all the others to arrive before it returns, so a serial
+    implementation trips the barrier's own timeout on any machine, fast or
+    slow, instead of passing by being quick enough.
+    """
+
+    module = _load_studio_app()
+    monkeypatch.delenv("COMFYUI_URL", raising=False)
+    monkeypatch.delenv("COMFYUI_ENDPOINT", raising=False)
+    candidates = [f"http://127.0.0.1:{port}" for port in (29401, 29402, 29403, 29404)]
+    monkeypatch.setattr(
+        module.local_tools,
+        "default_comfyui_endpoint_candidates",
+        lambda: list(candidates),
+    )
+
+    rendezvous = threading.Barrier(len(candidates), timeout=5)
+
+    def stalled(url, timeout=0.45):
+        rendezvous.wait()
+        raise OSError("offline for the test")
+
+    monkeypatch.setattr(module.local_tools, "_http_json", stalled)
+
+    item = module._probe_comfyui()
+
+    assert item["status"] == "unavailable"
+
+
+def test_the_comfyui_probe_still_prefers_a_configured_endpoint(monkeypatch):
+    """Concurrency must not turn "first candidate wins" into "first reply wins".
+
+    The configured endpoint answers last here, so an implementation that
+    took whichever future completed first would report a default endpoint
+    instead.
+    """
+
+    module = _load_studio_app()
+    monkeypatch.setenv("COMFYUI_URL", "http://127.0.0.1:29411")
+    monkeypatch.delenv("COMFYUI_ENDPOINT", raising=False)
+    monkeypatch.setattr(
+        module.local_tools,
+        "default_comfyui_endpoint_candidates",
+        lambda: ["http://127.0.0.1:29412", "http://127.0.0.1:29413"],
+    )
+
+    def answer(url, timeout=0.45):
+        if "29411" in url:
+            time.sleep(0.05)
+        return {"system": {"comfyui_version": "0.34.0"}}
+
+    monkeypatch.setattr(module.local_tools, "_http_json", answer)
+
+    item = module._probe_comfyui()
+
+    assert item["status"] == "ready"
+    assert item["target"] == "http://127.0.0.1:29411"
+
+
 def test_studio_shell_includes_bilingual_ui_controls():
     module = _load_studio_app()
     html = module.STATIC_DIR.joinpath("index.html").read_text(encoding="utf-8")

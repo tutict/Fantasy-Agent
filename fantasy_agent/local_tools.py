@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from glob import glob
 from pathlib import Path
 from typing import Any
@@ -274,33 +275,52 @@ def _comfyui_target() -> dict[str, Any]:
         for value in [os.environ.get("COMFYUI_URL"), os.environ.get("COMFYUI_ENDPOINT")]
         if value and _is_local_http_endpoint(value)
     ]
-    candidates = [*env_candidates, *default_comfyui_endpoint_candidates()]
-    failures: list[str] = []
-    for endpoint in candidates:
-        if not _is_local_http_endpoint(endpoint):
-            continue
+    probed = [
+        endpoint
+        for endpoint in [*env_candidates, *default_comfyui_endpoint_candidates()]
+        if _is_local_http_endpoint(endpoint)
+    ]
+    errors: dict[int, str] = {}
+    if probed:
+        # Every candidate goes out at once, but the answers are read back in
+        # candidate order: the highest-priority endpoint that answers wins,
+        # which is what the serial version did. Two things this buys over the
+        # obvious "wait for all of them" shape: a healthy first candidate
+        # still returns immediately instead of waiting on a stalled later one
+        # (a machine with something wedged on 8001 used to answer in 0.02s
+        # and would have waited ~0.5s), and a pile of stalled candidates
+        # costs one timeout in total rather than one each.
+        pool = ThreadPoolExecutor(max_workers=len(probed))
         try:
-            stats = _http_json(f"{endpoint.rstrip('/')}/system_stats")
-        except (OSError, TimeoutError, error.URLError, json.JSONDecodeError) as exc:
-            failures.append(f"{endpoint}: {exc}")
-            continue
-        system = stats.get("system", {}) if isinstance(stats, dict) else {}
-        version = system.get("comfyui_version") or "reachable"
-        return _target(
-            target_id="comfyui",
-            status="ready",
-            target=endpoint,
-            openable=True,
-            detail_key="manualComfyReady",
-            metadata={"version": version},
-        )
+            futures = {
+                index: pool.submit(_http_json, f"{endpoint.rstrip('/')}/system_stats")
+                for index, endpoint in enumerate(probed)
+            }
+            for index in range(len(probed)):
+                try:
+                    stats = futures[index].result()
+                except (OSError, TimeoutError, error.URLError, json.JSONDecodeError) as exc:
+                    errors[index] = f"{probed[index]}: {exc}"
+                    continue
+                system = stats.get("system", {}) if isinstance(stats, dict) else {}
+                version = system.get("comfyui_version") or "reachable"
+                return _target(
+                    target_id="comfyui",
+                    status="ready",
+                    target=probed[index],
+                    openable=True,
+                    detail_key="manualComfyReady",
+                    metadata={"version": version},
+                )
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
     return _target(
         target_id="comfyui",
         status="degraded",
         target=default_comfyui_endpoint_candidates()[0],
         openable=True,
         detail_key="manualComfyMissing",
-        metadata={"failures": failures[-3:]},
+        metadata={"failures": [errors[index] for index in sorted(errors)][-3:]},
     )
 
 

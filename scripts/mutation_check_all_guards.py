@@ -228,6 +228,20 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "tests/test_studio_app.py::test_the_comfyui_panel_opens_no_socket_of_its_own",
     ),
     (
+        "C5 the ComfyUI probe goes back to one candidate at a time",
+        "fantasy_agent/local_tools.py",
+        b"        pool = ThreadPoolExecutor(max_workers=len(probed))\n",
+        b"        pool = ThreadPoolExecutor(max_workers=1)\n",
+        "tests/test_studio_app.py::test_the_comfyui_probe_queries_candidates_at_the_same_time",
+    ),
+    (
+        "C6 the ComfyUI probe reads the candidates in the wrong order",
+        "fantasy_agent/local_tools.py",
+        b"            for index in range(len(probed)):\n",
+        b"            for index in range(len(probed) - 1, -1, -1):\n",
+        "tests/test_studio_app.py::test_the_comfyui_probe_still_prefers_a_configured_endpoint",
+    ),
+    (
         "U3 the manifest reader stops tolerating a truncated file",
         "fantasy_agent/local_tools.py",
         (
