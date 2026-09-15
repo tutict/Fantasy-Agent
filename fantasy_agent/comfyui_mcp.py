@@ -5,10 +5,10 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from urllib import parse
 
 from pydantic import ValidationError
 
+from fantasy_agent import local_tools
 from fantasy_agent.comfyui_client import ComfyUIClient
 from fantasy_agent.contracts import (
     ComfyUICapabilityProbeRequest,
@@ -350,7 +350,7 @@ class ComfyUIMCPBridge(BaseMCPBridge):
         manifest: ComfyUIRunManifest,
         allow_remote_endpoint: bool,
     ) -> list[str]:
-        if not allow_remote_endpoint and not _is_local_endpoint(manifest.endpoint):
+        if not allow_remote_endpoint and not local_tools._is_local_http_endpoint(manifest.endpoint):
             raise ComfyUIMCPSafetyError(
                 f"ComfyUI endpoint must be local unless allow_remote_endpoint=true: {manifest.endpoint}"
             )
@@ -379,7 +379,7 @@ class ComfyUIMCPBridge(BaseMCPBridge):
             candidates = _dedupe([request.endpoint, *request.endpoint_candidates])
         warnings: list[str] = []
         for endpoint in candidates:
-            if not request.allow_remote_endpoint and not _is_local_endpoint(endpoint):
+            if not request.allow_remote_endpoint and not local_tools._is_local_http_endpoint(endpoint):
                 warnings.append(f"Skipped non-local ComfyUI endpoint: {endpoint}")
                 continue
             try:
@@ -619,12 +619,6 @@ def _slug(value: str) -> str:
     while "__" in slug:
         slug = slug.replace("__", "_")
     return slug or "comfyui"
-
-
-def _is_local_endpoint(endpoint: str) -> bool:
-    parsed = parse.urlparse(endpoint)
-    host = parsed.hostname or ""
-    return host in {"127.0.0.1", "localhost", "::1"}
 
 
 def _extract_image_refs(history: dict[str, Any], prompt_id: str) -> list[dict[str, str]]:

@@ -208,6 +208,26 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "tests/test_studio_app.py::test_a_remote_comfyui_endpoint_is_never_probed_by_the_panel",
     ),
     (
+        "C3 the local-endpoint check stops reading the scheme",
+        "fantasy_agent/local_tools.py",
+        b'    return parsed.scheme in {"http", "https"} and parsed.hostname in {\n',
+        b"    return parsed.hostname in {\n",
+        "tests/test_comfyui_mcp.py::test_comfyui_mcp_rejects_a_non_http_scheme_on_a_local_host",
+    ),
+    (
+        "C4 the ComfyUI panel dials the endpoint itself as well as asking",
+        "apps/studio/app/main.py",
+        b"    target = local_tools._comfyui_target()\n",
+        (
+            b"    try:\n"
+            b'        local_tools._http_json("http://127.0.0.1:8188/system_stats")\n'
+            b"    except OSError:\n"
+            b"        pass\n"
+            b"    target = local_tools._comfyui_target()\n"
+        ),
+        "tests/test_studio_app.py::test_the_comfyui_panel_opens_no_socket_of_its_own",
+    ),
+    (
         "U3 the manifest reader stops tolerating a truncated file",
         "fantasy_agent/local_tools.py",
         (

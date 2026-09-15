@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import socket
 import threading
 import time
 from pathlib import Path
@@ -199,6 +200,23 @@ def test_the_comfyui_panel_asks_the_shared_resolver_instead_of_probing_again(mon
         "_comfyui_target",
         lambda: {
             "id": "comfyui",
+            "status": "ready",
+            "target": "http://127.0.0.1:9999",
+            "openable": True,
+            "detail_key": "manualComfyReady",
+            "metadata": {},
+        },
+    )
+    services = {s["id"]: s for s in module.mcp_status("UE5")["services"]}
+
+    assert services["comfyui"]["status"] == "ready"
+    assert services["comfyui"]["metadata"]["version"] == "reachable"
+
+    monkeypatch.setattr(
+        module.local_tools,
+        "_comfyui_target",
+        lambda: {
+            "id": "comfyui",
             "status": "degraded",
             "target": "http://127.0.0.1:8188",
             "openable": True,
@@ -245,6 +263,43 @@ def test_a_remote_comfyui_endpoint_is_never_probed_by_the_panel(monkeypatch):
     assert all(
         "remote.invalid" not in failure for failure in comfyui["metadata"]["failures"]
     ), comfyui["metadata"]["failures"]
+
+
+def test_the_comfyui_panel_opens_no_socket_of_its_own(monkeypatch):
+    """Consulting the resolver is not the same as consulting it *only*.
+
+    The guard above proves the panel asks the shared resolver; it would still
+    pass if the panel asked and then also dialled the endpoint itself, since
+    the resolver's answer is what gets reported either way. Recording
+    ``socket.create_connection`` closes that half: a panel that opens its own
+    connection is caught even if it swallows the resulting error.
+    """
+
+    module = _load_studio_app()
+    opened: list[tuple] = []
+
+    def record(*args, **kwargs):
+        opened.append(args[:2])
+        raise OSError("offline for the test")
+
+    monkeypatch.setattr(socket, "create_connection", record)
+    monkeypatch.setattr(
+        module.local_tools,
+        "_comfyui_target",
+        lambda: {
+            "id": "comfyui",
+            "status": "degraded",
+            "target": "http://127.0.0.1:8188",
+            "openable": True,
+            "detail_key": "manualComfyMissing",
+            "metadata": {"failures": []},
+        },
+    )
+
+    item = module._probe_comfyui()
+
+    assert item["status"] == "unavailable"
+    assert opened == [], f"the panel opened its own connection(s): {opened}"
 
 
 def test_studio_shell_includes_bilingual_ui_controls():

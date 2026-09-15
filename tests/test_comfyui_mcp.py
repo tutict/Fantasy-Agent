@@ -252,6 +252,26 @@ def test_comfyui_mcp_rejects_remote_endpoint_by_default(tmp_path: Path):
     assert "endpoint must be local" in result["content"][0]["text"]
 
 
+def test_comfyui_mcp_rejects_a_non_http_scheme_on_a_local_host(tmp_path: Path):
+    """``file://127.0.0.1/...`` names a local host but is not a ComfyUI server.
+
+    A host-only check lets it through, and ``urlopen`` happily opens ``file:``
+    URLs, so the endpoint gate has to read the scheme as well -- the shared
+    ``_is_local_http_endpoint`` predicate the status panel and the ComfyUI
+    resolver already use.
+    """
+
+    _template(tmp_path)
+    result = call_comfyui_mcp_tool(
+        "prepare_visual_reference_workflows",
+        {"plan": _plan(endpoint="file://127.0.0.1/C:/Windows/win.ini").model_dump(mode="json")},
+        workspace_root=tmp_path,
+    )
+
+    assert result["isError"] is True
+    assert "endpoint must be local" in result["content"][0]["text"]
+
+
 def test_comfyui_mcp_rejects_templates_outside_allowlist(tmp_path: Path):
     plan = _plan().model_copy(
         update={
