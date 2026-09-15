@@ -46,9 +46,20 @@ def _candidate_paths(patterns: list[str]) -> list[str]:
 
 
 def _existing_env_path(names: list[str]) -> str | None:
+    """The path a variable names, if it names a *file*.
+
+    ``exists()`` was the test, and it let a directory through: told to "set
+    ``GODOT_EXECUTABLE`` to the Godot executable", a user pointing it at the
+    folder that holds the executable is a natural mistake, and it made the
+    status panel report ``ready`` on a folder -- then the launch raised
+    ``PermissionError`` instead of the ``FileNotFoundError`` the caller expects.
+    Naming a directory is not naming a binary, so it falls through to PATH and
+    the install-location search, which is where a usable answer comes from.
+    """
+
     for name in names:
         value = os.environ.get(name)
-        if value and Path(value).exists():
+        if value and Path(value).is_file():
             return value
     return None
 
@@ -71,9 +82,35 @@ def _find_executable(
     return None
 
 
+#: Godot's version as it appears in a download name, ``Godot_v4.6.3-stable``.
+#: The ``Godot_v`` prefix is what makes a number a version rather than noise.
+_GODOT_VERSION_IN_NAME = re.compile(r"Godot_v(\d+(?:\.\d+)*)", re.IGNORECASE)
+
+
 def _godot_candidate_key(path: str) -> tuple[tuple[int, ...], int, str]:
-    version = tuple(int(part) for part in re.findall(r"\d+", path))
-    console_score = 1 if "console" in Path(path).name.casefold() else 0
+    """Sort key: the Godot version, the console build, then the whole path.
+
+    The version comes from a ``Godot_v4.6.3``-shaped name -- the file's own name
+    first, then its parent directory, which is what carries it for an install
+    whose exe was renamed -- rather than from every digit in the path. Taking
+    all digits mixed in whatever else happened to hold them:
+    ``C:\\Users\\user99\\Downloads\\Godot_v4.5-stable_win64`` keyed as
+    ``(99, 4, 5, 64, ...)`` and outranked a clean ``(4, 6, 3, 64, ...)``, so the
+    *older* engine won on a machine with two installed -- and ``C:/Users/*/`` is
+    a segment the install search itself expands. A candidate with no such name
+    sorts below one that has it.
+
+    The console build is the tiebreak rather than the leading term: Windows
+    only routes stdout through the captured pipe for that one, but it is still
+    worth running a newer GUI build over an older console build.
+    """
+
+    candidate = Path(path)
+    match = _GODOT_VERSION_IN_NAME.search(candidate.name) or _GODOT_VERSION_IN_NAME.search(
+        candidate.parent.name
+    )
+    version = tuple(int(part) for part in match.group(1).split(".")) if match else ()
+    console_score = 1 if "console" in candidate.name.casefold() else 0
     return version, console_score, path.casefold()
 
 
@@ -501,7 +538,13 @@ def open_manual_correction_target(
                 "target": "",
                 "detail_key": "manualOpenUnknownTarget",
             }
-    except FileNotFoundError as exc:
+    # ``FileNotFoundError`` alone was too narrow: it is one ``OSError`` among
+    # many, and the ones that reach here are all "this cannot be launched" --
+    # a directory where an executable was expected (``PermissionError``), a file
+    # that is not a runnable image (``WinError 193``). Each of them used to
+    # escape this function, and the endpoint that calls it answered 500 instead
+    # of reporting an unlaunchable target.
+    except OSError as exc:
         return {
             "status": "unavailable",
             "target_id": normalized,

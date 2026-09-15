@@ -310,6 +310,52 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         b'    "G3 the guard only looks on PATH": "godot4",\n',
         "tests/test_mutation_harness.py::test_engine_requirements_name_engines_the_harness_can_probe",
     ),
+    (
+        "C7 the Godot key goes back to every digit in the path",
+        "fantasy_agent/local_tools.py",
+        # Spans the match and the version line together: `_unreal_candidate_key`
+        # carries the identical version line, so it is not unique on its own.
+        (
+            b"    match = _GODOT_VERSION_IN_NAME.search(candidate.name)"
+            b" or _GODOT_VERSION_IN_NAME.search(\n"
+            b"        candidate.parent.name\n"
+            b"    )\n"
+            b'    version = tuple(int(part) for part in match.group(1).split("."))'
+            b" if match else ()\n"
+        ),
+        b'    version = tuple(int(part) for part in re.findall(r"\\d+", path))\n',
+        (
+            "tests/test_local_tools.py"
+            "::test_a_digit_in_the_install_path_does_not_outrank_the_engine_version"
+        ),
+    ),
+    (
+        "C8 naming a directory satisfies the executable check again",
+        "fantasy_agent/local_tools.py",
+        b"        if value and Path(value).is_file():\n",
+        b"        if value and Path(value).exists():\n",
+        (
+            "tests/test_local_tools.py"
+            "::test_a_directory_named_as_the_executable_does_not_answer_a_probe"
+        ),
+    ),
+    (
+        "C9 the open path stops catching an unlaunchable target",
+        "fantasy_agent/local_tools.py",
+        b"    except OSError as exc:\n",
+        b"    except FileNotFoundError as exc:\n",
+        "tests/test_local_tools.py::test_the_open_path_reports_a_target_it_cannot_launch",
+    ),
+    (
+        "C10 a backend detail key is renamed without the dictionary",
+        "fantasy_agent/local_tools.py",
+        b'            "detail_key": "manualOpenUnavailable",\n',
+        b'            "detail_key": "manualOpenUnavailableRenamed",\n',
+        (
+            "tests/test_local_tools.py"
+            "::test_every_detail_key_the_open_path_returns_exists_in_the_frontend"
+        ),
+    ),
 )
 
 
