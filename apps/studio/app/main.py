@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import shutil
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from glob import glob
 from pathlib import Path
 from typing import Any
 from urllib import error, request
@@ -16,7 +15,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
-from fantasy_agent import api_settings
+from fantasy_agent import api_settings, local_tools
 from fantasy_agent.api_settings import public_settings
 from fantasy_agent.blender_codegen import build_blender_script_artifact
 from fantasy_agent.contracts import (
@@ -260,83 +259,29 @@ def _probe_comfyui() -> dict[str, Any]:
     )
 
 
-def _candidate_paths(patterns: list[str]) -> list[str]:
-    found: list[str] = []
-    for pattern in patterns:
-        found.extend(path for path in glob(pattern) if Path(path).exists())
-    return found
-
-
-def _existing_env_path(names: list[str]) -> str | None:
-    for name in names:
-        value = os.environ.get(name)
-        if value and Path(value).exists():
-            return value
-    return None
-
-
-def _find_executable(
-    *,
-    env_names: list[str],
-    commands: list[str],
-    path_patterns: list[str],
-) -> str | None:
-    env_path = _existing_env_path(env_names)
-    if env_path:
-        return env_path
-    for command in commands:
-        resolved = shutil.which(command)
-        if resolved:
-            return resolved
-    for candidate in _candidate_paths(path_patterns):
-        return candidate
-    return None
-
-
-def _godot_candidate_key(path: str) -> tuple[tuple[int, ...], int, str]:
-    version = tuple(int(part) for part in re.findall(r"\d+", path))
-    console_score = 1 if "console" in Path(path).name.casefold() else 0
-    return version, console_score, path.casefold()
-
-
-def _find_godot_executable() -> str | None:
-    env_path = _existing_env_path(["GODOT_EXECUTABLE"])
-    if env_path:
-        return env_path
-    for command in ["godot-console", "godot4", "godot"]:
-        resolved = shutil.which(command)
-        if resolved:
-            return resolved
-    candidates = _candidate_paths(
-        [
-            "C:/Program Files/Godot/Godot*.exe",
-            "C:/Users/*/AppData/Local/Programs/Godot/Godot*.exe",
-            "C:/Users/*/Downloads/Godot*/Godot*.exe",
-        ]
-    )
-    if candidates:
-        return max(candidates, key=_godot_candidate_key)
-    return None
-
-
 def _probe_executable(
     *,
     service_id: str,
     label: str,
-    env_names: list[str],
-    commands: list[str],
-    path_patterns: list[str],
+    candidates: str,
+    resolver: Callable[[], str | None],
     next_action_ready: str,
     next_action_missing: str,
     next_action_ready_key: str,
     next_action_missing_key: str,
     required: bool = True,
 ) -> dict[str, Any]:
-    executable = _find_executable(
-        env_names=env_names,
-        commands=commands,
-        path_patterns=path_patterns,
-    )
+    """Report a local engine, resolving the path through ``local_tools``.
+
+    The resolver is passed in rather than reimplemented here on purpose.
+    Executables used to be probed twice -- once in ``local_tools``, which the
+    executor actually launches, and once in this module -- and the two drifted:
+    an engine installed to a custom Launcher root was found by the executor
+    while the status panel still reported ``unavailable``. One resolver, one
+    answer, so the panel cannot disagree with what a run would start.
+    """
+
+    executable = resolver()
     if executable:
         return _mcp_status_item(
             service_id=service_id,
@@ -353,7 +298,7 @@ def _probe_executable(
         service_id=service_id,
         label=label,
         status="unavailable",
-        target=", ".join([*commands, *env_names]),
+        target=candidates,
         detail="No executable was found on PATH, in configured environment variables, or common install folders.",
         next_action=next_action_missing,
         detail_key="mcpDetailExecutableMissing",
@@ -393,28 +338,51 @@ def _probe_github_cli() -> dict[str, Any]:
 
 
 def _probe_godot(required: bool) -> dict[str, Any]:
-    executable = _find_godot_executable()
-    if executable:
-        return _mcp_status_item(
-            service_id="godot",
-            label="Godot",
-            status="ready",
-            target=executable,
-            detail="Executable found. MCP execution still requires explicit confirmation.",
-            next_action="Use Godot MCP validation for Godot-selected quick-play projects.",
-            detail_key="mcpDetailExecutableReady",
-            next_action_key="mcpNextGodotReady",
-            required=required,
-        )
-    return _mcp_status_item(
+    return _probe_executable(
         service_id="godot",
         label="Godot",
+        candidates="godot-console, godot4, godot, GODOT_EXECUTABLE",
+        resolver=local_tools._find_godot,
+        next_action_ready="Use Godot MCP validation for Godot-selected quick-play projects.",
+        next_action_missing="Install Godot 4 or set GODOT_EXECUTABLE to the Godot executable.",
+        next_action_ready_key="mcpNextGodotReady",
+        next_action_missing_key="mcpNextGodotMissing",
+        required=required,
+    )
+
+
+def _probe_unreal(required: bool) -> dict[str, Any]:
+    """Report Unreal, naming the binary a tool call would actually start.
+
+    ``local_tools._find_unreal`` returns ``UnrealEditor.exe``, but headless
+    commandlets run through the sibling ``-Cmd`` build. Reporting only the
+    editor would make a "ready" panel disagree with the process that gets
+    launched, so the target is resolved exactly the way the executor does it.
+    """
+
+    editor = local_tools._find_unreal()
+    if editor:
+        return _mcp_status_item(
+            service_id="unreal",
+            label="Unreal Engine",
+            status="ready",
+            target=local_tools._unreal_cmd_executable(editor) or editor,
+            detail="Executable found. MCP execution still requires explicit confirmation.",
+            next_action="Use Unreal MCP validation before editor commandlets or PIE/package tests.",
+            detail_key="mcpDetailExecutableReady",
+            next_action_key="mcpNextUnrealReady",
+            required=required,
+            metadata={"editor": editor},
+        )
+    return _mcp_status_item(
+        service_id="unreal",
+        label="Unreal Engine",
         status="unavailable",
-        target="godot-console, godot4, godot, GODOT_EXECUTABLE",
+        target="UNREAL_EDITOR, UE_EDITOR, UnrealEditor-Cmd.exe, Epic Launcher manifest",
         detail="No executable was found on PATH, in configured environment variables, or common install folders.",
-        next_action="Install Godot 4 or set GODOT_EXECUTABLE to the Godot executable.",
+        next_action="Install UE5 or set UNREAL_EDITOR to UnrealEditor-Cmd.exe.",
         detail_key="mcpDetailExecutableMissing",
-        next_action_key="mcpNextGodotMissing",
+        next_action_key="mcpNextUnrealMissing",
         required=required,
     )
 
@@ -430,32 +398,14 @@ def _mcp_connectivity_status(engine: str = "UE5") -> dict[str, Any]:
         _probe_executable(
             service_id="blender",
             label="Blender",
-            env_names=["BLENDER_EXECUTABLE"],
-            commands=["blender"],
-            path_patterns=[
-                "C:/Program Files/Blender Foundation/Blender */blender.exe",
-                "C:/Program Files/Blender Foundation/Blender/blender.exe",
-            ],
+            candidates="BLENDER_EXECUTABLE, blender, C:/Program Files/Blender Foundation/Blender */blender.exe",
+            resolver=local_tools._find_blender,
             next_action_ready="Generate Blender Python first, then execute only after confirmation.",
             next_action_missing="Install Blender or set BLENDER_EXECUTABLE to blender.exe.",
             next_action_ready_key="mcpNextBlenderReady",
             next_action_missing_key="mcpNextBlenderMissing",
         ),
-        _probe_executable(
-            service_id="unreal",
-            label="Unreal Engine",
-            env_names=["UNREAL_EDITOR", "UE_EDITOR"],
-            commands=["UnrealEditor-Cmd.exe", "UnrealEditor.exe"],
-            path_patterns=[
-                "C:/Program Files/Epic Games/UE_*/Engine/Binaries/Win64/UnrealEditor-Cmd.exe",
-                "C:/Program Files/Epic Games/UE_*/Engine/Binaries/Win64/UnrealEditor.exe",
-            ],
-            next_action_ready="Use Unreal MCP validation before editor commandlets or PIE/package tests.",
-            next_action_missing="Install UE5 or set UNREAL_EDITOR to UnrealEditor-Cmd.exe.",
-            next_action_ready_key="mcpNextUnrealReady",
-            next_action_missing_key="mcpNextUnrealMissing",
-            required=not godot_selected,
-        ),
+        _probe_unreal(required=not godot_selected),
         _probe_godot(required=godot_selected),
         _probe_github_cli(),
     ]

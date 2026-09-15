@@ -87,29 +87,77 @@ def test_studio_serves_combined_desktop_panel():
 
 
 def test_studio_detects_downloaded_godot_install(monkeypatch, tmp_path):
+    """The panel reports whatever the shared resolver returns.
+
+    The downloaded-install search this used to run locally still exists -- in
+    ``local_tools``, where the executor reads it too. Stubbing the resolver is
+    what proves the panel has no second copy: this module no longer knows the
+    Downloads glob at all, so the only way it can find Godot is by asking.
+    """
+
     module = _load_studio_app()
-    older_godot = tmp_path / "Godot_v4.6.1-stable_win64" / "Godot_v4.6.1-stable_win64.exe"
     godot = tmp_path / "Godot_v4.6.3-stable_win64" / "Godot_v4.6.3-stable_win64_console.exe"
-    older_godot.parent.mkdir(parents=True)
     godot.parent.mkdir(parents=True)
-    older_godot.write_text("", encoding="utf-8")
     godot.write_text("", encoding="utf-8")
 
-    monkeypatch.delenv("GODOT_EXECUTABLE", raising=False)
-    monkeypatch.setattr(module.shutil, "which", lambda _command: None)
-    monkeypatch.setattr(
-        module,
-        "_candidate_paths",
-        lambda patterns: [str(older_godot), str(godot)]
-        if "C:/Users/*/Downloads/Godot*/Godot*.exe" in patterns
-        else [],
-    )
+    monkeypatch.setattr(module.local_tools, "_find_godot", lambda: str(godot))
 
     status = module.mcp_status(engine="Godot 4.6")
     services = {service["id"]: service for service in status["services"]}
 
     assert services["godot"]["status"] == "ready"
     assert services["godot"]["target"] == str(godot)
+
+
+def test_the_unreal_panel_reports_the_binary_a_run_would_launch(monkeypatch, tmp_path):
+    """A "ready" panel has to name the process the executor actually starts.
+
+    ``local_tools._find_unreal`` returns ``UnrealEditor.exe``, but headless
+    commandlets run through the sibling ``-Cmd`` build. Reporting the editor
+    would let the panel agree with the disk and disagree with the run -- the
+    same failure mode, one level down.
+    """
+
+    module = _load_studio_app()
+    win64 = tmp_path / "Engine" / "Binaries" / "Win64"
+    win64.mkdir(parents=True)
+    (win64 / "UnrealEditor.exe").write_text("", encoding="utf-8")
+    (win64 / "UnrealEditor-Cmd.exe").write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        module.local_tools, "_find_unreal", lambda: (win64 / "UnrealEditor.exe").as_posix()
+    )
+
+    status = module.mcp_status("UE5")
+    unreal = next(service for service in status["services"] if service["id"] == "unreal")
+
+    assert unreal["status"] == "ready"
+    # The panel reports the path the way the shared resolver spells it: the
+    # sibling lookup goes through pathlib, which normalises to backslashes here.
+    assert unreal["target"] == str(win64 / "UnrealEditor-Cmd.exe")
+
+
+def test_a_missing_engine_is_reported_unavailable(monkeypatch):
+    """The "no engine" branch has to stay reachable and actionable.
+
+    Plumbed straight through to a resolver, the ready branch is the easy one;
+    a machine with nothing installed is where the panel earns its keep, so the
+    status, the required-ness and the recovery hint are all pinned.
+    """
+
+    module = _load_studio_app()
+    for resolver in ("_find_unreal", "_find_blender", "_find_godot"):
+        monkeypatch.setattr(module.local_tools, resolver, lambda: None)
+
+    status = module.mcp_status("UE5")
+    services = {service["id"]: service for service in status["services"]}
+
+    assert services["unreal"]["status"] == "unavailable"
+    assert services["unreal"]["required"] is True
+    assert services["unreal"]["next_action_key"] == "mcpNextUnrealMissing"
+    assert services["blender"]["status"] == "unavailable"
+    assert status["status"] == "degraded"
+    assert status["required_ready"] < status["required_total"]
 
 
 def test_studio_shell_includes_bilingual_ui_controls():

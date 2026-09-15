@@ -146,6 +146,8 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 
 **引擎装在哪由 `local_tools` 解析，别写死路径**：`_find_unreal` 先读 Epic 自己的 `%PROGRAMDATA%\Epic\UnrealEngineLauncher\LauncherInstalled.dat`，再退回 `Program Files` 路径模式。原因是 Launcher 允许把引擎装到任意根目录——本机 `UE_5.8` 在 `C:\ue\UE_5.8`，而 `C:\Program Files\Epic Games\UE_5.8` 只剩一个空的 Launcher stub，所以只靠路径模式会对着装好的引擎报"未安装"。manifest 里插件行（`FabPlugin_5.8` / `QuixelBridge_5.7`）和引擎行同在一个目录，只认 `ArtifactId` 以 `UE_` 开头的那几条。`tests/test_unreal_mcp.py` 钉着"自定义根目录能发现""插件的版本号不算引擎版本""manifest 缺失或损坏读作未安装而不是抛异常"。
 
+**状态面板也走这套解析**：`apps/studio/app/main.py` 的 `_probe_executable` 接受一个 resolver，不再自己复制一份 glob/PATH 搜索——它复制过，于是执行器认得出自定义根目录的引擎、而 `/api/tool-status` 报 `unavailable`，面板和它要启动的进程各说各话。`tests/test_studio_app.py` 用打桩的 resolver 钉住"面板没有第二份实现"；Unreal 那一格显示的是真正会启动的 `-Cmd` 二进制，不是磁盘上那个 `UnrealEditor.exe`。
+
 **ComfyUI 是服务，不是二进制**：Godot / Blender / Unreal 是拉起来就跑，ComfyUI 得先有一个在 `127.0.0.1:8188` 上监听的服务，探针不会替你起。下面这条是本机（Windows）验证过的路，**路径全是这台机器的，换机要按自己的安装位置改**（ComfyUI Desktop 装在 `D:\Comfy-Desktop`）：
 
 ```
