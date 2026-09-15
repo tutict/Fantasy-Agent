@@ -106,7 +106,14 @@ def _program_data_dir() -> Path | None:
 
     value = os.environ.get("PROGRAMDATA")
     if value:
-        return Path(value)
+        candidate = Path(value)
+        # A relative value would be resolved against whatever the working
+        # directory happens to be, so a manifest planted alongside the process
+        # could name an executable anywhere and have the resolver call it the
+        # engine. ``PROGRAMDATA`` names an absolute location by definition;
+        # anything else is treated as unset rather than followed.
+        if candidate.is_absolute():
+            return candidate
     conventional = Path("C:/ProgramData")
     return conventional if conventional.exists() else None
 
@@ -151,21 +158,39 @@ def _unreal_launcher_installs() -> list[str]:
     ]
 
 
+#: The engine version as it appears in an install path: Launcher roots are
+#: named ``UE_5.8``, and the manifest keys off the same ``UE_`` prefix.
+_UNREAL_VERSION_IN_PATH = re.compile(r"UE_(\d+(?:\.\d+)*)", re.IGNORECASE)
+
+
 def _unreal_candidate_key(path: str) -> tuple[tuple[int, ...], str]:
-    version = tuple(int(part) for part in re.findall(r"\d+", path))
+    """Sort key: the engine version in the path, then the whole path.
+
+    The version is read from a ``UE_5.8``-shaped segment rather than from every
+    digit in the path. Taking all digits mixed in whatever else happened to
+    contain them: ``C:\\Users\\user99\\UE_5.8`` keyed as ``(99, 5, 8, 64)`` and
+    outranked a clean ``(5, 9, 64)``, so the *older* engine won on a machine
+    with two installed. A path with no such segment sorts below one that has it.
+    """
+
+    match = _UNREAL_VERSION_IN_PATH.search(path)
+    version = tuple(int(part) for part in match.group(1).split(".")) if match else ()
     return version, path.casefold()
 
 
 def _find_unreal() -> str | None:
-    """Locate UnrealEditor, preferring the newest installed engine.
+    """Locate UnrealEditor, preferring the newest engine the Launcher installed.
 
-    Every source is collected before one candidate is chosen, because they
-    cover different machines and neither is a superset: the Launcher manifest
-    finds an engine installed to a custom root, and the fixed patterns cover
-    one the Launcher never recorded. There is deliberately no sweep across
-    drives -- a hand-placed engine is what ``UNREAL_EDITOR`` is for, and the
-    CLI already tells the user to pass ``--unreal-exe PATH`` when this returns
-    nothing.
+    ``UNREAL_EDITOR`` / ``UE_EDITOR`` and then ``PATH`` win outright: those are
+    explicit choices, and a user who names a binary has already answered the
+    question. Only the *discovered* candidates -- the Launcher manifest and the
+    fixed patterns -- are version-compared, because those are the ones that can
+    turn up several engines at once. They cover different machines and neither
+    is a superset: the manifest finds an engine installed to a custom root, and
+    the fixed patterns cover one the Launcher never recorded. There is
+    deliberately no sweep across drives -- a hand-placed engine is what
+    ``UNREAL_EDITOR`` is for, and the CLI already tells the user to pass
+    ``--unreal-exe PATH`` when this returns nothing.
     """
 
     env_path = _existing_env_path(["UNREAL_EDITOR", "UE_EDITOR"])

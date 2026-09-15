@@ -46,7 +46,7 @@ MCP tool contracts -> 17 个
 |---|---|
 | `apps/studio/app/main.py` | 删掉复制的 `_candidate_paths` / `_existing_env_path` / `_find_executable` / `_godot_candidate_key` / `_find_godot_executable`；`_probe_executable` 改为接受 `resolver`；新增 `_probe_unreal`，target 解析到真正会启动的 `-Cmd` 二进制；Blender / Godot / Unreal 全部改走 `local_tools` |
 | `tests/test_studio_app.py` | 原 `test_studio_detects_downloaded_godot_install` 打桩已删的函数，改写为"打桩 resolver、断言面板跟随"；新增 Unreal `-Cmd` 显示与"引擎缺失仍报 unavailable"两条守卫 |
-| `generated/mutation_check_all_guards.py` | 新增 S1（面板不再询问共享 resolver）、S2（面板报编辑器而非 `-Cmd`） |
+| `generated/mutation_check_all_guards.py` | 新增 S1（面板不再询问共享 resolver）、S2（面板报编辑器而非 `-Cmd`）。该文件被 `generated/*` 规则 gitignore，**不入版本控制**——只存在于本机，CI 不会执行它 |
 | `AGENTS.md` | 在"引擎装在哪由 `local_tools` 解析"下补"状态面板也走这套解析" |
 
 `unreal` target 现在显示 `-Cmd` 版，因为 headless commandlet 走的是它；只报 `UnrealEditor.exe` 会让"面板 ready"和"实际启动的进程"继续不一致。

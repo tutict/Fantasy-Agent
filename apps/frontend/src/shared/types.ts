@@ -384,6 +384,12 @@ export interface McpService {
   detail_args?: Record<string, unknown>;
   next_action_args?: Record<string, unknown>;
   required?: boolean;
+  /**
+   * Extra backend detail about how the status was reached -- for Unreal this
+   * carries the `UnrealEditor.exe` that `target` was resolved from, so a reader
+   * can tell a headless `-Cmd` build from a GUI-only install.
+   */
+  metadata?: Record<string, unknown>;
 }
 
 export interface McpStatus {

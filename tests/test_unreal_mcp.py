@@ -845,10 +845,13 @@ def test_unreal_is_found_through_the_launcher_manifest(monkeypatch, tmp_path: Pa
     from fantasy_agent import local_tools
 
     engine_root = _fake_install(tmp_path / "custom", "UE_5.8")
-    # A plugin row pointing at a root that really does hold an editor. It must
-    # not answer for the engine: a plugin's version is not an engine version,
-    # and letting one win would silently resolve to the wrong UE build.
-    plugin_root = _fake_install(tmp_path / "custom", "QuixelBridge_5.9")
+    # A plugin row whose install root is itself named ``UE_5.9`` and holds an
+    # editor. Its path carries a *higher* version than the engine's, so dropping
+    # the ArtifactId filter would let it win the version comparison -- a plugin
+    # row is not an engine, whatever its folder happens to be called. Naming the
+    # root this way is what keeps the guard honest: a plugin row that could only
+    # lose on version would pass even with the filter removed.
+    plugin_root = _fake_install(tmp_path / "custom", "UE_5.9")
     _isolate_unreal_discovery(
         monkeypatch,
         tmp_path,
@@ -901,6 +904,61 @@ def test_unreal_discovery_reports_nothing_rather_than_raising(monkeypatch, tmp_p
     assert manifest.exists()
     manifest.write_text("{ this is not json", encoding="utf-8")
     assert local_tools._find_unreal() is None
+
+
+def test_the_version_sorting_ignores_digits_that_are_not_the_version():
+    """A digit elsewhere in the path must not outrank the engine's version.
+
+    The sort key used to be every digit in the path, so
+    ``C:\\Users\\user99\\UE_5.8`` keyed as ``(99, 5, 8, 64)`` and beat a clean
+    ``(5, 9, 64)`` -- the *older* engine won on a machine with two installed,
+    because the username outranked the version. Only a ``UE_5.8``-shaped
+    segment carries a version.
+    """
+
+    from fantasy_agent import local_tools
+
+    polluted_older = r"C:\Users\user99\UE_5.8\Engine\Binaries\Win64\UnrealEditor.exe"
+    clean_newer = r"C:\ue\UE_5.9\Engine\Binaries\Win64\UnrealEditor.exe"
+
+    assert local_tools._unreal_candidate_key(clean_newer) > local_tools._unreal_candidate_key(
+        polluted_older
+    )
+    assert max([polluted_older, clean_newer], key=local_tools._unreal_candidate_key) == clean_newer
+
+
+def test_a_path_without_a_version_sorts_below_one_with_a_version():
+    """A path with no version segment is not evidence of anything.
+
+    It must not win by accident just because its spelling happens to sort
+    first; an empty version tuple stays below every real one.
+    """
+
+    from fantasy_agent import local_tools
+
+    versioned = r"C:\Program Files\Epic Games\UE_5.7\Engine\Binaries\Win64\UnrealEditor.exe"
+    unversioned = r"D:\Unreal\Engine\Binaries\Win64\UnrealEditor.exe"
+
+    assert local_tools._unreal_candidate_key(versioned) > local_tools._unreal_candidate_key(
+        unversioned
+    )
+
+
+def test_a_relative_program_data_root_is_not_followed(monkeypatch):
+    """``PROGRAMDATA`` names an absolute place; a relative one is not followed.
+
+    Resolved against the working directory instead, a relative value would let
+    a manifest planted beside the process point the resolver at any executable
+    and have it treated as the engine.
+    """
+
+    from fantasy_agent import local_tools
+
+    monkeypatch.setenv("PROGRAMDATA", "./poison")
+
+    root = local_tools._program_data_dir()
+
+    assert root is None or root.is_absolute(), root
 
 
 # ── The local derived data cache path ────────────────────────────────────────

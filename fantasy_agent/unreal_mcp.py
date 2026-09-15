@@ -1349,8 +1349,11 @@ class UnrealMCPBridge(BaseMCPBridge):
         if len(local_ddc.as_posix()) <= MAX_LOCAL_DDC_PATH:
             return local_ddc
         # Keyed by project path so two projects neither share nor evict each
-        # other's cache, and short by construction: the temp root is a few
-        # dozen characters where a deep workspace can be over a hundred.
+        # other's cache. Short by construction rather than by check: the temp
+        # root is a few dozen characters, and the result measures 71 against
+        # the 119 limit on this machine. A temp root over roughly 81 characters
+        # would still exceed it -- the length assertion in the DDC test is what
+        # catches that, since this function does not re-check the fallback.
         digest = hashlib.sha256(project_file.parent.as_posix().encode("utf-8")).hexdigest()
         return Path(tempfile.gettempdir()) / "fantasy-agent-ue-ddc" / digest[:16]
 
