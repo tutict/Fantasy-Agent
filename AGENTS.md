@@ -156,6 +156,14 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 
 三条守卫钉住这一格：一条打桩 resolver、要求面板只复述 resolver 的答案（自建探测读不到桩，两条分支都会红）；一条记录 resolver 实际拨的 URL、要求非本机端点从未被请求；一条把 `socket.create_connection` 换成记录器，要求面板**一次连接都不自己开**——前一条只证明"问了 resolver"，问完又自己拨一遍它抓不住。`scripts/mutation_check_all_guards.py` 的 `C1`–`C4` 证明这三条守卫承重。
 
+**Godot 是便携版，没有 manifest 可读**：Unreal 能问 Launcher 要安装清单，Godot 下载下来是个 zip，解到哪就在哪。所以 `_find_godot` 是环境变量 → `PATH`（`godot-console` / `godot4` / `godot`）→ 三条路径模式（`Program Files/Godot`、`AppData/Local/Programs/Godot`、`Users/*/Downloads/Godot*/`）；装在别处就设 `GODOT_EXECUTABLE`，这是唯一的手动出口。**候选按版本排序，版本只从 `Godot_v<版本>` 这个形状的名字里读**——先文件名，再退一步取所在目录名（有些安装是把 exe 改过名的，`Godot_v4.6.3-…/godot.exe`）。曾经是取**整条路径**的所有数字，于是路径里任何一段都能压过版本：`C:/Users/user99/Downloads/Godot_v4.5-…` 的键是 `(99, 4, 5, 64, …)`，赢过干净的 `(4, 6, 3, 64, …)`，机器上装了新旧两个时选中的是**旧的**——而 `C:/Users/*/` 正是那三条模式自己会展开的一段。同名同版本时优先 `*_console`，因为 Windows 上只有它把 stdout 接进被捕获的管道（`run_godot_import` 走 `--headless --import`，要读日志）；不过实测这一条目前是**冗余**的，路径的字典序本来就落在 console 上，所以没为它建守卫。
+
+**`GODOT_EXECUTABLE` 指向目录不再算数**：谓词是 `Path(value).exists()`，于是把变量指到"装 exe 的那个文件夹"——面板自己的文案写着 "set `GODOT_EXECUTABLE` to the Godot executable"，这么读很自然——就满足了探测：面板报 `ready`，随后启动抛 `PermissionError`。现在要求 `is_file()`，落空则继续走 PATH 和路径模式。这条谓词是**三个引擎共用**的（`_find_godot` / `_find_blender` / `_find_unreal`），`_find_unreal` 的 docstring 自己写着"a user who names a binary has already answered the question"——意图就是"命名了一个二进制"，代码原先没校验这一点。
+
+**打开目标失败是一种状态，不是一个 500**：`open_manual_correction_target` 原先只 `except FileNotFoundError`，而它只是 `OSError` 的一种——目录当二进制（`PermissionError`）、不是可执行映像（`WinError 193`）都会逸出，`POST /api/manual-correction/open` 于是回 500 而不是说明问题。现在按 `OSError` 收，返回 `unavailable`。顺带发现前端是用 `t(result.detail_key)` 渲染的、`makeTranslator` 查不到就原样返回键名，而这条路径能返回的 5 个 `detail_key` 里**有 3 个不在 i18n.ts**（`manualOpenNeedsConfirmation` / `manualOpenUnknownTarget` / `manualOpenUnavailable`）——三个失败分支都是把键名直接显示给用户。已补齐，并有一条守卫按分支枚举这 5 个键、要求都在字典里。
+
+`tests/test_local_tools.py` 钉住以上四条（版本键不被路径数字污染、改名的 exe 仍按目录排名、目录不满足探测、打不开的目标报状态；外加那条 i18n 覆盖）。`C7`–`C10` 证明它们承重。**Godot 探测没有第二份实现**——面板 `_probe_godot` 通过 `_probe_executable` 传入 `local_tools._find_godot`，执行器和 `tool_registry`（模型传的 `godot_executable` 会被探针结果覆盖）以及 `verify_engine_links.py` 都走它，这次核查确认过。
+
 **ComfyUI 是服务，不是二进制**：Godot / Blender / Unreal 是拉起来就跑，ComfyUI 得先有一个在 `127.0.0.1:8188` 上监听的服务，探针不会替你起。下面这条是本机（Windows）验证过的路，**路径全是这台机器的，换机要按自己的安装位置改**（ComfyUI Desktop 装在 `D:\Comfy-Desktop`）：
 
 ```
