@@ -32,6 +32,15 @@ jobs:
       - name: Pytest
         run: python -m pytest -q
 
+      # The guards above are only worth having if they would go red when the
+      # behaviour they describe is removed. Each case mutates a source file,
+      # runs one guard, and requires that guard to fail; sources are restored
+      # byte-for-byte. Cases whose guard launches a local engine report as not
+      # applicable here (no engine on the runner) rather than failing, so this
+      # step covers everything except the two Godot cases.
+      - name: Mutation guards
+        run: python scripts/mutation_check_all_guards.py
+
   frontend:
     name: Frontend (typecheck + test + build)
     runs-on: ubuntu-latest
