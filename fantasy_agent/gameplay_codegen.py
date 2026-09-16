@@ -617,6 +617,28 @@ _BOUNDARY_WORDS = (
 )
 
 
+def _gd_literal(text: str) -> str:
+    """Spec text made safe to sit inside a GDScript double-quoted literal.
+
+    Every string here is *the spec's own words*, written by a model and then
+    pasted into generated source. Only the quote used to be handled, which left
+    two ways for a spec to produce a script that will not parse at all:
+
+    - a newline, which ends the literal mid-string -- ``_fail("Player fell off``
+      followed by the rest of the sentence on the next line;
+    - a backslash, because ``\\r`` is a carriage return and ``\\l`` is not an
+      escape in the first place. A failure state quoting a Windows path is
+      enough.
+
+    Both take down the whole ``game_manager.gd``, so the slice cannot be run at
+    all -- a bad run instead of a bad message. Collapsing the whitespace first
+    also keeps the emitted line one line, which is what makes the generated file
+    readable in a diff.
+    """
+
+    return " ".join(text.split()).replace("\\", "\\\\").replace('"', "'")
+
+
 def _boundary_failure(fails: list[str], fallback: str) -> str:
     """The spec's own wording for losing the route, when it has one.
 
@@ -634,7 +656,7 @@ def _boundary_failure(fails: list[str], fallback: str) -> str:
     for text in fails:
         lowered = text.casefold()
         if any(word in lowered for word in _BOUNDARY_WORDS):
-            return text.replace('"', "'")
+            return _gd_literal(text)
     return fallback
 
 
@@ -646,16 +668,16 @@ def _game_manager(
 ) -> str:
     if production_spec_bundle is not None:
         narrative = production_spec_bundle.narrative
-        win = (narrative.hud_text.get("objective") or narrative.objective_copy[-1]).replace('"', "'")
+        win = _gd_literal(narrative.hud_text.get("objective") or narrative.objective_copy[-1])
         fails = narrative.failure_feedback or ["Pressure reached maximum"]
-        title = production_spec_bundle.gameplay_spec_title.replace('"', "'")
+        title = _gd_literal(production_spec_bundle.gameplay_spec_title)
         pressure_limit = float(production_spec_bundle.numeric.pressure_clock_seconds)
     else:
-        win = spec.win_state.replace('"', "'")
+        win = _gd_literal(spec.win_state)
         fails = spec.failure_states or ["Pressure reached maximum"]
-        title = spec.title.replace('"', "'")
+        title = _gd_literal(spec.title)
         pressure_limit = float(spec.target_session_minutes * 60)
-    fail0 = fails[0].replace('"', "'")
+    fail0 = _gd_literal(fails[0])
     boundary = _boundary_failure(fails, "Left the active route")
     return f'''extends Node
 
@@ -768,7 +790,7 @@ def _enemy_controller(axis: str) -> str:
     default_behavior = behaviors[0]
     enemy_hp = template.enemies[0][2] if template and template.enemies else 3
     enemy_name = template.enemies[0][0] if template and template.enemies else "Patrol Guard"
-    contact = (mechanics.enemy_contact if mechanics else "Enemy contact").replace('"', "'")
+    contact = _gd_literal(mechanics.enemy_contact if mechanics else "Enemy contact")
     branches = "\n".join(
         f'        "{behavior}":\n            _{behavior}(delta)' for behavior in behaviors
     )

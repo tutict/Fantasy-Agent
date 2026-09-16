@@ -261,6 +261,48 @@ def test_an_unnamed_boundary_failure_is_not_quoted_as_the_pressure_clock():
     ), "the boundary failure is quoting the timer"
 
 
+def test_spec_text_cannot_break_the_generated_literal():
+    """A spec's own words are pasted into GDScript source, so they have to be safe there.
+
+    Only the double quote used to be handled, and both of the remaining holes
+    were measured:
+
+    - a newline ended the literal mid-string, emitting ``_fail("Player fell off``
+      with the rest of the sentence on the following line;
+    - a backslash was not escaped at all, and ``\\l`` is not a GDScript escape
+      (``\\r`` is a carriage return, so even a valid-looking path was mangled).
+
+    Godot refuses to parse either one, which takes the whole ``game_manager.gd``
+    -- and with it the run -- down. A spec written by a model produces this kind
+    of text; a failure state quoting a path does not have to be contrived.
+    """
+
+    spec = _spec_for("parkour")
+    spec.win_state = 'Reach the exit\nand do not "fall"'
+    spec.failure_states = [r"Player fell to C:\route\level", "Player's route is gone"]
+    manager = deterministic_gameplay_scripts(spec)[GAME_MANAGER_SCRIPT]
+
+    # The literal landed on one line, with the newline folded rather than
+    # dropped, and the quotes turned into ones that do not close it.
+    assert "Reach the exit and do not 'fall'" in manager
+    assert "Player fell to C:\\\\route\\\\level" in manager, (
+        "the backslash has to be doubled, or Godot reads \\r and \\l as escapes"
+    )
+
+    # The shapes that cannot parse, checked independently of the two examples
+    # above: an odd number of quotes means the literal never closes, and a lone
+    # backslash means GDScript is about to interpret the next character.
+    emitted = [
+        line
+        for line in manager.splitlines()
+        if "_fail(" in line or "_update_hud(" in line
+    ]
+    assert emitted, manager
+    for line in emitted:
+        assert line.count('"') % 2 == 0, f"a literal that never closes: {line!r}"
+        assert "\\" not in line.replace("\\\\", ""), f"an unescaped backslash: {line!r}"
+
+
 # ── fallback ─────────────────────────────────────────────────────────────────
 
 def test_unknown_verbs_fall_back_to_the_generic_controller():

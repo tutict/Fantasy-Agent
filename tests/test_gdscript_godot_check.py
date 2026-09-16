@@ -106,6 +106,12 @@ const ROUTE_TILE_HALF_X := 1.5
 const ROUTE_TILE_HALF_Z := 2.5
 const ROUTE_SLACK := 0.5
 
+# Two threats closer than this read as one threat wearing two names. The
+# generated rule puts them in lateral lanes 2.3m apart, or on different tiles
+# 5m apart, so the only way to get under 1.0 is for the rule to have stopped
+# separating them at all.
+const SPAWN_CLEARANCE := 1.0
+
 
 func _route_excursion(scene: Node, point: Vector3) -> float:
 	# How far outside the walkway this point is: 0.0 over any tile, measured
@@ -206,11 +212,31 @@ func _static_report() -> void:
 	_say("hud_at_spawn", gm._hud.text if gm != null and gm._hud else "")
 	var enemies := get_nodes_in_group("enemy")
 	_say("enemy_count", enemies.size())
+	var start_tile := scene.get_node_or_null("FA_RouteFloor_Start") as Node3D
+	var exit_tile := scene.get_node_or_null("FA_RouteFloor_Exit") as Node3D
 	var on_route := 0
+	var on_spawn_tile := 0
+	var on_exit_tile := 0
+	var stacked := 0
+	var points: Array[Vector3] = []
 	for enemy in enemies:
-		if _on_route(scene, (enemy as Node3D).global_position):
+		var point: Vector3 = (enemy as Node3D).global_position
+		if _on_route(scene, point):
 			on_route += 1
+		# Tiles are contiguous along z, so "within a tile's half-length of its
+		# centre" is exactly "standing on it".
+		if start_tile != null and absf(start_tile.position.z - point.z) <= ROUTE_TILE_HALF_Z:
+			on_spawn_tile += 1
+		if exit_tile != null and absf(exit_tile.position.z - point.z) <= ROUTE_TILE_HALF_Z:
+			on_exit_tile += 1
+		for other in points:
+			if other.distance_to(point) < SPAWN_CLEARANCE:
+				stacked += 1
+		points.append(point)
 	_say("enemies_on_route", on_route)
+	_say("enemies_on_spawn_tile", on_spawn_tile)
+	_say("enemies_on_exit_tile", on_exit_tile)
+	_say("enemy_pairs_stacked", stacked)
 	_say("exit_trigger_present", scene.get_node_or_null("FA_ExitTrigger") != null)
 	scene.free()
 
@@ -580,6 +606,23 @@ def test_the_generated_prototype_can_actually_be_played(tmp_path, axis):
         assert int(report["enemy_count"]) >= 1, "the design declares enemies"
         assert report["enemies_on_route"] == report["enemy_count"], (
             f"{report['enemy_count']} enemies, {report['enemies_on_route']} on the route"
+        )
+        # Both of these were measured on the stealth roster, which declares five
+        # enemies for a three-beat route: the surplus landed on the exit tile --
+        # inside the gate, inside the trigger -- and two of them at the same
+        # coordinates. Nothing in the design says the exit should be a wall of
+        # guards, and a threat standing in the door guards nothing.
+        assert report["enemies_on_exit_tile"] == "0", (
+            f"{report['enemies_on_exit_tile']} of {report['enemy_count']} enemies "
+            "spawned on the exit tile, which is where the run is supposed to end"
+        )
+        assert report["enemies_on_spawn_tile"] == "0", (
+            f"{report['enemies_on_spawn_tile']} enemies spawned on the player's own "
+            "tile, so the run is over before it starts"
+        )
+        assert report["enemy_pairs_stacked"] == "0", (
+            f"{report['enemy_pairs_stacked']} pairs of enemies share a spawn point, "
+            "so the roster is smaller than the design declares"
         )
         assert report["contact_ended"] == "true", "walking into an enemy did not end the run"
         assert report["contact_hud"].startswith("FAIL"), report["contact_hud"]

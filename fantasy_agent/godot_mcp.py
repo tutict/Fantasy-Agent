@@ -829,15 +829,30 @@ func _spawn_enemies(gm: Node) -> void:
 
 
 func _enemy_spawn_position(index: int) -> Vector3:
-    # One tile past the player's, alternating sides. The old rule spread them
-    # on fixed coordinates that put most of them in the gaps between tiles --
-    # a threat patrolling empty air guards nothing.
+    # Interior tiles only, and never two threats at one point.
+    #
+    # The first tile is the player's spawn and the last one carries the exit
+    # gate, so a threat parked on either stands in the player's lap or inside
+    # the door it is meant to be guarding. The rule before this one spread them
+    # on fixed coordinates that put most of them in the gaps between tiles -- a
+    # threat patrolling empty air guards nothing -- and simply counting upwards
+    # from the first tile then landed the surplus on the exit tile, two of them
+    # at the same coordinates.
+    #
+    # Lateral lanes only: contact ends the run, so a lane down the middle of a
+    # 3m corridor would end it for anyone walking straight through. The three
+    # counters are mixed-radix over (tile, lane, row), so every index gets its
+    # own point however many enemies a design declares.
+    var lanes := [1.15, -1.15]
     var floors := _route_floors()
-    var x := 1.15 if index % 2 == 0 else -1.15
-    if floors.is_empty():
-        return Vector3(x, 0.85, -5.0 - float(index) * 2.2)
-    var tile := floors[mini(index + 1, floors.size() - 1)] as Node3D
-    return Vector3(tile.position.x + x, 0.85, tile.position.z)
+    if floors.size() < 3:
+        return Vector3(1.15 if index % 2 == 0 else -1.15, 0.85, -5.0 - float(index) * 2.2)
+    var interior := floors.slice(1, floors.size() - 1)
+    var per_row := interior.size() * lanes.size()
+    var lane: float = lanes[floori(float(index) / float(interior.size())) % lanes.size()]
+    var tile := interior[index % interior.size()] as Node3D
+    var row := floori(float(index) / float(per_row))
+    return Vector3(tile.position.x + lane, 0.85, tile.position.z - 1.4 * float(row))
 
 
 func _decorate_enemy(enemy: Area3D, behavior: String) -> void:
