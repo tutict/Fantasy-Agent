@@ -135,7 +135,8 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 三条规则是这次接线定下的，改之前先读：
 
 1. **权限从 MCP 注解推导，不手写。** `readOnlyHint` → `read_only`；非只读且 `idempotentHint` → `write`；非幂等 → `execute`（只有 `run_*` / `generate_asset_batch` 会启进程）。`permission_from_annotations()` 是唯一出处。
-2. **模型不造 plan。** `create_godot_project_structure` 这类工具要一个嵌套 `GodotProjectPlan`，模型造不出来也不该造。它们声明 `plan_key`，`plan` 参数从 schema 里**隐藏**，由注册表把本轮 `generate_game_production_plan` 的产物注入（`run_agent` 每次调用后调 `remember_plan`）。附带收益：Godot 那个工具的 schema 从 19.5KB 降到 1.5KB。
+2. **模型不造 plan，也不供 spec。** `create_godot_project_structure` 这类工具要一个嵌套 `GodotProjectPlan`，模型造不出来也不该造。它们声明 `plan_key`，`plan` 参数从 schema 里**隐藏**，由注册表把本轮 `generate_game_production_plan` 的产物注入（`run_agent` 每次调用后调 `remember_plan`）。附带收益：Godot 那个工具的 schema 从 19.5KB 降到 1.5KB。隐藏的参数还包括 `gameplay_spec` / `production_spec_bundle`（`_ENGINE_HIDDEN_ARGS` + `_HIDDEN_ARG_SOURCES` 从同一份策划结果回填）与 `gameplay_scripts`（故意不回填，由 `godot_mcp` 从 spec 派生）。
+   **藏起来的参数一律「先丢弃再回填」，不做「缺了才填」。** 从 schema 里拿掉一个参数并不能阻止模型把它发过来——`EXECUTABLE_FIELDS` 一直就是按这个前提写的。而 `if args.get(...)` 只是让模型的值**赢**，正是隐藏要防的那件事：模型自带 `gameplay_spec` 就会建出一个本轮计划之外的工程，自带 `gameplay_scripts` 就会把一段手写 GDScript 抢先写进磁盘、绕过 codegen。所以 `_call_arguments` 先 `pop` 掉 `plan` 与 `_ENGINE_HIDDEN_ARGS` 里的全部参数，再从 `self.artifacts` 回填。`plan` 的存在性闸门也据此改读 store，不读 `arguments`——否则一个模型自带的 plan 会让调用通过，然后交给 handler 一个里面没有 plan 的参数集。改这三张表里任何一张之前先看 `test_every_hidden_argument_is_either_sourced_or_exempt`：隐藏了却没有任何来源的参数必须显式登记进 `_HIDDEN_ARG_WITHOUT_SOURCE` 并写明理由，否则就是一个「隐藏即等于模型自选」的静默洞。
 3. **确认由闸门注入，不由模型声明。** `write_files` / `confirmed_side_effects` 默认都是 false，不注入的话"授权"等于什么都没发生。授权时注册表写入 true——但**模型显式传 false 时保留**，那是它主动要 dry run。
 
 **未接线的一个**：`publish_prototype_branch`（github-mcp）只有契约没有实现。`unimplemented_contracts()` + 测试把这个缺口钉住——实现了却没接线、或删了契约忘了测试，都会红。

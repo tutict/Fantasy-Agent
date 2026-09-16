@@ -14,6 +14,9 @@ import pytest
 from fantasy_agent import llm
 from fantasy_agent.agent_loop import AgentRunResult, run_agent
 from fantasy_agent.tool_registry import (
+    _ENGINE_HIDDEN_ARGS,
+    _HIDDEN_ARG_SOURCES,
+    _HIDDEN_ARG_WITHOUT_SOURCE,
     EXECUTE,
     READ_ONLY,
     WRITE,
@@ -372,6 +375,105 @@ def test_hiding_the_plan_shrinks_the_schema_dramatically():
 
     spec = engine_registry().get("create_godot_project_structure")
     assert len(json.dumps(spec.model_schema())) < 4000
+
+
+def test_a_hidden_argument_the_model_sent_is_discarded():
+    """Hiding an argument takes it out of the schema. It does not stop a model.
+
+    So the registry settles these by discarding whatever arrived and then
+    filling from this run's own stores. Keeping the model's value instead --
+    which is what an ``if args.get(...)`` guard does -- means a Godot call
+    carrying its own ``gameplay_spec`` builds a project the rest of the run was
+    never planned around, and one carrying ``gameplay_scripts`` puts
+    hand-written GDScript on disk ahead of the codegen module that is supposed
+    to produce it.
+    """
+
+    seen: dict = {}
+
+    def spy(arguments):
+        seen.update(arguments)
+        return "ok"
+
+    registry = engine_registry()
+    spec = registry.get("create_godot_project_structure")
+    spec.handler = spy
+    registry.artifacts["godot_plan"] = {"project_name": "rooftop"}
+    registry.artifacts["gameplay_spec"] = {"title": "the run's own spec"}
+    registry.artifacts["production_spec_bundle"] = {"numeric": {"player_hp": 5}}
+
+    registry.call(
+        "create_godot_project_structure",
+        {
+            "gameplay_spec": {"title": "the model's own spec"},
+            "production_spec_bundle": {"numeric": {"player_hp": 99}},
+            "gameplay_scripts": {"player_controller.gd": "extends Node\n"},
+        },
+        allow_write=True,
+    )
+
+    assert seen["gameplay_spec"] == {"title": "the run's own spec"}
+    assert seen["production_spec_bundle"] == {"numeric": {"player_hp": 5}}
+    assert "gameplay_scripts" not in seen, (
+        "the model's own GDScript reached the bridge; godot_mcp derives the "
+        "scripts from the spec it is handed"
+    )
+
+
+def test_a_plan_the_model_sent_does_not_satisfy_the_run():
+    """The gate has to look where the plan is kept, not at what arrived.
+
+    A plan is hidden for the same reason the spec is, and is discarded the same
+    way -- so reading ``arguments`` to decide whether the run has one lets a
+    call through and then hands the handler an argument set with no plan in it.
+    """
+
+    registry = engine_registry()
+
+    outcome = registry.call(
+        "create_godot_project_structure",
+        {"plan": {"project_name": "invented"}, "write_files": True},
+        allow_write=True,
+    )
+
+    assert outcome.status == "error"
+    assert "generate_game_production_plan" in outcome.content
+
+
+def test_every_hidden_argument_is_either_sourced_or_exempt():
+    """A hidden argument with nothing to fill it in is one the model supplies.
+
+    ``_ENGINE_HIDDEN_ARGS`` promises the model does not get to set these, and
+    the registry enforces it by discarding whatever arrives. An argument in that
+    list which no table replaces is therefore simply never set -- deliberate for
+    ``gameplay_scripts``, but only if the reason is written down. Without this
+    check, adding a fourth hidden argument and forgetting its source is a silent
+    hole rather than a red test.
+    """
+
+    unaccounted = []
+    for tool, arguments in _ENGINE_HIDDEN_ARGS.items():
+        sourced = set(_HIDDEN_ARG_SOURCES.get(tool, {}))
+        exempt = set(_HIDDEN_ARG_WITHOUT_SOURCE.get(tool, {}))
+        for argument in arguments:
+            if argument not in sourced and argument not in exempt:
+                unaccounted.append(f"{tool}.{argument}")
+    assert unaccounted == [], (
+        f"hidden with nothing to fill it in: {unaccounted}. Add it to "
+        "_HIDDEN_ARG_SOURCES, or to _HIDDEN_ARG_WITHOUT_SOURCE with the reason."
+    )
+
+    phantom = sorted(
+        f"{tool}.{argument}"
+        for tool, sources in _HIDDEN_ARG_SOURCES.items()
+        for argument in sources
+        if argument not in _ENGINE_HIDDEN_ARGS.get(tool, ())
+    )
+    assert phantom == [], (
+        f"filled in but not hidden: {phantom}. The injection overwrites whatever "
+        "arrives, so the model could never set this argument even though the "
+        "schema advertises it."
+    )
 
 
 def test_an_engine_tool_without_a_plan_names_the_missing_step():

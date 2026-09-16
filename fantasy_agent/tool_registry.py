@@ -189,15 +189,17 @@ class ToolRegistry:
                 f"{name} writes files and requires write confirmation; it was not run.",
             )
 
-        if spec.plan_key and not (arguments or {}).get("plan"):
-            plan = self.artifacts.get(spec.plan_key)
-            if plan is None:
-                return ToolOutcome(
-                    name,
-                    "error",
-                    f"{name} needs a {spec.plan_key}, but this run has not produced "
-                    "one yet; call generate_game_production_plan first.",
-                )
+        # Read from the store, not from ``arguments``: the model's own plan is
+        # discarded in ``_call_arguments``, so accepting it here would let the
+        # call through and then hand the handler an argument set with no plan in
+        # it at all.
+        if spec.plan_key and self.artifacts.get(spec.plan_key) is None:
+            return ToolOutcome(
+                name,
+                "error",
+                f"{name} needs a {spec.plan_key}, but this run has not produced "
+                "one yet; call generate_game_production_plan first.",
+            )
 
         try:
             payload = spec.handler(self._call_arguments(spec, arguments, allow_write, allow_execute))
@@ -218,7 +220,7 @@ class ToolRegistry:
     ) -> dict[str, Any]:
         """Fill in what the model must not be trusted with, or need not supply.
 
-        Four things are injected here, all outside the model's reach:
+        Four things are settled here, all outside the model's reach:
 
         - the plan, from this run's planning result, so the model asks for the
           work rather than reconstructing a nested object it cannot get right;
@@ -227,23 +229,35 @@ class ToolRegistry:
         - the confirmation flag, reflecting the grant the *caller* made. An
           explicit ``false`` from the model is left alone: that is a
           deliberate dry run;
-        - the executable path, from a local probe. Unlike the others this one
-          *overwrites* rather than fills in: hiding the argument from the
-          schema does not stop a model from sending it anyway, so whatever
-          arrives is discarded. When nothing is installed the key is dropped
-          and the bridge falls back to its own default.
+        - the executable path, from a local probe. When nothing is installed the
+          key is dropped and the bridge falls back to its own default.
+
+        The hidden ones are *discarded-then-filled*, never filled-if-missing.
+        Hiding an argument only takes it out of the advertised schema, which
+        does not stop a model from sending it anyway -- the executable probe has
+        always had to cope with exactly that, and that is why it overwrites. An
+        ``if args.get(...)`` guard does not do the same job; it keeps the
+        model's value, which is the one thing the hiding existed to prevent. A
+        Godot call carrying its own ``gameplay_spec`` would then silently build
+        a project the rest of the run was not planned around, and one carrying
+        ``gameplay_scripts`` would put hand-written GDScript on disk ahead of
+        the codegen module that is supposed to produce it.
         """
 
         args = dict(arguments or {})
 
-        if spec.plan_key and not args.get("plan"):
+        hidden = set(_ENGINE_HIDDEN_ARGS.get(spec.name, ()))
+        if spec.plan_key:
+            hidden.add("plan")
+        for argument in hidden:
+            args.pop(argument, None)
+
+        if spec.plan_key:
             plan = self.artifacts.get(spec.plan_key)
             if plan is not None:
                 args["plan"] = plan
 
         for argument, artifact_key in _HIDDEN_ARG_SOURCES.get(spec.name, {}).items():
-            if args.get(argument):
-                continue
             value = self.artifacts.get(artifact_key)
             if value is not None:
                 args[argument] = value
@@ -442,13 +456,27 @@ _ENGINE_HIDDEN_ARGS: dict[str, tuple[str, ...]] = {
 # Godot tool that is this run's planning result. Without this the tool was
 # built with no gameplay spec at all: the project got the plain player template,
 # no game_manager.gd, and no code that spawns a player or decides the run, so
-# the slice the model produced could not be played. (``gameplay_scripts`` is
-# absent on purpose: godot_mcp derives them from the spec it is handed, which
-# keeps "how a script is made" in the codegen module.)
+# the slice the model produced could not be played.
 _HIDDEN_ARG_SOURCES: dict[str, dict[str, str]] = {
     "create_godot_project_structure": {
         "gameplay_spec": "gameplay_spec",
         "production_spec_bundle": "production_spec_bundle",
+    },
+}
+
+#: Hidden arguments that no source fills in, and why that is deliberate. Every
+#: entry is an argument that is taken out of the schema and then simply never
+#: set, so the bridge decides the value on its own -- which is a decision worth
+#: writing down here rather than leaving as an absence. A hidden argument in
+#: neither table is the silent case: hidden, unsourced, and therefore whatever
+#: the model felt like sending, which is what
+#: ``test_every_hidden_argument_is_either_sourced_or_exempt`` forbids.
+_HIDDEN_ARG_WITHOUT_SOURCE: dict[str, dict[str, str]] = {
+    "create_godot_project_structure": {
+        "gameplay_scripts": (
+            "godot_mcp derives them from the spec it is handed, which keeps "
+            '"how a script is made" in the codegen module'
+        ),
     },
 }
 

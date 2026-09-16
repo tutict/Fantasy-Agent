@@ -463,18 +463,17 @@ def test_the_registry_built_project_survives_a_real_godot(tmp_path):
         registry, tmp_path / "planned", planned_project, "the spec-carrying project"
     )
 
-    # ``remember_plan`` is what stores the spec, so skipping it is how a caller
-    # gets the plan-only project. The plan itself has to be passed in, because
-    # that is the one argument the registry does not fill from a store it never
-    # wrote to.
+    # A store holding the plan but not the spec is how a caller gets the
+    # plan-only project. Written into the store rather than passed as an
+    # argument, because a hidden argument is discarded whatever arrives -- the
+    # plan has to come from where the registry looks for it.
     spec_source = planned.data.get("summary")
     if not isinstance(spec_source, dict):
         spec_source = planned.data
     plain_registry = combined_registry(tmp_path / "plain")
+    plain_registry.artifacts["godot_plan"] = spec_source["godot_plan"]
     plan_only = plain_registry.call(
-        "create_godot_project_structure",
-        {"plan": spec_source["godot_plan"], "write_files": True},
-        allow_write=True,
+        "create_godot_project_structure", {"write_files": True}, allow_write=True
     )
     assert plan_only.status == "ok", plan_only.content
     plain_project = _result_data(plan_only)["artifact"]["project_file"]
