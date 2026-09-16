@@ -74,6 +74,7 @@ export interface PipelineStage {
   risks?: string[];
   requires_confirmation?: boolean;
   mcp_tools?: string[];
+  kind?: string;
 }
 
 export interface ProductionPipeline {

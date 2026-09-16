@@ -75,7 +75,13 @@ def test_every_needle_still_matches_exactly_once():
         eol = b"\r\n" if b"\r\n" in original else b"\n"
         count = original.count(harness._as_eol(needle, eol))
         if count != 1:
-            stale.append(f"{label!r}: needle appears {count}x in {relative}")
+            # The instinct is to fix the needle. For a file nobody edited the
+            # needle is not what is wrong: a run killed mid-case leaves its
+            # mutation on disk, and `finally` does not run on a kill.
+            stale.append(
+                f"{label!r}: needle appears {count}x in {relative} -- a rename, or the "
+                f"residue of a killed run; `git diff {relative}` first"
+            )
     assert stale == [], "\n".join(stale)
 
 

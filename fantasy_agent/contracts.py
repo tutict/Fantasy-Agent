@@ -58,6 +58,12 @@ CreativeReviewDimension = Literal[
     "technical_usability",
 ]
 ProductionTaskStatus = Literal["pending", "ready", "blocked", "done"]
+#: Who drives the stage. An ``agent`` stage is handed its own ``mcp_tools`` and
+#: has to name at least one; a ``human`` stage is a decision only the user can
+#: make, so it carries no tools at all. Before this field existed both cases
+#: looked identical -- an empty ``mcp_tools`` -- and an orchestrator could not
+#: tell "nobody filled this in" from "this one is not a tool call".
+ProductionStageKind = Literal["agent", "human"]
 ProductionTaskAgent = Literal[
     "director-agent",
     "gameplay-agent",
@@ -1004,6 +1010,7 @@ class ProductionPipelineStage(StrictModel):
     quality_gates: list[str] = Field(default_factory=list)
     side_effects: list[str] = Field(default_factory=list)
     depends_on: list[ProductionPipelineStageId] = Field(default_factory=list)
+    kind: ProductionStageKind = "agent"
     status: ProductionTaskStatus = "pending"
     requires_confirmation: bool = False
     risks: list[str] = Field(default_factory=list)

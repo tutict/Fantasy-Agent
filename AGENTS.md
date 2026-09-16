@@ -145,6 +145,9 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 
 **变异校验 `scripts/mutation_check_all_guards.py`**（进 CI，跟在 pytest 之后）：一套绿测试只说明守卫通过，不说明**把守卫声称要拦的行为删掉之后它会红**——守卫可以又绿又空。每条 case 就做这件事：把源码改回修复前的样子（或后来人真会写出的那个错），跑那一个守卫，要求它变红，再逐字节还原并校验还原结果。判定读 runner 自己的计数行、不读退出码，因为退出码两个方向都会骗人：节点名失效时 pytest 收集到 0 条、runner 退出 2，"非零即抓住"会把一个死守卫读成活的；守卫自己 skip 时退出 0 且报告全绿，看起来像"没抓住"。所以 `NO RUN` 与 `SKIPPED` 都单独报成**未证明**，不计入通过。需要本机引擎的 case 在 `ENGINE_REQUIREMENTS` 里声明，引擎不在时报 `N/A` 而非失败，于是它在没装引擎的 CI runner 上照样跑得完其余的；**别在文档或注释里写「几条需要引擎」这种数字**，加一条真机 case 它就过期了——总结行的 N/A 列表才是准的。`tests/test_mutation_harness.py` 在 CI 里静态校验 harness 的输入——针点是否仍恰好命中 1 次（含行尾归一）、每个节点名是否存在、参化测试是否被裸 id 指代、引擎声明是否还有对应 case——因为 harness 自己坏掉是隐形的；这些输入检查本身也算守卫，所以各自也有自变异 case（H 系列），尤其「参化测试必须 pin 住那一条腿」这条规则在真实 case 列表里已经没有活体被检对象（全都 pin 好了），于是它由一条合成用例承担，否则规则可以静默失效。`--only <子串>` 只跑匹配的 case（改一行源码不必等全部），它会明说漏掉了多少条；`--list` 列出全部。
 
+- **`--only` 的子串要足够长。** 匹配是大小写不敏感的子串包含，`--only T` 几乎命中每一条 label（每条里都有个 t），等于跑全量；只想跑新加的几条就写整句片段，比如 `--only "the creative review goes back"`。
+- **被打断的运行会在工作区留下变异残留。** 唯一有变异文件落在盘上的时刻就是那次 guard 运行，而它正是每个 case 里最长、最会被 Ctrl-C 打断的一段；`finally` 在进程被杀时不执行。残留的表现是**下一个**运行（或 CI 里的）`test_every_needle_still_matches_exactly_once` 报出「某条 case 的针点在某个没人改过的文件里命中 0 次」。先 `git diff <那个文件>`，别先改针点——2026-09-16 就是在这里把 `godot_mcp.py` 的 `spacing = 5.0` 留在 `6.0` 上，下一次全量运行的失败信息指着一个与故障无关的文件。
+
 **真机探针 `scripts/verify_engine_links.py`**（手动跑，不进 CI）：测试和探针各管一半——测试钉"代码路径对不对"，探针钉"本机的引擎真的应答"。它走的是同一个 `combined_registry`，所以权限闸门、可执行文件探测和模型 tool call 完全一致；每一步把引擎自己的命令行、`return_code`、stderr 打出来，于是"这条链路是通的"是可读的结论而不是信念。`python scripts/verify_engine_links.py [--workspace 目录]`。引擎会真的被拉起来，所以它会写 `generated/` 并占用引擎时间。Unreal 那一步是真的起 headless editor（`DataValidation` commandlet）——只把 `.uproject` 写出来不算验证，因为"没装"和"坏了"在磁盘上看一模一样；asset ingest / level assembly 要脚本，探针不建，所以不用它们做启动测试。**没装引擎的步骤照样报告，只是降级**——区分"Unreal 没装"和"Unreal 链路坏了"正是它存在的理由。探针里的工具名是手写的，`tests/test_workbench_tool_coverage.py` 守着它们仍在注册表里。
 
 **引擎装在哪由 `local_tools` 解析，别写死路径**：`_find_unreal` 先读 Epic 自己的 `%PROGRAMDATA%\Epic\UnrealEngineLauncher\LauncherInstalled.dat`，再退回 `Program Files` 路径模式。原因是 Launcher 允许把引擎装到任意根目录——本机 `UE_5.8` 在 `C:\ue\UE_5.8`，而 `C:\Program Files\Epic Games\UE_5.8` 只剩一个空的 Launcher stub，所以只靠路径模式会对着装好的引擎报"未安装"。manifest 里插件行（`FabPlugin_5.8` / `QuixelBridge_5.7`）和引擎行同在一个目录，只认 `ArtifactId` 以 `UE_` 开头的那几条。`tests/test_unreal_mcp.py` 钉着"自定义根目录能发现""插件的版本号不算引擎版本""manifest 缺失或损坏读作未安装而不是抛异常"。
@@ -209,6 +212,15 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 4. 准备 Unreal、Godot、Blender 和 ComfyUI 交接。
 5. 准备 QA 计划。
 6. 返回下一步和风险。
+
+**编排表（`ProductionPipeline`，`workflows.py::prepare_production_pipeline`）**
+
+`DirectorBuildPlan.production_pipeline` 是一份 7 阶段的编排表：`order` 定顺序、`depends_on` 定门控、`mcp_tools` 定每阶段能用哪些工具。它长期只有前端在读（`rendering.tsx` / `PlanPanels.tsx` 纯展示），所以字段一直是"写给人看"的，直到 `docs/superpowers/plans/2026-09-16-internal-pi-task-orchestration.md` 的编排器要按它推进。要让编排器信它，这几条必须成立，全部由 `tests/test_pipeline_contract.py` 钉住：
+
+- **空 `mcp_tools` 不合法。** 它曾经同时表示两件事：`gameplay_orchestration` 是漏填，`creative_review` 是人工闸门。现在 `kind: "agent" | "human"` 把两者分开——`agent` 阶段必须至少有一个工具，`human` 阶段必须一个都没有（`creative_review` 是唯一的 `human`，它的 side effect 就是"问用户要审批决定"）。
+- **`mcp_tools` 里的名字必须是注册表里真实存在的工具，不是 commandlet。** Unreal 两个阶段曾写着 `DataValidation`——那是 `run_editor_commandlet` 要跑的 commandlet 名。这类名字读起来像工具、解析结果为 0，而且只在 Unreal 路线上出现，只测 Godot 路线永远看不到。守卫因此同时跑两条路线。
+- **`depends_on` 只许指向 `order` 更小的阶段**，`order` 必须是 `1..N` 且唯一（表末尾有一次重编号，钉的就是它的产出）。
+- 加字段是加法：`kind` 有默认值，旧 JSON 去掉这个键仍按 `agent` 加载。前端 `types.ts` 的 `PipelineStage` 要同步，否则新字段对 UI 不可见。
 
 ## Gameplay Agent
 

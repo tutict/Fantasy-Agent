@@ -24,6 +24,12 @@ So two outcomes are reported as *unproven* rather than either pass or fail:
 guard needs a local engine declare it in ``ENGINE_REQUIREMENTS``; where that
 engine is absent they are ``N/A`` instead, which is what lets this run on a
 machine -- or a CI runner -- with no engines installed.
+
+One hazard is the harness's own: the only moment a mutated file is on disk is
+the guard run, which is the long, interruptible part of a case. A run killed
+there leaves the mutation behind (``finally`` does not run on a kill), and the
+next run reports it as some *other* case whose needle "appears 0x". That is a
+stale-needle report for a file nobody edited, so both places say so.
 """
 
 from __future__ import annotations
@@ -553,6 +559,77 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         ),
         "tests/test_mutation_harness.py::test_a_bare_id_for_a_parametrised_guard_is_rejected",
     ),
+    # ── the orchestration table ─────────────────────────────────────────────
+    # `tests/test_pipeline_contract.py` holds the production pipeline to what
+    # the orchestrator is about to read off it: an agent stage names its tools,
+    # a human stage names none, every name resolves, every edge points backwards
+    # and `order` is dense. These cases hold that guard file to the same promise.
+    (
+        "T1 an agent stage loses the tools it declares",
+        "fantasy_agent/workflows.py",
+        (
+            b"            mcp_tools=[\n"
+            b'                "extract_idea_seed",\n'
+            b'                "generate_game_production_plan",\n'
+            b'                "decompose_production_tasks",\n'
+            b'                "render_gdd",\n'
+            b"            ],\n"
+        ),
+        b"",
+        "tests/test_pipeline_contract.py::test_every_stage_an_agent_drives_names_the_tools_it_uses",
+    ),
+    (
+        "T2 the human gate is handed a tool",
+        "fantasy_agent/workflows.py",
+        b'            kind="human",\n',
+        b'            kind="human",\n            mcp_tools=["validate_godot_project"],\n',
+        "tests/test_pipeline_contract.py::test_a_human_stage_names_no_tools",
+    ),
+    (
+        "T3 the creative review goes back to being an agent stage",
+        "fantasy_agent/workflows.py",
+        b'            kind="human",\n',
+        b"",
+        "tests/test_pipeline_contract.py::test_the_creative_review_is_the_pipelines_human_gate",
+    ),
+    (
+        "T4 the stage kind defaults to human",
+        "fantasy_agent/contracts.py",
+        b'    kind: ProductionStageKind = "agent"\n',
+        b'    kind: ProductionStageKind = "human"\n',
+        "tests/test_pipeline_contract.py::test_a_stage_written_before_the_kind_field_still_loads_as_an_agent_stage",
+    ),
+    (
+        "T5 a commandlet name goes back in where a tool name belongs",
+        "fantasy_agent/workflows.py",
+        b'            mcp_tools=["generate_blender_script"],\n',
+        b'            mcp_tools=["generate_blender_script", "DataValidation"],\n',
+        "tests/test_pipeline_contract.py::test_every_declared_tool_is_one_the_registry_can_resolve",
+    ),
+    (
+        "T6 the declared orders stop being renumbered",
+        "fantasy_agent/workflows.py",
+        (
+            b"    for index, stage in enumerate(stages, start=1):\n"
+            b"        stage.order = index\n"
+        ),
+        b"",
+        "tests/test_pipeline_contract.py::test_the_order_is_a_dense_sequence_covering_every_stage_once",
+    ),
+    (
+        "T7 a stage waits for one that runs after it",
+        "fantasy_agent/workflows.py",
+        b'            depends_on=["creative_review"],\n',
+        b'            depends_on=["optimization_testing"],\n',
+        "tests/test_pipeline_contract.py::test_a_stage_only_depends_on_stages_that_come_before_it",
+    ),
+    (
+        "T8 the next stage is one this route throws away",
+        "fantasy_agent/workflows.py",
+        b'        next_stage="comfyui_visual_production",\n',
+        b'        next_stage="unreal_production",\n',
+        "tests/test_pipeline_contract.py::test_the_pipeline_references_only_stages_a_route_actually_builds",
+    ),
 )
 
 
@@ -755,6 +832,10 @@ def main(argv: list[str] | None = None) -> int:
 
         if original.count(needle) != 1:
             print(f"{label:44} {'SKIP':14} needle appears {original.count(needle)}x in {relative}")
+            # Said here because the reader's instinct is to edit the needle, and
+            # for a file that was never edited the needle is not what is wrong.
+            print(f"{'':45}0 matches is a rename, or the residue of a run killed mid-case;")
+            print(f"{'':45}check `git diff {relative}` before touching the needle.")
             failures.append(label)
             continue
 

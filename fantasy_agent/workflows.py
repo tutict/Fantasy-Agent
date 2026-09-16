@@ -526,6 +526,7 @@ def _pipeline_stage(
     quality_gates: list[str] | None = None,
     side_effects: list[str] | None = None,
     depends_on: list[str] | None = None,
+    kind: str = "agent",
     status: str = "pending",
     requires_confirmation: bool = False,
     risks: list[str] | None = None,
@@ -545,6 +546,7 @@ def _pipeline_stage(
         quality_gates=quality_gates or [],
         side_effects=side_effects or [],
         depends_on=depends_on or [],  # type: ignore[arg-type]
+        kind=kind,  # type: ignore[arg-type]
         status=status,  # type: ignore[arg-type]
         requires_confirmation=requires_confirmation,
         risks=risks or [],
@@ -586,6 +588,15 @@ def prepare_production_pipeline(
                 "generated/gameplay-spec.yaml",
                 "generated/gdd.md",
                 "generated/level-beats.yaml",
+            ],
+            # These four tools produce exactly the outputs listed above. The
+            # stage was declared with no tools at all, which read as "this stage
+            # does nothing" to anything that took the table at its word.
+            mcp_tools=[
+                "extract_idea_seed",
+                "generate_game_production_plan",
+                "decompose_production_tasks",
+                "render_gdd",
             ],
             quality_gates=[
                 "Core loop has at least three testable decisions.",
@@ -731,6 +742,10 @@ def prepare_production_pipeline(
                 "generated/creative-review-report.yaml",
                 "generated/asset-approval-manifest.yaml",
             ],
+            # No tool approves an asset: the side effect below is asking the user
+            # for a decision. Declaring it as an agent stage is what left it with
+            # an empty tool list and no way to tell that apart from an oversight.
+            kind="human",
             quality_gates=[
                 "Every candidate has approve, revise, or reject status.",
                 "User taste and art direction override generated visual references.",
@@ -823,7 +838,7 @@ def prepare_production_pipeline(
             mcp_tools=[
                 "prepare_level_assembly",
                 "run_level_assembly",
-                "DataValidation",
+                "run_editor_commandlet",
             ],
             quality_gates=[
                 f"Default map opens to {', '.join(unreal_plan.maps[:1])}.",
@@ -858,7 +873,7 @@ def prepare_production_pipeline(
                 "generated/logs/qa/*.log",
                 "generated/logs/unreal/*.log",
             ],
-            mcp_tools=["DataValidation"],
+            mcp_tools=["run_editor_commandlet"],
             quality_gates=[
                 f"Average session remains within {qa_plan.target_session_minutes} minutes.",
                 "A first-time player can understand failure reason and restart.",
