@@ -216,8 +216,13 @@ _PARKOUR_PHYSICS = '''
     elif is_on_floor():
         _vaulting = false
 
-    # [SLIDE] crouch-slide on the ground gives a forward burst
+    # [SLIDE] crouch-slide on the ground gives a forward burst.
+    # Held over a few frames: an impulse that survives exactly one frame moves
+    # the player 6/60 m, i.e. not at all as far as anyone playing can tell.
     if is_on_floor() and Input.is_action_just_pressed("slide"):
+        _slide_time = slide_duration
+    if _slide_time > 0.0:
+        _slide_time = maxf(0.0, _slide_time - delta)
         velocity.x += direction.x * slide_boost
         velocity.z += direction.z * slide_boost
 '''
@@ -263,10 +268,15 @@ _COMBAT_PHYSICS = '''
     velocity.x = direction.x * speed
     velocity.z = direction.z * speed
 
-    # [EVADE] a short burst dash on a cooldown
+    # [EVADE] a short burst dash on a cooldown.
+    # The burst is held for a moment, not one frame: a single-frame addition is
+    # 7/60 m, which reads as "evade does nothing".
     _evade_cooldown = maxf(0.0, _evade_cooldown - delta)
     if Input.is_action_just_pressed("evade") and _evade_cooldown <= 0.0:
         _evade_cooldown = evade_cooldown
+        _evade_time = evade_duration
+    if _evade_time > 0.0:
+        _evade_time = maxf(0.0, _evade_time - delta)
         velocity.x += direction.x * evade_impulse
         velocity.z += direction.z * evade_impulse
 
@@ -355,12 +365,6 @@ _MOBILITY_PHYSICS = '''
     if absf(input_dir.x) > 0.1:
         rotate_y(-input_dir.x * steer_rate * delta)
 
-    # [DASH] instant burst along the current facing
-    _dash_cooldown = maxf(0.0, _dash_cooldown - delta)
-    if Input.is_action_just_pressed("dash") and _dash_cooldown <= 0.0:
-        _dash_cooldown = dash_cooldown
-        velocity += -transform.basis.z * dash_impulse
-
     # [BOOST] hold to spend the boost meter for sustained speed
     var speed := move_speed
     if Input.is_action_pressed("boost") and _boost > 0.0:
@@ -368,6 +372,21 @@ _MOBILITY_PHYSICS = '''
         speed *= boost_multiplier
     velocity.x = direction.x * speed
     velocity.z = direction.z * speed
+
+    # [DASH] burst along the current facing.
+    # Two things were wrong with it. It added to velocity *before* the pair of
+    # assignments above, so the assignment erased the whole impulse on the same
+    # frame -- measured, dashing covered the same 0.80m in 6 frames as not
+    # dashing. And even in the right order a one-frame impulse is worth
+    # 9/60 m, which no player can feel. It now runs after them and lasts a
+    # moment.
+    _dash_cooldown = maxf(0.0, _dash_cooldown - delta)
+    if Input.is_action_just_pressed("dash") and _dash_cooldown <= 0.0:
+        _dash_cooldown = dash_cooldown
+        _dash_time = dash_duration
+    if _dash_time > 0.0:
+        _dash_time = maxf(0.0, _dash_time - delta)
+        velocity += -transform.basis.z * dash_impulse
 
     # [RISK] hold to run hot: faster, but contact ends the run
     _risking = Input.is_action_pressed("risk")
@@ -429,8 +448,9 @@ _AXIS_MECHANICS: dict[str, AxisMechanics] = {
             "@export var wall_run_fall := 1.5       # [WALL_RUN_FALL]\n"
             "@export var vault_velocity := 7.5      # [VAULT_VELOCITY]\n"
             "@export var slide_boost := 6.0         # [SLIDE_BOOST]\n"
+            "@export var slide_duration := 0.22     # [SLIDE_DURATION]\n"
         ),
-        state="var _wall_running := false\nvar _vaulting := false\n",
+        state="var _wall_running := false\nvar _vaulting := false\nvar _slide_time := 0.0\n",
         physics=_PARKOUR_PHYSICS,
         enemy_contact="Pursuer drone clipped the runner",
     ),
@@ -456,12 +476,14 @@ _AXIS_MECHANICS: dict[str, AxisMechanics] = {
             "@export var attack_cooldown := 0.55     # [ATTACK_COOLDOWN]\n"
             "@export var evade_impulse := 7.0        # [EVADE_IMPULSE]\n"
             "@export var evade_cooldown := 1.1       # [EVADE_COOLDOWN]\n"
+            "@export var evade_duration := 0.18      # [EVADE_DURATION]\n"
             "@export var brace_speed_multiplier := 0.6  # [BRACE_SPEED_MULTIPLIER]\n"
             "@export var recover_rate := 0.5         # [RECOVER_RATE]\n"
         ),
         state=(
             "var _attack_cooldown := 0.0\n"
             "var _evade_cooldown := 0.0\n"
+            "var _evade_time := 0.0\n"
             "var _bracing := false\n"
             "var _stamina := 1.0\n"
         ),
@@ -505,11 +527,17 @@ _AXIS_MECHANICS: dict[str, AxisMechanics] = {
             "@export var steer_rate := 2.4       # [STEER_RATE]\n"
             "@export var dash_impulse := 9.0     # [DASH_IMPULSE]\n"
             "@export var dash_cooldown := 1.2    # [DASH_COOLDOWN]\n"
+            "@export var dash_duration := 0.18   # [DASH_DURATION]\n"
             "@export var boost_multiplier := 1.5 # [BOOST_MULTIPLIER]\n"
             "@export var boost_drain := 0.4      # [BOOST_DRAIN]\n"
             "@export var risk_multiplier := 1.25 # [RISK_MULTIPLIER]\n"
         ),
-        state="var _boost := 1.0\nvar _dash_cooldown := 0.0\nvar _risking := false\n",
+        state=(
+            "var _boost := 1.0\n"
+            "var _dash_cooldown := 0.0\n"
+            "var _dash_time := 0.0\n"
+            "var _risking := false\n"
+        ),
         physics=_MOBILITY_PHYSICS,
         enemy_contact="A barrier clipped the racer at speed",
     ),
@@ -577,6 +605,39 @@ func _physics_process(delta: float) -> void:
 '''
 
 
+#: Words a spec's own failure text uses when it means "you left the route".
+_BOUNDARY_WORDS = (
+    "boundary",
+    "leaves",
+    "leave",
+    "out of bounds",
+    "off the route",
+    "fell",
+    "falls",
+)
+
+
+def _boundary_failure(fails: list[str], fallback: str) -> str:
+    """The spec's own wording for losing the route, when it has one.
+
+    Falling was the one failure the generated game manager could not report at
+    all. The route is 3m wide, so stepping off the side is one keypress away --
+    and the run then ended only when the pressure clock ran out, which is ten
+    minutes of falling. Matching on the spec's words rather than indexing the
+    list, because which position a failure state occupies is not fixed.
+
+    ``fallback`` is not the pressure-clock text: a spec that never enumerated
+    "left the route" would otherwise be quoted as having failed for the one
+    reason it did not.
+    """
+
+    for text in fails:
+        lowered = text.casefold()
+        if any(word in lowered for word in _BOUNDARY_WORDS):
+            return text.replace('"', "'")
+    return fallback
+
+
 def _game_manager(
     spec: GameplaySpec,
     *,
@@ -595,11 +656,13 @@ def _game_manager(
         title = spec.title.replace('"', "'")
         pressure_limit = float(spec.target_session_minutes * 60)
     fail0 = fails[0].replace('"', "'")
+    boundary = _boundary_failure(fails, "Left the active route")
     return f'''extends Node
 
 # Real win/fail判定 + HUD, derived from the GameplaySpec (M6a).
 @export var pressure_limit := {pressure_limit}   # [PRESSURE_LIMIT] seconds before failure
 @export var auto_return := 3.0       # [AUTO_RETURN] seconds on end screen
+@export var fall_limit := -12.0      # [FALL_LIMIT] below this the route is lost
 
 var _elapsed := 0.0
 var _ended := false
@@ -627,6 +690,16 @@ func _process(delta: float) -> void:
     _update_hud("Time left: %0.1fs  |  progress: %d" % [remaining, _progress])
     if remaining <= 0.0:
         _fail("{fail0}")
+        return
+    var player := _find_player()
+    if player != null and player.global_position.y < fall_limit:
+        _fail("{boundary}")
+
+
+func _find_player() -> Node3D:
+    # Looked up rather than bound at spawn: a project produced without gameplay
+    # scripts has no player at all, and the manager still has to run.
+    return get_tree().get_first_node_in_group("player") as Node3D
 
 
 func reach_exit() -> void:
@@ -770,8 +843,12 @@ def _patrol_func(contact: str) -> str:
     return f'''
 
 func _patrol(delta: float) -> void:
-    position.x += _direction * move_speed * delta
-    if abs(position.x - _origin.x) >= patrol_radius:
+    # Along ``z``: that is the axis the greybox route runs on, so a patrol stays
+    # on the walkway. Walking ``x`` sent it across the 3m width and off the edge
+    # after the first leg -- a guard floating beside the route it is meant to
+    # guard.
+    position.z += _direction * move_speed * delta
+    if abs(position.z - _origin.z) >= patrol_radius:
         _direction *= -1.0
     _fail_if_player_close("{contact}")
 '''

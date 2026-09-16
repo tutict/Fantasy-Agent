@@ -123,6 +123,13 @@ class ToolRegistry:
             value = source.get(key)
             if isinstance(value, dict) and value:
                 self.artifacts[key] = value
+        # The gameplay spec travels with the same planning result and is not a
+        # sub-plan, but the Godot tool is built from it -- see
+        # _HIDDEN_ARG_SOURCES for why it has to be kept.
+        for key in ("gameplay_spec", "production_spec_bundle"):
+            value = source.get(key)
+            if isinstance(value, dict) and value:
+                self.artifacts[key] = value
 
     def register(self, spec: ToolSpec) -> ToolSpec:
         if spec.permission not in PERMISSIONS:
@@ -211,15 +218,17 @@ class ToolRegistry:
     ) -> dict[str, Any]:
         """Fill in what the model must not be trusted with, or need not supply.
 
-        Three things are injected here, all outside the model's reach:
+        Four things are injected here, all outside the model's reach:
 
         - the plan, from this run's planning result, so the model asks for the
           work rather than reconstructing a nested object it cannot get right;
+        - the rest of the pipeline's own inputs for that tool (the gameplay spec
+          and production spec bundle for the Godot tool), from the same result;
         - the confirmation flag, reflecting the grant the *caller* made. An
           explicit ``false`` from the model is left alone: that is a
           deliberate dry run;
-        - the executable path, from a local probe. Unlike the other two this
-          one *overwrites* rather than fills in: hiding the argument from the
+        - the executable path, from a local probe. Unlike the others this one
+          *overwrites* rather than fills in: hiding the argument from the
           schema does not stop a model from sending it anyway, so whatever
           arrives is discarded. When nothing is installed the key is dropped
           and the bridge falls back to its own default.
@@ -231,6 +240,13 @@ class ToolRegistry:
             plan = self.artifacts.get(spec.plan_key)
             if plan is not None:
                 args["plan"] = plan
+
+        for argument, artifact_key in _HIDDEN_ARG_SOURCES.get(spec.name, {}).items():
+            if args.get(argument):
+                continue
+            value = self.artifacts.get(artifact_key)
+            if value is not None:
+                args[argument] = value
 
         if spec.confirm_field and spec.confirm_field not in args:
             granted = allow_execute if spec.permission == EXECUTE else (allow_write or allow_execute)
@@ -419,6 +435,21 @@ _ENGINE_HIDDEN_ARGS: dict[str, tuple[str, ...]] = {
         "gameplay_scripts",
         "production_spec_bundle",
     ),
+}
+
+# Which artifact fills each hidden argument. Hiding an argument only removes it
+# from the advertised schema -- something still has to supply it, and for the
+# Godot tool that is this run's planning result. Without this the tool was
+# built with no gameplay spec at all: the project got the plain player template,
+# no game_manager.gd, and no code that spawns a player or decides the run, so
+# the slice the model produced could not be played. (``gameplay_scripts`` is
+# absent on purpose: godot_mcp derives them from the spec it is handed, which
+# keeps "how a script is made" in the codegen module.)
+_HIDDEN_ARG_SOURCES: dict[str, dict[str, str]] = {
+    "create_godot_project_structure": {
+        "gameplay_spec": "gameplay_spec",
+        "production_spec_bundle": "production_spec_bundle",
+    },
 }
 
 # The argument that unlocks a tool's real side effect. Both default to false,

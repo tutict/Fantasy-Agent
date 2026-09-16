@@ -293,6 +293,18 @@ class GodotMCPBridge(BaseMCPBridge):
         production_spec_bundle: ProductionSpecBundle | None = None,
     ) -> list[str]:
         gameplay_scripts = gameplay_scripts or {}
+        if not gameplay_scripts and gameplay_spec is not None:
+            # Knowing the spec is enough to make the slice playable, and the
+            # deterministic pass is the same one the executor falls back to.
+            # Without it a caller that supplies a spec but no scripts gets the
+            # plain player template, no game_manager.gd, and no code that spawns
+            # a player -- a project that imports cleanly and cannot be played
+            # (no player to move, nothing to win or lose).
+            from fantasy_agent.gameplay_codegen import deterministic_gameplay_scripts
+
+            gameplay_scripts = deterministic_gameplay_scripts(
+                gameplay_spec, production_spec_bundle=production_spec_bundle
+            )
         project_dir = self._resolve_workspace_path(artifact.project_dir)
         project_dir.mkdir(parents=True, exist_ok=True)
         for folder in plan.folders:
@@ -502,19 +514,37 @@ script = ExtResource("1_main")
 
 
 def _default_route_body() -> str:
-    """The original fixed greybox route, used when no GameplaySpec is supplied."""
+    """The original fixed greybox route, used when no GameplaySpec is supplied.
+
+    Two things were wrong with the first version, both only visible once
+    something actually walks it.
+
+    It ran along ``x``, while ``move_forward`` is ``-z``: the route sat across
+    the player's forward axis, so the first key anyone presses walks off the
+    side of it. It now runs the way the camera looks, so forward follows the
+    route.
+
+    And every prop was a ``StaticBody3D``: a 3m-wide corridor with a solid
+    checkpoint gate, objective prop and beat marker parked in the middle is a
+    corridor you cannot walk down. Collision is now the floor tiles and the
+    exit gate -- the things the route is *made of* -- while the props on it are
+    the mesh-only ``_prop`` (see ``_spawn_marker``).
+    """
     lines = [
-        '    _box("FA_RouteFloor_Start", Vector3(-6.0, 0.0, 0.0), Vector3(5.0, 0.25, 3.0), MAT_SAFE)',
-        '    _box("FA_RouteFloor_Mid", Vector3(0.0, 0.0, 0.0), Vector3(5.0, 0.25, 3.0), MAT_SAFE)',
-        '    _box("FA_RouteFloor_Final", Vector3(6.0, 0.0, 0.0), Vector3(5.0, 0.25, 3.0), MAT_SAFE)',
-        '    _box("FA_Ramp_Teach", Vector3(-2.6, 0.55, -1.25), Vector3(2.4, 0.3, 1.0), MAT_NEUTRAL)',
-        '    _box("FA_WallRun_Panel", Vector3(1.2, 1.5, -1.7), Vector3(3.5, 2.4, 0.24), MAT_NEUTRAL)',
-        '    _box("FA_Boost_Pad", Vector3(3.9, 0.18, 1.0), Vector3(1.5, 0.18, 0.9), MAT_EXIT)',
-        '    _box("FA_Fall_Hazard_A", Vector3(-0.1, -0.08, 2.0), Vector3(2.3, 0.12, 0.45), MAT_HAZARD)',
-        '    _box("FA_Fall_Hazard_B", Vector3(5.1, -0.08, -2.0), Vector3(2.8, 0.12, 0.45), MAT_HAZARD)',
-        '    _box("FA_Checkpoint_Gate", Vector3(0.0, 1.1, 0.0), Vector3(0.35, 2.2, 3.1), MAT_EXIT)',
-        '    _box("FA_Objective_Prop", Vector3(6.6, 0.75, 0.0), Vector3(0.8, 1.4, 0.8), MAT_OBJECTIVE)',
-        '    _box("FA_Exit_Gate", Vector3(8.8, 1.2, 0.0), Vector3(0.45, 2.4, 3.2), MAT_EXIT)',
+        # Tiles are 5.0 long and 5.0 apart, so they touch: a route, not a row of
+        # islands with a 1m hole between each pair.
+        '    _box("FA_RouteFloor_Start", Vector3(0.0, 0.0, 5.0), Vector3(3.0, 0.25, 5.0), MAT_SAFE)',
+        '    _box("FA_RouteFloor_Mid", Vector3(0.0, 0.0, 0.0), Vector3(3.0, 0.25, 5.0), MAT_SAFE)',
+        '    _box("FA_RouteFloor_Final", Vector3(0.0, 0.0, -5.0), Vector3(3.0, 0.25, 5.0), MAT_SAFE)',
+        '    _box("FA_RouteFloor_Exit", Vector3(0.0, 0.0, -10.0), Vector3(3.0, 0.25, 5.0), MAT_SAFE)',
+        '    _prop("FA_Ramp_Teach", Vector3(-1.05, 0.55, 2.6), Vector3(1.0, 0.3, 2.4), MAT_NEUTRAL)',
+        '    _prop("FA_WallRun_Panel", Vector3(-1.9, 1.5, -1.2), Vector3(0.24, 2.4, 3.5), MAT_NEUTRAL)',
+        '    _prop("FA_Boost_Pad", Vector3(1.05, 0.18, -3.9), Vector3(0.9, 0.18, 1.5), MAT_EXIT)',
+        '    _prop("FA_Fall_Hazard_A", Vector3(1.35, 0.02, 0.1), Vector3(0.45, 0.12, 2.3), MAT_HAZARD)',
+        '    _prop("FA_Fall_Hazard_B", Vector3(-1.35, 0.02, -5.1), Vector3(0.45, 0.12, 2.8), MAT_HAZARD)',
+        '    _prop("FA_Checkpoint_Gate", Vector3(1.25, 1.1, 0.0), Vector3(0.35, 2.2, 3.1), MAT_EXIT)',
+        '    _prop("FA_Objective_Prop", Vector3(1.0, 0.75, -6.6), Vector3(0.8, 1.4, 0.8), MAT_OBJECTIVE)',
+        '    _box("FA_Exit_Gate", Vector3(0.0, 1.2, -10.0), Vector3(3.2, 2.4, 0.45), MAT_EXIT)',
     ]
     return "\n".join(lines)
 
@@ -547,25 +577,43 @@ def _route_body_lines(markers: list[tuple[str, str, str, str]]) -> str:
     """Shared greybox route emission: one floor+marker per entry, then the exit gate.
 
     Each entry is (floor_name, marker_name, material_constant, asset_glb).
+
+    The route runs along ``-z``, which is the direction the camera looks and
+    the direction ``move_forward`` moves. It used to run along ``x``: the route
+    sat across the player's forward axis, so the first key anyone pressed
+    walked them off its side into open air.
+
+    ``spacing`` equals the tile length, so consecutive tiles touch. The old 6.0
+    spacing against 5.0-long tiles left a 1.0m hole between every pair -- the
+    player is 0.8m wide, drops through, and nothing catches a fall.
+
+    The exit gets a tile of its own. The gate used to sit one full spacing past
+    the last floor, i.e. 3.5m of nothing between the end of the route and the
+    thing that ends it.
     """
+
     lines: list[str] = []
-    spacing = 6.0
-    start_x = -spacing * (len(markers) - 1) / 2.0
+    spacing = 5.0
+    start_z = spacing * (len(markers) - 1) / 2.0
     for index, (floor_name, marker_name, material, asset_glb) in enumerate(markers):
-        x = start_x + index * spacing
+        z = start_z - index * spacing
         lines.append(
-            f'    _box("{floor_name}", Vector3({x:.1f}, 0.0, 0.0), '
-            "Vector3(5.0, 0.25, 3.0), MAT_SAFE)"
+            f'    _box("{floor_name}", Vector3(0.0, 0.0, {z:.1f}), '
+            "Vector3(3.0, 0.25, 5.0), MAT_SAFE)"
         )
         asset_literal = json.dumps(asset_glb, ensure_ascii=False)
         lines.append(
-            f'    _spawn_marker("{marker_name}", Vector3({x:.1f}, 0.9, 0.0), '
+            f'    _spawn_marker("{marker_name}", Vector3(0.0, 0.9, {z:.1f}), '
             f"Vector3(0.8, 1.4, 0.8), {material}, {asset_literal})"
         )
-    exit_x = start_x + len(markers) * spacing
+    exit_z = start_z - len(markers) * spacing
     lines.append(
-        f'    _box("FA_Exit_Gate", Vector3({exit_x:.1f}, 1.2, 0.0), '
-        "Vector3(0.45, 2.4, 3.2), MAT_EXIT)"
+        f'    _box("FA_RouteFloor_Exit", Vector3(0.0, 0.0, {exit_z:.1f}), '
+        "Vector3(3.0, 0.25, 5.0), MAT_SAFE)"
+    )
+    lines.append(
+        f'    _box("FA_Exit_Gate", Vector3(0.0, 1.2, {exit_z:.1f}), '
+        "Vector3(3.2, 2.4, 0.45), MAT_EXIT)"
     )
     return "\n".join(lines)
 
@@ -664,7 +712,7 @@ func _spawn_gameplay() -> void:
         var player: CharacterBody3D = player_script.new()
         player.name = "FA_Player"
         player.add_to_group("player")
-        player.position = Vector3(-6.0, 1.0, 0.0)
+        player.position = _player_spawn_position()
         var col := CollisionShape3D.new()
         var caps := CapsuleShape3D.new()
         caps.radius = 0.4
@@ -689,12 +737,48 @@ func _spawn_gameplay() -> void:
             area.name = "FA_ExitTrigger"
             var acol := CollisionShape3D.new()
             var box := BoxShape3D.new()
-            box.size = Vector3(1.2, 3.0, 3.6)
+            box.size = Vector3(3.6, 3.0, 1.2)
             acol.shape = box
             area.add_child(acol)
-            exit.add_child(area)
-            area.body_entered.connect(func(_b: Node) -> void: gm.reach_exit())
+            # A sibling of the gate, never a child of it. An Area3D parked
+            # inside its own parent StaticBody3D reports that parent as an
+            # overlap, so body_entered fired on the frame the scene loaded and
+            # the run was won before the player could take a step.
+            add_child(area)
+            area.position = exit.position
+            area.body_entered.connect(_on_exit_entered.bind(gm))
         _spawn_enemies(gm)
+
+
+func _on_exit_entered(body: Node, gm: Node) -> void:
+    # Only the player ends the run. Anything else the trigger overlaps -- a
+    # patrolling enemy walking through the gate, the gate's own body -- is not
+    # an arrival.
+    if body != null and body.is_in_group("player"):
+        gm.reach_exit()
+
+
+func _route_floors() -> Array:
+    # The tiles the route actually generated, in creation order, so everything
+    # that needs to stand on the route asks it instead of re-deriving the
+    # layout. The route start moves with the beat count; the old spawn hardcoded
+    # one tile's coordinate, which only lined up for a three-beat design and
+    # left the player in the air between tiles for any other.
+    var floors := []
+    for child in get_children():
+        if child is Node3D and str(child.name).begins_with("FA_RouteFloor"):
+            floors.append(child)
+    return floors
+
+
+func _player_spawn_position() -> Vector3:
+    var floors := _route_floors()
+    if floors.is_empty():
+        return Vector3(0.0, 1.0, 6.0)
+    var first := floors[0] as Node3D
+    # Behind the first marker, along the route, so the first thing forward does
+    # is walk the route rather than into a prop.
+    return Vector3(first.position.x, first.position.y + 1.0, first.position.z + 1.1)
 
 
 func _spawn_enemies(gm: Node) -> void:
@@ -745,10 +829,15 @@ func _spawn_enemies(gm: Node) -> void:
 
 
 func _enemy_spawn_position(index: int) -> Vector3:
-    # Distribute threats along the route, away from the player spawn and final exit.
-    var x := -2.0 + float(index) * 2.2
-    var z := -1.35 if index % 2 == 0 else 1.35
-    return Vector3(x, 0.85, z)
+    # One tile past the player's, alternating sides. The old rule spread them
+    # on fixed coordinates that put most of them in the gaps between tiles --
+    # a threat patrolling empty air guards nothing.
+    var floors := _route_floors()
+    var x := 1.15 if index % 2 == 0 else -1.15
+    if floors.is_empty():
+        return Vector3(x, 0.85, -5.0 - float(index) * 2.2)
+    var tile := floors[mini(index + 1, floors.size() - 1)] as Node3D
+    return Vector3(tile.position.x + x, 0.85, tile.position.z)
 
 
 func _decorate_enemy(enemy: Area3D, behavior: String) -> void:
@@ -890,8 +979,10 @@ func _build_lighting() -> void:
     add_child(sun)
     var camera := Camera3D.new()
     camera.name = "FA_PrototypeCamera"
-    camera.position = Vector3(0.0, 8.0, 13.0)
-    camera.rotation_degrees = Vector3(-38.0, 0.0, 0.0)
+    # Behind the route's near end looking down it: the route runs along -z, so
+    # "forward" on screen is forward along the route.
+    camera.position = Vector3(0.0, 9.0, 12.0)
+    camera.rotation_degrees = Vector3(-32.0, 0.0, 0.0)
     add_child(camera)
     camera.current = true
 
@@ -904,7 +995,7 @@ func _build_ui_proxy() -> void:
     var label := Label3D.new()
     label.name = "FA_UIProxy_Objective"
     label.text = "Objective -> Reach exit"
-    label.position = Vector3(-5.8, 2.2, 0.0)
+    label.position = Vector3(0.0, 2.2, 5.0)
     label.pixel_size = 0.035
     add_child(label)
 
@@ -922,7 +1013,26 @@ func _spawn_marker(node_name: String, origin: Vector3, size: Vector3, color: Col
                 instance.position = origin
                 add_child(instance)
                 return instance
-    return _box(node_name, origin, size, color)
+    return _prop(node_name, origin, size, color)
+
+
+func _prop(node_name: String, origin: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
+    # Mesh only, on purpose. The route's collision is the tiles it is made of
+    # and the exit gate at the end; everything standing *on* the route is proxy
+    # art. When a beat marker was a StaticBody3D too, it was a solid pillar in
+    # the middle of a 3m-wide corridor -- and the player spawns on the first
+    # tile, so the very first step forward was into it. It also made the
+    # greybox stand-in stricter than the glb it stands in for, which carries
+    # only whatever collision the asset itself has.
+    var mesh_instance := MeshInstance3D.new()
+    mesh_instance.name = node_name
+    mesh_instance.position = origin
+    var mesh := BoxMesh.new()
+    mesh.size = size
+    mesh_instance.mesh = mesh
+    mesh_instance.material_override = _material(color)
+    add_child(mesh_instance)
+    return mesh_instance
 
 
 func _box(node_name: String, origin: Vector3, size: Vector3, color: Color) -> StaticBody3D:

@@ -257,9 +257,27 @@ warning 这一级保住了既有承诺：缺工具仍然降级而不是失败，
 - **只能按项目里存在的 InputMap 动作。** 动作名来自 `spec.core_verbs`（`workflows.prepare_godot_project` 注册），所以 `action_name()` 与 `godot_mcp._godot_identifier` 必须同源；按了一个没注册的动作，Godot 运行时报 `Request for nonexistent InputMap action`。
 - **敌人行为只有一个来源**：设计模板的 `enemies` 名册。轴里不再另存一份行为清单（曾经两份会漂移）。
 - **新增一条轴**：`AXIS_TEMPLATES` 加条目 → `_AXIS_MECHANICS` 加对应实现 → 跑 `tests/test_gameplay_codegen_axis.py`（键集不一致立刻红）。
-- **真机校验**：`tests/test_gdscript_godot_check.py` 给每条轴建临时工程，跑 `godot --check-only --script` 做语法检查，再用一个 SceneTree harness 实例化并推 20 帧，抓运行时错误。同一个文件还走一次 `combined_registry`（= tool call 同一条路径）生成工程并真跑 `run_godot_import`，断言 Godot 日志里没有任何 `Parse Error` / `SCRIPT ERROR` / `ERROR:`。
+- **真机校验分两层：先"加载没问题"，再"玩得下去"。** `tests/test_gdscript_godot_check.py` 给每条轴建临时工程，跑 `godot --check-only --script` 做语法检查，再用一个 SceneTree harness 实例化并推 20 帧抓运行时错误；同一个文件还走一次 `combined_registry`（= tool call 同一条路径）生成工程并真跑 `run_godot_import`，断言 Godot 日志里没有任何 `Parse Error` / `SCRIPT ERROR` / `ERROR:`。
+  - **但"能加载"不等于"能玩"，第二层必须真的按键跑一遍。** `test_the_generated_prototype_can_actually_be_played` 用真输入（`Input.action_press`）在真物理帧上驱动装配好的工程，问玩家会问的问题：有没有玩家节点、开局是不是还没结束、按住前进会不会动、路线能不能把人送到出口（WIN）、撞敌人会不会失败、掉出边界会不会失败、巡逻兵会不会走出路线。**上面那 20 帧 harness 对这五类缺陷全是绿灯**——它们全部能解析、能导入、能推帧，一个错都不报。上一轮查出的五条（开局即 WIN、按住 W 位移 0.0、出口悬空在最后一块地板外 3.5m、敌人因 `_ended` 已为真而永远不触发、冲刺位移与不冲刺完全相同）就是这么漏出去的。parkour / stealth / mobility 各跑一遍：前两个覆盖 chase 与 patrol 两种敌人行为，mobility 的爆发类动词只能靠测量证明。
+  - **能动的单位要每一帧都看，不要只看结束那一刻。** 巡逻兵走出路线是间歇性的——它只在每条腿的一部分时间位于路面之外，所以单次读数可能正好落在腿中间，把一个已经走歪的巡逻兵读成"没问题"（D13 变异实测：三个巡逻兵只有一个在那一刻被判出界）。现在的写法是每帧采样、记录每个巡逻兵的最大越界距离，再拿它去比容差。
+  - **容差写清楚，别让"合法行为"被判成缺陷。** 地砖 3m 宽 × 5m 长（半长 2.5），而巡逻兵在 `patrol_radius` 处掉头，会越过那条线最多一帧的行程（按生成的 `move_speed` 算是 0.04m，stealth 轴实测 0.02m）——零容差会把**正确**的巡逻判成出界。`ROUTE_SLACK := 0.5` 就是这么来的，注释里写明了这两个数的来源。反过来，判据也不能松到测不出 D13：横向走位能越出 1.0m 以上，远超容差（实测合法巡逻最大越界 0.02m，余量 25 倍）。
   - **二进制发现用项目自己的探针**（`local_tools._find_godot`：环境变量 → PATH → 安装位置 glob），不再只看 PATH。之前它只看 PATH，本机 Godot 装在 `Downloads/` 下，于是整个文件静默 skip —— 这正是"生成的代码坏了却一路绿灯"的成因。探针优先 `*_console` 版本，因为 Windows 上只有它能把输出写进被捕获的管道。
-  - **`HANDOFF` 是 `const` 字典字面量，只能 `.get()` 读。** Godot 在解析期就拿字面量的已知键做静态检查，所以 `HANDOFF["gameplay"]` 在键不存在时是**静态解析错误**，`if HANDOFF.has("gameplay")` 挡不住——要挡的那行本身就编译不过。没有 gameplay 块的工程（也正是模型经注册表能产生的唯一形态）会整份 main.gd 加载失败，而 `validate_godot_project` 只查文件存在性，会报 `issues: []`。守卫分两层：`tests/test_godot_mcp.py` 断言源码里没有 `HANDOFF[`（CI 可跑），`test_gdscript_godot_check.py` 用真 Godot 复现（本地跑）。
+  - **`HANDOFF` 是 `const` 字典字面量，只能 `.get()` 读。** Godot 在解析期就拿字面量的已知键做静态检查，所以 `HANDOFF["gameplay"]` 在键不存在时是**静态解析错误**，`if HANDOFF.has("gameplay")` 挡不住——要挡的那行本身就编译不过。没有 gameplay 块的工程会整份 main.gd 加载失败，而 `validate_godot_project` 只查文件存在性，会报 `issues: []`。守卫分两层：`tests/test_godot_mcp.py` 断言源码里没有 `HANDOFF[`（CI 可跑），`test_gdscript_godot_check.py` 用真 Godot 复现（本地跑，**两种产物都跑**：带 spec 的工程和有 plan 无 spec 的朴素模板工程）。必须两种都跑：把 registry 修成会回填 spec 之后，tool call 路径就不再产出朴素模板了，`HANDOFF["gameplay"]` 这个变异于是从"被抓住"变成"溜过去"——缺陷没被修掉，只是从这个测试眼前消失了。
+
+
+**灰盒路线必须走得通（`fantasy_agent/godot_mcp.py` 的 main.gd 模板）**
+
+路线是生成的，所以"走不通"是生成器的 bug，不是关卡设计问题。九条实测过的规则，改之前先读：
+
+- **路线沿 `-z` 铺，因为 `move_forward` 就是 `-z`。** 控制器把 `move_forward` 映射到 `Vector3(0, 0, -1)`；路线沿 `x` 铺时它横躺在玩家面前，任何人按下的第一个键都是往路线侧面走——实测前进位移 **0.0m**，退出平台后无限下落。相机与 UI 代理标签同轴。
+- **地砖首尾相接。** 地砖长 5.0，`spacing` 也是 5.0。曾经是 6.0：每两块之间一个 1.0m 的洞，而玩家宽 0.8m —— 走路会掉进去，且**当时没有任何东西接住掉落**。
+- **出口那格要有地砖。** 出口门曾经落在最后一块地板**之后整整一个 spacing**（3.5m 空气），只能靠一次没人告诉过你的跳跃够到。
+- **路线上的道具不能有碰撞。** 碰撞只属于"路线由什么构成"（地砖）+ 终点那道门；站在路线上的东西（节拍标记、检查点拱门、目标道具、跳板、危险条）一律走 `_prop()`，只有网格没有 `StaticBody3D`。节拍标记曾经是实心柱子且正好压在第一块地砖上，而玩家就出生在那块地砖上——出生即嵌在柱子里，被去穿透推到旁边，然后每一步前进都被它挡住（`get_slide_collision` 指的就是那个 marker）。灰盒兜底也因此比它替代的 glb 更严格：glb 只带资产自己的碰撞，通常没有。
+- **出生点与敌人位置都从生成出来的地砖上读**（`_route_floors()`），不写死坐标。`Vector3(-6.0, 1.0, 0.0)` 只对三节拍的路线成立；四节拍的路线从 -9 开始，玩家会被丢在两块地砖之间的空中。
+- **出口触发器是门的兄弟节点，且只认玩家。** `Area3D` 放在作为它父节点的 `StaticBody3D` 里面时，会把自己父节点报成重叠——实测 `get_overlapping_bodies()` 返回 `[FA_Exit_Gate]`，于是 `body_entered` 在场景装载那一帧就触发 `reach_exit()`，**开局第一帧就 WIN**。`_on_exit_entered` 另外要求 `body.is_in_group("player")`：巡逻兵穿过门不算抵达。
+- **掉出路线必须有失败判定。** 路线宽 3m，侧向一个按键就下去了。Game manager 的 `fall_limit` 与 `[FALL_LIMIT]` 触发失败，文案优先取 spec 自己写的边界失败文案（关键词匹配，不按位置索引）；spec 没写过就用中立文案，**不要退回压力时钟那句**——那是把没发生过的原因安在玩家头上。
+- **爆发类动词（slide / evade / dash）要持续几帧。** 它们都是往 `velocity` 上加量，而同一个 `_physics_process` 会用输入方向**赋值** `velocity.x/z`：加在赋值之前，冲量在同一帧被抹掉（mobility 的 dash 原本就是这样，实测冲刺 6 帧走 0.80m，和完全不冲刺一模一样）；即使顺序对了，只持续一帧也只是 `9/60` m。现在每条都有 `*_duration` 与 `*_time`，且加在赋值之后。
+- **巡逻兵沿 `-z` 走。** 沿 `x` 走会在第一条腿就横穿出 3m 宽的路面，变成在路线旁边飘着。
 
 命令行入口：
 

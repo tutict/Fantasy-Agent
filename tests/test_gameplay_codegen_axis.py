@@ -179,6 +179,88 @@ def test_player_controller_and_manager_stay_valid_gdscript(axis):
     assert "move_and_slide()" in deterministic_gameplay_scripts(_spec_for(axis))[PLAYER_SCRIPT]
 
 
+# ── burst verbs ──────────────────────────────────────────────────────────────
+
+#: axis -> (verb, duration export, timer). Every "burst" verb in the table:
+#: they add to velocity, which the same function assigns from the input
+#: direction, so both the order and the duration of the addition matter.
+BURST_VERBS = {
+    "parkour": ("slide", "slide_duration", "_slide_time"),
+    "combat": ("evade", "evade_duration", "_evade_time"),
+    "mobility": ("dash", "dash_duration", "_dash_time"),
+}
+
+
+@pytest.mark.parametrize("axis", sorted(BURST_VERBS))
+def test_burst_verbs_last_longer_than_one_frame(axis):
+    """An impulse worth ``x/60`` m is an impulse nobody can feel.
+
+    These three added their boost to velocity for the single frame the key was
+    read on: ``6.0`` becomes 0.1m of travel, so slide/evade/dash read as "does
+    nothing". Measured on the mobility axis before the fix: dashing covered the
+    same 0.80m in 6 frames as not dashing. Each now runs a short burst.
+    """
+
+    verb, export, timer = BURST_VERBS[axis]
+    player = deterministic_gameplay_scripts(_spec_for(axis))[PLAYER_SCRIPT]
+
+    assert f"@export var {export} :=" in player
+    assert f"var {timer} := 0.0" in player
+    assert f"{timer} = {verb}_duration" in player, "the burst is never started"
+    assert f"if {timer} > 0.0:" in player, "the burst is applied for one frame only"
+    assert f"{timer} = maxf(0.0, {timer} - delta)" in player
+
+
+def test_the_dash_is_applied_after_the_speed_assignment():
+    """The mobility dash was erased on the frame it fired.
+
+    ``_MOBILITY_PHYSICS`` added to velocity *before* the pair of assignments
+    that set it from the input direction, so the assignment overwrote the whole
+    impulse. Asserting the order because that is the defect: with the burst
+    moved below them, the impulse survives.
+    """
+
+    player = deterministic_gameplay_scripts(_spec_for("mobility"))[PLAYER_SCRIPT]
+    assert player.index("_dash_time = dash_duration") > player.index(
+        "velocity.z = direction.z * speed"
+    )
+
+
+# ── leaving the route ────────────────────────────────────────────────────────
+
+def test_losing_the_route_ends_the_run():
+    """There was no failure for falling, so a fall was a soft-lock.
+
+    The walkway is 3m wide, so stepping off the side is one keypress away --
+    and the only thing that could end the run afterwards was the pressure
+    clock, which is ten minutes of falling.
+    """
+
+    manager = deterministic_gameplay_scripts(_spec_for("parkour"))[GAME_MANAGER_SCRIPT]
+    assert "fall_limit" in manager
+    assert "player.global_position.y < fall_limit" in manager
+    # The parkour spec names this failure itself, so its own words are used.
+    assert "Player leaves the rooftop boundary and loses the active route" in manager
+
+
+def test_an_unnamed_boundary_failure_is_not_quoted_as_the_pressure_clock():
+    """A spec with no boundary wording must not be misquoted.
+
+    Falling back to the pressure-clock text would report the run as having
+    ended for a reason the spec never gave, which is worse than saying what
+    actually happened.
+    """
+
+    manager = deterministic_gameplay_scripts(_spec_for("stealth"))[GAME_MANAGER_SCRIPT]
+    assert "Left the active route" in manager
+    assert "Alert level reaches the lockdown threshold before extraction" in manager, (
+        "the pressure-clock text still has to be the timer's reason"
+    )
+    assert manager.index("Left the active route") != manager.index(
+        "Alert level reaches the lockdown threshold before extraction"
+    ), "the boundary failure is quoting the timer"
+
+
 # ── fallback ─────────────────────────────────────────────────────────────────
 
 def test_unknown_verbs_fall_back_to_the_generic_controller():

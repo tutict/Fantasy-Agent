@@ -366,6 +366,127 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
             "::test_every_detail_key_the_open_path_returns_exists_in_the_frontend"
         ),
     ),
+    # ── the generated prototype ──────────────────────────────────────────
+    # Every one of these ships a project that imports, parses and pumps frames
+    # cleanly. The cases whose guard says "godot" end in a real playtest.
+    (
+        "D1 the beat marker is a solid body again",
+        "fantasy_agent/godot_mcp.py",
+        b"    return _prop(node_name, origin, size, color)\n",
+        b"    return _box(node_name, origin, size, color)\n",
+        "tests/test_godot_mcp.py::test_route_props_carry_no_collision",
+    ),
+    (
+        "D2 the exit trigger is a child of its own gate again",
+        "fantasy_agent/godot_mcp.py",
+        b"            add_child(area)\n",
+        b"            exit.add_child(area)\n",
+        "tests/test_godot_mcp.py::test_the_exit_trigger_is_not_a_child_of_its_own_gate",
+    ),
+    (
+        "D3 the same, caught by a real playtest",
+        "fantasy_agent/godot_mcp.py",
+        b"            add_child(area)\n",
+        b"            exit.add_child(area)\n",
+        (
+            "tests/test_gdscript_godot_check.py"
+            "::test_the_generated_prototype_can_actually_be_played[parkour]"
+        ),
+    ),
+    (
+        "D4 the player spawns on a hardcoded coordinate again",
+        "fantasy_agent/godot_mcp.py",
+        b"        player.position = _player_spawn_position()\n",
+        b"        player.position = Vector3(-6.0, 1.0, 0.0)\n",
+        "tests/test_godot_mcp.py::test_the_player_spawns_where_the_route_actually_starts",
+    ),
+    (
+        "D5 the same, caught by a real playtest",
+        "fantasy_agent/godot_mcp.py",
+        b"        player.position = _player_spawn_position()\n",
+        b"        player.position = Vector3(-6.0, 1.0, 0.0)\n",
+        (
+            "tests/test_gdscript_godot_check.py"
+            "::test_the_generated_prototype_can_actually_be_played[parkour]"
+        ),
+    ),
+    (
+        "D6 the route is laid out across the player again",
+        "fantasy_agent/godot_mcp.py",
+        b"            f'    _box(\"{floor_name}\", Vector3(0.0, 0.0, {z:.1f}), '\n",
+        b"            f'    _box(\"{floor_name}\", Vector3({z:.1f}, 0.0, 0.0), '\n",
+        "tests/test_godot_mcp.py::test_the_route_runs_along_the_axis_move_forward_moves[True]",
+    ),
+    (
+        "D7 the tiles are a stride apart again",
+        "fantasy_agent/godot_mcp.py",
+        b"    spacing = 5.0\n",
+        b"    spacing = 6.0\n",
+        "tests/test_godot_mcp.py::test_the_route_has_no_gap_between_tiles",
+    ),
+    (
+        "D8 the same gap, caught by a real playtest",
+        "fantasy_agent/godot_mcp.py",
+        b"    spacing = 5.0\n",
+        b"    spacing = 6.0\n",
+        (
+            "tests/test_gdscript_godot_check.py"
+            "::test_the_generated_prototype_can_actually_be_played[parkour]"
+        ),
+    ),
+    (
+        "D9 the pipeline stops supplying the gameplay spec",
+        "fantasy_agent/tool_registry.py",
+        b'        for key in ("gameplay_spec", "production_spec_bundle"):\n',
+        b'        for key in ("production_spec_bundle",):\n',
+        "tests/test_godot_mcp.py::test_a_tool_call_builds_a_project_that_can_be_played",
+    ),
+    (
+        "D10 the burst verbs are one-frame impulses again",
+        "fantasy_agent/gameplay_codegen.py",
+        # One frame of burst: the timer is set to a single delta instead of the
+        # verb's own duration, so the impulse survives exactly one frame.
+        b"        _dash_time = dash_duration\n",
+        b"        _dash_time = delta\n",
+        (
+            "tests/test_gameplay_codegen_axis.py"
+            "::test_burst_verbs_last_longer_than_one_frame[mobility]"
+        ),
+    ),
+    (
+        "D11 the dash stops moving the player",
+        "fantasy_agent/gameplay_codegen.py",
+        # The line lives inside a template string, so its trailing newline is the
+        # two characters ``\`` and ``n``, not a byte break -- written as such
+        # because the harness rewrites real line endings to the file's own.
+        b"@export var dash_impulse := 9.0     # [DASH_IMPULSE]\\n",
+        b"@export var dash_impulse := 0.0     # [DASH_IMPULSE]\\n",
+        (
+            "tests/test_gdscript_godot_check.py"
+            "::test_the_generated_prototype_can_actually_be_played[mobility]"
+        ),
+    ),
+    (
+        "D12 a fall off the route stops ending the run",
+        "fantasy_agent/gameplay_codegen.py",
+        b"    var player := _find_player()\n"
+        b"    if player != null and player.global_position.y < fall_limit:\n"
+        b'        _fail("{boundary}")\n',
+        b"",
+        "tests/test_gameplay_codegen_axis.py::test_losing_the_route_ends_the_run",
+    ),
+    (
+        "D13 the patrol walks across the route again",
+        "fantasy_agent/gameplay_codegen.py",
+        b"    position.z += _direction * move_speed * delta\n"
+        b"    if abs(position.z - _origin.z) >= patrol_radius:\n",
+        b"    position.x += _direction * move_speed * delta\n"
+        b"    if abs(position.x - _origin.x) >= patrol_radius:\n",
+        (
+            "tests/test_gdscript_godot_check.py"
+            "::test_the_generated_prototype_can_actually_be_played[stealth]"
+        ),
+    ),
 )
 
 
@@ -384,6 +505,11 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
 ENGINE_REQUIREMENTS: dict[str, str] = {
     "G2 same, caught by real Godot": "godot",
     "G3 the guard only looks on PATH": "godot",
+    "D3 the same, caught by a real playtest": "godot",
+    "D5 the same, caught by a real playtest": "godot",
+    "D8 the same gap, caught by a real playtest": "godot",
+    "D11 the dash stops moving the player": "godot",
+    "D13 the patrol walks across the route again": "godot",
 }
 
 #: counts line of scripts/run_tests.py: `tests=1 passed=0 failed=1 errors=0 skipped=0`
