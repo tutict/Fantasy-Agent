@@ -1,5 +1,6 @@
 import re
 import subprocess
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -313,7 +314,7 @@ def test_the_route_has_no_gap_between_tiles(tmp_path: Path):
     zs = _route_floor_z(_main_gd_text(tmp_path, spec))
     assert len(zs) >= 3, zs
 
-    gaps = [round(a - b, 3) for a, b in zip(zs, zs[1:])]
+    gaps = [round(a - b, 3) for a, b in pairwise(zs)]
     assert all(gap == 5.0 for gap in gaps), (
         f"consecutive tiles must be one tile-length apart so they touch; got {gaps} from {zs}"
     )

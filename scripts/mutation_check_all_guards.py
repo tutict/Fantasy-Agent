@@ -469,19 +469,25 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
     (
         "D12 a fall off the route stops ending the run",
         "fantasy_agent/gameplay_codegen.py",
-        b"    var player := _find_player()\n"
-        b"    if player != null and player.global_position.y < fall_limit:\n"
-        b'        _fail("{boundary}")\n',
+        (
+            b"    var player := _find_player()\n"
+            b"    if player != null and player.global_position.y < fall_limit:\n"
+            b'        _fail("{boundary}")\n'
+        ),
         b"",
         "tests/test_gameplay_codegen_axis.py::test_losing_the_route_ends_the_run",
     ),
     (
         "D13 the patrol walks across the route again",
         "fantasy_agent/gameplay_codegen.py",
-        b"    position.z += _direction * move_speed * delta\n"
-        b"    if abs(position.z - _origin.z) >= patrol_radius:\n",
-        b"    position.x += _direction * move_speed * delta\n"
-        b"    if abs(position.x - _origin.x) >= patrol_radius:\n",
+        (
+            b"    position.z += _direction * move_speed * delta\n"
+            b"    if abs(position.z - _origin.z) >= patrol_radius:\n"
+        ),
+        (
+            b"    position.x += _direction * move_speed * delta\n"
+            b"    if abs(position.x - _origin.x) >= patrol_radius:\n"
+        ),
         (
             "tests/test_gdscript_godot_check.py"
             "::test_the_generated_prototype_can_actually_be_played[stealth]"
