@@ -23,10 +23,21 @@ from scripts import mutation_check_all_guards as harness
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-#: The only node-id shape the harness uses: ``tests/test_foo.py::test_bar``.
-#: A parametrised id would not match, which is deliberate -- a case that needs
-#: one has to say so here rather than quietly collecting the wrong test.
-NODE_ID = re.compile(r"^(tests/[\w./-]+\.py)::(\w+)$")
+#: The node-id shapes the harness uses: ``tests/test_foo.py::test_bar``, and the
+#: parametrised ``tests/test_foo.py::test_bar[axis]`` for a guard that is one leg
+#: of a parametrised test.
+#:
+#: The bare name of a parametrised test is the id that has to be rejected: pytest
+#: collects *every* leg for it, so a case meant to pin one axis would run the
+#: whole roster and call whatever failed first "caught". A pinned parameter is
+#: checked against the module's own source below.
+NODE_ID = re.compile(r"^(tests/[\w./-]+\.py)::(\w+)(?:\[([^\]]+)\])?$")
+
+#: A parametrisation decorator sitting above the guard it names, allowing other
+#: decorators in between (a parametrised test that also carries a skipif).
+_PARAMETRIZED = re.compile(
+    r"@pytest\.mark\.parametrize\(.*?\)\s*\n(?:\s*@[^\n]*\n)*\s*def (\w+)\(", re.DOTALL
+)
 
 
 def _cases() -> list[tuple[str, str, bytes, bytes, str]]:
@@ -93,18 +104,41 @@ def test_every_named_guard_exists():
     That is why the harness reads the runner's counts instead -- and why the
     names are pinned here as well: a case that points at nothing would otherwise
     only be discovered by the one run where it suddenly means nothing.
+
+    A pinned parameter (``test_bar[axis]``) is checked against the file it lives
+    in. This does not prove pytest collects the leg -- a parametrisation built
+    from an expression such as ``sorted(BURST_VERBS)`` cannot be resolved without
+    importing the module -- but the harness fails a case it cannot collect
+    (``NO RUN (unproven)``), so a wrong parameter surfaces there; what this
+    catches is the typo, before anyone spends a run on it.
     """
 
     missing = []
+    sources: dict[str, str] = {}
+    parametrised: dict[str, set[str]] = {}
     for label, _target, _needle, _mutant, test in _cases():
         match = NODE_ID.match(test)
         if match is None:
             missing.append(f"{label!r}: unrecognised node id {test!r}")
             continue
-        path, name = match.group(1), match.group(2)
-        source = (REPO_ROOT / path).read_text(encoding="utf-8")
+        path, name, parameter = match.group(1), match.group(2), match.group(3)
+        if path not in sources:
+            sources[path] = (REPO_ROOT / path).read_text(encoding="utf-8")
+            parametrised[path] = {
+                found.group(1) for found in _PARAMETRIZED.finditer(sources[path])
+            }
+        source = sources[path]
         if re.search(rf"^def {name}\(", source, re.MULTILINE) is None:
             missing.append(f"{label!r}: {name} is not defined in {path}")
+        elif parameter is None and name in parametrised[path]:
+            missing.append(
+                f"{label!r}: {name} is parametrised, so the bare id collects every "
+                "leg -- pin the one this case is about"
+            )
+        elif parameter is not None and parameter not in source:
+            missing.append(
+                f"{label!r}: {name} pins [{parameter}], which appears nowhere in {path}"
+            )
     assert missing == [], "\n".join(missing)
 
 

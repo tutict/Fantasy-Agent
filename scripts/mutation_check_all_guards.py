@@ -109,7 +109,13 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "fantasy_agent/llm.py",
         b'        raise LLMError("No API key configured for the OpenAI Responses provider.")\n',
         b"        pass  # mutation: key guard removed\n",
-        "tests/test_llm_tool_calling.py::test_a_missing_key_is_a_loud_failure_not_a_degraded_run",
+        # Pinned to the provider the guard is about. The bare id would collect a
+        # test per provider, and whichever leg failed first would be reported as
+        # this mutation being caught.
+        (
+            "tests/test_llm_tool_calling.py"
+            "::test_a_missing_key_is_a_loud_failure_not_a_degraded_run[openai_responses]"
+        ),
     ),
     (
         "L3 the openai_compatible tool turn stops being dispatched",
@@ -124,7 +130,11 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
             b"        return _openai_chat_tool_turn(\n"
             b"            instructions=instructions,"
         ),
-        "tests/test_llm_tool_calling.py::test_the_loop_accepts_a_tool_call_on_every_provider",
+        # Pinned to the provider whose dispatch the mutation removes.
+        (
+            "tests/test_llm_tool_calling.py"
+            "::test_the_loop_accepts_a_tool_call_on_every_provider[openai_compatible]"
+        ),
     ),
     (
         "L4 the chat transcript relabels a tool result as an assistant turn",
