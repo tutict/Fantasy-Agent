@@ -17,6 +17,7 @@ The heavy half, proving each guard really goes red, stays a deliberate run:
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from pathlib import Path
 
 from scripts import mutation_check_all_guards as harness
@@ -113,33 +114,124 @@ def test_every_named_guard_exists():
     catches is the typo, before anyone spends a run on it.
     """
 
-    missing = []
+    problems = _node_id_problems(_cases(), _read_source)
+    assert problems == [], "\n".join(problems)
+
+
+def _read_source(path: str) -> str:
+    return (REPO_ROOT / path).read_text(encoding="utf-8")
+
+
+def _node_id_problems(
+    cases: list[tuple[str, str, bytes, bytes, str]],
+    read: Callable[[str], str],
+) -> list[str]:
+    """Every reason a pinned guard id is unusable, for one case list.
+
+    Separated from the check that runs it so the rule can be handed a case list
+    that breaks it -- see ``test_a_bare_id_for_a_parametrised_guard_is_rejected``
+    for why that matters.
+    """
+
+    problems: list[str] = []
     sources: dict[str, str] = {}
     parametrised: dict[str, set[str]] = {}
-    for label, _target, _needle, _mutant, test in _cases():
+    for label, _target, _needle, _mutant, test in cases:
         match = NODE_ID.match(test)
         if match is None:
-            missing.append(f"{label!r}: unrecognised node id {test!r}")
+            problems.append(f"{label!r}: unrecognised node id {test!r}")
             continue
         path, name, parameter = match.group(1), match.group(2), match.group(3)
         if path not in sources:
-            sources[path] = (REPO_ROOT / path).read_text(encoding="utf-8")
+            sources[path] = read(path)
             parametrised[path] = {
                 found.group(1) for found in _PARAMETRIZED.finditer(sources[path])
             }
         source = sources[path]
         if re.search(rf"^def {name}\(", source, re.MULTILINE) is None:
-            missing.append(f"{label!r}: {name} is not defined in {path}")
+            problems.append(f"{label!r}: {name} is not defined in {path}")
         elif parameter is None and name in parametrised[path]:
-            missing.append(
+            problems.append(
                 f"{label!r}: {name} is parametrised, so the bare id collects every "
                 "leg -- pin the one this case is about"
             )
         elif parameter is not None and parameter not in source:
-            missing.append(
+            problems.append(
                 f"{label!r}: {name} pins [{parameter}], which appears nowhere in {path}"
             )
-    assert missing == [], "\n".join(missing)
+    return problems
+
+
+#: One guard, parametrised, as its own module: the smallest thing that can be
+#: checked against the rules above without touching the repository.
+_SYNTHETIC_PARAMETRISED = '''\
+import pytest
+
+
+@pytest.mark.parametrize("axis", ["a", "b"])
+def test_one_leg_per_axis(axis):
+    assert axis
+'''
+
+_SYNTHETIC_PLAIN = '''\
+def test_not_parametrised():
+    assert True
+'''
+
+
+def test_a_bare_id_for_a_parametrised_guard_is_rejected():
+    """The rule needs a subject, and the case list has stopped providing one.
+
+    Every parametrised pin in ``CASES`` now names its leg, so nothing in the real
+    list ever reaches the branch that rejects a bare id -- it would pass whether
+    the rule worked or had been deleted. That is the same failure mode this whole
+    module exists to catch, one level up, so the rule is handed a synthetic case
+    that breaks it.
+    """
+
+    sources = {"tests/test_synthetic.py": _SYNTHETIC_PARAMETRISED}
+
+    def read(path: str) -> str:
+        return sources[path]
+
+    bare = [
+        ("X1", "tests/test_synthetic.py", b"a", b"b", "tests/test_synthetic.py::test_one_leg_per_axis")
+    ]
+    problems = _node_id_problems(bare, read)
+    assert len(problems) == 1, problems
+    assert "parametrised" in problems[0], problems
+
+    # The same guard, pinned: nothing to complain about.
+    pinned = [
+        (
+            "X1",
+            "tests/test_synthetic.py",
+            b"a",
+            b"b",
+            "tests/test_synthetic.py::test_one_leg_per_axis[a]",
+        )
+    ]
+    assert _node_id_problems(pinned, read) == []
+
+    # A parameter that is not in the file at all, and a guard that is not in it
+    # either, both still have to be caught.
+    sources["tests/test_synthetic.py"] = _SYNTHETIC_PARAMETRISED
+    typo = [
+        (
+            "X1",
+            "tests/test_synthetic.py",
+            b"a",
+            b"b",
+            "tests/test_synthetic.py::test_one_leg_per_axis[axes]",
+        )
+    ]
+    assert "appears nowhere" in _node_id_problems(typo, read)[0]
+
+    sources["tests/test_synthetic.py"] = _SYNTHETIC_PLAIN
+    gone = [
+        ("X1", "tests/test_synthetic.py", b"a", b"b", "tests/test_synthetic.py::test_missing")
+    ]
+    assert "is not defined" in _node_id_problems(gone, read)[0]
 
 
 def test_engine_requirements_name_cases_that_still_exist():

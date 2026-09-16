@@ -36,8 +36,10 @@ jobs:
       # behaviour they describe is removed. Each case mutates a source file,
       # runs one guard, and requires that guard to fail; sources are restored
       # byte-for-byte. Cases whose guard launches a local engine report as not
-      # applicable here (no engine on the runner) rather than failing, so this
-      # step covers everything except the two Godot cases.
+      # applicable here (no engine on the runner) rather than failing, and the
+      # summary line names them -- read that list rather than a count written
+      # here, which silently goes stale every time a case that needs an engine
+      # is added.
       - name: Mutation guards
         run: python scripts/mutation_check_all_guards.py
 

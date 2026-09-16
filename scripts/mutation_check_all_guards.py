@@ -28,6 +28,7 @@ machine -- or a CI runner -- with no engines installed.
 
 from __future__ import annotations
 
+import argparse
 import re
 import subprocess
 import sys
@@ -493,6 +494,65 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
             "::test_the_generated_prototype_can_actually_be_played[stealth]"
         ),
     ),
+    (
+        "D14 the enemies pile back onto the exit tile",
+        "fantasy_agent/godot_mcp.py",
+        b"    var interior := floors.slice(1, floors.size() - 1)\n",
+        b"    var interior := floors.slice(1, floors.size())\n",
+        (
+            "tests/test_gdscript_godot_check.py"
+            "::test_the_generated_prototype_can_actually_be_played[stealth]"
+        ),
+    ),
+    (
+        "D15 two enemies share a spawn point again",
+        "fantasy_agent/godot_mcp.py",
+        (
+            b"    var lane: float = lanes[floori(float(index) / float(interior.size()))"
+            b" % lanes.size()]\n"
+        ),
+        b"    var lane: float = 1.15 if index % 2 == 0 else -1.15\n",
+        (
+            "tests/test_gdscript_godot_check.py"
+            "::test_the_generated_prototype_can_actually_be_played[stealth]"
+        ),
+    ),
+    (
+        "D16 a hidden argument the model sent is kept",
+        "fantasy_agent/tool_registry.py",
+        (
+            b"        for argument in hidden:\n"
+            b"            args.pop(argument, None)\n"
+        ),
+        (
+            b"        for argument in hidden:\n"
+            b"            pass  # mutation: the model's value is kept\n"
+        ),
+        "tests/test_agent_loop.py::test_a_hidden_argument_the_model_sent_is_discarded",
+    ),
+    (
+        "D17 a spec's own words go into a GDScript literal unescaped",
+        "fantasy_agent/gameplay_codegen.py",
+        (
+            b"    return \" \".join(text.split()).replace(\"\\\\\", \"\\\\\\\\\")"
+            b".replace('\"', \"'\")\n"
+        ),
+        b"    return text.replace('\"', \"'\")\n",
+        "tests/test_gameplay_codegen_axis.py::test_spec_text_cannot_break_the_generated_literal",
+    ),
+    (
+        "H6 the parametrised-guard check stops recognising parametrisation",
+        "tests/test_mutation_harness.py",
+        (
+            b'    r"@pytest\\.mark\\.parametrize\\(.*?\\)\\s*\\n(?:\\s*@[^\\n]*\\n)'
+            b'*\\s*def (\\w+)\\(", re.DOTALL\n'
+        ),
+        (
+            b'    r"@pytest\\.mark\\.parametrize_MUTANT\\(.*?\\)\\s*\\n(?:\\s*@[^\\n]*\\n)'
+            b'*\\s*def (\\w+)\\(", re.DOTALL\n'
+        ),
+        "tests/test_mutation_harness.py::test_a_bare_id_for_a_parametrised_guard_is_rejected",
+    ),
 )
 
 
@@ -500,9 +560,12 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
 #:
 #: Where that engine is absent the guard skips itself (``pytest.mark.skipif``),
 #: and a skip proves nothing either way -- so the case is reported as *not
-#: applicable* rather than as a failure. Two of the cases below execute a real
+#: applicable* rather than as a failure. Most of the cases below execute a real
 #: Godot, which is why a machine without one cannot run them: pinning them as
-#: failures would make this harness unrunnable on any CI runner.
+#: failures would make this harness unrunnable on any CI runner. That is a real
+#: hole in what CI proves, so the run prints the list rather than a count --
+#: counting it here is how this comment came to claim two cases when seven had
+#: needed an engine for a while.
 #:
 #: Keyed by label because the case tuple stays the shape it always was, and a
 #: label is the only stable name a reader has. ``tests/test_mutation_harness.py``
@@ -516,6 +579,8 @@ ENGINE_REQUIREMENTS: dict[str, str] = {
     "D8 the same gap, caught by a real playtest": "godot",
     "D11 the dash stops moving the player": "godot",
     "D13 the patrol walks across the route again": "godot",
+    "D14 the enemies pile back onto the exit tile": "godot",
+    "D15 two enemies share a spawn point again": "godot",
 }
 
 #: counts line of scripts/run_tests.py: `tests=1 passed=0 failed=1 errors=0 skipped=0`
@@ -618,7 +683,45 @@ def run(test: str) -> tuple[int, str]:
     return completed.returncode, completed.stdout + completed.stderr
 
 
-def main() -> int:
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Prove each guard goes red when the behaviour it describes is removed."
+    )
+    parser.add_argument(
+        "--only",
+        action="append",
+        default=[],
+        metavar="SUBSTRING",
+        help=(
+            "run only the cases whose label contains SUBSTRING (repeatable, "
+            "case-insensitive). For iterating on one guard -- a full run launches "
+            "pytest once per case. A filtered run proves nothing about the cases it "
+            "skipped, so the summary says how many it left out."
+        ),
+    )
+    parser.add_argument("--list", action="store_true", help="print every case and exit")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    options = _parse_args(sys.argv[1:] if argv is None else argv)
+
+    if options.list:
+        for label, relative, _needle, _mutant, test in CASES:
+            print(f"{label:44} {relative} :: {test}")
+        return 0
+
+    selected = [
+        case
+        for case in CASES
+        if not options.only
+        or any(token.casefold() in case[0].casefold() for token in options.only)
+    ]
+    if not selected:
+        # Silently running nothing would exit 0 and read as "all proven".
+        print(f"no case label matches {options.only}; try --list")
+        return 1
+
     failures: list[str] = []
     not_applicable: list[str] = []
     caught = 0
@@ -638,7 +741,7 @@ def main() -> int:
         print(f"ENGINE_REQUIREMENTS names engines this harness cannot probe: {unprobeable}")
         failures.extend(unprobeable)
 
-    for label, relative, needle, mutant, test in CASES:
+    for label, relative, needle, mutant, test in selected:
         engine = ENGINE_REQUIREMENTS.get(label)
         if engine and not _engine_installed(engine):
             print(f"{label:44} {'N/A':14} needs {engine}, which is not installed here")
@@ -674,7 +777,9 @@ def main() -> int:
         print(f"UNPROVEN OR FAILED: {failures}")
         return 1
 
-    proven = f"{caught}/{len(CASES)} mutations caught"
+    proven = f"{caught}/{len(selected)} mutations caught"
+    if len(selected) != len(CASES):
+        proven += f" (--only: {len(CASES) - len(selected)} of {len(CASES)} cases not run)"
     excused = (
         f"; not applicable here (no engine): {not_applicable}" if not_applicable else ""
     )
