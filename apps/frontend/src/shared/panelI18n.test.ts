@@ -5,61 +5,29 @@ import { consoleI18n, makeTranslator, workbenchI18n } from "./i18n";
 // `toString()` on a transformed component: esbuild rewrites the JSX and does not
 // reliably preserve the `t("...")` calls, so a runtime extractor under-reports
 // silently -- and a guard that under-reports is worse than none.
-import consolePanelSource from "../console/rendering.tsx?raw";
-import workbenchPanelSource from "../workbench/PlanPanels.tsx?raw";
+import consoleSource from "../console/rendering.tsx?raw";
+import sharedPanelSource from "./panels/PlanPanels.tsx?raw";
+import workbenchSource from "../workbench/PlanPanels.tsx?raw";
 
 /**
- * Guard for F1 (one panel implemented once).
+ * Guard for the shared plan panels.
  *
- * The six panels the console and the planning workbench share currently exist
- * twice, and each entry point injects its own translator:
+ * The six panels the console and the planning workbench share are one
+ * implementation now, in `shared/panels/PlanPanels.tsx`, and each entry point
+ * still injects its own translator:
  *
- *   - `console/rendering.tsx`    is rendered with `consoleI18n`
- *   - `workbench/PlanPanels.tsx` is rendered with `workbenchI18n`
+ *   - the console renders them with `consoleI18n`
+ *   - the workbench renders them with `workbenchI18n`
  *
- * The two dictionaries overlap on 19 keys and diverge on the rest. That is
- * harmless while the panels are separate, and silently broken the moment they
- * become one component: `makeTranslator` falls back to `|| key`, so a console
- * operator would read the literal string "logline" or "stagesCount", no
- * exception is raised, and every existing test stays green.
+ * That is the whole risk of the merge. `makeTranslator` falls back to `|| key`,
+ * so a panel calling a key its dictionary lacks prints the literal key name --
+ * no exception, no type error, and every rendering test stays green. Before the
+ * lift the two dictionaries diverged by 19 keys in one direction and 7 in the
+ * other; both gaps are closed, and this file is what keeps them closed.
  *
- * This file pins the current key surface of both halves so that:
- *
- *   1. A key a panel calls but a dictionary does not define fails here, naming
- *      the key, instead of shipping as untranslated text.
- *   2. Any *new* divergence between the two halves is caught while the panels
- *      are still separate -- the failure is cheap now and expensive later.
- *
- * The key lists are read from the source text rather than from the imported
- * modules -- see the `?raw` imports below for why.
+ * The key lists are read from source text via `?raw` rather than from the
+ * imported modules -- see the import comment for why.
  */
-
-/**
- * The keys `workbenchI18n` defines and `consoleI18n` does not. Pinned as an
- * exact list on purpose: while the panels are two implementations this gap is
- * the measure of how far apart they are, and F1 is done when it is empty.
- */
-const KNOWN_CONSOLE_GAP = [
-  "assetNeeds",
-  "comfyui",
-  "confirmRequired",
-  "coreAction",
-  "coreVerbs",
-  "designPillars",
-  "failureStates",
-  "gameplayLoop",
-  "logline",
-  "noPlan",
-  "pacing",
-  "playerFantasy",
-  "projectGoal",
-  "qaFocus",
-  "stagesCount",
-  "toolActions",
-  "toolActionsHint",
-  "unreal",
-  "winState"
-].sort();
 
 /**
  * English strings that legitimately equal their own key (`minutes: "minutes"`).
@@ -76,79 +44,56 @@ function dictionaryKeys(dictionary: Record<string, Record<string, string>>): str
   return Object.keys(dictionary.en).sort();
 }
 
-const consoleKeys = panelKeys(consolePanelSource);
-const workbenchKeys = panelKeys(workbenchPanelSource);
+const sharedKeys = panelKeys(sharedPanelSource);
 
 describe("shared panel translation keys", () => {
-  it("keeps both halves calling a real set of keys", () => {
+  it("still finds the keys the panels call", () => {
     // A floor, not an exact count: it fails loudly if the extractor stops
     // matching (a rewrite to `translate("...")` would take it to zero) rather
     // than passing vacuously.
-    expect(consoleKeys.length, "keys called by the console panels").toBeGreaterThan(30);
-    expect(workbenchKeys.length, "keys called by the workbench panels").toBeGreaterThan(20);
+    expect(sharedKeys.length, "keys called by the shared panels").toBeGreaterThan(30);
   });
 
-  it("shares the orchestration keys that both entries have to agree on", () => {
-    const shared = workbenchKeys.filter((key) => consoleKeys.includes(key));
+  it("defines every key the shared panels call in both dictionaries", () => {
+    // This is the assertion the merge exists to satisfy. Both entry points
+    // render the same component and inject a different dictionary, so a key
+    // defined in only one of them is a string that renders wrong in the other.
+    const dictionaries = [
+      { name: "consoleI18n", keys: dictionaryKeys(consoleI18n) },
+      { name: "workbenchI18n", keys: dictionaryKeys(workbenchI18n) }
+    ];
 
-    // These carry the gate semantics -- whether a tool may run here, what must
-    // finish first, what quality bar the stage owes. Both entries must show
-    // them, or the two consoles disagree about the same pipeline.
-    for (const key of ["humanGate", "dependencies", "quality", "risks", "confirmation", "tools"]) {
-      expect(shared, `shared key ${key}`).toContain(key);
+    for (const { name, keys } of dictionaries) {
+      const missing = sharedKeys.filter((key) => !keys.includes(key));
+      expect(
+        missing,
+        `${name} has no entry for these keys, so a shared panel would render the raw ` +
+          "key name there. Add them to both locales."
+      ).toEqual([]);
     }
   });
 
-  it("reports the console dictionary gap as exactly the known list", () => {
-    const consoleDefined = dictionaryKeys(consoleI18n);
-    const workbenchDefined = dictionaryKeys(workbenchI18n);
-
-    const missingFromConsole = workbenchKeys
-      .filter((key) => workbenchDefined.includes(key))
-      .filter((key) => !consoleDefined.includes(key))
-      .sort();
-
-    expect(
-      missingFromConsole,
-      "workbench panel keys with no console translation. A new entry here means a panel " +
-        "reached for a key only one entry point defines -- the silent breakage F1 exists to " +
-        "avoid. Add the key to consoleI18n for both locales, or move it to a shared dictionary."
-    ).toEqual(KNOWN_CONSOLE_GAP);
-  });
-
   it("never renders a panel label as a raw key name", () => {
-    const translate = makeTranslator("en", consoleI18n);
-
-    const echoed = [...new Set([...consoleKeys, ...workbenchKeys])]
+    const echoed = sharedKeys
       .filter((key) => !SELF_NAMED_KEYS.has(key))
-      .filter((key) => translate(key) === key)
+      .filter((key) => makeTranslator("en", consoleI18n)(key) === key)
       .sort();
 
-    // Every echo is a real gap: the console translator has no entry for the
-    // key, so the operator reads the key itself. After the lift this must be
-    // empty, and a lifted panel calling a workbench-only key would otherwise
-    // pass every other test in the suite.
-    const expectedEchoes = KNOWN_CONSOLE_GAP.filter((key) =>
-      [...consoleKeys, ...workbenchKeys].includes(key)
-    ).sort();
-
-    expect(echoed, "keys the console translator renders as their own name").toEqual(expectedEchoes);
+    expect(echoed, "keys the console translator renders as their own name").toEqual([]);
   });
 
-  it.todo(
-    "assert the console dictionary gap is empty once shared/panels/ is the single implementation"
-  );
+  it("keeps both locales aligned for the panel keys", () => {
+    // `i18n.test.ts` already checks whole-dictionary parity; this narrows it to
+    // the panel keys so a failure here points straight at the panels.
+    for (const [name, dictionary] of Object.entries({ consoleI18n, workbenchI18n })) {
+      const en = dictionary.en as Record<string, string>;
+      const zh = dictionary["zh-CN"] as Record<string, string>;
+      const missingZh = sharedKeys.filter((key) => key in en && !(key in zh));
+      expect(missingZh, `${name}: panel keys present in en but not zh-CN`).toEqual([]);
+    }
+  });
 });
 
-/**
- * The third F1 acceptance item: after the lift, no shared panel may still be
- * exported from two files. This is deliberately a todo rather than a live
- * assertion -- it fails today by construction, and a red suite would make the
- * safety net it sits next to indistinguishable from a regression.
- *
- * The exact list of names that must disappear from one side is pinned in the
- * body so the lift has a target it can check itself against.
- */
 describe("single implementation", () => {
   const SHARED_PANELS = [
     "OverviewPanel",
@@ -159,21 +104,28 @@ describe("single implementation", () => {
     "QaPanel"
   ];
 
-  it.todo(
-    `exports each shared panel (${SHARED_PANELS.join(", ")}) from exactly one module`
-  );
-
-  it("still finds both implementations, so the todo above is not stale", () => {
-    // Records the starting state. When the lift lands, this test flips to
-    // failing -- which is the signal to delete it and enable the todo above.
-    const inConsole = SHARED_PANELS.filter((name) =>
-      new RegExp(`export function ${name}\\b`).test(consolePanelSource)
+  it("exports each shared panel from the shared module", () => {
+    const missing = SHARED_PANELS.filter(
+      (name) => !new RegExp(`export function ${name}\\b`).test(sharedPanelSource)
     );
-    const inWorkbench = SHARED_PANELS.filter((name) =>
-      new RegExp(`export function ${name}\\b`).test(workbenchPanelSource)
-    );
+    expect(missing, "shared panels not defined in shared/panels/PlanPanels.tsx").toEqual([]);
+  });
 
-    expect(inConsole, "shared panels still duplicated in the console").toEqual(SHARED_PANELS);
-    expect(inWorkbench, "shared panels still duplicated in the workbench").toEqual(SHARED_PANELS);
+  it("does not also define them in either entry point", () => {
+    // Both entry points re-export the shared panels so their own imports stay
+    // put; re-exporting is fine, a second `export function` is the regression.
+    const duplicated: string[] = [];
+    const entries: Array<readonly [string, string]> = [
+      ["console/rendering.tsx", consoleSource],
+      ["workbench/PlanPanels.tsx", workbenchSource]
+    ];
+    for (const [name, source] of entries) {
+      for (const panel of SHARED_PANELS) {
+        if (new RegExp(`export function ${panel}\\b`).test(source)) {
+          duplicated.push(`${panel} in ${name}`);
+        }
+      }
+    }
+    expect(duplicated, "shared panels implemented a second time").toEqual([]);
   });
 });

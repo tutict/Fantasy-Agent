@@ -96,8 +96,10 @@ export const consoleI18n: Record<Locale, Dictionary> = {
     risks: "Risks",
     owner: "Owner",
     tools: "Tools",
-    godot: "Godot quick-play",
-    blender: "Blender jobs",
+    // Engine labels are shared with the workbench now, so they name the engine
+    // rather than the console's phrasing of what the stage does.
+    godot: "Godot",
+    blender: "Blender",
     creativeReview: "Creative review",
     artDirection: "Art direction",
     reviewQuestions: "Review questions",
@@ -216,7 +218,27 @@ export const consoleI18n: Record<Locale, Dictionary> = {
     reworkSession: "Session",
     reworkResume: "Resume here",
     reworkRunning: "Resuming from node...",
-    reworkFromLabel: "From"
+    reworkFromLabel: "From",
+    // Added when the six plan panels became one implementation shared with the
+    // workbench. Without these the console would render the raw key name.
+    noPlan: "No plan yet. Generate one in the Planning Workbench.",
+    logline: "Logline",
+    gameplayLoop: "Gameplay loop",
+    coreVerbs: "Core verbs",
+    pacing: "Pacing",
+    winState: "Win state",
+    failureStates: "Failure states",
+    assetNeeds: "Asset needs",
+    qaFocus: "QA focus",
+    projectGoal: "Project goal",
+    stagesCount: "{count} stages",
+    playerFantasy: "Player fantasy",
+    coreAction: "Core action",
+    confirmRequired: "Confirm the idea before generating the production plan.",
+    unreal: "Unreal",
+    comfyui: "ComfyUI",
+    toolActions: "Plan tools",
+    toolActionsHint: "Each tool refines one part of the plan."
   },
   "zh-CN": {
     productLabel: "流程控制台",
@@ -309,8 +331,10 @@ export const consoleI18n: Record<Locale, Dictionary> = {
     risks: "风险",
     owner: "负责人",
     tools: "工具",
-    godot: "Godot 快速验证",
-    blender: "Blender 任务",
+    // Engine labels are shared with the workbench now, so they name the engine
+    // rather than the console's phrasing of what the stage does.
+    godot: "Godot",
+    blender: "Blender",
     creativeReview: "创意审阅",
     artDirection: "艺术方向",
     reviewQuestions: "审阅问题",
@@ -427,7 +451,27 @@ export const consoleI18n: Record<Locale, Dictionary> = {
     reworkSession: "会话",
     reworkResume: "从此节点续跑",
     reworkRunning: "正在从节点续跑...",
-    reworkFromLabel: "起点"
+    reworkFromLabel: "起点",
+    // Added when the six plan panels became one implementation shared with the
+    // workbench. Without these the console would render the raw key name.
+    noPlan: "还没有计划。先在策划工作台生成一份。",
+    logline: "一句话简介",
+    gameplayLoop: "玩法循环",
+    coreVerbs: "核心动词",
+    pacing: "节奏",
+    winState: "胜利条件",
+    failureStates: "失败状态",
+    assetNeeds: "资产需求",
+    qaFocus: "质量重点",
+    projectGoal: "项目目标",
+    stagesCount: "{count} 个阶段",
+    playerFantasy: "玩家幻想",
+    coreAction: "核心动作",
+    confirmRequired: "生成生产计划前，请先确认点子。",
+    unreal: "Unreal",
+    comfyui: "ComfyUI",
+    toolActions: "计划工具",
+    toolActionsHint: "每个工具只细化计划的一部分。"
   }
 };
 
@@ -752,7 +796,17 @@ export const workbenchI18n: Record<Locale, Dictionary> = {
     failureStates: "Failure states",
     assetNeeds: "Asset needs",
     qaFocus: "QA focus",
-    logline: "Logline"
+    logline: "Logline",
+    // Fields the console panels render and the workbench did not, added when
+    // the six plan panels became one implementation. The workbench shows the
+    // union too, so it needs the whole set.
+    session: "Target session",
+    win: "Win state",
+    pillars: "Design pillars",
+    next: "Next actions",
+    nextStage: "Next stage",
+    rules: "Usage rules",
+    requiredDecisions: "Required decisions"
   },
   "zh-CN": {
     appEyebrow: "游戏生产",
@@ -863,7 +917,17 @@ export const workbenchI18n: Record<Locale, Dictionary> = {
     failureStates: "失败状态",
     assetNeeds: "资产需求",
     qaFocus: "质量重点",
-    logline: "一句话简介"
+    logline: "一句话简介",
+    // Fields the console panels render and the workbench did not, added when
+    // the six plan panels became one implementation. The workbench shows the
+    // union too, so it needs the whole set.
+    session: "目标时长",
+    win: "胜利条件",
+    pillars: "设计支柱",
+    next: "下一步",
+    nextStage: "下一阶段",
+    rules: "使用规则",
+    requiredDecisions: "待定决策"
   }
 };
 

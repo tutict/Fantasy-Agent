@@ -1,52 +1,52 @@
-import type { ReactElement, ReactNode } from "react";
-import type {
-  BlenderPlan,
-  ComfyPlan,
-  CreativeReview,
-  CreativeReviewItem,
-  DirectorBuildPlan,
-  GodotPlan,
-  Locale,
-  ProductionSpecBundle,
-  QaPlan,
-  SpecBundlePreviewResponse,
-  TaskBreakdown,
-  TaskItem,
-  UnrealPlan
-} from "../shared/types";
+/**
+ * Console-specific rendering.
+ *
+ * The six plan panels this file used to own (overview / pipeline / tasks /
+ * build / visuals / qa) now live once, in `shared/panels/PlanPanels.tsx`, and
+ * are re-exported here so the console's own imports stay put. What remains is
+ * what only the console renders: the creative review workspace with its
+ * per-asset decision buttons, the spec-bundle inspector, and the small
+ * formatting helpers those two need.
+ *
+ * `selectedEngineVersion` and `usesGodotEngine` also moved to
+ * `shared/planModel.ts`; they are re-exported for the same reason.
+ */
 
-export type Translator = (key: string) => string;
+import type { CreativeReview, CreativeReviewItem, Locale, ProductionSpecBundle, SpecBundlePreviewResponse } from "../shared/types";
 
-export function preferredTitle(plan: DirectorBuildPlan | undefined, locale: Locale, t: Translator): string {
-  const spec = plan?.gameplay_spec;
+export {
+  BuildPanel,
+  OverviewPanel,
+  PipelinePanel,
+  QaPanel,
+  TasksPanel,
+  VisualsPanel,
+  type Translator
+} from "../shared/panels/PlanPanels";
+export { selectedEngineVersion, usesGodotEngine } from "../shared/planModel";
+
+/**
+ * The console's stage track and the shared panels both resolve a stage's
+ * display title the same way, so this is the shared helper under the name the
+ * console already imports it by.
+ */
+export { localizedTitle as localizedStageTitle } from "../shared/planModel";
+
+/** The console translates with a flat key lookup, so the fallback is the key. */
+type Translator = (key: string) => string;
+
+export function preferredTitle(
+  plan: { gameplay_spec?: { title?: string } } | undefined,
+  locale: Locale,
+  t: Translator
+): string {
+  const spec = plan?.gameplay_spec as
+    | { title?: string; i18n?: { field_translations?: { title?: Partial<Record<Locale, string>> } } }
+    | undefined;
   if (!spec) return t("emptyTitle");
   return locale === "zh-CN" && spec.i18n?.field_translations?.title?.["zh-CN"]
     ? spec.i18n.field_translations.title["zh-CN"] ?? t("emptyTitle")
     : spec.title ?? t("emptyTitle");
-}
-
-export function localizedStageTitle(
-  stage: { title?: string; title_i18n?: Partial<Record<Locale, string>> },
-  locale: Locale
-): string {
-  return locale === "zh-CN"
-    ? stage.title_i18n?.["zh-CN"] || stage.title || "-"
-    : stage.title_i18n?.en || stage.title || "-";
-}
-
-export function localizedTaskTitle(task: TaskItem, locale: Locale): string {
-  return locale === "zh-CN"
-    ? task.title_i18n?.["zh-CN"] || task.title || "-"
-    : task.title_i18n?.en || task.title || "-";
-}
-
-export function usesGodotEngine(plan: DirectorBuildPlan | null | undefined): boolean {
-  return Boolean(plan?.production_pipeline?.stages?.some((stage) => stage.id === "godot_quick_play"));
-}
-
-export function selectedEngineVersion(plan: DirectorBuildPlan | null): string {
-  if (!plan) return "UE5";
-  return usesGodotEngine(plan) ? plan.godot_plan?.engine_version || "Godot 4" : plan.unreal_plan?.engine_version || "UE5";
 }
 
 export function statusLabel(status: string | undefined, t: Translator): string {
@@ -55,43 +55,6 @@ export function statusLabel(status: string | undefined, t: Translator): string {
   if (status === "rejected") return t("rejected");
   if (status === "pending_user_review") return t("pendingReview");
   return status || "-";
-}
-
-export function list(items: unknown[] | undefined, t: Translator): ReactElement {
-  if (!items?.length) return <p>{t("noItems")}</p>;
-  return (
-    <ul>
-      {items.map((item, index) => (
-        <li key={`${String(item)}-${index}`}>{String(item)}</li>
-      ))}
-    </ul>
-  );
-}
-
-export function numbered<T>(
-  items: T[] | undefined,
-  t: Translator,
-  renderItem: (item: T, index: number) => ReactNode
-): ReactElement {
-  if (!items?.length) return <p>{t("noItems")}</p>;
-  return <ol>{items.map((item, index) => <li key={index}>{renderItem(item, index)}</li>)}</ol>;
-}
-
-export function SummaryBlock({
-  title,
-  wide,
-  children
-}: {
-  title: string;
-  wide?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <section className={`summary-block${wide ? " wide" : ""}`}>
-      <h3>{title}</h3>
-      {children}
-    </section>
-  );
 }
 
 export function GateItem({ title, detail }: { title: string; detail: string }) {
@@ -103,140 +66,14 @@ export function GateItem({ title, detail }: { title: string; detail: string }) {
   );
 }
 
-export function OverviewPanel({ plan, locale, t }: { plan: DirectorBuildPlan; locale: Locale; t: Translator }) {
-  const spec = plan.gameplay_spec;
-  if (!spec) return null;
+function list(items: unknown[] | undefined, t: Translator) {
+  if (!items?.length) return <p>{t("noItems")}</p>;
   return (
-    <div className="overview-grid" id="overview-content">
-      <SummaryBlock title={t("session")}>
-        <p>
-          {spec.target_session_minutes ?? "-"} {t("minutes")}
-        </p>
-      </SummaryBlock>
-      <SummaryBlock title={t("win")}>
-        <p>{spec.win_state || "-"}</p>
-      </SummaryBlock>
-      <SummaryBlock title={t("pillars")}>{list(spec.design_pillars, t)}</SummaryBlock>
-      <SummaryBlock title={t("failure")}>{list(spec.failure_states, t)}</SummaryBlock>
-      <SummaryBlock title={t("loop")} wide>
-        {numbered(spec.core_loop, t, (step) => (
-          <>
-            <strong>{step.action || "-"}</strong>
-            <br />
-            <span>{step.player_decision || "-"}</span>
-          </>
-        ))}
-      </SummaryBlock>
-      <SummaryBlock title={t("systems")} wide>
-        {numbered(spec.systems, t, (system) => (
-          <>
-            <strong>{system.name || "-"}</strong>
-            <br />
-            <span>{system.purpose || "-"}</span>
-          </>
-        ))}
-      </SummaryBlock>
-      <SummaryBlock title={t("next")} wide>
-        {list(plan.next_actions, t)}
-      </SummaryBlock>
-    </div>
-  );
-}
-
-export function PipelinePanel({ plan, locale, t }: { plan: DirectorBuildPlan; locale: Locale; t: Translator }) {
-  const pipeline = plan.production_pipeline;
-  if (!pipeline) return <div className="pipeline-board" id="pipeline-output" />;
-  return (
-    <div className="pipeline-board" id="pipeline-output">
-      <section className="stage-row wide">
-        <h3>{pipeline.project_name}</h3>
-        <p>{pipeline.goal}</p>
-        <div className="stage-meta">
-          <span className="stage-pill">
-            {t("currentStage")}: {pipeline.current_stage}
-          </span>
-          <span className="stage-pill">
-            {t("nextStage")}: {pipeline.next_stage}
-          </span>
-        </div>
-      </section>
-      {(pipeline.stages || []).map((stage) => (
-        <section className="stage-row" key={stage.id || stage.order}>
-          <h3>
-            {String(stage.order ?? "").padStart(2, "0")} {localizedStageTitle(stage, locale)}
-          </h3>
-          <p>{stage.purpose}</p>
-          <div className="stage-meta">
-            <span className={`stage-pill ${stage.status || ""}`}>{stage.status}</span>
-            {stage.kind === "human" ? <span className="stage-pill human">{t("humanGate")}</span> : null}
-            <span className="stage-pill">
-              {t("owner")}: {stage.owner_agent}
-            </span>
-            {stage.requires_confirmation ? <span className="stage-pill">{t("confirmation")}</span> : null}
-            {stage.depends_on?.length ? (
-              <span className="stage-pill">
-                {t("dependencies")}: {stage.depends_on.join(", ")}
-              </span>
-            ) : null}
-            {stage.mcp_tools?.length ? (
-              <span className="stage-pill">
-                {t("tools")}: {stage.mcp_tools.join(", ")}
-              </span>
-            ) : null}
-          </div>
-          <h3>{t("quality")}</h3>
-          {list(stage.quality_gates, t)}
-          {stage.risks?.length ? (
-            <>
-              <h3>{t("risks")}</h3>
-              {list(stage.risks, t)}
-            </>
-          ) : null}
-        </section>
+    <ul>
+      {items.map((item, index) => (
+        <li key={`${String(item)}-${index}`}>{String(item)}</li>
       ))}
-    </div>
-  );
-}
-
-export function TasksPanel({ breakdown, locale, t }: { breakdown?: TaskBreakdown; locale: Locale; t: Translator }) {
-  if (!breakdown) return <div className="task-board" id="tasks-output" />;
-  const goal = locale === "zh-CN" ? breakdown.goal_i18n?.["zh-CN"] || breakdown.goal : breakdown.goal_i18n?.en || breakdown.goal;
-  return (
-    <div className="task-board" id="tasks-output">
-      <section className="task-row">
-        <div>
-          <h3>{goal}</h3>
-          <p>
-            {t("recommended")}: {breakdown.recommended_next_task}
-          </p>
-        </div>
-        <span className="task-pill">{breakdown.tasks?.length || 0}</span>
-      </section>
-      {(breakdown.tasks || []).map((task) => (
-        <section className="task-row" key={task.id}>
-          <div>
-            <h3>{localizedTaskTitle(task, locale)}</h3>
-            <p>{task.purpose}</p>
-            <div className="task-meta">
-              <span className={`task-pill ${task.status || ""}`}>{task.status}</span>
-              <span className="task-pill">{task.id}</span>
-              <span className="task-pill">{task.agent}</span>
-              {task.requires_confirmation ? <span className="task-pill">{t("confirmation")}</span> : null}
-              {task.depends_on?.length ? (
-                <span className="task-pill">
-                  {t("dependencies")}: {task.depends_on.length}
-                </span>
-              ) : null}
-              {task.side_effects?.length ? (
-                <span className="task-pill">
-                  {t("sideEffects")}: {task.side_effects.length}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </section>
-      ))}
-    </div>
+    </ul>
   );
 }
 
@@ -260,7 +97,15 @@ export function ReviewPanel({
     <div className="review-layout">
       <div className="review-board" id="review-output">
         {items.length ? (
-          items.map((item) => <ReviewItem key={item.asset_id} item={item} decision={decisions[item.asset_id || ""] || item.approval_status || ""} setDecision={setDecision} t={t} />)
+          items.map((item) => (
+            <ReviewItem
+              key={item.asset_id}
+              item={item}
+              decision={decisions[item.asset_id || ""] || item.approval_status || ""}
+              setDecision={setDecision}
+              t={t}
+            />
+          ))
         ) : (
           <section className="review-item">
             <div>
@@ -345,102 +190,6 @@ function ReviewItem({
   );
 }
 
-export function BuildPanel({ plan, t }: { plan: DirectorBuildPlan; t: Translator }) {
-  const godotIsPrimary = usesGodotEngine(plan);
-  const unreal = godotIsPrimary ? undefined : plan.unreal_plan;
-  const godot = godotIsPrimary ? plan.godot_plan : undefined;
-  return (
-    <div className="split-output" id="build-output">
-      {unreal ? <UnrealBlocks unreal={unreal} t={t} /> : null}
-      {godot ? <GodotBlocks godot={godot} t={t} /> : null}
-      {plan.blender_plan ? <BlenderBlocks blender={plan.blender_plan} t={t} /> : null}
-    </div>
-  );
-}
-
-function UnrealBlocks({ unreal, t }: { unreal: UnrealPlan; t: Translator }) {
-  return (
-    <>
-      <SummaryBlock title={t("maps")}>{list(unreal.maps, t)}</SummaryBlock>
-      <SummaryBlock title={t("classes")}>{list(unreal.gameplay_classes, t)}</SummaryBlock>
-      <SummaryBlock title={t("folders")}>{list(unreal.folders, t)}</SummaryBlock>
-      <SummaryBlock title={t("automation")}>{list(unreal.automation_steps, t)}</SummaryBlock>
-    </>
-  );
-}
-
-function GodotBlocks({ godot, t }: { godot: GodotPlan; t: Translator }) {
-  return (
-    <SummaryBlock title={t("godot")} wide>
-      {list(godot.scenes, t)}
-      {list(godot.scripts, t)}
-      {list(godot.automation_steps, t)}
-    </SummaryBlock>
-  );
-}
-
-function BlenderBlocks({ blender, t }: { blender: BlenderPlan; t: Translator }) {
-  return (
-    <SummaryBlock title={t("blender")} wide>
-      {numbered(blender.jobs, t, (job) => (
-        <>
-          <strong>{job.asset_name}</strong>
-          <br />
-          <span>{job.purpose}</span>
-          <br />
-          <code>{job.export_path}</code>
-        </>
-      ))}
-    </SummaryBlock>
-  );
-}
-
-export function VisualsPanel({ comfy, review, t }: { comfy?: ComfyPlan; review?: CreativeReview; t: Translator }) {
-  return (
-    <div className="split-output" id="visuals-output">
-      {comfy ? (
-        <>
-          <SummaryBlock title={t("jobs")} wide>
-            {numbered(comfy.jobs, t, (job) => (
-              <>
-                <strong>{job.job_id}</strong>
-                <br />
-                <span>{job.gameplay_constraint}</span>
-                <br />
-                <code>{job.workflow_template}</code>
-              </>
-            ))}
-          </SummaryBlock>
-          <SummaryBlock title={t("rules")} wide>
-            {list(comfy.usage_rules, t)}
-          </SummaryBlock>
-        </>
-      ) : null}
-      {review ? (
-        <SummaryBlock title={t("creativeReview")} wide>
-          {list(review.required_user_decisions, t)}
-        </SummaryBlock>
-      ) : null}
-    </div>
-  );
-}
-
-export function QaPanel({ qa, t }: { qa?: QaPlan; t: Translator }) {
-  return (
-    <div className="split-output" id="qa-output">
-      {qa ? (
-        <>
-          <SummaryBlock title={t("smoke")}>{list(qa.smoke_tests, t)}</SummaryBlock>
-          <SummaryBlock title={t("playability")}>{list(qa.playability_checks, t)}</SummaryBlock>
-          <SummaryBlock title={t("failure")}>{list(qa.failure_checks, t)}</SummaryBlock>
-          <SummaryBlock title={t("packaging")}>{list(qa.packaging_checks, t)}</SummaryBlock>
-        </>
-      ) : null}
-    </div>
-  );
-}
-
-
 export function SpecBundlePanel({
   bundle,
   preview,
@@ -453,7 +202,11 @@ export function SpecBundlePanel({
   t: Translator;
 }) {
   if (!bundle) {
-    return <div className="spec-bundle-layout"><p>{t("specBundleEmpty")}</p></div>;
+    return (
+      <div className="spec-bundle-layout">
+        <p>{t("specBundleEmpty")}</p>
+      </div>
+    );
   }
   const segments = [
     bundle.level?.teaching_segment,
@@ -473,30 +226,93 @@ export function SpecBundlePanel({
           {validation?.status || t("specPreviewLoading")}
         </span>
       </header>
-      {error ? <p className="handoff-note">{t("specPreviewFailed")}: {error}</p> : null}
+      {error ? (
+        <p className="handoff-note">
+          {t("specPreviewFailed")}: {error}
+        </p>
+      ) : null}
       <div className="spec-domain-grid">
-        <section className="spec-domain"><h3>{t("specCombat")}</h3><strong>{bundle.combat?.encounters?.length || 0}</strong><p>{t("specEncounters")}</p></section>
-        <section className="spec-domain"><h3>{t("specLevel")}</h3><strong>{segments.length}</strong><p>{(bundle.level?.objective_gates || []).join(", ") || "-"}</p></section>
-        <section className="spec-domain"><h3>{t("specNumeric")}</h3><strong>{bundle.numeric?.target_session_minutes || "-"} min</strong><p>{t("specMoveSpeed")}: {bundle.numeric?.player_move_speed || "-"}</p></section>
-        <section className="spec-domain"><h3>{t("specNarrative")}</h3><strong>{bundle.narrative?.beats?.length || 0}</strong><p>{bundle.narrative?.hud_text?.objective || bundle.narrative?.premise || "-"}</p></section>
-        <section className="spec-domain"><h3>{t("specConfig")}</h3><strong>{bundle.config_tables?.tables?.length || 0}</strong><p>{(bundle.config_tables?.tables || []).map((table) => table.table_id).join(", ")}</p></section>
-        <section className="spec-domain"><h3>{t("specResources")}</h3><strong>{bundle.resource_pipeline?.assets?.length || 0}</strong><p>{t("specBlocked")}: {bundle.resource_pipeline?.blocked_assets?.length || 0}</p></section>
+        <section className="spec-domain">
+          <h3>{t("specCombat")}</h3>
+          <strong>{bundle.combat?.encounters?.length || 0}</strong>
+          <p>{t("specEncounters")}</p>
+        </section>
+        <section className="spec-domain">
+          <h3>{t("specLevel")}</h3>
+          <strong>{segments.length}</strong>
+          <p>{(bundle.level?.objective_gates || []).join(", ") || "-"}</p>
+        </section>
+        <section className="spec-domain">
+          <h3>{t("specNumeric")}</h3>
+          <strong>{bundle.numeric?.target_session_minutes || "-"} min</strong>
+          <p>
+            {t("specMoveSpeed")}: {bundle.numeric?.player_move_speed || "-"}
+          </p>
+        </section>
+        <section className="spec-domain">
+          <h3>{t("specNarrative")}</h3>
+          <strong>{bundle.narrative?.beats?.length || 0}</strong>
+          <p>{bundle.narrative?.hud_text?.objective || bundle.narrative?.premise || "-"}</p>
+        </section>
+        <section className="spec-domain">
+          <h3>{t("specConfig")}</h3>
+          <strong>{bundle.config_tables?.tables?.length || 0}</strong>
+          <p>{(bundle.config_tables?.tables || []).map((table) => table.table_id).join(", ")}</p>
+        </section>
+        <section className="spec-domain">
+          <h3>{t("specResources")}</h3>
+          <strong>{bundle.resource_pipeline?.assets?.length || 0}</strong>
+          <p>
+            {t("specBlocked")}: {bundle.resource_pipeline?.blocked_assets?.length || 0}
+          </p>
+        </section>
       </div>
       <section className="spec-section">
         <h3>{t("specValidation")}</h3>
-        {validation?.issues?.length ? <ul>{validation.issues.map((issue, index) => <li key={`${issue.field || "issue"}-${index}`}><strong>{issue.severity}</strong> <code>{issue.field}</code> {issue.message}</li>)}</ul> : <p>{t("specValidationClean")}</p>}
+        {validation?.issues?.length ? (
+          <ul>
+            {validation.issues.map((issue, index) => (
+              <li key={`${issue.field || "issue"}-${index}`}>
+                <strong>{issue.severity}</strong> <code>{issue.field}</code> {issue.message}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p>{t("specValidationClean")}</p>
+        )}
       </section>
-      <section className="spec-section"><h3>{t("specArtifacts")}</h3>{list((preview?.artifacts || []).map((artifact) => artifact.path || "-"), t)}</section>
+      <section className="spec-section">
+        <h3>{t("specArtifacts")}</h3>
+        {list((preview?.artifacts || []).map((artifact) => artifact.path || "-"), t)}
+      </section>
       <section className="spec-section">
         <h3>{t("specTrace")}</h3>
         <div className="spec-trace-list">
-          {(preview?.traces || []).map((trace, index) => <div className="spec-trace-row" key={`${trace.spec_field || "trace"}-${index}`}><code>{trace.spec_field}</code><span>→</span><code>{trace.artifact_path}</code><span>{trace.consumer}</span></div>)}
+          {(preview?.traces || []).map((trace, index) => (
+            <div className="spec-trace-row" key={`${trace.spec_field || "trace"}-${index}`}>
+              <code>{trace.spec_field}</code>
+              <span>-&gt;</span>
+              <code>{trace.artifact_path}</code>
+              <span>{trace.consumer}</span>
+            </div>
+          ))}
           {!preview?.traces?.length ? <p>{t("specPreviewLoading")}</p> : null}
         </div>
       </section>
       <section className="spec-section">
         <h3>{t("specExecutableQa")}</h3>
-        <div className="spec-qa-list">{qaResults.map((result) => <div className="spec-qa-row" data-state={result.passed ? "passed" : result.severity} key={result.assertion_id}><strong>{result.assertion_id}</strong><span>{result.passed ? t("specQaPassed") : result.message}</span></div>)}</div>
+        <div className="spec-qa-list">
+          {qaResults.map((result) => (
+            <div
+              className="spec-qa-row"
+              data-state={result.passed ? "passed" : result.severity}
+              key={result.assertion_id}
+            >
+              <strong>{result.assertion_id}</strong>
+              <span>{result.passed ? t("specQaPassed") : result.message}</span>
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   );

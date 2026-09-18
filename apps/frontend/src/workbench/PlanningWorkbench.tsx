@@ -318,7 +318,7 @@ export function PlanningWorkbench() {
       case "tasks":
         return <TasksPanel plan={plan} t={t} locale={locale} />;
       case "build":
-        return <BuildPanel plan={plan} t={t} locale={locale} />;
+        return <BuildPanel plan={plan} t={t} />;
       case "visuals":
         return <VisualsPanel plan={plan} t={t} />;
       case "gdd":

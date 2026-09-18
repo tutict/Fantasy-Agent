@@ -288,56 +288,19 @@ export function canGenerate(seed: IdeaSeed | null, seedConfirmed: boolean): bool
   return Boolean(seed && seedConfirmed);
 }
 
-type LocalizedValue = string | { en?: string; "zh-CN"?: string } | null | undefined;
-
-/** Plan lists may hold either a plain string or an ``{en, "zh-CN"}`` pair. */
-export function localizedValue(value: LocalizedValue, locale: Locale): string {
-  if (value == null) return "";
-  if (typeof value === "string") return value;
-  return (locale === "zh-CN" ? value["zh-CN"] : value.en) ?? value.en ?? value["zh-CN"] ?? "";
-}
-
-export function localizedArray(items: unknown, locale: Locale): string[] {
-  if (!Array.isArray(items)) return [];
-  return items.map((item) => localizedValue(item as LocalizedValue, locale));
-}
-
 /**
- * Pipeline stages and task items carry ``title_i18n`` instead of a localized
- * array, so they need their own helper.
+ * The plan-reading helpers moved to `shared/planModel.ts` so the shared plan
+ * panels can use them without importing from an entry point's folder. They are
+ * re-exported here because this module is where callers and tests learned to
+ * find them; there is still exactly one implementation.
  */
-export function localizedTitle(
-  item: { title?: string; title_i18n?: Partial<Record<Locale, string>> } | null | undefined,
-  locale: Locale
-): string {
-  if (!item) return "";
-  const translated = item.title_i18n?.[locale];
-  if (translated) return translated;
-  return item.title ?? "";
-}
-
-export function planDisplayTitle(plan: DirectorBuildPlan | null | undefined, locale: Locale): string {
-  const spec = plan?.gameplay_spec;
-  if (!spec) return "";
-  const translations = (
-    spec as { i18n?: { field_translations?: Record<string, Partial<Record<Locale, string>>> } }
-  ).i18n?.field_translations;
-  if (locale === "zh-CN") {
-    const translated = translations?.title?.["zh-CN"];
-    if (translated) return translated;
-  }
-  return spec.title ?? "";
-}
-
-/**
- * True when the pipeline was planned for Godot. Drives which engine plan the
- * build panel shows.
- */
-export function usesGodotEngine(plan: DirectorBuildPlan | null | undefined): boolean {
-  return Boolean(
-    plan?.production_pipeline?.stages?.some((stage) => stage.id === "godot_quick_play")
-  );
-}
+export {
+  localizedArray,
+  localizedTitle,
+  localizedValue,
+  planDisplayTitle,
+  usesGodotEngine
+} from "../shared/planModel";
 
 export interface NormalizedToolResult {
   structured: WorkbenchStructured;

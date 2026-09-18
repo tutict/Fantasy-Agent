@@ -61,7 +61,7 @@ function plan(overrides: Partial<DirectorBuildPlan> = {}): DirectorBuildPlan {
 }
 
 describe("console overview panel", () => {
-  it("renders the session length, win state and the loop the operator is signing off", () => {
+  it("renders the union field set, not just the console half", () => {
     render(
       <OverviewPanel
         locale="en"
@@ -74,38 +74,78 @@ describe("console overview panel", () => {
             design_pillars: ["momentum", "readable risk"],
             failure_states: ["fall", "timeout"],
             core_loop: [{ action: "wall-run", player_decision: "commit or drop" }],
-            systems: [{ name: "momentum", purpose: "reward uninterrupted routes" }]
+            systems: [{ name: "momentum", purpose: "reward uninterrupted routes" }],
+            // Fields only the workbench used to render; the merged panel shows
+            // them here too.
+            logline: "Deliver packages across a collapsing skyline.",
+            core_verbs: ["wall-run", "vault"],
+            asset_needs: ["rooftop kit"],
+            qa_focus: ["frame time"]
           },
           next_actions: ["run the Godot greybox"]
         })}
       />
     );
 
+    // Console-original fields.
     expect(screen.getByText("Target session")).toBeTruthy();
     expect(screen.getByText("reach the drop zone")).toBeTruthy();
-    // "momentum" is both a design pillar and a system name, so assert on the
-    // system's purpose instead of the word that legitimately appears twice.
-    expect(screen.getByText("reward uninterrupted routes")).toBeTruthy();
     expect(screen.getByText("Design pillars")).toBeTruthy();
-    expect(screen.getByText("Core loop")).toBeTruthy();
+    expect(screen.getByText("Systems")).toBeTruthy();
     expect(screen.getByText("Next actions")).toBeTruthy();
-    expect(screen.getByText("timeout")).toBeTruthy();
-    expect(screen.getByText("wall-run")).toBeTruthy();
-    expect(screen.getByText("commit or drop")).toBeTruthy();
     expect(screen.getByText("run the Godot greybox")).toBeTruthy();
+    expect(screen.getByText("timeout")).toBeTruthy();
+    // The loop step is one string, action then decision, as the workbench had
+    // it; the console used to break the pair across two lines.
+    expect(screen.getByText("wall-run -- commit or drop")).toBeTruthy();
+
+    // Workbench-original fields, now part of the same panel.
+    expect(screen.getByText("Logline")).toBeTruthy();
+    expect(screen.getByText("Deliver packages across a collapsing skyline.")).toBeTruthy();
+    expect(screen.getByText("Core verbs")).toBeTruthy();
+    expect(screen.getByText("vault")).toBeTruthy();
+    expect(screen.getByText("Asset needs")).toBeTruthy();
+    expect(screen.getByText("rooftop kit")).toBeTruthy();
+    expect(screen.getByText("QA focus")).toBeTruthy();
+    expect(screen.getByText("frame time")).toBeTruthy();
+
+    // Every label must come from the console dictionary, not the key name.
+    for (const label of ["Logline", "Core verbs", "Pacing", "Asset needs", "QA focus", "Pacing"]) {
+      expect(screen.getByText(label), label).toBeTruthy();
+    }
   });
 
-  it("renders nothing rather than a broken shell when the plan carries no spec", () => {
+  it("renders the shell with placeholders rather than a broken layout when the spec is missing", () => {
+    // The two halves disagreed here: the workbench rendered a labelled shell,
+    // the console rendered nothing. The union keeps the labelled shell -- an
+    // operator can see which fields the plan owes.
     const { container } = render(<OverviewPanel locale="en" t={t} plan={plan()} />);
-    expect(container.querySelector("#overview-content")).toBeNull();
+
+    expect(container.querySelector("#overview-content")).toBeTruthy();
+    expect(screen.getByText("Logline")).toBeTruthy();
+    expect(screen.getByText("Target session")).toBeTruthy();
   });
 
-  /**
-   * Union field set. The workbench half already renders these; the console half
-   * has to as well once both are one component, or the promise behind "one
-   * panel implemented once" is only half kept.
-   */
-  it.todo("renders the workbench-only spec fields after the lift (logline, core verbs, level beats, asset needs, QA focus)");
+  it("says so when there is no plan and no seed at all", () => {
+    render(<OverviewPanel locale="en" t={t} plan={null} />);
+    expect(screen.getByText(/No plan yet/)).toBeTruthy();
+  });
+
+  it("falls back to the idea seed while the plan is still being captured", () => {
+    render(
+      <OverviewPanel
+        locale="en"
+        t={t}
+        plan={null}
+        seed={{ player_fantasy: "become the courier", core_action: "wall-run" }}
+      />
+    );
+
+    expect(screen.getByText("Player fantasy")).toBeTruthy();
+    expect(screen.getByText("become the courier")).toBeTruthy();
+    expect(screen.getByText("Core action")).toBeTruthy();
+    expect(screen.getByText("wall-run")).toBeTruthy();
+  });
 });
 
 describe("console pipeline panel", () => {
@@ -188,11 +228,10 @@ describe("console pipeline panel", () => {
       />
     );
 
-    expect(screen.getByText("Quality gates")).toBeTruthy();
-    expect(screen.getByText("runs at 60fps")).toBeTruthy();
-    expect(screen.getByText("no missing scripts")).toBeTruthy();
-    expect(screen.getByText("Risks")).toBeTruthy();
-    expect(screen.getByText("approval blocks the import")).toBeTruthy();
+    // The merged panel folds each list into one pill, the workbench's shape:
+    // the console used to explode them into <ul> bullets.
+    expect(screen.getByText("Quality gates: runs at 60fps / no missing scripts")).toBeTruthy();
+    expect(screen.getByText("Risks: approval blocks the import")).toBeTruthy();
     expect(screen.getByText("Tools: godot-mcp")).toBeTruthy();
   });
 
@@ -214,15 +253,38 @@ describe("console pipeline panel", () => {
     );
 
     expect(within(container).getByText("neon-rooftops")).toBeTruthy();
-    expect(container.querySelectorAll(".stage-row:not(.wide)")).toHaveLength(0);
-    // The dead shell the console shows before a handoff exists.
+    expect(container.querySelectorAll(".stage-row")).toHaveLength(0);
     expect(container.querySelector("#pipeline-output")).toBeTruthy();
   });
 
-  it("renders an empty shell when there is no pipeline at all", () => {
-    const { container } = render(<PipelinePanel locale="en" t={t} plan={{}} />);
-    expect(container.querySelector("#pipeline-output")).toBeTruthy();
-    expect(container.textContent).toBe("");
+  it("names the current and next stage and counts the stages", () => {
+    render(
+      <PipelinePanel
+        locale="en"
+        t={t}
+        plan={plan({
+          production_pipeline: {
+            project_name: "neon-rooftops",
+            goal: "ship a 10 minute slice",
+            current_stage: "godot_quick_play",
+            next_stage: "creative_review",
+            stages: [stage(), stage({ id: "creative_review", order: 2, title: "Creative review" })]
+          }
+        })}
+      />
+    );
+
+    expect(screen.getByText("Current stage: godot_quick_play")).toBeTruthy();
+    expect(screen.getByText("Next stage: creative_review")).toBeTruthy();
+    expect(screen.getByText("2 stages")).toBeTruthy();
+    expect(screen.getByText("Project goal")).toBeTruthy();
+  });
+
+  it("says there is no plan rather than rendering an empty board", () => {
+    // Was a bare shell with no text; the union keeps the workbench's message,
+    // which is the one an operator can act on.
+    render(<PipelinePanel locale="en" t={t} plan={{}} />);
+    expect(screen.getByText(/No plan yet/)).toBeTruthy();
   });
 });
 
@@ -247,16 +309,24 @@ describe("console tasks panel", () => {
   it("renders the goal, the recommended next task and the task's gate pills", () => {
     render(<TasksPanel breakdown={breakdown} locale="en" t={t} />);
 
-    expect(screen.getByText("ship the greybox")).toBeTruthy();
-    expect(screen.getByText("Recommended: wire the drop zone")).toBeTruthy();
+    expect(screen.getByText("Recommended")).toBeTruthy();
+    expect(screen.getByText("ship the greybox -> wire the drop zone")).toBeTruthy();
     expect(screen.getByText("Wire the drop zone")).toBeTruthy();
     expect(screen.getByText("end the loop")).toBeTruthy();
     expect(screen.getByText("task-1")).toBeTruthy();
     expect(screen.getByText("godot")).toBeTruthy();
     expect(screen.getByText("Confirmation required")).toBeTruthy();
-    // Counts, not ids -- the console deliberately shortens these two.
-    expect(screen.getByText("Dependencies: 1")).toBeTruthy();
-    expect(screen.getByText("Tool operations: 1")).toBeTruthy();
+    // Spelled out, not counted: the union keeps the workbench's form, which
+    // names what a stage waits on instead of only how many things it waits on.
+    expect(screen.getByText("Dependencies: task-0")).toBeTruthy();
+    expect(screen.getByText("Tool operations: write project file")).toBeTruthy();
+  });
+
+  it("reads the breakdown off the plan when the console did not pass one in", () => {
+    // The workbench hands in the whole plan; accepting both shapes is what let
+    // the two call sites keep their own.
+    render(<TasksPanel plan={plan({ task_breakdown: breakdown })} locale="en" t={t} />);
+    expect(screen.getByText("Wire the drop zone")).toBeTruthy();
   });
 
   it("renders an empty shell when no breakdown has arrived", () => {
@@ -264,9 +334,6 @@ describe("console tasks panel", () => {
     expect(container.querySelector("#tasks-output")).toBeTruthy();
     expect(container.textContent).toBe("");
   });
-
-  /** Union field set: the workbench half spells the dependency ids out. */
-  it.todo("spells out dependency and side-effect ids after the lift, instead of only counting them");
 });
 
 describe("console build panel", () => {
@@ -295,13 +362,16 @@ describe("console build panel", () => {
       />
     );
 
-    expect(screen.getByText("Maps")).toBeTruthy();
+    // One titled list per engine, as the workbench had it; the console used to
+    // split the same data into four blocks (maps / classes / folders /
+    // automation) under its own labels.
+    expect(screen.getByText("Unreal")).toBeTruthy();
     expect(screen.getByText("L_Rooftops")).toBeTruthy();
     expect(screen.getByText("AMomentumPlayer")).toBeTruthy();
     expect(screen.getByText("/Game/Rooftops")).toBeTruthy();
     expect(screen.getByText("run headless import")).toBeTruthy();
-    expect(screen.getByText("Rooftop kit")).toBeTruthy();
-    expect(screen.getByText("/out/rooftop.fbx")).toBeTruthy();
+    expect(screen.getByText("Blender")).toBeTruthy();
+    expect(screen.getByText("Rooftop kit / level art / /out/rooftop.fbx")).toBeTruthy();
   });
 
   it("swaps to the Godot plan when the pipeline does declare a Godot stage", () => {
@@ -320,7 +390,7 @@ describe("console build panel", () => {
       />
     );
 
-    expect(screen.getByText("Godot quick-play")).toBeTruthy();
+    expect(screen.getByText("Godot")).toBeTruthy();
     expect(screen.getByText("res://main.tscn")).toBeTruthy();
     expect(screen.getByText("res://player.gd")).toBeTruthy();
     expect(screen.getByText("run headless verify")).toBeTruthy();
@@ -328,10 +398,11 @@ describe("console build panel", () => {
     expect(screen.queryByText("L_Rooftops")).toBeNull();
   });
 
-  it("renders the shell with no blocks when the plan has no engine plan", () => {
+  it("renders no engine blocks when the plan carries no engine plan", () => {
     const { container } = render(<BuildPanel t={t} plan={plan()} />);
     expect(container.querySelector("#build-output")).toBeTruthy();
-    expect(container.textContent).toBe("");
+    // The shell and its two empty list headers remain, each showing a dash.
+    expect(screen.getAllByText("-")).toHaveLength(2);
   });
 });
 
@@ -340,24 +411,40 @@ describe("console visuals panel", () => {
     jobs: [{ job_id: "job-1", gameplay_constraint: "keep wall-run routes readable", workflow_template: "rooftop-kit" }],
     usage_rules: ["never ship unapproved output"]
   };
-  const review = { required_user_decisions: ["sign off the rooftop kit"] };
+  const review = {
+    required_user_decisions: ["sign off the rooftop kit"],
+    approval_gate: "creative_review",
+    items: [
+      { asset_id: "rooftop-kit", source: "comfyui", approval_status: "pending", asset_path: "/out/kit.png" }
+    ],
+    art_direction: { user_review_questions: ["are the routes readable?"] }
+  };
 
-  it("renders the ComfyUI jobs, the usage rules and the review decisions still owed", () => {
+  it("renders both halves: the review side and the ComfyUI side", () => {
     render(<VisualsPanel comfy={comfy} review={review} t={t} />);
 
-    expect(screen.getByText("Jobs")).toBeTruthy();
-    expect(screen.getByText("job-1")).toBeTruthy();
-    expect(screen.getByText("keep wall-run routes readable")).toBeTruthy();
-    expect(screen.getByText("rooftop-kit")).toBeTruthy();
+    // Console-original fields.
+    expect(screen.getByText("ComfyUI")).toBeTruthy();
+    expect(screen.getByText("job-1 / keep wall-run routes readable / rooftop-kit")).toBeTruthy();
     expect(screen.getByText("Usage rules")).toBeTruthy();
     expect(screen.getByText("never ship unapproved output")).toBeTruthy();
+    expect(screen.getByText("Required decisions")).toBeTruthy();
     expect(screen.getByText("sign off the rooftop kit")).toBeTruthy();
+
+    // Review fields the workbench rendered and the console did not.
+    expect(screen.getByText("Approval gate")).toBeTruthy();
+    expect(screen.getByText("creative_review")).toBeTruthy();
+    expect(screen.getByText("Creative review")).toBeTruthy();
+    expect(screen.getByText("rooftop-kit / comfyui / pending / /out/kit.png")).toBeTruthy();
+    expect(screen.getByText("Review questions")).toBeTruthy();
+    expect(screen.getByText("are the routes readable?")).toBeTruthy();
   });
 
-  it("renders only the half it was given", () => {
-    render(<VisualsPanel comfy={comfy} t={t} />);
-    expect(screen.getByText("Jobs")).toBeTruthy();
-    expect(screen.queryByText("Creative review")).toBeNull();
+  it("reads both halves off the plan when handed a whole plan", () => {
+    // The workbench's call shape: it passes the plan and nothing else.
+    render(<VisualsPanel plan={plan({ comfyui_plan: comfy, creative_review: review })} t={t} />);
+    expect(screen.getByText("ComfyUI")).toBeTruthy();
+    expect(screen.getByText("Creative review")).toBeTruthy();
   });
 
   it("renders the shell with no blocks when neither half arrived", () => {
@@ -365,9 +452,6 @@ describe("console visuals panel", () => {
     expect(container.querySelector("#visuals-output")).toBeTruthy();
     expect(container.textContent).toBe("");
   });
-
-  /** Union field set: the workbench half renders the review items themselves. */
-  it.todo("renders the approval gate, the review items and the art-direction questions after the lift");
 });
 
 describe("console qa panel", () => {
@@ -394,6 +478,11 @@ describe("console qa panel", () => {
     expect(screen.getByText("export runs on the CI runner")).toBeTruthy();
   });
 
+  it("reads the QA plan off the plan when handed a whole plan", () => {
+    render(<QaPanel plan={plan({ qa_plan: { smoke_tests: ["boots"] } })} t={t} />);
+    expect(screen.getByText("boots")).toBeTruthy();
+  });
+
   it("renders the shell with no blocks when no QA plan arrived", () => {
     const { container } = render(<QaPanel t={t} />);
     expect(container.querySelector("#qa-output")).toBeTruthy();
@@ -402,19 +491,45 @@ describe("console qa panel", () => {
 });
 
 /**
- * Cross-panel invariant. Every console panel renders `t("noItems")` for an
- * empty list, so an empty list must look like an explicit "No items" rather
- * than a blank region -- otherwise the operator cannot tell "nothing here"
- * from "the payload never arrived".
+ * Cross-panel invariant. The merged panels render a dash for an empty list
+ * (the workbench's shape) rather than the console's "No items" paragraph. Both
+ * say the same thing -- "this list is genuinely empty" -- and the point of the
+ * assertion is that an empty list never renders as a blank region, which an
+ * operator cannot tell apart from a payload that never arrived.
  */
 describe("console panel list fallbacks", () => {
-  it("says No items rather than rendering a blank list", () => {
+  it("marks each empty list rather than rendering a blank region", () => {
     render(
       <QaPanel
         t={t}
         qa={{ smoke_tests: [], playability_checks: [], failure_checks: [], packaging_checks: [] }}
       />
     );
-    expect(screen.getAllByText("No items")).toHaveLength(4);
+    // One dash per empty list, and every group heading still present.
+    expect(screen.getAllByText("-")).toHaveLength(4);
+    expect(screen.getByText("Smoke tests")).toBeTruthy();
+    expect(screen.getByText("Packaging checks")).toBeTruthy();
+  });
+
+  it("keeps a section visible when its list is empty instead of dropping the heading", () => {
+    render(
+      <PipelinePanel
+        locale="en"
+        t={t}
+        plan={plan({
+          production_pipeline: {
+            project_name: "p",
+            goal: "g",
+            current_stage: "c",
+            next_stage: "n",
+            stages: [stage({ quality_gates: [] })]
+          }
+        })}
+      />
+    );
+    // The stage declares no quality gates, so the quality pill is absent --
+    // but the stage row itself and its status pill are still there.
+    expect(screen.queryByText(/^Quality gates:/)).toBeNull();
+    expect(screen.getByText("ready")).toBeTruthy();
   });
 });
