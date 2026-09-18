@@ -299,7 +299,6 @@ p {
 
 .locale-switch,
 .theme-switch,
-.gdd-toolbar,
 .review-actions,
 .handoff-actions,
 .mode-grid {
@@ -900,18 +899,17 @@ input[type="text"]:focus {
   display: none !important;
 }
 
-.overview-grid,
-.split-output,
-.task-board,
-.pipeline-board {
+/**
+ * The plan grid. The panels that fill it now live in `shared/panels/` and
+ * carry `wb-*` class names, so those rules are in `workbench.css` — this file
+ * only has to lay out the container.
+ */
+.split-output {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
-.summary-block,
-.task-row,
-.stage-row,
 .review-item,
 .review-inspector {
   border: 1px solid var(--line);
@@ -920,56 +918,27 @@ input[type="text"]:focus {
   padding: 13px;
 }
 
-.summary-block.wide,
-.stage-row.wide {
-  grid-column: 1 / -1;
-}
-
-.summary-block h3,
-.stage-row h3,
 .review-item h3,
 .review-inspector h3 {
   margin-bottom: 9px;
 }
 
-.summary-block p,
-.summary-block li,
-.task-row p,
-.stage-row p,
-.stage-row li,
 .review-item p,
 .review-inspector p,
 .review-inspector li {
   color: var(--muted-strong);
 }
 
-.summary-block ul,
-.summary-block ol,
-.stage-row ul,
-.stage-row ol,
 .review-inspector ul,
 .review-inspector ol {
   margin: 0;
   padding-left: 18px;
 }
 
-.summary-block li + li,
-.stage-row li + li,
 .review-inspector li + li {
   margin-top: 5px;
 }
 
-.task-row {
-  display: grid;
-  gap: 10px;
-}
-
-.task-row p {
-  margin: 7px 0 0;
-}
-
-.task-meta,
-.stage-meta,
 .review-meta {
   display: flex;
   flex-wrap: wrap;
@@ -978,7 +947,6 @@ input[type="text"]:focus {
 }
 
 .task-pill,
-.stage-pill,
 .review-pill {
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -990,30 +958,28 @@ input[type="text"]:focus {
 }
 
 .task-pill.ready,
-.stage-pill.ready,
 .review-pill.approved {
   border-color: var(--line-strong);
   color: var(--accent);
 }
 
 .task-pill.blocked,
-.stage-pill.blocked,
 .review-pill.rejected {
   border-color: rgba(255, 107, 107, 0.38);
   color: var(--danger);
 }
 
-.stage-pill.pending,
 .review-pill.needs_revision {
   border-color: rgba(232, 163, 86, 0.38);
   color: var(--amber);
 }
 
 /**
- * A human gate runs no tool, so it reads as "nothing executes here": dashed,
- * like the empty-state borders, instead of a status colour.
+ * The human-gate pill is no longer rendered here — shared panels emit
+ * `wb-pill human`, styled in `workbench.css`. Kept so the state still reads as
+ * "nothing executes at this gate" if the console brings the pill back.
  */
-.stage-pill.human {
+.review-pill.human {
   border-style: dashed;
   border-color: var(--line-strong);
   color: var(--muted-strong);
@@ -1036,8 +1002,7 @@ input[type="text"]:focus {
   gap: 12px;
 }
 
-.review-item code,
-.summary-block code {
+.review-item code {
   display: block;
   overflow-wrap: anywhere;
   border: 1px solid var(--line);
@@ -1076,26 +1041,6 @@ input[type="text"]:focus {
   position: sticky;
   top: 0;
   align-self: start;
-}
-
-.code-output {
-  width: 100%;
-  min-height: 520px;
-  margin: 0;
-  overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--code-bg);
-  color: var(--text);
-  padding: 15px;
-  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.55;
-  white-space: pre-wrap;
-}
-
-.gdd-toolbar {
-  margin-bottom: 10px;
 }
 
 /* --------------------------------------------------------------------------
@@ -1616,10 +1561,7 @@ input[type="text"]:focus {
 
   .stage-strip,
   .insight-row,
-  .overview-grid,
   .split-output,
-  .task-board,
-  .pipeline-board,
   .review-layout {
     grid-template-columns: 1fr;
   }
