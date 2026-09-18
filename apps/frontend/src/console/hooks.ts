@@ -5,6 +5,7 @@ import {
   getAssetExecutionJob,
   getExecuteJob,
   getManualCorrectionTargets,
+  previewGameplaySpec,
   previewSpecBundle,
   writeApprovalManifest
 } from "../shared/api";
@@ -14,11 +15,13 @@ import type {
   DirectorBuildPlan,
   EnemyPressureTuning,
   ExecuteResult,
+  GameplaySpec,
   Locale,
   ManualCorrectionTarget,
   ManualTargetsPayload,
   PlanningHandoff,
   ProductionSpecBundle,
+  PromptRequest,
   SpecBundlePreviewResponse,
   StatusState,
   Theme
@@ -99,6 +102,137 @@ export function useSpecPreview(currentPlan: DirectorBuildPlan | null, enabled: b
   }, [currentPlan, enabled]);
 
   return { specPreview, specPreviewError };
+}
+
+/** How the console names the engine to `previewSpecBundle` / `getSessionState`. */
+export function specTarget(plan: DirectorBuildPlan | null): "godot" | "unreal" {
+  return usesGodotEngine(plan) ? "godot" : "unreal";
+}
+
+/**
+ * Rebuild the `PromptRequest` a loaded plan came from.
+ *
+ * **Why this is the best available reconstruction, and not a faithful one.**
+ * The prompt text is genuinely not recoverable from the handoff: the workbench
+ * extracts an `IdeaSeed`, derives `seed.next_prompt` from it, generates the plan
+ * from that, and then persists only the plan. `DirectorBuildPlan` has no prompt
+ * field on either side of the REST boundary, and `WriterConfig` has no prompt
+ * either -- so there is nothing to read it back from.
+ *
+ * What *is* recoverable is the scope half every `PromptRequest` carries, all of
+ * which is legible from the plan itself:
+ *
+ *   - `target_minutes` from the spec, which the schema pins to 5-15
+ *   - `engine_version` from whichever engine plan the pipeline chose
+ *   - `platforms` / `constraints` from the spec's declared asset list
+ *   - `source_locale` / `output_locales` from the i18n bundle, which is the one
+ *     field that records what the spec was derived *under*
+ *
+ * The prompt itself falls back to the title plus the logline. That is
+ * deliberately **not** the original prompt, so the regenerated spec must be
+ * read as "what the backend makes of this plan's headline idea now", never as
+ * "what the original prompt produces". The panel says so in the UI, because an
+ * operator who mistook this for a re-run of their own prompt would silently
+ * compare two unrelated specs.
+ */
+export function promptRequestFromPlan(plan: DirectorBuildPlan | null): PromptRequest | null {
+  const spec = plan?.gameplay_spec;
+  if (!spec) return null;
+  const godot = usesGodotEngine(plan);
+  return {
+    prompt: [spec.title, spec.logline].filter(Boolean).join(". ") || spec.player_fantasy || "",
+    target_minutes: spec.target_session_minutes,
+    engine_version: godot
+      ? plan?.godot_plan?.engine_version || "Godot 4"
+      : plan?.unreal_plan?.engine_version || "UE5",
+    platforms: [inferPlatform(plan)],
+    jam_scope: true,
+    // The spec does not carry the request's free-form constraints; `asset_needs`
+    // is the closest thing the plan records, and it is what the panel shows as
+    // the payload it sends.
+    constraints: [],
+    source_locale: spec.i18n?.source_locale ?? "en",
+    output_locales: spec.i18n?.output_locales ?? ["en", "zh-CN"]
+  };
+}
+
+/**
+ * The plan does not record a platform, so read one off the assets it declared.
+ *
+ * `MOBILE_NEEDLE` is boundary-anchored, and that is load-bearing rather than
+ * cosmetic: a bare `ios` substring matches "kiosk" and "prioritization", so a
+ * plan whose assets say `asset kiosk prop` would regenerate against `Android`
+ * with nothing on screen to explain where that platform came from. The boundary
+ * is `[^a-z0-9]` rather than `\b` on purpose -- `\b` would reject the matches
+ * that matter (`ios_controls`, `mobile-first`), because `_` and `-` are word
+ * characters to `\b` but separators to us. Case-insensitive because the needle
+ * list is lowercase while real asset names write `iOS`.
+ *
+ * There is no `console` needle for the same reason the mobile list needed this
+ * guard: `console` matches `console.log`, and a spec whose asset notes mention a
+ * debug console would silently regenerate against `Console`. `gamepad` and
+ * `controller` have no such embedded collision, so they carry the Console branch
+ * on their own.
+ */
+export const MOBILE_NEEDLE = /(?:^|[^a-z0-9])(?:touch|mobile|android|ios|handheld)(?![a-z0-9])/i;
+const CONSOLE_NEEDLE = /(?:^|[^a-z0-9])(?:console|gamepad|controller)(?![a-z0-9])/i;
+
+function inferPlatform(plan: DirectorBuildPlan | null): string {
+  const needles = (plan?.gameplay_spec?.asset_needs ?? []).join(" ").toLowerCase();
+  if (MOBILE_NEEDLE.test(needles)) return "Android";
+  if (CONSOLE_NEEDLE.test(needles)) return "Console";
+  return "Windows";
+}
+
+/**
+ * Preview of the spec the backend would derive from a loaded plan *now*.
+ *
+ * The console's spec tab shows the spec frozen into the handoff, so a plan built
+ * under an older prompt, an older generator, or different LLM settings is
+ * indistinguishable from a current one. This is the other half of that
+ * comparison -- see `shared/specDiff.ts` for the rows.
+ *
+ * Nothing is written and no process starts, so there is no approval flag; the
+ * deterministic generator makes it repeatable when LLM generation is off.
+ */
+export function useSpecRegen(plan: DirectorBuildPlan | null) {
+  const [regenerated, setRegenerated] = useState<GameplaySpec | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+  const [regenError, setRegenError] = useState<string | null>(null);
+
+  const request = promptRequestFromPlan(plan);
+
+  // A new plan invalidates the old comparison: the diff would otherwise show a
+  // regenerated spec derived from a plan the console is no longer looking at.
+  useEffect(() => {
+    setRegenerated(null);
+    setRegenError(null);
+  }, [plan]);
+
+  const regenerate = useCallback(async () => {
+    if (!request) {
+      setRegenError(null);
+      setRegenerated(null);
+      return;
+    }
+    setRegenerating(true);
+    try {
+      setRegenerated(await previewGameplaySpec(request));
+      setRegenError(null);
+    } catch (error) {
+      setRegenerated(null);
+      setRegenError(String(error));
+    } finally {
+      setRegenerating(false);
+    }
+  }, [request]);
+
+  const clear = useCallback(() => {
+    setRegenerated(null);
+    setRegenError(null);
+  }, []);
+
+  return { request, regenerated, regenerating, regenError, regenerate, clear };
 }
 
 

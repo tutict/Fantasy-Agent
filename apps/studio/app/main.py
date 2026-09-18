@@ -44,6 +44,7 @@ from fantasy_agent.idea_discovery import extract_idea_seed, prompt_request_from_
 from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
 from fantasy_agent.mcp import initial_mcp_contracts
 from fantasy_agent.studio_jobs import InMemoryJobRegistry
+from fantasy_agent.tool_registry import tool_catalog
 from fantasy_agent.workflows import (
     build_asset_approval_manifest,
     decompose_production_tasks,
@@ -524,6 +525,19 @@ def tool_contracts() -> list[Any]:
     """Local tool contracts inspected before any execution side effect."""
 
     return initial_mcp_contracts()
+
+
+@app.get("/api/tool-catalog")
+def tool_catalog_endpoint() -> dict[str, Any]:
+    """Every callable tool with the permission tier the gate will enforce.
+
+    ``/api/tool-contracts`` is the declared inventory; this is the enforced one.
+    The Agent panel shows it so an operator can see which tools the model was
+    offered and which of them need a grant -- the tiers come from the registry
+    that actually gates the call, not from a second hand-typed list.
+    """
+
+    return tool_catalog()
 
 
 def _use_llm() -> bool:

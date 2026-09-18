@@ -724,6 +724,97 @@ def unimplemented_contracts() -> list[str]:
     return sorted(c.name for c in initial_mcp_contracts() if c.name not in registered)
 
 
+def tool_catalog() -> dict[str, Any]:
+    """Every tool an agent may call, with the tier the gate will enforce.
+
+    ``/api/tool-contracts`` predates the registry: it serves ``MCPToolContract``,
+    a hand-written record that names a tool and its schema anchors but says
+    nothing about what the gate actually does with it. An operator reading that
+    list cannot tell a read-only probe from one that launches Blender, which is
+    the one thing AGENTS.md says must be declared before it runs.
+
+    This is the registry's own view instead -- the same records that feed the
+    model's tool list and the permission gate -- so the tiers shown here are the
+    tiers enforced, not a second inventory that can drift:
+
+    - ``source`` is ``"planning"`` for the four deterministic planning tools and
+      ``"engine"`` for the MCP bridges.
+    - ``permission`` is the gate's tier. Engine tools derive it from the bridge's
+      MCP annotations via ``permission_from_annotations``; nothing here is
+      hand-typed per tool.
+    - ``confirm_field`` names the argument that unlocks the real side effect
+      (MCP tools default it to false, so a granted run still writes nothing
+      until the caller sets it).
+    - ``hidden_args`` / ``executable_args`` are the arguments withheld from the
+      model. ``executable_args`` are *also* overwritten on every call -- a hidden
+      argument is only removed from the advertised schema, and a model can still
+      send one it was never offered.
+    - ``contract`` names the declared ``MCPToolContract`` when one exists, so a
+      tool implemented without a contract, or a contract with no implementation,
+      is visible rather than implied.
+
+    ``permission_counts`` is returned alongside so a caller can assert on the
+    shape without walking the list -- the UI prints it as a summary line.
+    """
+
+    from fantasy_agent.mcp import initial_mcp_contracts
+
+    declared = {contract.name: contract for contract in initial_mcp_contracts()}
+    implemented_engine = set(engine_registry().names())
+
+    entries: list[dict[str, Any]] = []
+    for source, registry in (
+        ("planning", default_registry()),
+        ("engine", engine_registry()),
+    ):
+        for name in registry.names():
+            spec = registry.get(name)
+            if spec is None:
+                continue
+            contract = declared.get(name)
+            entries.append(
+                {
+                    "name": name,
+                    "source": source,
+                    "server": spec.server,
+                    "permission": spec.permission,
+                    "description": spec.description,
+                    "confirm_field": spec.confirm_field,
+                    "plan_key": spec.plan_key,
+                    "hidden_args": list(spec.hidden_args),
+                    "executable_args": list(spec.executable_args),
+                    "contract": (
+                        {
+                            "declared": True,
+                            "side_effects": list(contract.side_effects),
+                            "safety_checks": list(contract.safety_checks),
+                        }
+                        if contract
+                        else None
+                    ),
+                }
+            )
+
+    counts = {tier: 0 for tier in PERMISSIONS}
+    for entry in entries:
+        counts[entry["permission"]] += 1
+
+    # Contracts that declare a tool nothing implements. Kept in the payload
+    # because the UI is the only place a human sees this list; the test that
+    # pins it (`unimplemented_contracts`) is invisible outside CI.
+    declared_only = sorted(
+        contract.name for contract in declared.values() if contract.name not in implemented_engine
+    )
+
+    return {
+        "tools": entries,
+        "permission_counts": counts,
+        # The planning tools are not MCP contracts, so only the engine half can
+        # be missing an implementation.
+        "declared_without_implementation": declared_only,
+    }
+
+
 def exposed_executable_args(registry: ToolRegistry | None = None) -> list[str]:
     """Tools whose model-visible schema still lets the model name a binary.
 

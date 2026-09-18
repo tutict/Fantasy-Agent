@@ -1382,6 +1382,124 @@ input[type="text"]:focus {
 }
 
 /* --------------------------------------------------------------------------
+   Spec regeneration: the frozen bundle above vs what the backend produces now
+-------------------------------------------------------------------------- */
+
+.spec-regen {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.spec-regen-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.spec-regen-head h3 {
+  margin: 0;
+}
+
+.spec-regen-status[data-state="passed"],
+.spec-regen-status.passed {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.spec-regen-status.warning {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.spec-regen-request {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-muted);
+  padding: 8px 10px;
+}
+
+.spec-regen-request summary {
+  cursor: pointer;
+  color: var(--text-soft);
+}
+
+.spec-regen-request dl {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.spec-regen-request dt {
+  color: var(--text-soft);
+  font-size: 0.85em;
+}
+
+.spec-regen-request dd {
+  margin: 2px 0 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.spec-regen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.spec-regen-digest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--text-soft);
+}
+
+.spec-regen-digest strong {
+  color: var(--text);
+}
+
+.spec-diff-list {
+  display: grid;
+  gap: 6px;
+}
+
+/* The arrow column is the whole point of the row, so it is the one column that
+   never shrinks; both values may wrap. */
+.spec-diff-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.6fr) minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  border-left: 3px solid var(--danger);
+  padding: 8px 10px;
+  background: var(--surface-muted);
+}
+
+.spec-diff-row code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.spec-diff-before,
+.spec-diff-after {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.spec-diff-before {
+  color: var(--text-soft);
+}
+
+.spec-diff-after {
+  color: var(--text);
+}
+
+/* --------------------------------------------------------------------------
    Responsive: 3 columns -> rails share the left column -> single column
 -------------------------------------------------------------------------- */
 

@@ -461,6 +461,13 @@ button {
   gap: 12px;
 }
 
+/* The build panel stacks: engine/asset lists first, then the Blender script
+   preview, which is a full-width block of its own rather than a grid cell. */
+.wb-build {
+  display: grid;
+  gap: 14px;
+}
+
 .wb-block ul,
 .wb-block ol {
   margin: 0;
@@ -550,4 +557,132 @@ button {
   overflow-wrap: anywhere;
   max-height: 60vh;
   overflow-y: auto;
+}
+
+/* --------------------------------------------------------------------------
+   Blender script preview (shared/panels/BlenderScriptPanel.tsx)
+
+   This mounts inside the shared BuildPanel, so it renders on both /workbench
+   and /web-console. Every class is `wb-*` and every rule lives here: the
+   console's own action classes live in console.css, which the workbench route
+   never loads. shared/panelStyles.test.ts enforces both halves.
+-------------------------------------------------------------------------- */
+
+.wb-script {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--surface);
+}
+
+.wb-script-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.wb-script-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.wb-script-head p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-soft);
+}
+
+.wb-script-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.wb-script-count {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.wb-script-error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+
+.wb-script-meta {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.wb-script-meta dt {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+
+.wb-script-meta dd {
+  margin: 2px 0 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.wb-script-section {
+  display: grid;
+  gap: 6px;
+}
+
+.wb-script-section h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.wb-script-notes {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-soft);
+  overflow-wrap: anywhere;
+}
+
+/* A real run deletes the scene before generating. That list is the one an
+   operator is actually weighing, so it reads as a warning rather than as
+   another bullet list next to the execution notes. */
+.wb-script-effects {
+  margin: 0;
+  padding: 8px 10px 8px 24px;
+  border-left: 3px solid var(--danger);
+  background: var(--danger-soft);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.wb-script-assets {
+  display: grid;
+  gap: 6px;
+}
+
+.wb-script-asset {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.5fr) minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 6px;
+  font-size: 12px;
+}
+
+.wb-script-asset code {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }

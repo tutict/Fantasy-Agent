@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { consoleI18n, makeTranslator, workbenchI18n } from "./i18n";
+import { consoleI18n, makeTranslator, studioI18n, workbenchI18n } from "./i18n";
 // Vite inlines these at transform time. Reading the source text beats calling
 // `toString()` on a transformed component: esbuild rewrites the JSX and does not
 // reliably preserve the `t("...")` calls, so a runtime extractor under-reports
 // silently -- and a guard that under-reports is worse than none.
 import consoleSource from "../console/rendering.tsx?raw";
 import flowConsoleSource from "../console/FlowConsole.tsx?raw";
+import studioSource from "../studio/StudioShell.tsx?raw";
 import sharedPanelSource from "./panels/PlanPanels.tsx?raw";
 import workbenchSource from "../workbench/PlanPanels.tsx?raw";
 
@@ -36,6 +37,78 @@ import workbenchSource from "../workbench/PlanPanels.tsx?raw";
  * missing one.
  */
 const SELF_NAMED_KEYS = new Set(["minutes"]);
+
+/**
+ * Keys with no caller that predate the entry-point guard.
+ *
+ * These came from earlier merges (the manual-correction flow was rewritten and
+ * its `manual*` strings were left behind). They are *not* sanctioned -- they are
+ * recorded so the guard can be strict about new orphans without failing on old
+ * ones. Removing them is a separate change; adding to this list is not the way
+ * to silence a failure, deleting the key is.
+ */
+const KNOWN_DEAD = new Set([
+  "toggleLog",
+  "loop",
+  "maps",
+  "classes",
+  "folders",
+  "automation",
+  "jobs",
+  "manualChecking",
+  "manualComfyReady",
+  "manualBlenderReady",
+  "manualUnrealReady",
+  "manualGodotReady",
+  "manualOpenNeedsConfirmation",
+  "manualOpenUnknownTarget",
+  "manualOpenUnavailable",
+  "winState",
+  "failureStates"
+]);
+
+/**
+ * `workbenchI18n` keys that a `t(...)` call cannot name.
+ *
+ * Two groups, and the distinction matters because it decides what to do when the
+ * guard fails:
+ *
+ *   - **Composed at the call site.** `ToolActions` renders `t(labelKey)` from the
+ *     `PLAN_TOOLS` table, so `toolExtractSeed` is reached through a variable.
+ *   - **Resolved at runtime by the backend.** Nothing in the frontend ever said
+ *     `apiTestConnected`; `fantasy_agent/api_settings.py` sends it as
+ *     `detail_key` and `ApiSettingsPanel` calls `t(payload.detail_key)`. If the
+ *     backend renamed one of these while the dictionary kept the old spelling,
+ *     the panel would print the raw key and no test would notice -- which is
+ *     exactly the failure mode this file exists to catch, so the list is spelled
+ *     out rather than derived from the same files it is meant to check.
+ *
+ * A key in neither group is dead: delete it, do not add it here.
+ */
+const RUNTIME_NAMED_KEYS = new Set([
+  // Composed: `toolExtractSeed` is not in PLAN_TOOLS (that table drives the ten
+  // plan-refinement buttons); the extract action lives in SeedInspector and
+  // labels itself `extractSeed`. Kept so a future table entry resolves.
+  "toolExtractSeed",
+  // Composed: PLAN_TOOLS label keys, looked up by `t(labelKey)`.
+  "toolGeneratePlan",
+  "toolDecomposeTasks",
+  "toolPreparePipeline",
+  "toolRenderGdd",
+  "toolGodotPlan",
+  "toolUnrealPlan",
+  "toolBlenderPlan",
+  "toolComfyuiPlan",
+  "toolCreativeReview",
+  "toolQaPlan",
+  // Backend-named: `detail_key` values from `api_settings.test_connection`.
+  "apiTestConnected",
+  "apiTestMissingKey",
+  "apiTestHttpError",
+  "apiTestUnreachable",
+  "apiTestBadResponse",
+  "apiTestInvalid"
+]);
 
 function panelKeys(source: string): string[] {
   return [...new Set([...source.matchAll(/\bt\("([A-Za-z0-9_]+)"/g)].map((match) => match[1]))].sort();
@@ -131,11 +204,11 @@ describe("single implementation", () => {
   });
 });
 
-describe("console dictionary has no keys nothing calls", () => {
+describe("entry-point dictionaries have no keys nothing calls", () => {
   /**
-   * A `consoleI18n` key is live if any *non-test* source in the frontend calls
-   * it, directly (`t("key")`) or indirectly (a bare `"key"` string, which is how
-   * `tabGroups` stores its labels before `{t(label)}` resolves them).
+   * A key is live if any *non-test* source in the frontend calls it, directly
+   * (`t("key")`) or indirectly (a bare `"key"` string, which is how `tabGroups`
+   * stores its labels before `{t(label)}` resolves them).
    *
    * Three scoping decisions, each load-bearing:
    *
@@ -143,8 +216,8 @@ describe("console dictionary has no keys nothing calls", () => {
    *     some of those panels, so their keys must stay. Excluding it made the
    *     check report `systems` / `tools` / `risks` as dead.
    *   - **Exclude test files.** A test may name a key purely to assert on it --
-   *     the `removed` list just below does exactly that -- and counting those
-   *     would make every key look used.
+   *     the `removed` list below does exactly that -- and counting those would
+   *     make every key look used.
    *   - **Exclude `i18n.ts` itself.** It is where the keys are defined.
    *
    * With that scope the distinction is real: `tabOverview` appears nowhere but
@@ -193,6 +266,58 @@ describe("console dictionary has no keys nothing calls", () => {
     "failureStates"
   ]);
 
+  /**
+   * Keys the *backend* names at runtime instead of the frontend.
+   *
+   * `StudioShell` renders these as `t(payload.detail_key)`, so the call is
+   * `t(someVariable)`, not `t("literal")`, and a source scan cannot see them.
+   * Every entry here is a `detail_key=` string emitted from
+   * `fantasy_agent/api_settings.py` or `apps/studio/app/main.py`; if one were
+   * renamed backend-side while the dictionary kept the old spelling, the panel
+   * would print the raw key with no test failing. That is why the list is
+   * spelled out rather than derived -- deriving it from the same file it guards
+   * would make the guard agree with whatever is there.
+   */
+  const BACKEND_NAMED_KEYS = new Set([
+    "apiTestConnected",
+    "apiTestMissingKey",
+    "apiTestHttpError",
+    "apiTestUnreachable",
+    "apiTestBadResponse",
+    "apiTestInvalid"
+  ]);
+
+  /**
+   * The two `studioI18n` halves the MCP card renders.
+   *
+   * `McpCard` builds these by concatenation -- `"mcpDetail" + key + state` -- so
+   * no `t("...")` call names them and a literal scan cannot see them.
+   */
+  const STUDIO_COMPOSED = new Set(
+    [
+      "mcpDetail",
+      "mcpNext",
+      ...[
+        "mcpDetailComfyReady",
+        "mcpDetailComfyMissing",
+        "mcpDetailExecutableReady",
+        "mcpDetailExecutableMissing",
+        "mcpDetailGithubReady",
+        "mcpDetailGithubOptional",
+        "mcpNextComfyReady",
+        "mcpNextComfyMissing",
+        "mcpNextBlenderReady",
+        "mcpNextBlenderMissing",
+        "mcpNextUnrealReady",
+        "mcpNextUnrealMissing",
+        "mcpNextGodotReady",
+        "mcpNextGodotMissing",
+        "mcpNextGithubReady",
+        "mcpNextGithubOptional"
+      ]
+    ].flatMap((entry) => [entry, entry + "Ready", entry + "Missing", entry + "Optional"])
+  );
+
   it("still finds the keys the console calls", () => {
     // Same floor rationale as above: a rewrite that stops the extractor from
     // matching must fail loudly instead of passing on an empty set.
@@ -201,16 +326,41 @@ describe("console dictionary has no keys nothing calls", () => {
     );
   });
 
-  it("has no newly orphaned keys", () => {
+  it("still finds the keys the studio shell calls", () => {
+    expect(panelKeys(studioSource).length, "direct t() calls in StudioShell.tsx").toBeGreaterThan(40);
+  });
+
+  it("has no orphaned console keys", () => {
     const orphans = dictionaryKeys(consoleI18n)
       .filter((key) => !mentioned.has(key))
       .filter((key) => !KNOWN_DEAD.has(key));
-
     expect(
       orphans,
-      "consoleI18n keys nothing calls. The console's duplicate tabs were removed, so " +
-        "tab* keys for the deleted panels must go with them. Delete the key rather " +
-        "than adding it to KNOWN_DEAD."
+      "consoleI18n keys nothing calls. Delete the key rather than adding it to " +
+        "KNOWN_DEAD; a key with no caller is a string no screen can ever show."
+    ).toEqual([]);
+  });
+
+  it("has no orphaned workbench keys", () => {
+    const orphans = dictionaryKeys(workbenchI18n)
+      .filter((key) => !mentioned.has(key))
+      .filter((key) => !RUNTIME_NAMED_KEYS.has(key));
+    expect(
+      orphans,
+      "workbenchI18n keys nothing calls. The workbench's static page is gone, so " +
+        "strings only it used must go with it. Delete the key."
+    ).toEqual([]);
+  });
+
+  it("has no orphaned studio keys either", () => {
+    const orphans = dictionaryKeys(studioI18n)
+      .filter((key) => !mentioned.has(key))
+      .filter((key) => !STUDIO_COMPOSED.has(key))
+      .filter((key) => !RUNTIME_NAMED_KEYS.has(key));
+    expect(
+      orphans,
+      "studioI18n keys nothing calls. The shell renders with this dictionary, so an " +
+        "orphan means a label was dropped from the panel while its string stayed behind."
     ).toEqual([]);
   });
 

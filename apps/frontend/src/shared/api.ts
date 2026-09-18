@@ -5,10 +5,13 @@ import type {
   AssetExecuteJob,
   AssetExecutePreview,
   AssetExecuteStart,
+  BlenderPlan,
+  BlenderScriptArtifact,
   CreativeReview,
   ExecuteJob,
   ExecutePreview,
   ExecuteStart,
+  GameplaySpec,
   IdeaDiscoveryRequest,
   JobCancelResponse,
   LlmApiSettings,
@@ -20,6 +23,7 @@ import type {
   PromptRequest,
   SessionState,
   SpecBundlePreviewResponse,
+  ToolCatalog,
   WorkbenchToolResult
 } from "./types";
 import type { DirectorBuildPlan, EnemyPressureTuning } from "./types";
@@ -219,6 +223,18 @@ export function getMcpStatus(engine: string): Promise<McpStatus> {
 }
 
 /**
+ * Every tool an agent may call, with the permission tier the gate enforces.
+ *
+ * Distinct from the contract dump at `tool-contracts`, which serves the
+ * *declared* MCP inventory: this one is the registry's own view, so the tiers it
+ * reports are the tiers ``ToolRegistry.call`` will apply. Read-only, so no
+ * approval flag.
+ */
+export function getToolCatalog(): Promise<ToolCatalog> {
+  return jsonRequest<ToolCatalog>("/api/tool-catalog");
+}
+
+/**
  * LLM settings calls deliberately bypass `jsonRequest`: the backend answers
  * with 200 + `ok: false` for a failed probe (and 400 + `{ error }` for an
  * invalid payload), and the panel needs those bodies to explain what happened.
@@ -323,5 +339,37 @@ export function previewSpecBundle(
       production_spec_bundle: productionSpecBundle,
       target
     })
+  });
+}
+
+/**
+ * Re-derive the gameplay spec for a prompt.
+ *
+ * The console shows the spec that was baked into the plan it was handed, so a
+ * plan produced under an older prompt is indistinguishable from a current one.
+ * This returns what the backend would produce *now*, which is what the spec tab
+ * diffs against the snapshot.
+ *
+ * Deterministic when LLM generation is off, and always read-only -- no approval
+ * flag, because nothing is written or launched.
+ */
+export function previewGameplaySpec(request: PromptRequest): Promise<GameplaySpec> {
+  return jsonRequest<GameplaySpec>("/api/design", {
+    method: "POST",
+    body: JSON.stringify(request)
+  });
+}
+
+/**
+ * Render the Blender Python for a plan, without running it.
+ *
+ * Displaying this is safe: `build_blender_script_artifact` formats a string and
+ * returns the side effects a later confirmed run *would* have. The panel labels
+ * it as not-executed so the distinction survives in the UI.
+ */
+export function previewBlenderScript(plan: BlenderPlan): Promise<BlenderScriptArtifact> {
+  return jsonRequest<BlenderScriptArtifact>("/api/blender/script", {
+    method: "POST",
+    body: JSON.stringify(plan)
   });
 }

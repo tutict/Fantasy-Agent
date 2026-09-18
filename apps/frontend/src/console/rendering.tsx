@@ -12,7 +12,8 @@
  * `shared/planModel.ts`; they are re-exported for the same reason.
  */
 
-import type { CreativeReview, CreativeReviewItem, Locale, ProductionSpecBundle, SpecBundlePreviewResponse } from "../shared/types";
+import type { CreativeReview, CreativeReviewItem, GameplaySpec, Locale, ProductionSpecBundle, PromptRequest, SpecBundlePreviewResponse } from "../shared/types";
+import { diffSpecs, specDigest, type SpecDiffResult } from "../shared/specDiff";
 
 export {
   BuildPanel,
@@ -40,8 +41,8 @@ import "../styles/workbench.css";
  */
 export { localizedTitle as localizedStageTitle } from "../shared/planModel";
 
-/** The console translates with a flat key lookup, so the fallback is the key. */
-type Translator = (key: string) => string;
+/** The console's translator. `args` fills `{placeholder}` pairs; see `makeTranslator`. */
+type Translator = (key: string, args?: Record<string, unknown>) => string;
 
 export function preferredTitle(
   plan: { gameplay_spec?: { title?: string } } | undefined,
@@ -323,5 +324,170 @@ export function SpecBundlePanel({
         </div>
       </section>
     </div>
+  );
+}
+
+/**
+ * Diff the spec the handoff froze against the one `/api/design` returns now.
+ *
+ * **Why this panel exists.** Everything above it renders the spec that arrived
+ * inside the handoff, and that snapshot is frozen at publish time. Change the
+ * prompt, the generator, or the LLM settings and the numbers above keep drawing
+ * the old spec with nothing on screen to say so. Only a regeneration makes the
+ * drift visible, and only a field-by-field comparison makes it legible.
+ *
+ * **The prompt caveat is not decoration.** `promptRequestFromPlan` reconstructs
+ * the request from the plan, and the plan never stored the prompt, so the request
+ * sent here carries the title plus the logline instead. The hint says that in as
+ * many words: without it an operator would read a diff of two unrelated specs as
+ * a drift report.
+ *
+ * **Read-only.** `previewGameplaySpec` writes nothing and launches nothing, so
+ * there is no confirm gate here. Adopting the regenerated spec into the plan
+ * would be a write, and that is deliberately not offered -- the plan is the
+ * planning workbench's to republish.
+ */
+export function SpecRegenPanel({
+  request,
+  regenerated,
+  regenerating,
+  error,
+  baseline,
+  onRegenerate,
+  onClear,
+  t
+}: {
+  request: PromptRequest | null;
+  regenerated?: GameplaySpec | null;
+  regenerating?: boolean;
+  error?: string | null;
+  baseline?: GameplaySpec | null;
+  onRegenerate?: () => void;
+  onClear?: () => void;
+  t: Translator;
+}) {
+  const diff: SpecDiffResult | null = regenerated ? diffSpecs(baseline, regenerated) : null;
+  const digest = regenerated ? specDigest(regenerated) : null;
+
+  return (
+    <section className="spec-regen" id="spec-regen">
+      <div className="spec-regen-head">
+        <div>
+          <h3>{t("specRegenTitle")}</h3>
+          <p className="handoff-note">{t("specRegenHint")}</p>
+        </div>
+        {diff ? (
+          <span className={`status-chip spec-regen-status ${diff.mirrorStale ? "warning" : "passed"}`}>
+            {diff.mirrorStale
+              ? t("specRegenDrifted", { count: String(diff.changedCount) })
+              : t("specRegenIdentical")}
+          </span>
+        ) : null}
+      </div>
+
+      {request ? (
+        <details className="spec-regen-request">
+          <summary>{t("specRegenRequest")}</summary>
+          <dl>
+            <div>
+              <dt>{t("specRegenPrompt")}</dt>
+              <dd>
+                <code>{request.prompt}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>{t("specRegenScope")}</dt>
+              <dd>
+                {request.target_minutes} {t("minutes")} / {request.engine_version} /{" "}
+                {(request.platforms || []).join(", ")} / {(request.output_locales || []).join(", ")}
+              </dd>
+              {/*
+                The scope line lists engine and platforms flat, which reads as
+                "all four of these shaped the diff". They did not: the offline
+                generator reads the prompt and target length only, and the other
+                two are consulted solely on the LLM path. Without this note an
+                operator changing the engine, seeing no drift, and concluding the
+                backend ignored them would be right -- but for the wrong reason,
+                and they would have no way to tell that from a healthy no-op.
+              */}
+              <dd className="handoff-note">{t("specRegenScopeCaveat")}</dd>
+            </div>
+          </dl>
+          <p className="handoff-note">{t("specRegenPromptCaveat")}</p>
+        </details>
+      ) : (
+        <p className="handoff-note">{t("specRegenNeedsPlan")}</p>
+      )}
+
+      <div className="spec-regen-actions">
+        <button
+          className="secondary-action"
+          type="button"
+          id="spec-regen-button"
+          disabled={!request || regenerating}
+          onClick={onRegenerate}
+        >
+          {regenerating ? t("specRegenRunning") : t("specRegenButton")}
+        </button>
+        {regenerated ? (
+          <button className="ghost-action" type="button" id="spec-regen-clear" onClick={onClear}>
+            {t("specRegenClear")}
+          </button>
+        ) : null}
+      </div>
+
+      {error ? (
+        <p className="handoff-note" id="spec-regen-error">
+          {t("specRegenFailed")}: {error}
+        </p>
+      ) : null}
+
+      {digest ? (
+        <div className="spec-regen-digest" id="spec-regen-digest">
+          <span>
+            {t("specRegenDigestTitle")}: <strong>{digest.title}</strong>
+          </span>
+          <span>
+            {t("specRegenDigestTarget")}: <strong>{digest.targetMinutes}</strong> {t("minutes")}
+          </span>
+          <span>
+            {t("specRegenDigestVerbs")}: <strong>{digest.verbs}</strong>
+          </span>
+          <span>
+            {t("specRegenDigestLoop")}: <strong>{digest.loopSteps}</strong>
+          </span>
+          <span>
+            {t("specRegenDigestSystems")}: <strong>{digest.systems}</strong>
+          </span>
+          <span>
+            {t("specRegenDigestBeats")}: <strong>{digest.beats}</strong>
+          </span>
+          <span>
+            {t("specRegenDigestEnemies")}: <strong>{digest.enemies}</strong>
+          </span>
+        </div>
+      ) : null}
+
+      {diff ? (
+        diff.changedCount ? (
+          <div className="spec-diff-list" id="spec-diff-list">
+            {diff.rows
+              .filter((row) => row.changed)
+              .map((row) => (
+                <div className="spec-diff-row" data-state="changed" key={row.field}>
+                  <code>{row.field}</code>
+                  <span className="spec-diff-before">{row.baseline || t("specDiffEmpty")}</span>
+                  <span aria-hidden="true">-&gt;</span>
+                  <span className="spec-diff-after">{row.regenerated || t("specDiffEmpty")}</span>
+                </div>
+              ))}
+          </div>
+        ) : (
+          <p className="handoff-note" id="spec-diff-list">
+            {t("specDiffNone")}
+          </p>
+        )
+      ) : null}
+    </section>
   );
 }

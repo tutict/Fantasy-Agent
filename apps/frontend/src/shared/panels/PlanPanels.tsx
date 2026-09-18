@@ -27,6 +27,7 @@ import type {
   TaskItem
 } from "../types";
 import { localizedTitle, usesGodotEngine } from "../planModel";
+import { BlenderScriptPanel } from "./BlenderScriptPanel";
 import { Block, ListBlock, Pill, PillRow, TextBlock } from "./primitives";
 
 export type Translator = (key: string, args?: Record<string, unknown>) => string;
@@ -247,15 +248,18 @@ export function BuildPanel({
       ];
 
   return (
-    <div className="wb-block-grid" id="build-output">
-      <ListBlock title={godot ? t("godot") : t("unreal")} items={engineItems} wide />
-      <ListBlock
-        title={t("blender")}
-        items={(plan.blender_plan?.jobs ?? []).map((job) =>
-          [job.asset_name, job.purpose, job.export_path].filter(Boolean).join(" / ")
-        )}
-        wide
-      />
+    <div className="wb-build" id="build-output">
+      <div className="wb-block-grid">
+        <ListBlock title={godot ? t("godot") : t("unreal")} items={engineItems} wide />
+        <ListBlock
+          title={t("blender")}
+          items={(plan.blender_plan?.jobs ?? []).map((job) =>
+            [job.asset_name, job.purpose, job.export_path].filter(Boolean).join(" / ")
+          )}
+          wide
+        />
+      </div>
+      <BlenderScriptPanel plan={plan.blender_plan} t={t} />
     </div>
   );
 }

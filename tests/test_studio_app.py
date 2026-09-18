@@ -40,6 +40,7 @@ def test_studio_serves_combined_desktop_panel():
         "/api/idea-seed",
         "/api/qa",
         "/api/tool-contracts",
+        "/api/tool-catalog",
         "/api/unreal/plan",
         "/api/godot/plan",
         "/api/blender/plan",
@@ -1027,3 +1028,54 @@ def test_frontend_includes_agent_panel():
     assert 'data-panel="agent"' in shell
     assert "runAgent" in api
     assert "/api/agent/run" in api
+
+
+def test_tool_catalog_endpoint_serves_the_registry_view():
+    """The route must return ``tool_catalog()``, not the declared contract dump.
+
+    The two are easy to conflate -- ``/api/tool-contracts`` already exists and
+    returns a list of contracts -- so a route that reached for the wrong helper
+    would still return 200 with plausible JSON. The distinguishing field is
+    ``permission_counts``: the contract dump has no notion of tiers, because
+    tiers come from the MCP annotations the registry derives them from.
+    """
+
+    module = _load_studio_app()
+    payload = module.tool_catalog_endpoint()
+
+    assert isinstance(payload, dict), "the catalog is an object, not a bare list"
+    assert payload["tools"], "catalog listed no tools"
+    assert "permission_counts" in payload, (
+        "the catalog must report permission_counts; without it this payload is "
+        "indistinguishable from the contract dump at /api/tool-contracts"
+    )
+    assert set(payload["permission_counts"]) >= {"read_only", "write", "execute"}
+    # Every entry must name its tier, since that is the field the panel renders.
+    assert all("permission" in entry for entry in payload["tools"])
+
+    # And the endpoint the panel calls is the one the frontend actually fetches.
+    api = module.REPO_ROOT.joinpath("apps/frontend/src/shared/api.ts").read_text(encoding="utf-8")
+    assert '"/api/tool-catalog"' in api
+
+
+def test_frontend_includes_the_spec_regen_and_blender_script_panels():
+    """A wired endpoint with no mounted panel would still pass the coverage guard.
+
+    ``tests/test_frontend_endpoint_coverage.py`` only sees the URL string in
+    ``api.ts``; it cannot tell a function that nothing renders from one an
+    operator can reach. These two panels are the call sites, so they are pinned
+    by name here.
+    """
+
+    module = _load_studio_app()
+    src = module.REPO_ROOT.joinpath("apps/frontend/src")
+
+    flow_console = src.joinpath("console/FlowConsole.tsx").read_text(encoding="utf-8")
+    rendering = src.joinpath("console/rendering.tsx").read_text(encoding="utf-8")
+    build_panel = src.joinpath("shared/panels/PlanPanels.tsx").read_text(encoding="utf-8")
+    blender_panel = src.joinpath("shared/panels/BlenderScriptPanel.tsx")
+
+    assert "SpecRegenPanel" in rendering, "the spec regen panel is not defined"
+    assert "<SpecRegenPanel" in flow_console, "the spec tab never mounts the spec regen panel"
+    assert blender_panel.exists(), "the Blender script panel is not defined"
+    assert "BlenderScriptPanel" in build_panel, "the build panel never mounts the Blender script panel"

@@ -42,18 +42,28 @@ PARAM = "{param}"
 # is whether it should be a UI feature instead.
 KNOWN_WITHOUT_UI: dict[str, str] = {
     "/api/plan": "plan generation; the React workbench calls generate_game_production_plan via /api/tools",
-    "/api/design": "gameplay spec preview; no panel in the new console yet",
     "/api/gdd": "GDD rendering; the workbench calls render_gdd via /api/tools",
     "/api/qa": "QA plan; the workbench calls prepare_qa_plan via /api/tools",
     "/api/tasks": "task breakdown; rendered from the plan payload instead",
     "/api/pipeline": "production pipeline; rendered from the plan payload instead",
     "/api/idea-seed": "idea seeds; the workbench calls extract_idea_seed via /api/tools",
-    "/api/tool-contracts": "MCP contract dump; inspection-only, no UI",
+    "/api/tool-contracts": (
+        "MCP contract dump (the *declared* 17-contract inventory). The Agent panel "
+        "shows /api/tool-catalog instead, which reports the registry's own view -- "
+        "the tiers the gate actually enforces. This one stays inspection-only."
+    ),
     "/api/unreal/plan": "per-engine plan; the console builds plans client-side",
     "/api/godot/plan": "per-engine plan; the console builds plans client-side",
-    "/api/blender/plan": "per-engine plan; the console builds plans client-side",
-    "/api/blender/script": "Blender script preview; no panel yet",
-    "/api/blender/plan-script": "Blender plan+script; no panel yet",
+    "/api/blender/plan": (
+        "per-engine plan; the console builds plans client-side. Its two consumers "
+        "are covered: the asset list renders inside the shared BuildPanel from "
+        "plan.blender_plan, and the generated Python comes from /api/blender/script."
+    ),
+    "/api/blender/plan-script": (
+        "spec -> Blender script in one call. Redundant now: the console previews "
+        "the script from the plan it already holds via /api/blender/script, so this "
+        "shortcut would duplicate that path with a second spec source."
+    ),
     "/api/comfyui/plan": "per-engine plan; the console builds plans client-side",
     "/api/creative-review": "creative review; reached through the approval manifest flow",
 }

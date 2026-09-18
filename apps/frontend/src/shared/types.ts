@@ -55,10 +55,23 @@ export interface GameplaySpec {
   asset_needs?: string[];
   qa_focus?: string[];
   enemies?: EnemySpec[];
+  /**
+   * The localization bundle the backend attaches to every spec
+   * (`fantasy_agent/i18n.py::build_i18n_bundle`).
+   *
+   * `field_translations` is keyed by spec path -- `title`,
+   * `design_pillars.0`, `core_loop.2.player_decision` -- so the type has to
+   * accept arbitrary paths, not just `title`. It previously declared `title`
+   * alone and silently dropped every other translation the backend sent.
+   *
+   * `source_locale` / `output_locales` are what the spec was *derived* under.
+   * The prompt itself is nowhere in the plan, so these are the only provenance
+   * the console can diff when `/api/design` re-derives a spec.
+   */
   i18n?: {
-    field_translations?: {
-      title?: Partial<Record<Locale, string>>;
-    };
+    source_locale?: Locale;
+    output_locales?: Locale[];
+    field_translations?: Record<string, Partial<Record<Locale, string>>>;
   };
 }
 
@@ -157,8 +170,80 @@ export interface GodotPlan {
   automation_steps?: string[];
 }
 
+/**
+ * A Blender asset job, as the backend's `BlenderAssetJob` declares it.
+ *
+ * **Two fields here are non-optional backend-side, and used to be missing from
+ * this type.** `primitive_strategy` and `collision_hint` have no default in
+ * `fantasy_agent/contracts.py::BlenderAssetJob`, so a payload without them is a
+ * 422 -- the type used to describe a shape the endpoint rejects. Nothing broke
+ * at runtime because the console passes the whole `blender_plan` straight
+ * through from the handoff, which carries every field; the narrowing only
+ * showed up in tests that hand-built a job from this type.
+ *
+ * They are marked optional here because every *consumer* in this app treats
+ * them as pass-through: nothing reads them, `previewBlenderScript` forwards the
+ * object unchanged. Declaring them required would force test fixtures to invent
+ * values for fields no UI path inspects.
+ */
+export interface BlenderJob {
+  asset_name?: string;
+  purpose?: string;
+  export_path?: string;
+  /** Required by the endpoint; never read in the UI. */
+  primitive_strategy?: string;
+  /** Required by the endpoint; never read in the UI. */
+  collision_hint?: string;
+  asset_kind?: string;
+  dimensions_cm?: [number, number, number];
+  material_key?: string;
+  collection?: string;
+  unreal_path?: string;
+  collision_name?: string;
+}
+
 export interface BlenderPlan {
-  jobs?: Array<{ asset_name?: string; purpose?: string; export_path?: string }>;
+  job_name?: string;
+  scene_units?: string;
+  jobs?: BlenderJob[];
+  python_entrypoint?: string;
+  export_format?: string;
+  handoff_artifacts?: string[];
+}
+
+/**
+ * Result of `POST /api/blender/script`.
+ *
+ * The console runs Blender through the demo pipeline, but until the run starts
+ * the generated Python is invisible -- an operator confirmed a side effect
+ * (`Deletes the active Blender scene before generation.`) without ever reading
+ * the script that performs it. This carries it for display.
+ *
+ * Everything here is *generated, not executed*: rendering the panel runs
+ * `build_blender_script_artifact`, which only formats strings. The
+ * `side_effects` list is what a later confirmed run would do.
+ */
+export interface BlenderScriptArtifact {
+  plan_name?: string;
+  script_path?: string;
+  script?: string;
+  import_manifest_path?: string;
+  import_manifest?: {
+    /**
+     * `UnrealImportAsset` names this field `source_file`, not `source_path`.
+     * The panel read `source_path` and therefore rendered a blank cell for
+     * every row -- the manifest table existed but its source-path column was
+     * always empty, which reads as "the backend did not say" rather than
+     * "the field name was wrong".
+     */
+    assets?: Array<{
+      asset_name?: string;
+      source_file?: string;
+      destination_path?: string;
+    }>;
+  };
+  execution_notes?: string[];
+  side_effects?: string[];
 }
 
 export interface ComfyPlan {
@@ -407,6 +492,57 @@ export interface McpStatus {
   required_ready?: number;
   required_total?: number;
   services?: McpService[];
+}
+
+/**
+ * One row of `GET /api/tool-catalog`.
+ *
+ * `permission` is the tier `tool_registry.ToolRegistry.call` enforces, so it is
+ * the number that decides whether a run needs `allow_write` / `allow_execute`.
+ * Engine tools derive it from their bridge's MCP annotations rather than a
+ * hand-typed list, which is why the UI renders it verbatim instead of mapping
+ * it back to a client-side table.
+ */
+export type ToolPermission = "read_only" | "write" | "execute";
+
+export interface ToolCatalogEntry {
+  name: string;
+  /** `planning` for the four deterministic tools, `engine` for the MCP bridges. */
+  source?: "planning" | "engine" | string;
+  server?: string;
+  permission?: ToolPermission | string;
+  description?: string;
+  /**
+   * Argument that unlocks the tool's real side effect. MCP tools default it to
+   * false, so a granted run still writes nothing until a caller sets it.
+   */
+  confirm_field?: string | null;
+  /** Which sub-plan of the run's plan fills this tool's `plan` argument. */
+  plan_key?: string | null;
+  /** Arguments withheld from the model because the pipeline supplies them. */
+  hidden_args?: string[];
+  /**
+   * Arguments naming a local binary. Hidden *and* overwritten on every call:
+   * hiding only removes them from the advertised schema, so a value the model
+   * sends anyway is discarded rather than honoured.
+   */
+  executable_args?: string[];
+  /** The declared `MCPToolContract`, when one exists for this tool. */
+  contract?: {
+    declared?: boolean;
+    side_effects?: string[];
+    safety_checks?: string[];
+  } | null;
+}
+
+export interface ToolCatalog {
+  tools?: ToolCatalogEntry[];
+  permission_counts?: Partial<Record<ToolPermission, number>>;
+  /**
+   * Contracts that declare a tool no bridge implements. Surfaced here because
+   * the test that pins it is invisible outside CI.
+   */
+  declared_without_implementation?: string[];
 }
 
 /** UI-safe view of the LLM API settings: the raw key is never sent to the browser. */

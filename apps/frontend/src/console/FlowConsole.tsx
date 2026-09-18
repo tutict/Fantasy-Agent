@@ -25,6 +25,7 @@ import {
   GateItem,
   ReviewPanel,
   SpecBundlePanel,
+  SpecRegenPanel,
   localizedStageTitle,
   selectedEngineVersion,
   statusLabel,
@@ -39,7 +40,8 @@ import {
   useEnemyTuning,
   useManualTargets,
   usePlanningHandoff,
-  useSpecPreview
+  useSpecPreview,
+  useSpecRegen
 } from "./hooks";
 import "../styles/console.css";
 
@@ -122,6 +124,8 @@ export function FlowConsole() {
   } = usePlanningHandoff({ locale, t, addActivity, setStatus });
   const { manualTargetsPayload, loadManualTargets, fallbackManualTargets } = useManualTargets(currentPlan);
   const { specPreview, specPreviewError } = useSpecPreview(currentPlan, activeTab === "specs");
+  const { request: specRegenRequest, regenerated, regenerating, regenError, regenerate, clear: clearRegen } =
+    useSpecRegen(currentPlan);
   const { approvalManifestPath, onWriteApprovalManifest } = useApprovalManifest({
     currentPlan,
     reviewDecisions,
@@ -602,6 +606,18 @@ export function FlowConsole() {
                 error={specPreviewError}
                 t={t}
               />
+              {currentPlan?.production_spec_bundle ? (
+                <SpecRegenPanel
+                  request={specRegenRequest}
+                  regenerated={regenerated}
+                  regenerating={regenerating}
+                  error={regenError}
+                  baseline={currentPlan?.gameplay_spec}
+                  onRegenerate={() => void regenerate()}
+                  onClear={clearRegen}
+                  t={t}
+                />
+              ) : null}
             </Panel>
           </section>
 

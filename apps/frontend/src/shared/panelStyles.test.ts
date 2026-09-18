@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 // `panelI18n.test.ts` uses it: a runtime extractor reads the transformed module
 // and under-reports silently.
 import consoleSource from "../console/rendering.tsx?raw";
+import blenderScriptSource from "./panels/BlenderScriptPanel.tsx?raw";
 import sharedPrimitivesSource from "./panels/primitives.tsx?raw";
 import sharedPanelSource from "./panels/PlanPanels.tsx?raw";
 
@@ -72,7 +73,13 @@ function styledClasses(css: string): Set<string> {
   return names;
 }
 
-const sharedClasses = [...new Set([...emittedClasses(sharedPanelSource), ...emittedClasses(sharedPrimitivesSource)])].sort();
+const sharedClasses = [
+  ...new Set([
+    ...emittedClasses(sharedPanelSource),
+    ...emittedClasses(sharedPrimitivesSource),
+    ...emittedClasses(blenderScriptSource)
+  ])
+].sort();
 const workbenchStyles = styledClasses(readStylesheet("workbench.css"));
 const consoleStyles = styledClasses(readStylesheet("console.css"));
 
