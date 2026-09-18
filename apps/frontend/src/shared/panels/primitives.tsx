@@ -6,10 +6,11 @@
  * and they emit the `wb-*` class names because that set is the superset: it
  * already carries the block grid the console panels lack.
  *
- * `console.css` keeps the old `.summary-block` / `.stage-pill` selectors as
- * aliases so the panels drop into the console layout without a second stylesheet
- * rewrite. That is deliberate -- the class rename and the panel merge are two
- * changes, and doing them together would make a regression hard to attribute.
+ * The merge deliberately kept the old class names alive as aliases in
+ * `console.css` for one commit, so a regression would be attributable to the
+ * merge rather than to the rename. That aliasing is gone: the dead selectors
+ * were removed once the merge proved stable, and `workbench.css` is now the
+ * only stylesheet behind these primitives. Both entry points load it.
  */
 
 import type { ReactNode } from "react";

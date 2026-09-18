@@ -98,7 +98,7 @@ export function OverviewPanel({
 
 function StageRow({ stage, locale, t }: { stage: PipelineStage; locale: Locale; t: Translator }) {
   return (
-    <div className="wb-row stage-row">
+    <div className="wb-row">
       <h4>{`${String(stage.order ?? 0).padStart(2, "0")} ${localizedTitle(stage, locale)}`}</h4>
       <p>{stage.purpose}</p>
       <PillRow>
@@ -140,7 +140,7 @@ export function PipelinePanel({
   if (!pipeline) return <p className="wb-empty">{t("noPlan")}</p>;
 
   return (
-    <div className="pipeline-board" id="pipeline-output">
+    <div className="wb-block-grid" id="pipeline-output">
       <TextBlock title={t("projectGoal")} body={pipeline.goal} wide />
       <TextBlock title={t("recommended")} body={pipeline.next_stage ?? "-"} wide />
       <PillRow>
@@ -158,7 +158,7 @@ export function PipelinePanel({
 
 function TaskRow({ task, locale, t }: { task: TaskItem; locale: Locale; t: Translator }) {
   return (
-    <div className="wb-row task-row">
+    <div className="wb-row">
       <h4>{localizedTitle(task, locale)}</h4>
       <p>{task.purpose}</p>
       <PillRow>
@@ -194,11 +194,11 @@ export function TasksPanel({
   t: Translator;
 }) {
   const resolved = breakdown ?? plan?.task_breakdown;
-  if (!resolved) return <div className="task-board" id="tasks-output" />;
+  if (!resolved) return <div className="wb-block-grid" id="tasks-output" />;
 
   const goal = localizedTitle({ title: resolved.goal }, locale) || resolved.goal || "";
   return (
-    <div className="task-board" id="tasks-output">
+    <div className="wb-block-grid" id="tasks-output">
       <TextBlock
         title={t("recommended")}
         body={`${goal} -> ${resolved.recommended_next_task ?? "-"}`}

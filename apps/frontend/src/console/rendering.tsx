@@ -26,6 +26,14 @@ export {
 export { selectedEngineVersion, usesGodotEngine } from "../shared/planModel";
 
 /**
+ * The shared panels emit `wb-*` class names, and `workbench.css` is where they
+ * are styled. The workbench imports that sheet; the console has to load it too
+ * or the panels it now re-exports render as unstyled HTML. Imported here rather
+ * than in `FlowConsole.tsx` so the dependency sits next to the reason for it.
+ */
+import "../styles/workbench.css";
+
+/**
  * The console's stage track and the shared panels both resolve a stage's
  * display title the same way, so this is the shared helper under the name the
  * console already imports it by.
