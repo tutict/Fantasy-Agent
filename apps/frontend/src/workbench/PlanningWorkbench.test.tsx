@@ -42,7 +42,7 @@ function planPayload() {
       project_name: "neon-rooftops",
       goal: "ship a 10 minute slice",
       current_stage: "godot_quick_play",
-      next_stage: "comfyui_visual_production",
+      next_stage: "creative_review",
       stages: [
         {
           id: "godot_quick_play",
@@ -54,6 +54,19 @@ function planPayload() {
           owner_agent: "godot",
           requires_confirmation: true,
           mcp_tools: ["godot-mcp"]
+        },
+        {
+          id: "creative_review",
+          order: 2,
+          title: "Creative review",
+          title_i18n: { "zh-CN": "创意评审" },
+          status: "blocked",
+          purpose: "ask the user which assets ship",
+          owner_agent: "creative-review-agent",
+          kind: "human",
+          depends_on: ["godot_quick_play"],
+          requires_confirmation: true,
+          risks: ["approval blocks the import"]
         }
       ]
     },
@@ -291,6 +304,15 @@ describe("planning workbench tool calls", () => {
     fireEvent.click(panelTab("pipeline"));
     await waitFor(() => expect(document.body.textContent).toContain("Godot quick play"));
     expect(document.body.textContent).toContain("Confirmation required");
+    /**
+     * The contract has carried `depends_on` since the beginning and `kind`
+     * since the orchestrator work landed; the panel rendered neither, so a
+     * human gate looked exactly like an agent stage that forgot its tools.
+     */
+    expect(document.body.textContent).toContain("Human gate");
+    expect(document.body.textContent).toContain("Dependencies: godot_quick_play");
+    expect(document.body.textContent).toContain("Risks: approval blocks the import");
+    expect(document.body.textContent).toContain("2 stages");
 
     fireEvent.click(panelTab("tasks"));
     await waitFor(() => expect(document.body.textContent).toContain("Assemble scene"));

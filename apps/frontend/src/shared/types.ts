@@ -74,7 +74,14 @@ export interface PipelineStage {
   risks?: string[];
   requires_confirmation?: boolean;
   mcp_tools?: string[];
+  /** `"human"` marks a gate no tool may run in; the contract defaults to `"agent"`. */
   kind?: string;
+  /**
+   * Stage ids that must reach `done` before this stage becomes `ready`. The
+   * backend has always sent this and the type silently dropped it, so no panel
+   * could render the one field an orchestrator gates on.
+   */
+  depends_on?: string[];
 }
 
 export interface ProductionPipeline {

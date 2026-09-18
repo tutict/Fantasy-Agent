@@ -168,10 +168,16 @@ export function PipelinePanel({ plan, locale, t }: { plan: DirectorBuildPlan; lo
           <p>{stage.purpose}</p>
           <div className="stage-meta">
             <span className={`stage-pill ${stage.status || ""}`}>{stage.status}</span>
+            {stage.kind === "human" ? <span className="stage-pill human">{t("humanGate")}</span> : null}
             <span className="stage-pill">
               {t("owner")}: {stage.owner_agent}
             </span>
             {stage.requires_confirmation ? <span className="stage-pill">{t("confirmation")}</span> : null}
+            {stage.depends_on?.length ? (
+              <span className="stage-pill">
+                {t("dependencies")}: {stage.depends_on.join(", ")}
+              </span>
+            ) : null}
             {stage.mcp_tools?.length ? (
               <span className="stage-pill">
                 {t("tools")}: {stage.mcp_tools.join(", ")}

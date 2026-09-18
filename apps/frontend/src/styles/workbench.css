@@ -519,6 +519,16 @@ button {
   color: var(--amber);
 }
 
+/**
+ * A human gate runs no tool, so it reads as "nothing executes here": dashed,
+ * like the empty-state borders, instead of a status colour.
+ */
+.wb-pill.human {
+  border-style: dashed;
+  border-color: var(--line-strong);
+  color: var(--muted-strong);
+}
+
 .wb-empty {
   padding: 18px;
   border: 1px dashed var(--line);

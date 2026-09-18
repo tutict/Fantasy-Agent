@@ -126,9 +126,15 @@ function StageRow({ stage, t, locale }: { stage: PipelineStage; t: Translator; l
       <p>{stage.purpose}</p>
       <div className="wb-meta">
         <span className="wb-pill">{stage.status}</span>
+        {stage.kind === "human" ? <span className="wb-pill human">{t("humanGate")}</span> : null}
         {stage.owner_agent ? <span className="wb-pill">{stage.owner_agent}</span> : null}
         {stage.requires_confirmation ? (
           <span className="wb-pill warn">{t("confirmation")}</span>
+        ) : null}
+        {stage.depends_on?.length ? (
+          <span className="wb-pill">
+            {t("dependencies")}: {stage.depends_on.join(", ")}
+          </span>
         ) : null}
         {stage.mcp_tools?.length ? (
           <span className="wb-pill">
@@ -140,6 +146,13 @@ function StageRow({ stage, t, locale }: { stage: PipelineStage; t: Translator; l
         <div className="wb-meta">
           <span className="wb-pill">
             {t("quality")}: {stage.quality_gates.join(" / ")}
+          </span>
+        </div>
+      ) : null}
+      {stage.risks?.length ? (
+        <div className="wb-meta">
+          <span className="wb-pill">
+            {t("risks")}: {stage.risks.join(" / ")}
           </span>
         </div>
       ) : null}
@@ -161,15 +174,14 @@ export function PipelinePanel({
 
   return (
     <>
-      <TextBlock
-        title={t("recommended")}
-        body={`${pipeline.goal ?? ""} ${t("recommended")}: ${pipeline.next_stage ?? "-"}`}
-        wide
-      />
+      <TextBlock title={t("projectGoal")} body={pipeline.goal} wide />
+      <TextBlock title={t("recommended")} body={pipeline.next_stage ?? "-"} wide />
       <div className="wb-meta">
         <span className="wb-pill">{pipeline.project_name}</span>
-        <span className="wb-pill">{pipeline.current_stage}</span>
-        <span className="wb-pill">{(pipeline.stages ?? []).length} stages</span>
+        <span className="wb-pill">
+          {t("currentStage")}: {pipeline.current_stage ?? "-"}
+        </span>
+        <span className="wb-pill">{t("stagesCount", { count: (pipeline.stages ?? []).length })}</span>
       </div>
       {(pipeline.stages ?? []).map((stage) => (
         <StageRow key={stage.id ?? stage.title ?? stage.order} stage={stage} t={t} locale={locale} />
