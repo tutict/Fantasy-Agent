@@ -22,15 +22,9 @@ import type {
   Theme
 } from "../shared/types";
 import {
-  BuildPanel,
   GateItem,
-  OverviewPanel,
-  PipelinePanel,
-  QaPanel,
   ReviewPanel,
   SpecBundlePanel,
-  TasksPanel,
-  VisualsPanel,
   localizedStageTitle,
   selectedEngineVersion,
   statusLabel,
@@ -72,37 +66,21 @@ const manualTargetKeys: Record<string, { label: string; detail: string }> = {
   generated: { label: "manualTargetGenerated", detail: "manualGeneratedDetail" }
 };
 
-type TabKey = "overview" | "pipeline" | "tasks" | "review" | "build" | "visuals" | "specs" | "qa" | "gdd" | "dsl";
+type TabKey = "review" | "specs";
 
+// The console keeps only what the workbench does not have: asset review (which
+// owns the approval manifest) and the production spec bundle. The other panels
+// used to be duplicated here -- overview / tasks / build / visuals / gdd / dsl --
+// as second copies of the shared implementations in `shared/panels/PlanPanels.tsx`.
+// Those duplicates are gone: the workbench is the single place to read a plan,
+// and the console is the place to act on it. The shared implementations were
+// left untouched; only this entry point was removed.
 const tabGroups: Array<{ labelKey: string; tabs: Array<[TabKey, string]> }> = [
-  {
-    labelKey: "tabGroupPlan",
-    tabs: [
-      ["overview", "tabOverview"],
-      ["pipeline", "tabPipeline"],
-      ["tasks", "tabTasks"]
-    ]
-  },
   {
     labelKey: "tabGroupAssets",
     tabs: [
       ["review", "tabReview"],
-      ["visuals", "tabVisuals"]
-    ]
-  },
-  {
-    labelKey: "tabGroupDelivery",
-    tabs: [
-      ["build", "tabBuild"],
-      ["specs", "tabSpecs"],
-      ["qa", "tabQa"]
-    ]
-  },
-  {
-    labelKey: "tabGroupDocs",
-    tabs: [
-      ["gdd", "tabGdd"],
-      ["dsl", "tabDsl"]
+      ["specs", "tabSpecs"]
     ]
   }
 ];
@@ -111,11 +89,10 @@ export function FlowConsole() {
   const [locale, setLocale] = useState<Locale>(() => initialLocale(CONSOLE_LOCALE_KEY));
   const [theme, setTheme] = useState<Theme>(() => initialTheme());
   const [status, setStatus] = useState<StatusState>("idle");
-  const [gddLocale, setGddLocale] = useState<Locale>(locale);
   const [selectedCorrectionMode, setSelectedCorrectionMode] = useState<CorrectionMode>("gameplay");
   const [correctionEntries, setCorrectionEntries] = useState<Array<{ mode: CorrectionMode; notes: string; createdAt: string }>>([]);
   const [correctionNotes, setCorrectionNotes] = useState("");
-  const [activeTab, setActiveTab] = useState<TabKey>("overview");
+  const [activeTab, setActiveTab] = useState<TabKey>("review");
   const [withAssets, setWithAssets] = useState(false);
   const [withVisuals, setWithVisuals] = useState(false);
   const [withGameplay, setWithGameplay] = useState(false);
@@ -183,7 +160,6 @@ export function FlowConsole() {
   useEffect(() => {
     document.documentElement.lang = locale;
     localStorage.setItem(CONSOLE_LOCALE_KEY, locale);
-    setGddLocale(locale);
   }, [locale]);
 
   useEffect(() => {
@@ -374,9 +350,6 @@ export function FlowConsole() {
     reviewItems: String(currentPlan?.creative_review?.items?.length || 0),
     blockedTasks: String((currentPlan?.task_breakdown?.tasks || []).filter((task) => task.status === "blocked").length)
   };
-
-  const gddDocs = currentPlan?.gdd?.markdown_by_locale || {};
-  const gddText = gddDocs[gddLocale] || gddDocs.en || currentPlan?.gdd?.markdown || "";
 
   return (
     <main className="shell">
@@ -609,15 +582,6 @@ export function FlowConsole() {
           </nav>
 
           <section className="content-frame">
-            <Panel tab="overview" activeTab={activeTab}>
-              {!currentPlan ? <EmptyState t={t} /> : <OverviewPanel plan={currentPlan} locale={locale} t={t} />}
-            </Panel>
-            <Panel tab="pipeline" activeTab={activeTab}>
-              {currentPlan ? <PipelinePanel plan={currentPlan} locale={locale} t={t} /> : null}
-            </Panel>
-            <Panel tab="tasks" activeTab={activeTab}>
-              {currentPlan ? <TasksPanel breakdown={currentPlan.task_breakdown} locale={locale} t={t} /> : null}
-            </Panel>
             <Panel tab="review" activeTab={activeTab}>
               <ReviewPanel
                 review={currentPlan?.creative_review}
@@ -631,12 +595,6 @@ export function FlowConsole() {
                 t={t}
               />
             </Panel>
-            <Panel tab="build" activeTab={activeTab}>
-              {currentPlan ? <BuildPanel plan={currentPlan} t={t} /> : null}
-            </Panel>
-            <Panel tab="visuals" activeTab={activeTab}>
-              {currentPlan ? <VisualsPanel comfy={currentPlan.comfyui_plan} review={currentPlan.creative_review} t={t} /> : null}
-            </Panel>
             <Panel tab="specs" activeTab={activeTab}>
               <SpecBundlePanel
                 bundle={currentPlan?.production_spec_bundle}
@@ -644,26 +602,6 @@ export function FlowConsole() {
                 error={specPreviewError}
                 t={t}
               />
-            </Panel>
-            <Panel tab="qa" activeTab={activeTab}>
-              {currentPlan ? <QaPanel qa={currentPlan.qa_plan} t={t} /> : null}
-            </Panel>
-            <Panel tab="gdd" activeTab={activeTab}>
-              <div className="gdd-toolbar">
-                {(["en", "zh-CN"] as Locale[]).map((item) => (
-                  <button className={`mini-action ${gddLocale === item ? "active" : ""}`} type="button" data-gdd-locale={item} key={item} onClick={() => setGddLocale(item)}>
-                    {item === "en" ? "English" : "\u4e2d\u6587"}
-                  </button>
-                ))}
-              </div>
-              <pre id="gdd-output" className="code-output">
-                {gddText}
-              </pre>
-            </Panel>
-            <Panel tab="dsl" activeTab={activeTab}>
-              <pre id="dsl-output" className="code-output">
-                {currentPlan?.gameplay_spec ? JSON.stringify(currentPlan.gameplay_spec, null, 2) : ""}
-              </pre>
             </Panel>
           </section>
 
@@ -954,21 +892,6 @@ function Metric({ label, value, id }: { label: string; value: string; id: string
     <div className="metric">
       <span>{label}</span>
       <strong id={id}>{value}</strong>
-    </div>
-  );
-}
-
-function EmptyState({ t }: { t: (key: string) => string }) {
-  return (
-    <div className="empty-state">
-      <div className="signal-map" aria-hidden="true">
-        <div className="signal-route" />
-        <div className="signal-dot dot-a" />
-        <div className="signal-dot dot-b" />
-        <div className="signal-dot dot-c" />
-      </div>
-      <h3>{t("emptyHeading")}</h3>
-      <p>{t("emptyBody")}</p>
     </div>
   );
 }

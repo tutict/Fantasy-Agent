@@ -6,6 +6,7 @@ import { consoleI18n, makeTranslator, workbenchI18n } from "./i18n";
 // reliably preserve the `t("...")` calls, so a runtime extractor under-reports
 // silently -- and a guard that under-reports is worse than none.
 import consoleSource from "../console/rendering.tsx?raw";
+import flowConsoleSource from "../console/FlowConsole.tsx?raw";
 import sharedPanelSource from "./panels/PlanPanels.tsx?raw";
 import workbenchSource from "../workbench/PlanPanels.tsx?raw";
 
@@ -127,5 +128,112 @@ describe("single implementation", () => {
       }
     }
     expect(duplicated, "shared panels implemented a second time").toEqual([]);
+  });
+});
+
+describe("console dictionary has no keys nothing calls", () => {
+  /**
+   * A `consoleI18n` key is live if any *non-test* source in the frontend calls
+   * it, directly (`t("key")`) or indirectly (a bare `"key"` string, which is how
+   * `tabGroups` stores its labels before `{t(label)}` resolves them).
+   *
+   * Three scoping decisions, each load-bearing:
+   *
+   *   - **Include `shared/panels/PlanPanels.tsx`.** The console still renders
+   *     some of those panels, so their keys must stay. Excluding it made the
+   *     check report `systems` / `tools` / `risks` as dead.
+   *   - **Exclude test files.** A test may name a key purely to assert on it --
+   *     the `removed` list just below does exactly that -- and counting those
+   *     would make every key look used.
+   *   - **Exclude `i18n.ts` itself.** It is where the keys are defined.
+   *
+   * With that scope the distinction is real: `tabOverview` appears nowhere but
+   * this file's own list, while `systems` is called at
+   * `shared/panels/PlanPanels.tsx:86`.
+   */
+  const modules = import.meta.glob(["../**/*.{ts,tsx}", "!../**/*.test.{ts,tsx}"], {
+    query: "?raw",
+    import: "default",
+    eager: true
+  }) as Record<string, string>;
+
+  const mentioned = new Set(
+    Object.values(modules).flatMap((source) => [
+      ...panelKeys(source),
+      ...[...source.matchAll(/"([A-Za-z0-9_]+)"/g)].map((match) => match[1])
+    ])
+  );
+
+  /**
+   * Keys with no caller that predate this guard.
+   *
+   * These came from earlier merges (the manual-correction flow was rewritten and
+   * its `manual*` strings were left behind). They are *not* sanctioned -- they
+   * are recorded so this guard can be strict about new orphans without failing
+   * on old ones. Removing them is a separate change; adding to this list is not
+   * the way to silence a failure, deleting the key is.
+   */
+  const KNOWN_DEAD = new Set([
+    "toggleLog",
+    "loop",
+    "maps",
+    "classes",
+    "folders",
+    "automation",
+    "jobs",
+    "manualChecking",
+    "manualComfyReady",
+    "manualBlenderReady",
+    "manualUnrealReady",
+    "manualGodotReady",
+    "manualOpenNeedsConfirmation",
+    "manualOpenUnknownTarget",
+    "manualOpenUnavailable",
+    "winState",
+    "failureStates"
+  ]);
+
+  it("still finds the keys the console calls", () => {
+    // Same floor rationale as above: a rewrite that stops the extractor from
+    // matching must fail loudly instead of passing on an empty set.
+    expect(panelKeys(flowConsoleSource).length, "direct t() calls in FlowConsole.tsx").toBeGreaterThan(
+      20
+    );
+  });
+
+  it("has no newly orphaned keys", () => {
+    const orphans = dictionaryKeys(consoleI18n)
+      .filter((key) => !mentioned.has(key))
+      .filter((key) => !KNOWN_DEAD.has(key));
+
+    expect(
+      orphans,
+      "consoleI18n keys nothing calls. The console's duplicate tabs were removed, so " +
+        "tab* keys for the deleted panels must go with them. Delete the key rather " +
+        "than adding it to KNOWN_DEAD."
+    ).toEqual([]);
+  });
+
+  it("no longer carries the keys for the removed duplicate tabs", () => {
+    // The specific regression this change was about. Named individually so a
+    // failure says which tab came back rather than just "an orphan exists".
+    const removed = [
+      "tabOverview",
+      "tabPipeline",
+      "tabTasks",
+      "tabBuild",
+      "tabVisuals",
+      "tabQa",
+      "tabGdd",
+      "tabDsl",
+      "tabGroupPlan",
+      "tabGroupDelivery",
+      "tabGroupDocs",
+      "emptyHeading",
+      "emptyBody"
+    ];
+    const keys = dictionaryKeys(consoleI18n);
+    const returned = removed.filter((key) => keys.includes(key));
+    expect(returned, "keys for the deleted console tabs are back in consoleI18n").toEqual([]);
   });
 });

@@ -1,6 +1,6 @@
 # 前端 UI 重新规划
 
-> 状态：F0 已落地，F1 主体已落地（2026-09-18，`2dfe487` + `99d16e4` + `ad8adf3`）；**F5 第一步已落地**（2026-09-18：`apps/studio/static/` 退场 + `_frontend_index_or` 响亮失败 + 测试依赖修完），"删 console 重复 tab"的前置障碍已清；F2–F4 待定，F5 剩余两项（文档）待定。
+> 状态：F0 已落地；F1 已全部落地（2026-09-18，`2dfe487` + `99d16e4` + `ad8adf3` + `fa7b702`，含删 console 重复 tab）；**F5 第一步已落地**（2026-09-18，`d73762a`：`apps/studio/static/` 退场 + `_frontend_index_or` 响亮失败 + 测试依赖修完）；F2–F4 待定，F5 剩余两项（文档）待定。
 > 上游依赖：`docs/superpowers/plans/2026-09-16-internal-pi-task-orchestration.md`——编排 Task 2–6 会改变这个界面**必须显示什么**。
 > 本文所有数字都是本轮实测，复现命令见 §5。
 
@@ -196,11 +196,13 @@ Studio 外壳（单页，一层路由）
 
 > 删除 console 中与策划层重复的 tab（overview / tasks / build / visuals / gdd / dsl）
 
-这一项没动，因为它是**界面收缩，不是重构**：删掉后 console 只剩 review / specs / 执行面板，操作员唯一的"执行前体检"入口就没了。而 `apps/studio/static/` 底下还有一个**仍在被服务的上一代静态页**带着同一批 tab，删了 console 侧并不删那个。在 F5（静态页退场）之前删，等于把两份界面推向更不一致。等工程师定调：
+这一项暂时没动，因为它是**界面收缩，不是重构**：删掉后 console 只剩 review / specs / 执行面板，操作员唯一的"执行前体检"入口就没了。而 `apps/studio/static/` 底下还有一个**仍在被服务的上一代静态页**带着同一批 tab，删了 console 侧并不删那个。在 F5（静态页退场）之前删，等于把两份界面推向更不一致。当时给工程师的三个选项：
 
 - (a) 现在删，接受 console 变薄；
 - (b) 先做 F5 让静态页退场，再一起删；
 - (c) 不删，把 console 定位从"全量检视"改成"执行台"，tab 保留只读。
+
+**结论：走了 (b)，2026-09-18 完成，落地情况见 §4 F5。** `_frontend_index_or` 不再回退旧页（`d73762a`），随后删掉 console 的 6 个重复 tab 入口。
 
 
 #### 安全网补了什么
@@ -249,18 +251,23 @@ Studio 外壳（单页，一层路由）
   - 顺手补了一条 `test_store_keys_are_defined_once_and_imported_everywhere`：`StudioShell.tsx:599` 原先把 handoff key 写成字符串字面量（而非导入 `HANDOFF_KEY`），意味着 key 有两个定义、重命名时 shell 会静默读不到 handoff 而没有任何测试会红。已改为导入，并由新测试钉住。
 - [ ] 重写 `docs/ui/web-console.md`（它描述的入口已不存在）或并入 `docs/ui/studio.md`：三层导航、面板归属、`KNOWN_WITHOUT_UI` 的边界。
 - [ ] `README.md:193` 目录注释同步。
-- [ ] 删除 console 中与策划层重复的 tab（overview / tasks / build / visuals / gdd / dsl），console 保留 review / specs / 执行面板。**前置障碍已清**（静态页退场完成）。
+- [x] 删除 console 中与策划层重复的 tab（2026-09-18，`d73762a` 之后）。原计划删 6 个，实际按计划删 6 个 —— 但**核实后确认 `pipeline` 与 `qa` 同样有 workbench 等价物**（workbench 的 `panelBody()` 对二者都有 case），只是计划当初漏列。工程师定调「按计划删 6 个」，故 `pipeline`/`qa` 保留。
+  - 删的是**入口不是实现**：6 个面板的实现都在 `shared/panels/PlanPanels.tsx`，workbench 继续用，一个字没动。console 的 tab 从 10 个降到 2 个（`review` / `specs`）—— 这两个是 console 独有（workbench 完全不引用 `ReviewPanel` / `SpecBundlePanel`）。执行面板（rail）不在 tab 体系内，未受影响。
+  - 连带清理：`consoleI18n` 删 13 个死 key（227 → 214）、删死组件 `EmptyState`、删 `setGddLocale` 调用点、删 `console.css` 里 `.empty-state` / `.signal-map` / `.signal-route` / `.signal-dot` / `.dot-a/b/c` / `@keyframes pulse` 整段（CSS 37.10 → 36.09 kB）。
+  - 新增守卫 `panelI18n.test.ts` → "console dictionary has no keys nothing calls"：3 条。已变异验证（把 `tabGdd` 塞回字典 → 2 条精确报红并指名该 key）。
+    **提取器踩坑**：范围必须同时满足三条 —— ① 含 `shared/panels/`（console 仍渲染其中部分面板，排除会把 `systems`/`tools` 误报为孤儿）；② 排测试文件（测试会把 key 名当字符串列出，制造假阳性）；③ 排 `i18n.ts` 自身。判据要同时认 `t("key")` 直接调用和裸 `"key"` 字面量（`tabGroups` 走 `{t(label)}` 间接解析）。试错三轮才收敛，都写进注释了。
+  - **既有死 key 未动**：另有 17 个孤儿（`toggleLog` / `manual*` 系列 / `winState` / `failureStates` 等）是更早的合并遗留，与本轮无关，已登记在守卫的 `KNOWN_DEAD` 里，另开一轮清理。
 
 ## 5. 验证
 
-| 项 | 命令 | F0 实测（2026-09-16） | 安全网后（2026-09-18） | 静态页退场后（2026-09-18） |
-|---|---|---|---|---|
-| 前端类型 | `npm run frontend:typecheck` | clean | clean | clean |
-| 前端测试 | `npm run frontend:test` | 69 passed | **90 passed / 5 todo（95）** | **103 passed（9 files）** |
-| 前端构建 | `npm run frontend:build` | — | ✓ built（29 modules，340.63 kB） | ✓ built（32 modules，335.95 kB） |
-| Ruff | `.venv/Scripts/python.exe -m ruff check .` | — | — | All checks passed |
-| 读前端源码的后端测试 | `.venv/Scripts/python.exe scripts/run_tests.py tests/test_studio_app.py tests/test_web_console_app.py -q` | **43 passed** | 未动后端，未跑 | **40 passed** |
-| 全量后端 | `.venv/Scripts/python.exe scripts/run_tests.py` | 未跑（本轮只动前端资产） | 未跑（同上） | **590 passed / 0 failed（108.16s）** |
+| 项 | 命令 | F0 实测（2026-09-16） | 安全网后（2026-09-18） | 静态页退场后（2026-09-18） | 删重复 tab 后（2026-09-18） |
+|---|---|---|---|---|---|
+| 前端类型 | `npm run frontend:typecheck` | clean | clean | clean | clean |
+| 前端测试 | `npm run frontend:test` | 69 passed | **90 passed / 5 todo（95）** | **103 passed（9 files）** | **106 passed（9 files）** |
+| 前端构建 | `npm run frontend:build` | — | ✓ built（29 modules，340.63 kB） | ✓ built（32 modules，335.95 kB） | ✓ built（32 modules，333.25 kB / CSS 36.09 kB） |
+| Ruff | `.venv/Scripts/python.exe -m ruff check .` | — | — | All checks passed | All checks passed |
+| 读前端源码的后端测试 | `.venv/Scripts/python.exe scripts/run_tests.py tests/test_studio_app.py tests/test_web_console_app.py -q` | **43 passed** | 未动后端，未跑 | **40 passed** | 未重跑（并入全量） |
+| 全量后端 | `.venv/Scripts/python.exe scripts/run_tests.py` | 未跑（本轮只动前端资产） | 未跑（同上） | **590 passed / 0 failed（108.16s）** | **590 passed / 0 failed（112.28s）** |
 
 **跑法注意（踩过一次）**：不要给 vitest 传 `--root apps/frontend`。根 `vitest.config.ts` 已经设了 `root: "apps/frontend"`，命令行再传一次会覆盖掉配置里的 `environment: "jsdom"`，回落到 node 环境后 workbench 那 10 条全部报 `localStorage is not defined`——看起来像真回归、其实是跑法错了（20 failed / 49 passed）。正确命令是裸的 `npm run frontend:test`。
 
