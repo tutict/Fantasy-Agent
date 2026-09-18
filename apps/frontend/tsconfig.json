@@ -1,7 +1,11 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["vite/client"]
+    // `node` is here for the tests, which run under Vitest and read source
+    // files off disk. Browser code must still not use Node globals -- the
+    // bundle target has no Node runtime, so doing so breaks at load time rather
+    // than at typecheck time.
+    "types": ["vite/client", "node"]
   },
   "include": ["src", "vite-env.d.ts"]
 }

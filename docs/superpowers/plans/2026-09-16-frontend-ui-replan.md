@@ -1,6 +1,6 @@
 # 前端 UI 重新规划
 
-> 状态：F0 已落地（2026-09-16），F1 的安全网已补（2026-09-18），F1 迁移本身待定；F2–F5 待定。
+> 状态：F0 已落地，F1 主体已落地（2026-09-18，`2dfe487` + `99d16e4` + `ad8adf3`），仅剩"删 console 重复 tab"待定调；F2–F5 待定。
 > 上游依赖：`docs/superpowers/plans/2026-09-16-internal-pi-task-orchestration.md`——编排 Task 2–6 会改变这个界面**必须显示什么**。
 > 本文所有数字都是本轮实测，复现命令见 §5。
 
@@ -168,9 +168,40 @@ Studio 外壳（单页，一层路由）
 
 - [x] **先补安全网**（2026-09-18 落地）。console 侧从 10 条 → 32 条（`rendering.test.tsx` 2 → 21 条、新增 `shared/panelI18n.test.ts` 7 条）；前端总计 69 → 95（90 passed / 5 todo）。补了什么见下方「安全网补了什么」。
 - [x] **定下合并方向：并集**。两侧同名面板渲染的字段集几乎不重叠（Overview 只共享 4/10 个字段），F1 不是"去重"而是"合并成哪个"。已定：合并后渲染两边全部字段，断言只写一次。
-- [ ] 逐面板迁到 `apps/frontend/src/shared/panels/`，样式类统一成一套，`console.css` / `workbench.css` 只留各自布局。
-- [ ] 删除 console 中与策划层重复的 tab（overview / tasks / build / visuals / gdd / dsl），console 保留 review / specs / 执行面板。
-- [ ] 守卫：同一个导出组件名不得出现在两个文件里。**已就位**：`panelI18n.test.ts` 的 `single implementation` describe 里有一条 todo（目标清单已列出六个面板名）+ 一条记录当前双实现状态的活断言；迁移完成后删掉后者、启用前者。
+- [x] **逐面板迁到 `apps/frontend/src/shared/panels/`**（2026-09-18，`2dfe487`）。六个面板单实现落地；`console/rendering.tsx` 与 `workbench/PlanPanels.tsx` 改为 re-export，两个入口的导入路径不变。
+- [x] **样式类统一成一套**（2026-09-18，`99d16e4` + `ad8adf3`）。共享面板只发 `wb-*`；`console.css` 删掉已无匹配的 `.summary-block` / `.stage-row` / `.task-row` / `.task-board` / `.pipeline-board` / `.overview-grid`（1690 → 1632 行）。**这一步暴露了一个真 bug，见下方「样式归属」**。
+- [x] 守卫：同一个导出组件名不得出现在两个文件里。`panelI18n.test.ts` 的 `single implementation` describe 已生效（todo 已解开）；新增 `shared/panelStyles.test.ts` 守样式归属。
+- [ ] 删除 console 中与策划层重复的 tab（overview / tasks / build / visuals / gdd / dsl），console 保留 review / specs / 执行面板。**未动，见下方「F1 剩下的这一项为什么没直接做」**。
+- [x] 依赖方向修正：`shared/` 不得从入口目录导入，故 `localizedValue` / `localizedArray` / `localizedTitle` / `planDisplayTitle` / `usesGodotEngine` / `selectedEngineVersion` 提到 `shared/planModel.ts`，`workbenchModel.ts` re-export（26 条 model 测试未破）。
+
+#### 迁移抓出的真实缺陷：BuildPanel 漏字段
+
+并集实现时按 workbench 原版的字段顺序排，漏掉了 console 独有的 Unreal `folders` 与两个引擎的 `engine_version`——**数据静默丢失**。安全网抓出（`console/rendering.test.tsx` 的 build 面板断言）。若上一轮没补网，这条会绿着上线。
+
+#### 样式归属：两个入口共用一个组件，样式表却各挂各的
+
+删掉 console 的"死选择器"之后，`/web-console` 的面板**整个失去样式**。根因不是删错了，而是更早的一个假设不成立：
+
+- `workbench.css` 由 `PlanningWorkbench` 导入，而它只在 `/workbench` 挂载；`/web-console` 走 `FlowConsole`，只导入 `console.css`。
+- Vite 会把所有样式表合成一个文件，但**只在该模块进入路由的图时注入它的 CSS**。所以 console 路由拿不到 `wb-*` 规则。
+- 而当时 `console.css` 里那些"待清理的别名"（`.task-board` / `.pipeline-board` / `wb-row stage-row`）正是唯一给 console 路由上样式的东西。两套类名**各活一半**，任何一张表都不承认。
+
+修法两处：共享面板只发 `wb-*`（去掉三个残留的 console 类名）；`console/rendering.tsx` 紧挨着它 re-export 的面板 `import "../styles/workbench.css"`——样式表和需要它的标记放在一起，而不是取决于用户从哪个路由进来。
+
+守卫 `shared/panelStyles.test.ts`（6 条）双向对比：面板发的每个类名都必须在 console 路由会加载的表里定义；console 自己的表面（stage-strip / insight-row / split-output / review-item / review-inspector）必须留在 `console.css`；以及反转"类名不得回到退役的 console 命名空间"。三条独立断言各做过变异验证（删 CSS 导入 / 把 `task-board` 改回来 / 让 CSS 读成空串），全部报红。
+
+**踩到的坑：`?raw` 读 `.css` 返回空串**（本机 Vitest 5 + Vite 8）。不抛异常，直接让所有对比式断言**真空通过**。所以样式表改走 `node:fs` 读盘，并单加一条"仍能读到选择器"（>20 / >50）的空读护栏。<br>另：`fileURLToPath(import.meta.url)` 给的是正常路径，但 `new URL("..", import.meta.url)` 在 jsdom 下抛 `ERR_INVALID_URL_SCHEME`（旧笔记记过这条），要用 `path.resolve(dirname(...), ...)`。
+
+#### F1 剩下的这一项为什么没直接做
+
+> 删除 console 中与策划层重复的 tab（overview / tasks / build / visuals / gdd / dsl）
+
+这一项没动，因为它是**界面收缩，不是重构**：删掉后 console 只剩 review / specs / 执行面板，操作员唯一的"执行前体检"入口就没了。而 `apps/studio/static/` 底下还有一个**仍在被服务的上一代静态页**带着同一批 tab，删了 console 侧并不删那个。在 F5（静态页退场）之前删，等于把两份界面推向更不一致。等工程师定调：
+
+- (a) 现在删，接受 console 变薄；
+- (b) 先做 F5 让静态页退场，再一起删；
+- (c) 不删，把 console 定位从"全量检视"改成"执行台"，tab 保留只读。
+
 
 #### 安全网补了什么
 
