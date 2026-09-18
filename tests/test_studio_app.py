@@ -53,11 +53,15 @@ def test_studio_serves_combined_desktop_panel():
     # The standalone workbench must not expose an inbound MCP endpoint.
     assert "/mcp" not in paths
     assert "/debug/tool/{tool_name}" not in paths
-    # The retired planning-workbench.html is gone; the React workbench replaced it.
-    assert not module.STATIC_DIR.joinpath("planning-workbench.html").exists()
+    # The hand-written pages are gone -- not just superseded, deleted -- and so
+    # are the mounts that used to serve them. Leaving either in place is how a
+    # second UI survives a migration: the server keeps answering 200 with a page
+    # nobody maintains, and the two views drift without anyone noticing.
+    assert not module.APP_DIR.joinpath("static").exists()
+    assert "/studio-static" not in paths
+    assert "/assets" not in paths
     assert module.REPO_ROOT.joinpath("apps/frontend/src/workbench/PlanningWorkbench.tsx").exists()
-    assert module.STATIC_DIR.joinpath("index.html").exists()
-    assert module.WEB_CONSOLE_STATIC_DIR.joinpath("index.html").exists()
+    assert module.REPO_ROOT.joinpath("apps/frontend/src/console/FlowConsole.tsx").exists()
     status = module.mcp_status()
     assert status["engine_kind"] == "unreal"
     assert status["required_total"] >= 3
@@ -368,43 +372,83 @@ def test_the_comfyui_probe_still_prefers_a_configured_endpoint(monkeypatch):
 
 def test_studio_shell_includes_bilingual_ui_controls():
     module = _load_studio_app()
-    html = module.STATIC_DIR.joinpath("index.html").read_text(encoding="utf-8")
     frontend_source = module.REPO_ROOT.joinpath("apps/frontend/src/studio/StudioShell.tsx").read_text(encoding="utf-8")
     frontend_i18n = module.REPO_ROOT.joinpath("apps/frontend/src/shared/i18n.ts").read_text(encoding="utf-8")
     workbench_source = module.REPO_ROOT.joinpath(
         "apps/frontend/src/workbench/PlanningWorkbench.tsx"
     ).read_text(encoding="utf-8")
 
-    assert 'data-locale="en"' in html or 'data-locale="en"' in frontend_source
-    assert 'data-locale="zh-CN"' in html or 'data-locale="zh-CN"' in frontend_source
-    assert "sidebar-resizer" in html or "sidebar-resizer" in frontend_source
-    assert 'id="sidebar-toggle"' in html or 'id="sidebar-toggle"' in frontend_source
-    assert 'data-target="console"' in html or 'data-target={key}' in frontend_source
-    assert 'data-target="workbench"' in html or 'data-target={key}' in frontend_source
-    assert 'id="mcp-refresh"' in html or 'id="mcp-refresh"' in frontend_source
-    assert 'id="mcp-status-grid"' in html or 'id="mcp-status-grid"' in frontend_source
-    assert "/api/tool-status" in html or "getMcpStatus" in frontend_source
-    assert "mcpStatusTitle" in html or "mcpStatusTitle" in frontend_i18n
+    # Every assertion below used to read `... in html or ... in frontend_source`,
+    # where `html` was the deleted static shell. The "or" let the dead page
+    # satisfy half of each check, so the React source was never strictly pinned.
+    # The static page is gone: what remains is the source that actually ships.
+    assert 'data-locale="en"' in frontend_source
+    assert 'data-locale="zh-CN"' in frontend_source
+    assert "sidebar-resizer" in frontend_source
+    assert 'id="sidebar-toggle"' in frontend_source
+    # The panel nav is generated from a map, so the target is bound, not
+    # spelled out: `data-target={key}`. Pin the binding *and* the map entries --
+    # asserting the literal `data-target="console"` would pin a string the
+    # component never contains (the old "or" hid that behind the deleted page).
+    assert "data-target={key}" in frontend_source
+    assert "activePanel, setActivePanel] = useState<PanelKey>(" in frontend_source
+    for panel in ("workbench", "console"):
+        assert f'{panel}: {{ titleKey:' in frontend_source
+    assert 'id="mcp-refresh"' in frontend_source
+    assert 'id="mcp-status-grid"' in frontend_source
+    assert "getMcpStatus" in frontend_source
+    assert "mcpStatusTitle" in frontend_i18n
     assert 'activePanel, setActivePanel] = useState<PanelKey>("workbench")' in frontend_source
-    assert "Flow Console" in html or "consoleFrameTitle" in frontend_i18n
-    assert "\u6d41\u7a0b\u63a7\u5236\u53f0" in html or "\u6d41\u7a0b\u63a7\u5236\u53f0" in frontend_i18n
-    assert "Planning Workbench" in html or "workbenchFrameTitle" in frontend_i18n
-    assert "\u7b56\u5212\u5de5\u4f5c\u53f0" in html or "\u7b56\u5212\u5de5\u4f5c\u53f0" in frontend_i18n
-    assert "fantasy-agent-studio-locale" in html or "fantasy-agent-studio-locale" in frontend_source
+    assert "consoleFrameTitle" in frontend_i18n
+    assert "\u6d41\u7a0b\u63a7\u5236\u53f0" in frontend_i18n
+    assert "workbenchFrameTitle" in frontend_i18n
+    assert "\u7b56\u5212\u5de5\u4f5c\u53f0" in frontend_i18n
+    # The locale key is imported from `shared/storage`, not spelled out here --
+    # `test_store_keys_are_defined_once_and_imported_everywhere` pins the literal
+    # to that one file, so this checks the shell actually consumes the export.
+    assert "STUDIO_LOCALE_KEY" in frontend_source
+    assert "initialLocale(STUDIO_LOCALE_KEY)" in frontend_source
     # The workbench hands its plan to the console through this localStorage key.
     assert "savePlanningHandoff" in workbench_source
 
 
-def test_studio_prefers_vite_frontend_dist_when_available(monkeypatch):
+def test_store_keys_are_defined_once_and_imported_everywhere():
+    """The shared localStorage keys must have exactly one definition.
+
+    `StudioShell.selectedEngineVersion()` reads the planning handoff straight out
+    of `localStorage` to pick a default engine version. It used to spell the key
+    out as a string literal while `shared/storage.ts` exported `HANDOFF_KEY` for
+    the workbench and console -- so the key had two definitions and the shell's
+    copy was invisible to a rename. Renaming the export would have silently cut
+    the shell off from the handoff, with no test failing.
+    """
+
     module = _load_studio_app()
-    frontend_index = module.STATIC_DIR / "index.html"
-    monkeypatch.setattr(module, "FRONTEND_INDEX_PATH", frontend_index)
+    src = module.REPO_ROOT.joinpath("apps/frontend/src")
+    storage = src.joinpath("shared/storage.ts").read_text(encoding="utf-8")
 
-    assert Path(module.index().path) == frontend_index
-    assert Path(module.web_console().path) == frontend_index
+    for key in (
+        "fantasy-agent-planning-handoff",
+        "fantasy-agent-theme",
+        "fantasy-agent-studio-locale",
+        "fantasy-agent-studio-sidebar-width",
+        "fantasy-agent-studio-sidebar-collapsed",
+    ):
+        assert storage.count(key) == 1, f"{key} must be defined exactly once, in shared/storage.ts"
+
+    offenders = []
+    for path in src.rglob("*.ts*"):
+        if path.name in {"storage.ts"} or path.name.endswith(".test.ts") or path.name.endswith(".test.tsx"):
+            continue
+        text = path.read_text(encoding="utf-8")
+        for key in ("fantasy-agent-planning-handoff", "fantasy-agent-studio-locale"):
+            if key in text:
+                offenders.append(f"{path.relative_to(module.REPO_ROOT)}: {key}")
+
+    assert offenders == [], f"import the key from shared/storage instead: {offenders}"
 
 
-def test_workbench_serves_the_react_app_when_dist_exists(monkeypatch):
+def test_workbench_serves_the_react_app_when_dist_exists(monkeypatch, tmp_path):
     """``/workbench`` no longer points at a hand-written page.
 
     It used to be an unconditional ``FileResponse`` around the 2359-line
@@ -416,10 +460,11 @@ def test_workbench_serves_the_react_app_when_dist_exists(monkeypatch):
     """
 
     module = _load_studio_app()
-    frontend_index = module.STATIC_DIR / "index.html"
-    monkeypatch.setattr(module, "FRONTEND_INDEX_PATH", frontend_index)
+    built = tmp_path / "index.html"
+    built.write_text("<!doctype html><div id=root></div>", encoding="utf-8")
+    monkeypatch.setattr(module, "FRONTEND_INDEX_PATH", built)
 
-    assert Path(module.workbench().path) == frontend_index
+    assert Path(module.workbench().path) == built
 
 
 def test_workbench_route_is_not_a_legacy_page():

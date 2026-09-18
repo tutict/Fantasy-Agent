@@ -1,6 +1,6 @@
 # 前端 UI 重新规划
 
-> 状态：F0 已落地，F1 主体已落地（2026-09-18，`2dfe487` + `99d16e4` + `ad8adf3`），仅剩"删 console 重复 tab"待定调；F2–F5 待定。
+> 状态：F0 已落地，F1 主体已落地（2026-09-18，`2dfe487` + `99d16e4` + `ad8adf3`）；**F5 第一步已落地**（2026-09-18：`apps/studio/static/` 退场 + `_frontend_index_or` 响亮失败 + 测试依赖修完），"删 console 重复 tab"的前置障碍已清；F2–F4 待定，F5 剩余两项（文档）待定。
 > 上游依赖：`docs/superpowers/plans/2026-09-16-internal-pi-task-orchestration.md`——编排 Task 2–6 会改变这个界面**必须显示什么**。
 > 本文所有数字都是本轮实测，复现命令见 §5。
 
@@ -243,19 +243,24 @@ Studio 外壳（单页，一层路由）
 
 ### F5 清理与文档
 
-- [ ] `apps/studio/static/` 退场 + `_frontend_index_or` 明确失败 + 修 8 处测试依赖 + 修 3 条断言的右半边（§3.1⑤）。
+- [x] `apps/studio/static/` 退场 + `_frontend_index_or` 明确失败 + 修测试依赖（2026-09-18）。实测：4 个文件删除、`/studio-static` 与 `/assets` 两个 mount 移除、`_frontend_index_or()` 由「静默回退旧页」改为「dist 缺失 → 503 + 指名 `npm run frontend:build`」。
+  - 实际触及 **7 处**测试依赖（不是预估的 8 处）：`test_web_console_app.py` 2 处 + `test_studio_app.py` 3 处 `STATIC_DIR` 引用，外加 2 条被删/改写的测试。
+  - 「修 3 条断言的右半边」落地方式与预想不同：3 条断言不是"右半边要改"，而是**左半边（旧静态页）删掉后暴露出右半边本身就写错了**——`data-target="console"` 在 React 里根本不存在（是 `data-target={key}` 由 map 生成）、`fantasy-agent-planning-handoff` 属于 `shared/storage.ts` 而非 console 组件、`fantasy-agent-studio-locale` 是导入常量。原来那个 `or` 让这些错误断言一直由死页兜着。
+  - 顺手补了一条 `test_store_keys_are_defined_once_and_imported_everywhere`：`StudioShell.tsx:599` 原先把 handoff key 写成字符串字面量（而非导入 `HANDOFF_KEY`），意味着 key 有两个定义、重命名时 shell 会静默读不到 handoff 而没有任何测试会红。已改为导入，并由新测试钉住。
 - [ ] 重写 `docs/ui/web-console.md`（它描述的入口已不存在）或并入 `docs/ui/studio.md`：三层导航、面板归属、`KNOWN_WITHOUT_UI` 的边界。
 - [ ] `README.md:193` 目录注释同步。
+- [ ] 删除 console 中与策划层重复的 tab（overview / tasks / build / visuals / gdd / dsl），console 保留 review / specs / 执行面板。**前置障碍已清**（静态页退场完成）。
 
 ## 5. 验证
 
-| 项 | 命令 | F0 实测（2026-09-16） | 安全网后（2026-09-18） |
-|---|---|---|---|
-| 前端类型 | `npm run frontend:typecheck` | clean | clean |
-| 前端测试 | `npm run frontend:test` | 69 passed | **90 passed / 5 todo（95）** |
-| 前端构建 | `npm run frontend:build` | — | ✓ built（29 modules，340.63 kB） |
-| 读前端源码的后端测试 | `.venv/Scripts/python.exe scripts/run_tests.py tests/test_studio_app.py tests/test_web_console_app.py tests/test_frontend_endpoint_coverage.py -q` | **43 passed** | 未动后端，未跑 |
-| 全量后端 | `.venv/Scripts/python.exe scripts/run_tests.py -q` | 未跑（本轮只动前端资产） | 未跑（同上） |
+| 项 | 命令 | F0 实测（2026-09-16） | 安全网后（2026-09-18） | 静态页退场后（2026-09-18） |
+|---|---|---|---|---|
+| 前端类型 | `npm run frontend:typecheck` | clean | clean | clean |
+| 前端测试 | `npm run frontend:test` | 69 passed | **90 passed / 5 todo（95）** | **103 passed（9 files）** |
+| 前端构建 | `npm run frontend:build` | — | ✓ built（29 modules，340.63 kB） | ✓ built（32 modules，335.95 kB） |
+| Ruff | `.venv/Scripts/python.exe -m ruff check .` | — | — | All checks passed |
+| 读前端源码的后端测试 | `.venv/Scripts/python.exe scripts/run_tests.py tests/test_studio_app.py tests/test_web_console_app.py -q` | **43 passed** | 未动后端，未跑 | **40 passed** |
+| 全量后端 | `.venv/Scripts/python.exe scripts/run_tests.py` | 未跑（本轮只动前端资产） | 未跑（同上） | **590 passed / 0 failed（108.16s）** |
 
 **跑法注意（踩过一次）**：不要给 vitest 传 `--root apps/frontend`。根 `vitest.config.ts` 已经设了 `root: "apps/frontend"`，命令行再传一次会覆盖掉配置里的 `environment: "jsdom"`，回落到 node 环境后 workbench 那 10 条全部报 `localStorage is not defined`——看起来像真回归、其实是跑法错了（20 failed / 49 passed）。正确命令是裸的 `npm run frontend:test`。
 

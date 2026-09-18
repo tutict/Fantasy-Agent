@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { deleteLlmSettings, getLlmSettings, getMcpStatus, putLlmSettings, runAgent, testLlmSettings } from "../shared/api";
 import { makeTranslator, studioI18n } from "../shared/i18n";
 import {
+  HANDOFF_KEY,
   STUDIO_LOCALE_KEY,
   STUDIO_SIDEBAR_COLLAPSED_KEY,
   STUDIO_SIDEBAR_WIDTH_KEY,
@@ -596,7 +597,7 @@ function AgentPanel({ t }: { t: Translator }) {
 
 function selectedEngineVersion() {
   try {
-    const handoff = JSON.parse(localStorage.getItem("fantasy-agent-planning-handoff") || "{}") as {
+    const handoff = JSON.parse(localStorage.getItem(HANDOFF_KEY) || "{}") as {
       plan?: {
         production_pipeline?: { stages?: Array<{ id?: string }> };
         godot_plan?: { engine_version?: string };

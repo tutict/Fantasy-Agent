@@ -61,8 +61,6 @@ STUDIO_VERSION = "0.1.0"
 
 APP_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = APP_DIR.parents[1]
-STATIC_DIR = APP_DIR / "static"
-WEB_CONSOLE_STATIC_DIR = STATIC_DIR / "web-console"
 FRONTEND_DIST_DIR = REPO_ROOT / "apps" / "frontend" / "dist"
 FRONTEND_INDEX_PATH = FRONTEND_DIST_DIR / "index.html"
 
@@ -72,8 +70,11 @@ app = FastAPI(
     description="Standalone local workbench for Fantasy Agent production workflows.",
 )
 
-app.mount("/studio-static", StaticFiles(directory=str(STATIC_DIR)), name="studio_static")
-app.mount("/assets", StaticFiles(directory=str(WEB_CONSOLE_STATIC_DIR)), name="web_console_assets")
+# The hand-written pages under `apps/studio/static/` are gone, along with the
+# `/studio-static` and `/assets` mounts that served them. Every view -- `/`,
+# `/workbench`, `/web-console` -- is a route inside the Vite bundle, and the
+# bundle is the only thing served. Nothing here mounts a second UI or an HTML
+# fallback: a missing dist is a loud 503, not a stale page.
 if FRONTEND_DIST_DIR.exists():
     app.mount("/frontend", StaticFiles(directory=str(FRONTEND_DIST_DIR)), name="frontend_assets")
 
@@ -148,10 +149,28 @@ _EXECUTE_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
 _ASSET_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
 
 
-def _frontend_index_or(static_path: Path) -> FileResponse:
-    if FRONTEND_INDEX_PATH.exists():
-        return FileResponse(FRONTEND_INDEX_PATH)
-    return FileResponse(static_path)
+def _frontend_index_or() -> FileResponse:
+    """Serve the Vite bundle's entry document, or fail loudly.
+
+    This used to fall back to a hand-written static page when the bundle was
+    absent. That fallback is what let two UIs drift apart unnoticed: the server
+    answered 200 with the old page, so nothing looked broken, and the drift only
+    surfaced when someone compared the two by hand.
+
+    There is one UI now. If its build output is missing, say so with a 503 and
+    the command that fixes it, rather than serving a page that is no longer
+    maintained.
+    """
+
+    if not FRONTEND_INDEX_PATH.exists():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                f"Frontend bundle not found at {FRONTEND_INDEX_PATH}. "
+                "Run `npm run frontend:build` from the repository root, then reload."
+            ),
+        )
+    return FileResponse(FRONTEND_INDEX_PATH)
 
 
 def _mcp_status_item(
@@ -393,12 +412,12 @@ def _mcp_connectivity_status(engine: str = "UE5") -> dict[str, Any]:
 
 @app.get("/")
 def index() -> FileResponse:
-    return _frontend_index_or(STATIC_DIR / "index.html")
+    return _frontend_index_or()
 
 
 @app.get("/web-console")
 def web_console() -> FileResponse:
-    return _frontend_index_or(WEB_CONSOLE_STATIC_DIR / "index.html")
+    return _frontend_index_or()
 
 
 @app.get("/health")
@@ -815,7 +834,7 @@ def workbench() -> FileResponse:
     bundle, exactly like ``/web-console``.
     """
 
-    return _frontend_index_or(STATIC_DIR / "index.html")
+    return _frontend_index_or()
 
 
 @app.post("/api/tools/{tool_name}")
