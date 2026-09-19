@@ -1241,6 +1241,10 @@ def _orchestration_payload(session: dict[str, Any]) -> dict[str, Any]:
     return {
         "session_id": session["session_id"],
         "engine": session["engine"],
+        # Same fold the run response carries, so a board that reloads and
+        # adopts the session renders a status instead of the string "undefined"
+        # -- this payload used to be the only one without the field.
+        "status": orchestrator.run_status,
         "goal": plan.goal,
         "project_name": plan.project_name,
         "pending_confirmations": orchestrator.pending_confirmations(plan),
@@ -1347,6 +1351,7 @@ def orchestration_state(session_id: str) -> dict[str, Any]:
         return {
             "session_id": session_id,
             "found": False,
+            "status": "pending",
             "pending_confirmations": [],
             "confirmed": [],
             "stage_translation": _stage_translation(),

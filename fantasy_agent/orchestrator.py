@@ -245,6 +245,20 @@ class Orchestrator:
 
         return dict(self._outcomes)
 
+    @property
+    def run_status(self) -> str:
+        """The run-level fold of everything that has run, or ``"pending"``.
+
+        The board's read-back endpoint needs the same fold the run response
+        got, without running anything: a reload adopted the session and then
+        rendered a header with no status at all, because only the run response
+        carried one.
+        """
+
+        if not self._outcomes:
+            return "pending"
+        return _run_status(list(self._outcomes.values()))
+
     def run(
         self,
         plan: ProductionPipeline,
@@ -335,6 +349,12 @@ class Orchestrator:
         the cached result and the only way to redo a node would be a fresh
         session -- the full replay the stage table exists to avoid.
 
+        A rewound stage also loses its operator confirmation. What the reworked
+        stage will run is not what was approved before, so the gate has to ask
+        again: leaving ``_confirmed`` intact would let the next pass dispatch
+        straight through a stage the person only ever approved in its earlier
+        form.
+
         Stops at the plan rather than at the drill-down table: only stages the
         plan actually contains are dropped, which is what keeps a Godot rework
         from disturbing an Unreal plan that shares the same instance.
@@ -362,6 +382,7 @@ class Orchestrator:
         )
         for name in dropped:
             del self._outcomes[name]
+            self._confirmed.discard(name)
         return dropped
 
     def rewind_for_rework(

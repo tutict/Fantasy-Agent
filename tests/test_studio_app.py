@@ -1384,6 +1384,7 @@ def test_orchestration_state_is_readable_without_advancing(tmp_path: Path):
     missing = module.orchestration_state("no-such-session")
     assert missing["found"] is False
     assert missing["stages"] == []
+    assert missing["status"] == "pending"
     # The drill-down table is route metadata, not session state: the eight card
     # ids and the steps each owns do not depend on anything having run. An empty
     # table here would say the route has no execution steps at all.
@@ -1396,6 +1397,9 @@ def test_orchestration_state_is_readable_without_advancing(tmp_path: Path):
 
     assert state["found"] is True
     assert state["session_id"] == session_id
+    # The board renders `[status]` in its summary line; a payload without the
+    # field made a reload show the literal string "undefined".
+    assert state["status"] == started["status"]
     assert state["stage_translation"] == missing["stage_translation"]
     assert [stage["status"] for stage in state["stages"]] == [
         stage["status"] for stage in started["stages"]

@@ -818,6 +818,56 @@ def test_rewinding_an_unknown_stage_is_a_loud_error(fake_complete, tmp_path):
         orchestrator.rewind_from(plan, "godot_quick_play")
 
 
+def test_rewinding_a_confirmed_stage_asks_for_approval_again(fake_complete, tmp_path):
+    """The approval covered the stage as it was, not as the rework leaves it.
+
+    Dropping the outcome while keeping the confirmation would let the next
+    pass dispatch straight through a gate the person only ever approved in
+    its earlier form -- the board's rework button would be a one-click way
+    around `requires_confirmation`.
+    """
+
+    fake = fake_complete([llm.ModelReply(text="ok") for _ in range(3)])
+    plan = _plan(_stage("gameplay_orchestration", order=1, requires_confirmation=True))
+    orchestrator = _orchestrator(tmp_path)
+
+    orchestrator.run(plan, confirm_stages=("gameplay_orchestration",))
+    assert len(fake.payloads) == 1
+
+    dropped = orchestrator.rewind_from(plan, "gameplay_orchestration")
+    assert dropped == ["gameplay_orchestration"]
+    assert "gameplay_orchestration" in orchestrator.pending_confirmations(plan), (
+        "a rewound stage kept the confirmation it earned before the rework"
+    )
+
+    # And the gate still bites: without a fresh approval nothing dispatches.
+    result = orchestrator.run(plan)
+    assert len(fake.payloads) == 1, "a rewound-and-unconfirmed stage was dispatched"
+    assert result.outcome_for("gameplay_orchestration").status == AWAITING_CONFIRMATION
+
+    orchestrator.run(plan, confirm_stages=("gameplay_orchestration",))
+    assert len(fake.payloads) == 2
+
+
+def test_run_status_folds_the_outcomes_without_running_anything(fake_complete, tmp_path):
+    """The read-back endpoint needs the run fold before anyone has re-run."""
+
+    plan = _plan(
+        _stage("gameplay_orchestration", order=1, requires_confirmation=True),
+    )
+    orchestrator = _orchestrator(tmp_path)
+
+    assert orchestrator.run_status == "pending", "nothing has run yet"
+
+    result = orchestrator.run(plan)
+    assert orchestrator.run_status == result.status, (
+        "the read-back fold and the run fold must agree once something ran"
+    )
+
+    orchestrator.rewind_from(plan, "gameplay_orchestration")
+    assert orchestrator.run_status == "pending", "the rewind emptied the outcome map"
+
+
 def test_a_rework_target_lands_on_the_orchestration_stage_that_owns_the_node(fake_complete, tmp_path):
     """A pre-flight hint is in executor vocabulary; the board is in orchestration's.
 
