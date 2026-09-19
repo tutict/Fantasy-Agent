@@ -88,15 +88,17 @@ def test_every_payload_entry_exists():
 def test_building_for_another_platform_is_refused():
     """Cross-compiling silently is worse than not compiling.
 
-    PyInstaller does not cross-compile, and a .deb needs dpkg-deb. A build that
-    "succeeds" for another platform produces a bundle that cannot start there.
+    The staged runtime is a copy of the current platform's interpreter, and a
+    copy does not change architecture; a .deb additionally needs dpkg-deb. A
+    build that "succeeds" for another platform produces a bundle that cannot
+    start there.
     """
 
     module = _load_packager()
     native = module.current_target()
 
     other = next(target for target in module.SUPPORTED_TARGETS if target != native)
-    with pytest.raises(RuntimeError, match="does not cross-compile"):
+    with pytest.raises(RuntimeError, match="does not change architecture"):
         module.build(other)
 
 
@@ -173,3 +175,119 @@ def test_the_release_workflow_does_not_publish_on_every_push():
     # The `release` job is gated on a tag push specifically.
     assert "github.event_name == 'push'" in workflow
     assert 'tags: ["v*"]' in workflow
+
+
+def test_the_bundle_stages_the_interpreter_it_runs_on(tmp_path: Path):
+    """The launchers point at ``runtime/``; the build has to create it.
+
+    A launcher referencing an interpreter the build never staged ships a
+    bundle that cannot start anywhere -- and CI would upload it to a draft
+    release as if it were a deliverable.
+    """
+
+    module = _load_packager()
+
+    # A fake interpreter tree with the layout the copy must preserve.
+    base = tmp_path / "base-python"
+    (base / "bin").mkdir(parents=True)
+    (base / "bin" / "python3").write_text("#!/bin/sh\n", encoding="utf-8")
+    site = base / "lib" / "python3.13" / "site-packages"
+    site.mkdir(parents=True)
+    (site / "pip").mkdir()
+    (site / "pip" / "__init__.py").write_text("", encoding="utf-8")
+
+    # Dependencies installed into a venv, outside the base: they must be
+    # merged into the staged runtime's site-packages.
+    venv_site = tmp_path / "venv" / "site-packages"
+    venv_site.mkdir(parents=True)
+    (venv_site / "pywebview").mkdir()
+    (venv_site / "pywebview" / "__init__.py").write_text("", encoding="utf-8")
+
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    runtime = module._stage_runtime(stage, base_prefix=base, purelib=venv_site)
+
+    assert (runtime / "bin" / "python3").exists(), "interpreter copy is missing"
+    merged = runtime / "lib" / "python3.13" / "site-packages"
+    assert (merged / "pywebview" / "__init__.py").exists(), "venv deps were not merged"
+    assert (merged / "pip" / "__init__.py").exists(), "base deps were lost in the copy"
+
+
+def test_the_runtime_copy_leaves_the_build_machine_behind(tmp_path: Path):
+    """Caches and editable-install finders must not travel with the bundle.
+
+    An ``__editable__*`` finder points at the build machine's checkout; on a
+    user's machine it is a dead path at best and a shadowing import hook at
+    worst. The payload already carries the code it would import.
+    """
+
+    module = _load_packager()
+
+    base = tmp_path / "base-python"
+    site = base / "lib" / "python3.13" / "site-packages"
+    site.mkdir(parents=True)
+    (site / "stale" / "__pycache__").mkdir(parents=True)
+    (site / "stale" / "__pycache__" / "x.pyc").write_text("", encoding="utf-8")
+
+    venv_site = tmp_path / "venv" / "site-packages"
+    venv_site.mkdir(parents=True)
+    (venv_site / "__editable__fantasy_agent_finder.py").write_text("", encoding="utf-8")
+
+    stage = tmp_path / "stage"
+    stage.mkdir()
+    runtime = module._stage_runtime(stage, base_prefix=base, purelib=venv_site)
+    merged = runtime / "lib" / "python3.13" / "site-packages"
+
+    assert not list(merged.rglob("__editable__*"))
+    assert not list(runtime.rglob("__pycache__"))
+    assert not list(runtime.rglob("*.pyc"))
+
+
+def test_the_launchers_reference_a_runtime_the_build_stages():
+    """Every entry point must point at a directory ``build()`` actually creates.
+
+    This is the guard for the failure this suite shipped with once: the
+    launchers named ``runtime/`` and nothing ever staged it, so all three
+    platform artefacts were dead on arrival while every static check stayed
+    green.
+    """
+
+    source = PACKAGER_PATH.read_text(encoding="utf-8")
+
+    # The launchers name the runtime ...
+    assert 'runtime\\\\pythonw.exe' in source, "the Windows launcher must use the staged runtime"
+    assert '"$HERE/runtime/bin/python3"' in source, "the sh launcher must use the staged runtime"
+    # ... and build() stages it before writing them.
+    assert "_copy_payload(stage)\n    print(\"staging runtime\")" in source.replace(
+        "\r\n", "\n"
+    ), "build() must stage the runtime before the launchers are written"
+    assert "_stage_runtime(stage)" in source
+
+
+def test_the_frozen_exe_path_is_gone_for_good():
+    """The PyInstaller path was removed, not fixed, and must not creep back.
+
+    Its three halves disagreed: the spec's ``datas`` was a list of strings
+    where PyInstaller wants (src, dest) tuples, its output directory collided
+    with the staged payload, and no launcher or installer ever referenced the
+    frozen exe. The staged runtime replaced it; a reintroduction has to wire
+    all three ends at once, which is what this guard asks for.
+    """
+
+    source = PACKAGER_PATH.read_text(encoding="utf-8")
+    assert "pyinstaller" not in source.lower()
+
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert "pyinstaller" not in workflow.lower()
+
+
+def test_only_the_release_job_holds_write_access():
+    """Building needs read; write belongs to the job that drafts the release."""
+
+    workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
+    assert "permissions:\n      contents: read" in workflow.replace("\r\n", "\n"), (
+        "the build job must scope its permissions down to read"
+    )
+    assert "permissions:\n  contents: write" in workflow.replace("\r\n", "\n"), (
+        "the draft-release job still needs write"
+    )

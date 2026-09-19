@@ -1,8 +1,9 @@
 name: Release
 
 # Packaging needs a native interpreter and installer toolchain per platform, so
-# this fan-outs across the three runners rather than trying to cross-compile.
-# PyInstaller does not cross-compile at all, and a .deb needs dpkg-deb.
+# this fan-outs across the three runners rather than trying to cross-compile:
+# the staged runtime is a copy of the current platform's interpreter, and a
+# copy does not change architecture. A .deb additionally needs dpkg-deb.
 #
 # Triggered by a version tag. Nothing here publishes automatically: the upload
 # step creates a draft release, and a human decides whether the unsigned
@@ -30,6 +31,9 @@ jobs:
   build:
     name: Package (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
+    # Building is read-only work; only the draft-release job needs write.
+    permissions:
+      contents: read
     strategy:
       # One platform failing should not hide whether the other two built, since
       # the usual cause is a single toolchain (Inno Setup, hdiutil, dpkg-deb)
@@ -61,7 +65,7 @@ jobs:
           cache: npm
 
       - name: Install Python dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -e ".[desktop]" pyinstaller
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[desktop]"
 
       - name: Install frontend dependencies
         run: npm ci

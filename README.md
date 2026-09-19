@@ -111,7 +111,8 @@ Start-Fantasy-Agent.bat
 Start-Fantasy-Agent.bat --console
 ```
 
-不想用托盘（关窗口即退出），传 `--no-tray`：
+不想用托盘（关窗口即退出），传 `--no-tray`（bat 会把它转发给桌面启动器；`--console`
+要放在第一个参数的位置）：
 
 ```bat
 Start-Fantasy-Agent.bat --no-tray
@@ -321,7 +322,8 @@ Studio 是唯一入口，没有需要单独启动的 Agent 服务。
 ```
 
 产物写到 `dist/`（已 gitignore）：Windows 出安装包，macOS 出 `.app` / `.dmg`，
-Linux 出 `.deb` / `.AppImage`。
+Linux 出 `.deb` / `.AppImage`。目录包自带 `runtime/`——构建时从当前解释器拷入的
+Python 与依赖，启动器指向它，不依赖目标机器装没装 Python。
 
 **脚本只能构建当前平台的产物，跨平台会被明确拒绝。** PyInstaller 不支持交叉编译，
 `.dmg` 需要 macOS 的 `hdiutil`，`.deb` 需要 `dpkg-deb`——在 Windows 上"成功"构建出来的

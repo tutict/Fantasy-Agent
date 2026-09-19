@@ -16,21 +16,22 @@ target                  output
 
 Why one script with a ``--target`` flag rather than three scripts
 -----------------------------------------------------------------
-Two thirds of the work is identical: build the React bundle, install the Python
-dependencies into a bundle-local prefix, copy the launcher, generate the icons,
-write the version stamp. Splitting that across three files guarantees the
-platforms drift. The platform-specific tail (PyInstaller flags, the installer
-stub, the .deb control file) is where the differences actually live, and those
-are isolated in the ``_finalise_*`` functions.
+Two thirds of the work is identical: build the React bundle, stage the Python
+interpreter into a bundle-local ``runtime/`` prefix, copy the launcher,
+generate the icons, write the version stamp. Splitting that across three files
+guarantees the platforms drift. The platform-specific tail (the installer
+stub, the .deb control file, the .app wrapper) is where the differences
+actually live, and those are isolated in the ``_finalise_*`` functions.
 
 Why this cannot run on Windows for the other two targets
 ---------------------------------------------------------
-A macOS ``.app`` needs a Mach-O Python and a signed bundle; a Linux ``.deb``
-needs ``dpkg-deb`` and an ELF interpreter. Neither cross-compiles from Windows,
-and PyInstaller is explicit that it does not cross-compile at all. So the
-expectation is: run this script on each platform (or let the CI matrix do it --
-see ``.github/workflows/release.yml``), which is why the script refuses a
-mismatched target loudly instead of producing a subtly broken bundle.
+A macOS ``.app`` needs a Mach-O Python, and a Linux ``.deb`` needs
+``dpkg-deb`` and an ELF interpreter. The staged ``runtime/`` is a copy of the
+*current* platform's interpreter, and a copied interpreter does not change
+architecture. So the expectation is: run this script on each platform (or let
+the CI matrix do it -- see ``.github/workflows/release.yml``), which is why
+the script refuses a mismatched target loudly instead of producing a subtly
+broken bundle.
 
 Work still to do before a release
 ---------------------------------
@@ -50,6 +51,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import sysconfig
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -159,6 +161,9 @@ def ensure_icons(report: Report) -> None:
 
 def _copy_payload(stage: Path) -> None:
     """Copy the runtime payload into ``stage``, preserving layout."""
+    # Bytecode caches are noise in a shipped bundle: they are regenerated on
+    # first run, and a stale .pyc from the build machine can shadow the source.
+    ignore = shutil.ignore_patterns("__pycache__", "*.pyc")
     for relative in PAYLOAD:
         source = ROOT / relative
         if not source.exists():
@@ -166,7 +171,7 @@ def _copy_payload(stage: Path) -> None:
         destination = stage / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
         if source.is_dir():
-            shutil.copytree(source, destination, dirs_exist_ok=True)
+            shutil.copytree(source, destination, ignore=ignore, dirs_exist_ok=True)
         else:
             shutil.copy2(source, destination)
 
@@ -226,44 +231,61 @@ def _write_version_stamp(stage: Path, version: str, target: str) -> Path:
     return stamp
 
 
-def _run_pyinstaller(stage: Path, target: str, report: Report) -> Path | None:
-    """Freeze the Python side with PyInstaller, when it is available.
+def _stage_runtime(
+    stage: Path,
+    *,
+    base_prefix: Path | None = None,
+    purelib: Path | None = None,
+) -> Path:
+    """Copy the running interpreter into ``stage/runtime``.
 
-    Deliberately optional. PyInstaller decides a lot of details (hidden
-    imports, the one-file vs one-dir tradeoff) and each is a way to ship a
-    bundle that breaks on the user's machine and not on ours. When it is
-    missing the run still produces a working *directory* bundle from the
-    system interpreter and says so, rather than failing late.
+    The launchers reference ``runtime/``, so the bundle has to carry its own
+    interpreter -- without this step every entry point pointed at a directory
+    the build never created, and the CI artefacts could not start anywhere.
+    The layout of ``base_prefix`` is copied verbatim, which is what lets the
+    copied interpreter find its own stdlib the way the original does.
+
+    Dependencies arrive in one of two ways:
+
+    * installed into the interpreter itself (a CI runner's
+      ``pip install -e ".[desktop]"``): they live inside ``base_prefix`` and
+      travel with the copy;
+    * installed into a venv (a development machine): the venv's site-packages
+      are merged over the copy, minus the ``__editable__*`` finder modules --
+      those point back at the build machine's checkout, and the payload
+      already carries the code they would import.
+
+    The interpreter source comes in as keyword arguments (defaulting to the
+    running process) so a test can stage a fake tree instead of a hundred
+    megabytes of the real one.
     """
-    if shutil.which("pyinstaller") is None:
-        report.skip("PyInstaller is not installed; producing a directory bundle instead")
-        return None
+    base = Path(base_prefix) if base_prefix is not None else Path(sys.base_prefix)
+    runtime = stage / "runtime"
+    shutil.copytree(
+        base,
+        runtime,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        dirs_exist_ok=True,
+    )
 
-    spec = stage / f"{BUNDLE_NAME}.spec"
-    spec.write_text(
-        "# Generated by scripts/package_desktop.py -- regenerate rather than edit.\n"
-        "a = Analysis(\n"
-        "    ['apps/studio/desktop.py'],\n"
-        "    pathex=[],\n"
-        f"    datas={list(PAYLOAD)!r},\n"
-        ")\n"
-        "pyz = PYZ(a.pure)\n"
-        "exe = EXE(pyz, a.scripts, exclude_binaries=True, name='"
-        + DISPLAY_NAME_ZH
-        + "', console=False"
-        + (f", icon={str(ICON_DIR / 'fantasy-agent.ico')!r}" if target == "windows" else "")
-        + ")\n"
-        "coll = COLLECT(exe, a.binaries, a.datas, name='" + BUNDLE_NAME + "')\n",
-        encoding="utf-8",
+    pure = Path(purelib) if purelib is not None else Path(sysconfig.get_paths()["purelib"])
+    if pure.resolve().is_relative_to(base.resolve()):
+        # Dependencies live inside the interpreter; the copy already has them.
+        return runtime
+
+    site_packages = next(iter(sorted(runtime.rglob("site-packages"))), None)
+    if site_packages is None:
+        raise RuntimeError(
+            "no site-packages in the staged runtime; the bundle would be missing "
+            "its dependencies"
+        )
+    shutil.copytree(
+        pure,
+        site_packages,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "__editable__*"),
+        dirs_exist_ok=True,
     )
-    result = subprocess.run(
-        ["pyinstaller", "--noconfirm", "--clean", str(spec)],
-        cwd=ROOT,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise RuntimeError("PyInstaller failed")
-    return ROOT / "dist" / BUNDLE_NAME
+    return runtime
 
 
 def _finalise_windows(stage: Path, version: str, report: Report) -> None:
@@ -425,9 +447,11 @@ def build(target: str, *, version: str | None = None) -> Report:
     native = current_target()
     if target != native:
         raise RuntimeError(
-            f"cannot build the {target} bundle on {native}: a native interpreter and "
-            f"installer toolchain are required and PyInstaller does not cross-compile. "
-            f"Run this on {target} (or via the CI matrix in .github/workflows/release.yml)."
+            f"cannot build the {target} bundle on {native}: a native interpreter "
+            f"and installer toolchain are required, and the staged runtime is a "
+            f"copy of *this* platform's interpreter -- it does not change "
+            f"architecture. Run this on {target} (or via the CI matrix in "
+            f".github/workflows/release.yml)."
         )
 
     version = version or read_version()
@@ -444,13 +468,11 @@ def build(target: str, *, version: str | None = None) -> Report:
 
     print("copying payload")
     _copy_payload(stage)
+    print("staging runtime")
+    _stage_runtime(stage)
     _write_launcher(stage, target)
     _write_version_stamp(stage, version, target)
     report.artefacts.append(stage)
-
-    frozen = _run_pyinstaller(stage, target, report)
-    if frozen is not None:
-        report.artefacts.append(frozen)
 
     FINALISERS[target](stage, version, report)
 
