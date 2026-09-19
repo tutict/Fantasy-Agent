@@ -33,11 +33,13 @@ import type { DirectorBuildPlan } from "../shared/types";
 export const HUMAN_STAGE_KIND = "human";
 
 /**
- * The runtime vocabulary, mirroring `orchestrator.py`.
+ * The runtime vocabulary the board's status filter checks against.
  *
- * `plan_status` is a different vocabulary (`ProductionTaskStatus`) and is not
- * listed here -- the two are deliberately kept apart, and `RUNTIME_STATUSES` is
- * what the board's status filter is checked against.
+ * Superset of the backend's `STAGE_STATUSES` (`orchestrator.py`): the backend
+ * only ever answers for a stage that has an outcome, while a card with none
+ * yet renders `pending` -- the extra name here. `plan_status` is a different
+ * vocabulary (`ProductionTaskStatus`) and is not listed here -- the two are
+ * deliberately kept apart.
  */
 export const RUNTIME_STATUSES = [
   "pending",

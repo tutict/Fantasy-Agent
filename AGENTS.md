@@ -33,7 +33,7 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 
 - 只有**一代**前端：`apps/frontend/` 的 Vite + React/TSX 应用，经 `apps/frontend/dist/` 由 Studio 服务。上上代手写静态页（`apps/studio/static/`）已整体退场，`_frontend_index_or()` 在 dist 缺失时**响亮失败**（503 + 指名 `npm run frontend:build`），不再静默端出另一套 UI。所以「用户看到的是哪个界面」不再取决于上次构建是几天前。
 - **不要**在 `apps/studio/static/` 下新增或恢复文件；`escapeHtml()` 那套手写页约定随之作废。React 侧插值默认转义，别用 `dangerouslySetInnerHTML`。
-- 策划工作台在 `apps/frontend/src/workbench/`（`PlanningWorkbench` 主组件 + `workbenchModel` 纯函数 + `PlanPanels` 八个面板）。旧静态页 `planning-workbench.html` 已删除，`/workbench` 与其它路由一样走 dist 优先。
+- 策划工作台在 `apps/frontend/src/workbench/`（`PlanningWorkbench` 主组件 + `workbenchModel` 纯函数 + `PlanPanels` 面板，清单以 `workbenchModel.ts` 的 `PANEL_KEYS` 为准）。旧静态页 `planning-workbench.html` 已删除，`/workbench` 与其它路由一样走 dist 优先。
 - 工作台通过 `POST /api/tools/{name}` 调后端策划工具。工具名是跨端契约：改动任一侧后跑 `tests/test_workbench_tool_coverage.py`，前端引用不存在的工具、或后端新增未接 UI 的工具都会红。
 - 工作台只做策划，不写文件、不起进程 —— 执行一律在流程控制台。所以这里没有 `confirmed_side_effects` 之类的审批标记，唯一闸门是「点子确认后才能跑计划工具」。
 - 新增/改名后端端点后，跑 `tests/test_frontend_endpoint_coverage.py`：前端引用了不存在的端点会红；后端新增了前端没接的端点必须登记进 `KNOWN_WITHOUT_UI` 并写明原因。

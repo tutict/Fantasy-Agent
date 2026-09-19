@@ -20,6 +20,7 @@
 
 import type { CreativeReview, CreativeReviewItem, GameplaySpec, Locale, ProductionSpecBundle, PromptRequest, SpecBundlePreviewResponse } from "../shared/types";
 import { diffSpecs, specDigest, type SpecDiffResult } from "../shared/specDiff";
+import type { Translator } from "../shared/panels/PlanPanels";
 
 export {
   BuildPanel,
@@ -38,9 +39,6 @@ export { selectedEngineVersion, usesGodotEngine } from "../shared/planModel";
  * than in `FlowConsole.tsx` so the dependency sits next to the reason for it.
  */
 import "../styles/workbench.css";
-
-/** The console's translator. `args` fills `{placeholder}` pairs; see `makeTranslator`. */
-type Translator = (key: string, args?: Record<string, unknown>) => string;
 
 export function preferredTitle(
   plan: { gameplay_spec?: { title?: string } } | undefined,
