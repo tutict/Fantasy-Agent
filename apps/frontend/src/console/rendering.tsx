@@ -1,12 +1,18 @@
 /**
  * Console-specific rendering.
  *
- * The six plan panels this file used to own (overview / pipeline / tasks /
- * build / visuals / qa) now live once, in `shared/panels/PlanPanels.tsx`, and
- * are re-exported here so the console's own imports stay put. What remains is
- * what only the console renders: the creative review workspace with its
- * per-asset decision buttons, the spec-bundle inspector, and the small
- * formatting helpers those two need.
+ * The five plan panels this file used to own (overview / tasks / build /
+ * visuals / qa) now live once, in `shared/panels/PlanPanels.tsx`, and are
+ * re-exported here so the console's own imports stay put. What remains is what
+ * only the console renders: the creative review workspace with its per-asset
+ * decision buttons, the spec-bundle inspector, and the small formatting helpers
+ * those two need.
+ *
+ * `pipeline` is not among them any more. Stage rows belong to the orchestration
+ * board (`src/orchestration/`), which is the only module that reads
+ * `production_pipeline.stages`; there used to be three copies of a stage row
+ * here, in the workbench and in the console's own stage track, and no two of
+ * them rendered the same fields.
  *
  * `selectedEngineVersion` and `usesGodotEngine` also moved to
  * `shared/planModel.ts`; they are re-exported for the same reason.
@@ -18,7 +24,6 @@ import { diffSpecs, specDigest, type SpecDiffResult } from "../shared/specDiff";
 export {
   BuildPanel,
   OverviewPanel,
-  PipelinePanel,
   QaPanel,
   TasksPanel,
   VisualsPanel,
@@ -33,13 +38,6 @@ export { selectedEngineVersion, usesGodotEngine } from "../shared/planModel";
  * than in `FlowConsole.tsx` so the dependency sits next to the reason for it.
  */
 import "../styles/workbench.css";
-
-/**
- * The console's stage track and the shared panels both resolve a stage's
- * display title the same way, so this is the shared helper under the name the
- * console already imports it by.
- */
-export { localizedTitle as localizedStageTitle } from "../shared/planModel";
 
 /** The console's translator. `args` fills `{placeholder}` pairs; see `makeTranslator`. */
 type Translator = (key: string, args?: Record<string, unknown>) => string;

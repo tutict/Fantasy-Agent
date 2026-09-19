@@ -1,45 +1,10 @@
-:root {
-  color-scheme: light;
-  --bg: #f4f7f3;
-  --grid-line-a: rgba(7, 10, 8, 0.045);
-  --grid-line-b: rgba(7, 10, 8, 0.035);
-  --chrome: rgba(247, 250, 246, 0.96);
-  --surface: rgba(255, 255, 255, 0.78);
-  --surface-muted: rgba(7, 10, 8, 0.035);
-  --code-bg: rgba(7, 10, 8, 0.045);
-  --line: rgba(7, 10, 8, 0.12);
-  --line-strong: rgba(0, 118, 101, 0.36);
-  --text: #0b1713;
-  --text-soft: #3a463f;
-  --muted: #5d695f;
-  --muted-strong: #26332e;
-  --accent: #007966;
-  --accent-soft: rgba(0, 121, 102, 0.12);
-  --danger: #b4232c;
-  --shadow: 0 18px 44px rgba(19, 35, 29, 0.12);
-  --sidebar-width: 282px;
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #070a08;
-  --grid-line-a: rgba(255, 255, 255, 0.018);
-  --grid-line-b: rgba(255, 255, 255, 0.014);
-  --chrome: rgba(6, 8, 7, 0.94);
-  --surface: rgba(255, 255, 255, 0.04);
-  --surface-muted: rgba(255, 255, 255, 0.032);
-  --code-bg: rgba(0, 0, 0, 0.24);
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(0, 255, 204, 0.34);
-  --text: #ffffff;
-  --text-soft: #c7cfc8;
-  --muted: #8b938b;
-  --muted-strong: #bac2b8;
-  --accent: #00ffcc;
-  --accent-soft: rgba(0, 255, 204, 0.12);
-  --danger: #ff6b6b;
-  --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
-}
+/*
+ * Studio shell styles.
+ *
+ * Custom properties live in `tokens.css` (imported once from `main.tsx`); this
+ * file carries layout only. `shared/tokenOwnership.test.ts` fails the build if a
+ * `--*` definition reappears here.
+ */
 
 * {
   box-sizing: border-box;
@@ -87,6 +52,10 @@ iframe:focus-visible {
 }
 
 .studio-shell {
+  /* Default only; `StudioShell` overrides this per instance through an inline
+     style, and `.sidebar-collapsed` overrides it again. Component state rather
+     than a design token -- root-scope tokens live in tokens.css. */
+  --sidebar-width: 282px;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   height: 100vh;
@@ -319,6 +288,12 @@ iframe:focus-visible {
   width: 100%;
   height: 100%;
   border: 0;
+}
+
+/* The inlined views scroll inside this box rather than in their own document.
+   The mcp/api/agent panels get the same via the padding rule below. */
+.studio-frame {
+  overflow: auto;
 }
 
 .studio-frame.active,

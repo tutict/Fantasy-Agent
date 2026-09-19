@@ -17,6 +17,7 @@ import type {
   PromptRequest,
   WorkbenchConfig,
   WorkbenchMeta,
+  WorkbenchPanelKey,
   WorkbenchStructured,
   WorkbenchToolResult
 } from "../shared/types";
@@ -326,15 +327,37 @@ export function normalizeToolResult(result: WorkbenchToolResult | null | undefin
 }
 
 /**
+ * The workbench's own tabs, in the order they are shown.
+ *
+ * Defined in the model rather than next to the panels because `resultPanel`
+ * has to validate against it: a tool result naming a panel the workbench does
+ * not have must fall back, not be cast into `setActivePanel`.
+ */
+export const PANEL_KEYS: WorkbenchPanelKey[] = [
+  "overview",
+  "tasks",
+  "build",
+  "visuals",
+  "gdd",
+  "qa",
+  "dsl"
+];
+
+/**
  * Which panel a result should jump to. The backend says so in ``_meta``; each
  * tool also has a sensible fallback so a result never lands on a blank panel.
+ *
+ * `prepare_production_pipeline` is deliberately absent. The backend still names
+ * `pipeline` for it, and that is no longer a workbench tab: stage rows are the
+ * orchestration board's own view (`/pipeline`), which this view cannot open.
+ * Mapping it here would keep a name that nothing renders; the validated
+ * fallback below lands the operator on the overview instead.
  */
-export const TOOL_FALLBACK_PANEL: Record<string, string> = {
+export const TOOL_FALLBACK_PANEL: Partial<Record<string, WorkbenchPanelKey>> = {
   extract_idea_seed: "overview",
   generate_game_production_plan: "overview",
   decompose_production_tasks: "tasks",
   render_gdd: "gdd",
-  prepare_production_pipeline: "pipeline",
   prepare_unreal_plan: "build",
   prepare_godot_plan: "build",
   prepare_blender_plan: "build",
@@ -343,6 +366,17 @@ export const TOOL_FALLBACK_PANEL: Record<string, string> = {
   prepare_qa_plan: "qa"
 };
 
-export function resultPanel(toolName: string, meta: WorkbenchMeta): string {
-  return meta.activePanel ?? TOOL_FALLBACK_PANEL[toolName] ?? "overview";
+/**
+ * The panel a tool result asks for, checked against the tabs that exist.
+ *
+ * The backend's `activePanel` values are not this view's vocabulary, and the
+ * mismatch was invisible: an unrecognised name was cast straight into
+ * `setActivePanel`, the switch in `panelBody()` fell through to its default, and
+ * the operator saw the overview with nothing to say why. Two names are already
+ * outside the type -- `pipeline` (now a separate view) and `discovery` -- so the
+ * check is the mechanism, not a one-off fix.
+ */
+export function resultPanel(toolName: string, meta: WorkbenchMeta): WorkbenchPanelKey {
+  const named = meta.activePanel ?? TOOL_FALLBACK_PANEL[toolName];
+  return PANEL_KEYS.includes(named as WorkbenchPanelKey) ? (named as WorkbenchPanelKey) : "overview";
 }

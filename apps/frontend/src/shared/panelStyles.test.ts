@@ -152,7 +152,11 @@ describe("shared panel styles", () => {
     // Complement of the check above: if a shared panel's classes had leaked
     // into console.css, the previous test would pass while the two sheets were
     // quietly duplicating each other. These belong to the console alone.
-    const consoleOwned = ["stage-strip", "insight-row", "split-output", "review-item", "review-inspector"];
+    //
+    // `stage-strip` was on this list until F3 removed the console's stage track
+    // -- it rendered the pipeline's stage rows, which the orchestration board
+    // does now. Its selectors went with it.
+    const consoleOwned = ["insight-row", "split-output", "review-item", "review-inspector"];
     const missing = consoleOwned.filter((name) => !consoleStyles.has(name));
     expect(missing, "console.css stopped styling the console's own surface").toEqual([]);
   });

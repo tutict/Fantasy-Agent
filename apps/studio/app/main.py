@@ -421,6 +421,17 @@ def web_console() -> FileResponse:
     return _frontend_index_or()
 
 
+@app.get("/pipeline")
+def pipeline_board() -> FileResponse:
+    """Serve the orchestration board.
+
+    A route inside the SPA bundle like the other two: the board is a whole view,
+    so it gets its own URL rather than only being reachable from the sidebar.
+    """
+
+    return _frontend_index_or()
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "agent": STUDIO_NAME, "version": STUDIO_VERSION, "mode": "standalone"}
@@ -1115,6 +1126,236 @@ def run_planning_agent(req: AgentRunRequest) -> dict[str, Any]:
             {"text": step.text, "calls": step.calls} for step in result.steps
         ],
     }
+
+
+class OrchestrationRunRequest(StrictModel):
+    """One pass over a plan's stages, carrying the operator's approvals.
+
+    The plan is posted from the board rather than re-derived from a prompt here,
+    which is what ``/api/execute`` already does and for the same reason: the
+    board renders the stages of *that* plan. Rebuilding it from a prompt would
+    mean the cards show plan A while the run advances plan B, and nothing on
+    screen would say so.
+
+    The approvals ride with the request rather than being cached from an earlier
+    one because they are a *user action* -- AGENTS.md is explicit that
+    `confirmed_side_effects` / `confirmed` must come from a click, never from a
+    value written at the call site. `confirm_stages` is the same kind of flag,
+    so it is read off the request body and nothing else.
+    """
+
+    plan: DirectorBuildPlan
+    engine: str = ""  # inferred from the plan when empty
+    #: Reuse an earlier session to advance it (`_outcomes` stops finished stages
+    #: replaying); empty starts a new one.
+    session_id: str = ""
+    confirm_stages: list[str] = Field(default_factory=list)
+    #: Orchestration stage id to forget, along with everything after it, before
+    #: this pass -- the rework button. Empty runs the plan as it stands.
+    rewind_stage: str = ""
+    allow_write: bool = False
+    allow_execute: bool = False
+    max_turns: int = 8
+
+
+# `DirectorBuildPlan` is a forward reference from another module, same as in
+# `ExecuteDemoRequest`; resolve it so the model is fully defined.
+OrchestrationRunRequest.model_rebuild()
+
+
+#: Live orchestrators, one per session id.
+#:
+#: The object *is* the state, which is why it cannot be rebuilt per request:
+#: `_outcomes` is what stops a later pass replaying the stages that already
+#: finished, and `_confirmed` is what stops it asking the operator to approve the
+#: same stage twice. A fresh instance would reset both and turn "approve stage 5"
+#: into a replay of stages 1-4 -- the exact waste the orchestrator exists to
+#: remove. Studio is a single process (AGENTS.md), so a module-level registry is
+#: the whole mechanism.
+_ORCHESTRATION_SESSIONS: dict[str, dict[str, Any]] = {}
+
+
+def _stage_translation() -> dict[str, list[str]]:
+    """Which execution steps each orchestration card owns.
+
+    One definition, shared by the run payload and the "nothing has run yet"
+    answer, so the board cannot be told two different things about the same
+    route depending on whether it asked before or after a run.
+    """
+
+    from fantasy_agent.pipeline_state import ORCHESTRATION_TO_EXECUTOR_STAGES
+
+    return {stage_id: list(stages) for stage_id, stages in ORCHESTRATION_TO_EXECUTOR_STAGES.items()}
+
+
+def _orchestration_payload(session: dict[str, Any]) -> dict[str, Any]:
+    """The board's view of a session: plan, runtime state, and what to do next."""
+
+    from fantasy_agent.pipeline_state import executor_stages_for
+
+    orchestrator = session["orchestrator"]
+    plan = session["plan"]
+    outcomes = orchestrator.outcomes
+    confirmed = orchestrator.confirmed
+
+    entries: list[dict[str, Any]] = []
+    for stage in sorted(plan.stages, key=lambda entry: entry.order):
+        outcome = outcomes.get(stage.id)
+        entries.append(
+            {
+                "stage_id": stage.id,
+                "order": stage.order,
+                "title": stage.title,
+                "title_i18n": stage.title_i18n,
+                "kind": stage.kind,
+                # Plan-time status (`pending` / `ready` / ...) is written once
+                # when the plan is authored. `status` below is what this run
+                # actually did -- a board reading only the first would show a
+                # run that never starts.
+                "plan_status": stage.status,
+                "requires_confirmation": stage.requires_confirmation,
+                "confirmed": stage.id in confirmed,
+                # The plan-time fields the board draws a card from. They are
+                # sent rather than merged from the browser's copy of the plan
+                # for the same reason the request carries a plan: the card must
+                # describe the plan this pass advanced.
+                "purpose": stage.purpose,
+                "owner_agent": stage.owner_agent,
+                "depends_on": list(stage.depends_on),
+                "mcp_tools": list(stage.mcp_tools),
+                "quality_gates": list(stage.quality_gates),
+                "risks": list(stage.risks),
+                "exit_checks": list(stage.exit_checks),
+                "executor_stages": list(executor_stages_for(stage.id)),
+                "status": outcome.status if outcome else "pending",
+                "detail": outcome.detail if outcome else "",
+                "tools": list(outcome.tools) if outcome else [],
+                "dispatched": outcome.dispatched if outcome else False,
+                "tool_calls": outcome.tool_calls if outcome else 0,
+                "refusals": list(outcome.refusals) if outcome else [],
+                "checks": list(outcome.checks) if outcome else [],
+                "answer": outcome.answer if outcome else "",
+            }
+        )
+
+    return {
+        "session_id": session["session_id"],
+        "engine": session["engine"],
+        "goal": plan.goal,
+        "project_name": plan.project_name,
+        "pending_confirmations": orchestrator.pending_confirmations(plan),
+        "confirmed": sorted(confirmed),
+        "stage_translation": _stage_translation(),
+        "stages": entries,
+    }
+
+
+@app.post("/api/orchestration/run")
+def run_orchestration(req: OrchestrationRunRequest) -> dict[str, Any]:
+    """Advance a plan once, stage by stage, with the caller's approvals attached.
+
+    Never raises, same contract as `/api/agent/run`: a failure is a status the
+    caller can branch on, because the board has to keep rendering the stages it
+    already has rather than losing them to an error screen.
+    """
+
+    from uuid import uuid4
+
+    from fantasy_agent.orchestrator import Orchestrator
+
+    plan = req.plan.production_pipeline
+    if plan is None or not plan.stages:
+        return {
+            "status": "error",
+            "error": "the posted plan has no production_pipeline stages",
+            "stages": [],
+        }
+
+    try:
+        engine = _infer_engine(req.plan, req.engine)
+        session_id = req.session_id.strip() or f"orch-{uuid4().hex[:12]}"
+        session = _ORCHESTRATION_SESSIONS.get(session_id)
+        if session is None:
+            session = {
+                "session_id": session_id,
+                "orchestrator": Orchestrator(
+                    session_id=session_id,
+                    workspace_root=REPO_ROOT,
+                    engine_key=engine,
+                ),
+                "plan": plan,
+                "engine": engine,
+            }
+            _ORCHESTRATION_SESSIONS[session_id] = session
+        # Re-point the session at this request's plan: the stage ids are fixed
+        # per route, so the outcomes carry over while the board shows the plan
+        # the operator is actually looking at.
+        session["plan"] = plan
+        session["engine"] = engine
+
+        rewound: list[str] = []
+        rewind = req.rewind_stage.strip()
+        if rewind:
+            # Inside the try, but branching on the payload rather than falling
+            # through to the outer handler: a mistyped card id is a *user*
+            # mistake, and the board should keep its cards and say which id it
+            # did not recognise instead of being handed an empty stage list.
+            try:
+                rewound = session["orchestrator"].rewind_from(plan, rewind)
+            except ValueError as exc:
+                payload = _orchestration_payload(session)
+                payload["status"] = "error"
+                payload["error"] = str(exc)
+                payload["rewound"] = []
+                return payload
+
+        result = session["orchestrator"].run(
+            plan,
+            allow_write=req.allow_write,
+            allow_execute=req.allow_execute,
+            max_turns=max(1, min(req.max_turns, 64)),
+            confirm_stages=req.confirm_stages,
+        )
+    except Exception as exc:  # noqa: BLE001 - the endpoint must not 500
+        return {"status": "error", "error": f"{type(exc).__name__}: {exc}", "stages": []}
+
+    payload = _orchestration_payload(session)
+    payload["status"] = result.status
+    payload["error"] = result.error
+    payload["rewound"] = rewound
+    return payload
+
+
+@app.get("/api/orchestration/{session_id}")
+def orchestration_state(session_id: str) -> dict[str, Any]:
+    """What a session has done so far, without advancing it.
+
+    The board polls this after a run so a card's status is read from the same
+    place the run wrote it, rather than kept in a second copy in the browser.
+
+    A session that has never run answers with the stage translation, because
+    that table is route metadata rather than session state: the eight
+    orchestration stage ids and the execution steps each one owns are fixed for
+    the whole route. Answering `{}` here said "this route has no execution
+    stages", which is a stronger and less true claim than "nothing has run yet"
+    -- and it made the board's drill-down vanish exactly when the operator had
+    nothing else to read.
+    """
+
+    session = _ORCHESTRATION_SESSIONS.get(session_id)
+    if session is None:
+        return {
+            "session_id": session_id,
+            "found": False,
+            "pending_confirmations": [],
+            "confirmed": [],
+            "stage_translation": _stage_translation(),
+            "rewound": [],
+            "stages": [],
+        }
+    payload = _orchestration_payload(session)
+    payload["found"] = True
+    return payload
 
 
 @app.get("/api/sessions/{session_id}/state")

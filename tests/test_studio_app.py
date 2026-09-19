@@ -375,6 +375,9 @@ def test_studio_shell_includes_bilingual_ui_controls():
     module = _load_studio_app()
     frontend_source = module.REPO_ROOT.joinpath("apps/frontend/src/studio/StudioShell.tsx").read_text(encoding="utf-8")
     frontend_i18n = module.REPO_ROOT.joinpath("apps/frontend/src/shared/i18n.ts").read_text(encoding="utf-8")
+    locale_theme_source = module.REPO_ROOT.joinpath("apps/frontend/src/shared/localeTheme.tsx").read_text(
+        encoding="utf-8"
+    )
     workbench_source = module.REPO_ROOT.joinpath(
         "apps/frontend/src/workbench/PlanningWorkbench.tsx"
     ).read_text(encoding="utf-8")
@@ -399,16 +402,37 @@ def test_studio_shell_includes_bilingual_ui_controls():
     assert 'id="mcp-status-grid"' in frontend_source
     assert "getMcpStatus" in frontend_source
     assert "mcpStatusTitle" in frontend_i18n
-    assert 'activePanel, setActivePanel] = useState<PanelKey>("workbench")' in frontend_source
-    assert "consoleFrameTitle" in frontend_i18n
-    assert "\u6d41\u7a0b\u63a7\u5236\u53f0" in frontend_i18n
-    assert "workbenchFrameTitle" in frontend_i18n
-    assert "\u7b56\u5212\u5de5\u4f5c\u53f0" in frontend_i18n
-    # The locale key is imported from `shared/storage`, not spelled out here --
-    # `test_store_keys_are_defined_once_and_imported_everywhere` pins the literal
-    # to that one file, so this checks the shell actually consumes the export.
-    assert "STUDIO_LOCALE_KEY" in frontend_source
-    assert "initialLocale(STUDIO_LOCALE_KEY)" in frontend_source
+    # The starting panel comes from the pathname, not from a hardcoded default,
+    # and both views are rendered inline: `<iframe>` is gone, so the frame-title
+    # keys that only labelled the frames are gone with it.
+    assert "useState<PanelKey>(panelFromPathname)" in frontend_source
+    assert "<iframe" not in frontend_source
+    assert "FrameTitle" not in frontend_i18n
+    # ... but the nav labels are what a person reads, so pin those instead.
+    assert 'workbench: "\u7b56\u5212\u5de5\u4f5c\u53f0"' in frontend_i18n
+    assert 'console: "\u6d41\u7a0b\u63a7\u5236\u53f0"' in frontend_i18n
+    # Locale used to be the shell's own state, read here from `STUDIO_LOCALE_KEY`.
+    # A single provider owns it now and is the only reader of the key, so the
+    # shell must not have grown a copy back -- and the provider must be the one
+    # touching the document element.
+    assert "STUDIO_LOCALE_KEY" not in frontend_source
+    assert "initialLocale(STUDIO_LOCALE_KEY)" in locale_theme_source
+    # Pinned as the *assignment*, not as the member expression. The module's own
+    # docstring names `document.documentElement.lang` while explaining what the
+    # three old documents each did, so the bare substring stayed true with the
+    # assignment deleted -- the guard was vacuous and the mutation caught it.
+    assert "document.documentElement.lang = locale" in locale_theme_source
+    assert "document.documentElement.dataset.theme = theme" in locale_theme_source
+    # Engine version used to have a second implementation here, parsing the
+    # handoff out of localStorage itself. It reads the shared plan now.
+    #
+    # Pinned as the *call* rather than as the two identifiers: the shell also
+    # imports `readHandoffPlan`, so `"readHandoffPlan" in frontend_source` stays
+    # true after the call is swapped back out for a hand-rolled decoder. The
+    # mutation that reintroduces one proved it -- only the `JSON.parse` line
+    # below went red, this one sat green with the import satisfying it.
+    assert "selectedEngineVersion(readHandoffPlan())" in frontend_source
+    assert "JSON.parse(localStorage.getItem" not in frontend_source
     # The workbench hands its plan to the console through this localStorage key.
     assert "savePlanningHandoff" in workbench_source
 
@@ -434,6 +458,7 @@ def test_store_keys_are_defined_once_and_imported_everywhere():
         "fantasy-agent-studio-locale",
         "fantasy-agent-studio-sidebar-width",
         "fantasy-agent-studio-sidebar-collapsed",
+        "fantasy-agent-orchestration-session",
     ):
         assert storage.count(key) == 1, f"{key} must be defined exactly once, in shared/storage.ts"
 
@@ -1079,3 +1104,333 @@ def test_frontend_includes_the_spec_regen_and_blender_script_panels():
     assert "<SpecRegenPanel" in flow_console, "the spec tab never mounts the spec regen panel"
     assert blender_panel.exists(), "the Blender script panel is not defined"
     assert "BlenderScriptPanel" in build_panel, "the build panel never mounts the Blender script panel"
+
+# ── the orchestration board ─────────────────────────────────────────────────
+
+
+def _studio(tmp_path: Path):
+    """A loaded Studio whose sandbox is `tmp_path`, not the repository.
+
+    `REPO_ROOT` is what the orchestrator writes session state under, so
+    re-pointing it keeps a test run from leaving `generated/<engine>/sessions/`
+    directories behind. Each `_load_studio_app()` returns a fresh module, so
+    this does not touch the other tests' view of the repo.
+    """
+
+    module = _load_studio_app()
+    module.REPO_ROOT = tmp_path
+    module._ORCHESTRATION_SESSIONS.clear()
+    return module
+
+
+PROMPT = "a stealth courier escapes a haunted train station in ten minutes"
+
+
+def _plan():
+    """The plan the board would be showing, built deterministically.
+
+    `use_llm=False` on purpose: the board posts a plan rather than a prompt, so
+    a test of the board's endpoint should not need a provider to *produce* the
+    plan. It still needs the run itself to fail without one -- that is what the
+    stage outcomes below are read for.
+
+    `engine_version="Godot 4"` picks the Godot route, which is what the stage
+    ids below name. The Unreal route swaps `godot_quick_play` for
+    `unreal_production` and the board treats them the same way, so only one of
+    the two needs pinning down here.
+    """
+
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.workflows import run_director_workflow
+
+    plan = run_director_workflow(
+        PromptRequest(prompt=PROMPT, engine_version="Godot 4"), use_llm=False
+    )
+    assert plan.production_pipeline is not None
+    return plan
+
+
+def test_the_orchestration_endpoints_are_served():
+    module = _load_studio_app()
+    paths = {route.path for route in module.app.routes}
+
+    assert "/api/orchestration/run" in paths
+    assert "/api/orchestration/{session_id}" in paths
+    # The board is a whole view, so it has a URL of its own rather than being
+    # reachable only from the sidebar.
+    assert "/pipeline" in paths
+
+
+def test_a_run_reports_every_card_and_where_a_person_is_needed(tmp_path: Path):
+    """The board's contract: one entry per stage, and a list of who to ask.
+
+    The measured plan puts no confirmation gate on stage 1 (planning is
+    read-only), so a first pass really does dispatch it -- and in a test run
+    there is no provider configured, so it fails and everything downstream reads
+    `blocked`. Both halves matter: the cards get real runtime states, and the
+    five gated stages are still listed as waiting on a person even though the
+    dependency chain has not reached them yet.
+    """
+
+    module = _studio(tmp_path)
+
+    payload = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+
+    assert payload["status"] == "error"
+    assert payload["error"].startswith("gameplay_orchestration")
+    assert payload["session_id"]
+    assert len(payload["stages"]) == 7
+
+    by_id = {stage["stage_id"]: stage for stage in payload["stages"]}
+    assert by_id["gameplay_orchestration"]["dispatched"] is True
+    assert by_id["gameplay_orchestration"]["status"] == "failed"
+    assert by_id["creative_review"]["kind"] == "human"
+
+    # Not offered as an approve-able item: approving a human gate would not make
+    # it run, so a button for it would be a control that does nothing.
+    assert "creative_review" not in payload["pending_confirmations"]
+    assert set(payload["pending_confirmations"]) == {
+        "comfyui_visual_production",
+        "blender_modeling",
+        "asset_integration",
+        "godot_quick_play",
+        "optimization_testing",
+    }
+
+    # A dependency that has not finished comes first: nobody should be asked to
+    # approve a stage whose inputs do not exist, and no gated stage was
+    # dispatched just because the plan reached it.
+    for stage in payload["stages"]:
+        if stage["stage_id"] == "gameplay_orchestration":
+            continue
+        assert stage["status"] == "blocked", stage
+        assert stage["dispatched"] is False, stage
+
+
+def test_a_card_carries_the_plan_fields_it_is_drawn_from(tmp_path: Path):
+    """The board draws a card from the plan, so the plan has to travel with it.
+
+    These six fields are what F0's field-coverage work was about: the console's
+    stage row showed `risks` and the workbench's did not, and neither showed
+    `depends_on` -- the one field the orchestrator actually gates on. The board
+    is now the only stage renderer, so it is the only thing that can lose them,
+    and this is the test that says it has them.
+    """
+
+    module = _studio(tmp_path)
+
+    payload = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    card = next(
+        entry for entry in payload["stages"] if entry["stage_id"] == "blender_modeling"
+    )
+
+    for field in ("purpose", "owner_agent", "depends_on", "mcp_tools", "quality_gates", "risks"):
+        assert field in card, field
+    assert card["depends_on"] == ["gameplay_orchestration"]
+    assert card["owner_agent"] == "blender-worker"
+    assert card["quality_gates"], "the measured plan declares quality gates for this stage"
+
+
+def test_the_plan_time_status_and_the_runtime_one_are_both_carried(tmp_path: Path):
+    """`ProductionTaskStatus` is written once at authoring time and never moves.
+
+    A card that read only that field would render `pending` forever, no matter
+    how far the run got -- so both are sent and the runtime one is what the
+    board colours.
+    """
+
+    module = _studio(tmp_path)
+
+    payload = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    stage = next(
+        entry for entry in payload["stages"] if entry["stage_id"] == "comfyui_visual_production"
+    )
+
+    assert stage["plan_status"] in {"pending", "ready", "blocked", "done"}
+    assert stage["status"] == "blocked"
+    # The two vocabularies are kept apart: no runtime status leaks into the
+    # plan-time field. A board reading the wrong one would show a finished run
+    # as `pending`, or a card waiting on a person as `ready`.
+    assert stage["plan_status"] not in {
+        "awaiting_confirmation",
+        "awaiting_human",
+        "running",
+        "failed",
+    }
+
+
+def test_the_board_can_drill_from_a_card_into_the_process_steps(tmp_path: Path):
+    """F3's drill-down reads this table, so it has to reach the client."""
+
+    module = _studio(tmp_path)
+
+    payload = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    by_id = {stage["stage_id"]: stage for stage in payload["stages"]}
+
+    assert by_id["blender_modeling"]["executor_stages"] == ["blender"]
+    assert "import" in by_id["godot_quick_play"]["executor_stages"]
+    # The whole table travels too, so the board can label a node it is not
+    # currently showing without a second round trip.
+    assert payload["stage_translation"]["creative_review"] == []
+
+
+def test_a_plan_with_no_pipeline_is_an_error_status_not_an_exception(tmp_path: Path):
+    module = _studio(tmp_path)
+    plan = _plan()
+    plan.production_pipeline = None
+
+    payload = module.run_orchestration(module.OrchestrationRunRequest(plan=plan))
+
+    assert payload["status"] == "error"
+    assert "no production_pipeline" in payload["error"]
+    assert payload["stages"] == []
+
+
+def test_the_run_advances_the_plan_it_was_given_not_a_rebuilt_one(tmp_path: Path):
+    """The card and the run must describe the same plan.
+
+    This is why the request carries a plan instead of a prompt. Rebuilding from
+    a prompt would let the board render one plan while the pass advanced
+    another, and the mismatch would be invisible -- the cards would still
+    populate, from the wrong plan.
+    """
+
+    module = _studio(tmp_path)
+    plan = _plan()
+    # Hand the board a two-stage slice of the measured plan. A rebuilt plan
+    # would have seven stages again.
+    plan.production_pipeline.stages = [
+        stage
+        for stage in plan.production_pipeline.stages
+        if stage.id in {"gameplay_orchestration", "creative_review"}
+    ]
+
+    payload = module.run_orchestration(module.OrchestrationRunRequest(plan=plan))
+
+    assert [entry["stage_id"] for entry in payload["stages"]] == [
+        "gameplay_orchestration",
+        "creative_review",
+    ]
+
+
+def test_a_bad_rework_confirmation_is_reported_rather_than_raising(tmp_path: Path):
+    module = _studio(tmp_path)
+
+    payload = module.run_orchestration(
+        module.OrchestrationRunRequest(plan=_plan(), confirm_stages=["blender_modelingg"])
+    )
+
+    assert payload["status"] == "error"
+    assert "unknown orchestration stage" in payload["error"]
+
+
+def test_rewinding_a_card_forgets_it_and_everything_after_it(tmp_path: Path):
+    """The rework button. Not a fresh session -- that replay is what 编排 exists to avoid."""
+
+    module = _studio(tmp_path)
+    plan = _plan()
+
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=plan))
+    session_id = first["session_id"]
+    assert first["rewound"] == []
+
+    second = module.run_orchestration(
+        module.OrchestrationRunRequest(
+            plan=plan,
+            session_id=session_id,
+            rewind_stage="blender_modeling",
+        )
+    )
+
+    assert second["session_id"] == session_id
+    # Read off the plan rather than listed by hand: the plan's `order` is what
+    # the cutoff is computed from, and a hand-written list would only be
+    # checking that the two orders happen to agree today.
+    run_order = [
+        stage.id for stage in sorted(plan.production_pipeline.stages, key=lambda s: s.order)
+    ]
+    assert second["rewound"] == run_order[run_order.index("blender_modeling") :]
+    assert second["stages"][0]["status"] == "failed", "the first card kept its outcome"
+
+
+def test_rewinding_an_unknown_card_is_reported_with_the_cards_still_there(tmp_path: Path):
+    """A mistyped card id is a user mistake, so the board keeps its stages.
+
+    The contrast with the empty-plan branch is the point: that one has no cards
+    to lose, this one does, and answering with an empty stage list would blank
+    the board over a typo.
+    """
+
+    module = _studio(tmp_path)
+
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = first["session_id"]
+
+    payload = module.run_orchestration(
+        module.OrchestrationRunRequest(
+            plan=_plan(), session_id=session_id, rewind_stage="blender_modelling"
+        )
+    )
+
+    assert payload["status"] == "error"
+    assert "blender_modelling" in payload["error"]
+    assert payload["rewound"] == []
+    assert len(payload["stages"]) == 7
+
+
+def test_orchestration_state_is_readable_without_advancing(tmp_path: Path):
+    module = _studio(tmp_path)
+
+    missing = module.orchestration_state("no-such-session")
+    assert missing["found"] is False
+    assert missing["stages"] == []
+    # The drill-down table is route metadata, not session state: the eight card
+    # ids and the steps each owns do not depend on anything having run. An empty
+    # table here would say the route has no execution steps at all.
+    assert missing["stage_translation"]["blender_modeling"] == ["blender"]
+
+    started = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = started["session_id"]
+
+    state = module.orchestration_state(session_id)
+
+    assert state["found"] is True
+    assert state["session_id"] == session_id
+    assert state["stage_translation"] == missing["stage_translation"]
+    assert [stage["status"] for stage in state["stages"]] == [
+        stage["status"] for stage in started["stages"]
+    ]
+
+
+def test_a_second_request_reuses_the_session_it_was_given(tmp_path: Path):
+    """Approving a stage is a second request against the same session.
+
+    Keeping the session is what makes staging usable at all: a fresh
+    orchestrator would forget the approval it was just given and ask again.
+
+    The approval does not jump the dependency queue -- the stage still reads
+    `blocked` because stage 1 failed -- and that is the assertion: an approval
+    answers one question (may this stage start) without answering another (are
+    its inputs ready).
+    """
+
+    module = _studio(tmp_path)
+
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = first["session_id"]
+    assert "blender_modeling" in first["pending_confirmations"]
+
+    second = module.run_orchestration(
+        module.OrchestrationRunRequest(
+            plan=_plan(),
+            session_id=session_id,
+            confirm_stages=["blender_modeling"],
+        )
+    )
+
+    assert second["session_id"] == session_id
+    assert "blender_modeling" in second["confirmed"]
+    assert "blender_modeling" not in second["pending_confirmations"]
+    blender = next(e for e in second["stages"] if e["stage_id"] == "blender_modeling")
+    assert blender["status"] == "blocked"
+    assert blender["dispatched"] is False

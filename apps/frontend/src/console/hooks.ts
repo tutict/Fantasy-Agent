@@ -23,8 +23,7 @@ import type {
   ProductionSpecBundle,
   PromptRequest,
   SpecBundlePreviewResponse,
-  StatusState,
-  Theme
+  StatusState
 } from "../shared/types";
 import { preferredTitle, selectedEngineVersion, usesGodotEngine } from "./rendering";
 
@@ -280,11 +279,25 @@ export function useManualTargets(currentPlan: DirectorBuildPlan | null) {
 }
 
 export function usePlanningHandoff({
+  active,
   locale,
   t,
   addActivity,
   setStatus
 }: {
+  /**
+   * Whether the console is the visible view.
+   *
+   * The handoff used to arrive live: the workbench and the console were
+   * separate documents, so a write to the shared localStorage key raised a
+   * `storage` event in the other one. They are one document now (F4), and
+   * `storage` is only delivered to *other* documents -- so that channel went
+   * quiet without anything failing. Re-reading on activation is what replaces
+   * it: the shell mounts a view on first visit and keeps it mounted, so a
+   * mount-time read alone would show the plan as it was the first time the
+   * operator opened this view.
+   */
+  active: boolean;
   locale: Locale;
   t: (key: string) => string;
   addActivity: (label: string, message: string) => void;
@@ -343,10 +356,17 @@ export function usePlanningHandoff({
     [addActivity, mergeReviewDefaults, renderHandoffTitle, setStatus, t, titleForPlan]
   );
 
+  // Loaded once on mount (the console only mounts when it is first opened, so
+  // it is active by then) and again on every later activation. The silent flag
+  // keeps a panel switch from writing an activity line every time.
   useEffect(() => {
-    loadPlanningHandoff({ silent: true });
-  }, [loadPlanningHandoff]);
+    if (active) loadPlanningHandoff({ silent: true });
+  }, [active, loadPlanningHandoff]);
 
+  // Still worth keeping for the case it was written for -- a second browser tab
+  // -- but it is no longer how a handoff reaches *this* view: within one
+  // document `storage` is not delivered to the writer's own document. The
+  // activation effect above is what does that now.
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.key === HANDOFF_KEY) loadPlanningHandoff({ activityLabel: t("handoffReceived") });
@@ -529,9 +549,4 @@ export function useApprovalManifest({
   }, [addActivity, currentPlan, onBundleSynced, reviewDecisions, setStatus, t]);
 
   return { approvalManifestPath, setApprovalManifestPath, onWriteApprovalManifest };
-}
-
-export function localizedRoute(path: string, locale: Locale, theme: Theme) {
-  const search = new URLSearchParams({ locale, theme });
-  return `${path}?${search.toString()}`;
 }

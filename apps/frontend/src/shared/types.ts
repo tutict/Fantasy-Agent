@@ -90,6 +90,12 @@ export interface PipelineStage {
   /** `"human"` marks a gate no tool may run in; the contract defaults to `"agent"`. */
   kind?: string;
   /**
+   * Read-only tools the orchestrator runs after this stage's agent finishes;
+   * all of them must report `ok` or the stage is `failed` rather than `done`.
+   * Empty means the stage declares no machine check, which is every stage today.
+   */
+  exit_checks?: string[];
+  /**
    * Stage ids that must reach `done` before this stage becomes `ready`. The
    * backend has always sent this and the type silently dropped it, so no panel
    * could render the one field an orchestrator gates on.
@@ -103,6 +109,86 @@ export interface ProductionPipeline {
   current_stage?: string;
   next_stage?: string;
   stages?: PipelineStage[];
+}
+
+/**
+ * One card of the orchestration board as the backend sends it.
+ *
+ * Two status fields, and the distinction is the whole point of the board:
+ * `plan_status` is `ProductionTaskStatus`, written once when the plan was
+ * authored (`pending` / `ready` / `blocked` / `done`) and never updated by a
+ * run; `status` is the runtime vocabulary the orchestrator actually wrote
+ * (`ready` / `running` / `blocked` / `awaiting_human` / `awaiting_confirmation`
+ * / `done` / `failed`). A card that read only the first would say `pending`
+ * forever.
+ */
+export interface OrchestrationStageCard {
+  stage_id?: string;
+  order?: number;
+  title?: string;
+  title_i18n?: Partial<Record<Locale, string>>;
+  kind?: string;
+  plan_status?: string;
+  requires_confirmation?: boolean;
+  confirmed?: boolean;
+  purpose?: string;
+  owner_agent?: string;
+  depends_on?: string[];
+  mcp_tools?: string[];
+  quality_gates?: string[];
+  risks?: string[];
+  exit_checks?: string[];
+  /** Execution-layer steps this card owns; empty for the human gate. */
+  executor_stages?: string[];
+  status?: string;
+  detail?: string;
+  tools?: string[];
+  dispatched?: boolean;
+  tool_calls?: number;
+  refusals?: string[];
+  /** Exit checks that ran and passed. Empty covers "declares none" too. */
+  checks?: string[];
+  answer?: string;
+}
+
+export interface OrchestrationSession {
+  session_id?: string;
+  engine?: string;
+  goal?: string;
+  project_name?: string;
+  /** False when the server has no session under that id -- not an error. */
+  found?: boolean;
+  status?: string;
+  error?: string;
+  /** Cards dropped by the last rework, in plan order. */
+  rewound?: string[];
+  /** Stages a person still has to approve. A human gate is never in here. */
+  pending_confirmations?: string[];
+  confirmed?: string[];
+  /** Orchestration stage id -> the execution steps it owns; route metadata. */
+  stage_translation?: Record<string, string[]>;
+  stages?: OrchestrationStageCard[];
+}
+
+/**
+ * One pass over the plan's stages.
+ *
+ * The plan travels with the request rather than a prompt, because the board
+ * renders the stages of *that* plan: rebuilding it server-side from a prompt
+ * would let the cards show one plan while the pass advanced another.
+ *
+ * `confirm_stages` and `rewind_stage` are user actions and are only ever built
+ * from a click -- never defaulted to `true` at a call site.
+ */
+export interface OrchestrationRunRequest {
+  plan: DirectorBuildPlan;
+  engine?: string;
+  session_id?: string;
+  confirm_stages?: string[];
+  rewind_stage?: string;
+  allow_write?: boolean;
+  allow_execute?: boolean;
+  max_turns?: number;
 }
 
 export interface TaskItem {
@@ -634,9 +720,13 @@ export type WorkbenchToolName =
   | "prepare_creative_review_plan"
   | "prepare_qa_plan";
 
+/**
+ * The workbench's own tabs. `pipeline` is not among them: stage rows are the
+ * orchestration board's (`src/orchestration/`), reached at `/pipeline` rather
+ * than as a tab inside a view that shows a stage *snapshot*.
+ */
 export type WorkbenchPanelKey =
   | "overview"
-  | "pipeline"
   | "tasks"
   | "build"
   | "visuals"

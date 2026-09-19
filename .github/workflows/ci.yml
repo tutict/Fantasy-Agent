@@ -44,7 +44,7 @@ jobs:
         run: python scripts/mutation_check_all_guards.py
 
   frontend:
-    name: Frontend (typecheck + test + build)
+    name: Frontend (typecheck + test + build + mutation guards)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +54,14 @@ jobs:
           node-version: "22"
           cache: npm
 
+      # The frontend guards are vitest tests, so their mutations are driven by
+      # the vitest harness rather than the pytest one -- a second script instead
+      # of a second runner inside the first. It is standard-library only, but it
+      # does need `python` to exist on this runner.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
       - name: Install
         run: npm ci
 
@@ -62,6 +70,14 @@ jobs:
 
       - name: Test
         run: npm run frontend:test
+
+      # A harness nobody runs is indistinguishable from no harness, and these
+      # guards fail silently by construction: a source scan that stops matching
+      # still passes, it just stops checking anything. Same contract as the
+      # backend step -- every case must go red, and the summary names any case
+      # that could not be proven.
+      - name: Mutation guards
+        run: python scripts/mutation_check_frontend_guards.py
 
       - name: Build
         run: npm run frontend:build

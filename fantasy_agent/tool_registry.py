@@ -20,7 +20,7 @@ therefore never decides *whether* it may act -- only *what* to attempt.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -152,6 +152,52 @@ class ToolRegistry:
             for spec in sorted(self._tools.values(), key=lambda s: s.name)
             if PERMISSIONS.index(spec.permission) <= ceiling
         ]
+
+    def scoped(self, names: Iterable[str], *, up_to: str | None = None) -> ToolRegistry:
+        """A registry holding only ``names``, sharing this one's artifact store.
+
+        The orchestrator hands each stage its own whitelist. That derived
+        registry must share ``artifacts`` rather than copy it: the plan a
+        planning stage produced is what the engine stages read, so a private
+        store per stage would build the Godot tool with no gameplay spec at
+        all -- the exact failure ``_HIDDEN_ARG_SOURCES`` was added to prevent.
+
+        ``up_to`` applies the same tier ceiling ``schemas`` does, but as a
+        filter on the tool *set* rather than on what the model sees. It exists
+        so a caller can ask "does this stage have anything it is allowed to
+        run?" and answer it *before* spending a model turn on an empty set.
+
+        The two ways a name can fail to make it into the result mean different
+        things, so they are treated differently. A name that resolves to
+        nothing is a typo in a hand-written whitelist and raises; silently
+        dropping it would hand the stage an empty tool set and the stage would
+        read as "nothing to do here" rather than "this whitelist is wrong". A
+        name that resolves but sits above ``up_to`` is a runtime policy
+        outcome, not an error, so it is simply left out.
+
+        Raises:
+            ValueError: when any name is unknown. ``up_to`` that is not one of
+                ``PERMISSIONS`` raises too -- it comes from the caller, not
+                from data.
+        """
+
+        ceiling = len(PERMISSIONS) - 1 if up_to is None else PERMISSIONS.index(up_to)
+        derived = ToolRegistry()
+        unknown: list[str] = []
+        for name in names:
+            spec = self._tools.get(name)
+            if spec is None:
+                unknown.append(name)
+            elif PERMISSIONS.index(spec.permission) <= ceiling:
+                derived.register(spec)
+        if unknown:
+            raise ValueError(
+                f"unknown tool {', '.join(sorted(unknown))}; "
+                f"available: {', '.join(self.names())}"
+            )
+        # Shares the parent's dict on purpose -- see the docstring.
+        derived.artifacts = self.artifacts
+        return derived
 
     def call(
         self,

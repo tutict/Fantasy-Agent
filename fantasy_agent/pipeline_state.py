@@ -112,6 +112,90 @@ REWORK_CODE_STAGES: dict[str, str] = {
 }
 
 
+# The second translation layer. `REWORK_TARGET_STAGES` above connects an
+# authoring node to an *execution* stage; this connects an execution stage to
+# the *orchestration* stage that owns it, so a rework hint can be turned into
+# "resume from this card on the board".
+#
+# Two vocabularies, not one, and the split is deliberate. The three layers
+# answer different questions: a rework target says *what to fix*, an execution
+# stage says *which process step to re-run*, an orchestration stage says *which
+# production card is being redone*. Merging the last two would leak process
+# details (preflight, copy_refs) into the production semantics the board shows.
+#
+# An empty tuple is legal and means "this stage has no process step of its own"
+# -- exactly one stage qualifies, `creative_review`, because it is a person
+# reading art direction rather than a node that runs.
+#
+# Every value was checked against what `execute_godot_demo` /
+# `execute_unreal_demo` actually emit, not read off the source: `GODOT_STAGE_ORDER`
+# had drifted from its executor once already. The measured order is
+# `spec_validation, preflight, comfyui, blender, approval_gate, gameplay, create,
+# enemy_metrics, copy_assets, copy_refs, validate, import` for Godot and
+# `preflight, create, spec_compile, spec_qa, prepare_ingest, prepare_level,
+# validate` for Unreal, with `spec_validation` and the copy steps conditional.
+#
+# The plan for this work predicted `gameplay_orchestration` would be empty too.
+# Measurement says otherwise: the first two executor steps read the spec and
+# plan that stage produces, and leaving it empty would give a `prompt`-target
+# rework nowhere to land.
+ORCHESTRATION_TO_EXECUTOR_STAGES: dict[str, tuple[str, ...]] = {
+    "gameplay_orchestration": ("spec_validation", "preflight"),
+    "comfyui_visual_production": ("comfyui",),
+    "blender_modeling": ("blender",),
+    "creative_review": (),
+    "asset_integration": ("approval_gate", "copy_assets", "copy_refs"),
+    "godot_quick_play": ("gameplay", "create", "enemy_metrics", "validate", "import"),
+    "unreal_production": (
+        "create",
+        "spec_compile",
+        "spec_qa",
+        "prepare_ingest",
+        "prepare_level",
+        "validate",
+    ),
+    "optimization_testing": ("validate",),
+}
+
+
+def executor_stages_for(stage_id: str) -> tuple[str, ...]:
+    """Execution stages an orchestration stage stands for.
+
+    Raises:
+        ValueError: for an id that is not in the table. The alternative --
+            returning an empty tuple -- would make a typo indistinguishable
+            from ``creative_review``, which legitimately has no process step.
+    """
+
+    try:
+        return ORCHESTRATION_TO_EXECUTOR_STAGES[stage_id]
+    except KeyError:
+        known = ", ".join(sorted(ORCHESTRATION_TO_EXECUTOR_STAGES))
+        raise ValueError(
+            f"unknown orchestration stage {stage_id!r}; known stages: {known}"
+        ) from None
+
+
+def orchestration_stages_for(executor_stage: str) -> tuple[str, ...]:
+    """Orchestration stages whose translation contains ``executor_stage``.
+
+    More than one can match, and that is not a defect in the table: `create`,
+    `validate` and `preflight` happen on both routes, and `validate` is reached
+    from both a playable-verification card and an optimisation one. The caller
+    picks using the plan in hand -- see ``Orchestrator.rewind_for_rework`` --
+    rather than this module guessing which route the caller meant.
+
+    An empty result means "no orchestration stage claims this name", which is a
+    lookup that found nothing rather than a broken input, so it does not raise.
+    """
+
+    return tuple(
+        stage_id
+        for stage_id, executor_stages in ORCHESTRATION_TO_EXECUTOR_STAGES.items()
+        if executor_stage in executor_stages
+    )
+
+
 def normalize_resume_from(
     value: str,
     order: tuple[str, ...] = GODOT_STAGE_ORDER,

@@ -27,7 +27,7 @@ from fantasy_agent.contracts import (
     ProductionPipelineStageId,
     PromptRequest,
 )
-from fantasy_agent.tool_registry import combined_registry
+from fantasy_agent.tool_registry import READ_ONLY, combined_registry
 from fantasy_agent.workflows import run_director_workflow
 
 #: Both routes are built by the same function and ship a different stage list:
@@ -148,3 +148,83 @@ def test_a_stage_written_before_the_kind_field_still_loads_as_an_agent_stage():
     assert payload["kind"] == "agent", "the field must reach the frontend"
     payload.pop("kind")
     assert ProductionPipelineStage.model_validate(payload).kind == "agent"
+
+
+def _exit_check_problems(stages) -> list[str]:
+    """Every way an ``exit_checks`` entry can be unsafe to run unattended.
+
+    A function rather than an inline assertion because the guard needs a
+    positive control: no stage declares an exit check today, so scanning the
+    real pipelines alone would be a scan over an empty set that can only pass.
+    """
+
+    registry = combined_registry()
+    problems: list[str] = []
+    for stage in stages:
+        for name in stage.exit_checks:
+            spec = registry.get(name)
+            if spec is None:
+                problems.append(f"{stage.id} exits on unknown tool {name}")
+            elif spec.permission != READ_ONLY:
+                problems.append(f"{stage.id} exits on {name}, which is {spec.permission}")
+    return problems
+
+
+def test_every_exit_check_is_a_tool_that_cannot_launch_or_write_anything():
+    """An exit check is a *read* of the stage's output, never a second action.
+
+    The orchestrator runs these itself, outside the model's whitelist and
+    without waiting for a grant -- which is only safe while every name in the
+    list is a tool that computes and returns. A write or an execute tool here
+    would turn an exit check into an unreviewed engine launch, i.e. exactly the
+    side effect the permission gate exists to require confirmation for.
+
+    No stage declares one yet, on purpose: every exported ``quality_gates``
+    entry is a judgement a human makes, and the only read-only tool that takes
+    no arguments probes a network endpoint, which would turn "ComfyUI is not
+    installed" -- a degraded run, which AGENTS.md promises -- into a failed
+    stage. So the field is wired but unused, and the control below is what keeps
+    this scan from being an empty set that can only ever pass.
+    """
+
+    for route, pipeline in _pipelines().items():
+        assert _exit_check_problems(pipeline.stages) == [], route
+
+
+def test_the_exit_check_guard_would_catch_a_write_or_an_execute_tool():
+    """Positive control: the scan above has to be able to fail.
+
+    Both violation shapes are exercised, because they are caught by different
+    halves of the check -- an unresolvable name and a resolvable but
+    side-effecting one -- and a guard that only handles the first would let the
+    dangerous case through.
+    """
+
+    stage = ProductionPipelineStage(
+        id="blender_modeling",
+        order=1,
+        title="probe",
+        purpose="probe",
+        owner_agent="blender-worker",
+        inputs=["PromptRequest"],
+        outputs=["out"],
+        mcp_tools=["extract_idea_seed"],
+        exit_checks=["extract_idea_seed", "run_godot_import", "no_such_tool"],
+    )
+
+    problems = _exit_check_problems([stage])
+
+    assert any("no_such_tool" in problem for problem in problems)
+    assert any("run_godot_import" in problem for problem in problems)
+    assert not any(problem.endswith("extract_idea_seed") for problem in problems), (
+        "the control flagged a legitimate read-only check"
+    )
+
+
+def test_a_stage_written_before_the_exit_checks_field_still_loads():
+    """Same addition rule as `kind`: absent means "no machine checks", not "error"."""
+
+    payload = _stage(_pipelines()["Godot 4"], "godot_quick_play").model_dump(mode="json")
+    assert payload["exit_checks"] == [], "the field must reach the frontend"
+    payload.pop("exit_checks")
+    assert ProductionPipelineStage.model_validate(payload).exit_checks == []

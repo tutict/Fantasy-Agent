@@ -9,7 +9,7 @@ import {
   getSessionState
 } from "../shared/api";
 import { consoleI18n, makeTranslator } from "../shared/i18n";
-import { CONSOLE_LOCALE_KEY, THEME_KEY, initialLocale, initialTheme } from "../shared/storage";
+import { useLocaleTheme } from "../shared/localeTheme";
 import type {
   CorrectionMode,
   EnemyPressureTuning,
@@ -26,13 +26,11 @@ import {
   ReviewPanel,
   SpecBundlePanel,
   SpecRegenPanel,
-  localizedStageTitle,
   selectedEngineVersion,
   statusLabel,
   usesGodotEngine
 } from "./rendering";
 import {
-  localizedRoute,
   useActivityLog,
   useApprovalManifest,
   useAssetJobPolling,
@@ -87,9 +85,18 @@ const tabGroups: Array<{ labelKey: string; tabs: Array<[TabKey, string]> }> = [
   }
 ];
 
-export function FlowConsole() {
-  const [locale, setLocale] = useState<Locale>(() => initialLocale(CONSOLE_LOCALE_KEY));
-  const [theme, setTheme] = useState<Theme>(() => initialTheme());
+/**
+ * `active` defaults to true so the console behaves as it always did when it is
+ * rendered on its own -- which is how the component tests mount it. The shell
+ * passes the real value: a view it keeps mounted after the operator switches
+ * away is no longer the view a fresh handoff is addressed to.
+ */
+export function FlowConsole({ active = true }: { active?: boolean } = {}) {
+  // Locale and theme are the provider's, not this view's. The console used to
+  // own both and write `document.documentElement` itself -- correct while it was
+  // its own document, wrong now that it renders inside the shell, where two
+  // effects writing the same attribute is a race with no author.
+  const { locale, theme, setLocale, setTheme } = useLocaleTheme();
   const [status, setStatus] = useState<StatusState>("idle");
   const [selectedCorrectionMode, setSelectedCorrectionMode] = useState<CorrectionMode>("gameplay");
   const [correctionEntries, setCorrectionEntries] = useState<Array<{ mode: CorrectionMode; notes: string; createdAt: string }>>([]);
@@ -121,7 +128,7 @@ export function FlowConsole() {
     titleForPlan,
     renderHandoffTitle,
     loadPlanningHandoff
-  } = usePlanningHandoff({ locale, t, addActivity, setStatus });
+  } = usePlanningHandoff({ active, locale, t, addActivity, setStatus });
   const { manualTargetsPayload, loadManualTargets, fallbackManualTargets } = useManualTargets(currentPlan);
   const { specPreview, specPreviewError } = useSpecPreview(currentPlan, activeTab === "specs");
   const { request: specRegenRequest, regenerated, regenerating, regenError, regenerate, clear: clearRegen } =
@@ -160,16 +167,6 @@ export function FlowConsole() {
   const targets = manualTargetsPayload?.targets?.length ? manualTargetsPayload.targets : fallbackManualTargets();
   const recommendedTarget = targets.find((target) => target.id === recommendedManualTargetId()) || targets[0];
   const enemies = currentPlan?.gameplay_spec?.enemies || [];
-
-  useEffect(() => {
-    document.documentElement.lang = locale;
-    localStorage.setItem(CONSOLE_LOCALE_KEY, locale);
-  }, [locale]);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
 
   const { cancelling: demoCancelling, cancel: cancelDemoJob } = useDemoJobPolling({
     jobId: pollJobId,
@@ -210,7 +207,11 @@ export function FlowConsole() {
 
   const openManualTarget = async (targetId: string) => {
     if (targetId === "planning") {
-      window.open(localizedRoute("/workbench", locale, theme), "_blank", "noopener");
+      // Opened as a document of its own, so it reads locale and theme from the
+      // shared localStorage key -- the same one this window just wrote. It used
+      // to carry them across as `?locale=&theme=`, which was the last remaining
+      // copy of the parameter-passing protocol the iframes needed.
+      window.open("/workbench", "_blank", "noopener");
       addActivity(t("manualOpenStarted"), t("manualTargetPlanning"));
       return;
     }
@@ -348,9 +349,13 @@ export function FlowConsole() {
     }
   };
 
+  // Both metrics are computed from what this view holds. The console used to
+  // also show `production_pipeline.current_stage` / `next_stage` and a strip of
+  // the pipeline's stage rows -- plan-time values, written once when the plan
+  // was authored, rendered as if they were run state. The board is the one
+  // place that shows a stage's real status now; this view shows what it can
+  // actually vouch for.
   const metrics = {
-    currentStage: currentPlan?.production_pipeline?.current_stage || "-",
-    nextStage: currentPlan?.production_pipeline?.next_stage || "-",
     reviewItems: String(currentPlan?.creative_review?.items?.length || 0),
     blockedTasks: String((currentPlan?.task_breakdown?.tasks || []).filter((task) => task.status === "blocked").length)
   };
@@ -362,7 +367,7 @@ export function FlowConsole() {
           <span className="brand-mark" aria-hidden="true">FA</span>
           <div>
             <p className="eyebrow">{t("productLabel")}</p>
-            <h1>Fantasy Agent</h1>
+            <h1>{t("brandName")}</h1>
           </div>
         </div>
         <div className="plan-headline">
@@ -401,7 +406,7 @@ export function FlowConsole() {
         </div>
       </header>
 
-      <section className="workspace" aria-label="Fantasy Agent production cockpit">
+      <section className="workspace" aria-label={t("cockpitLabel")}>
         <aside className="side-rail plan-rail" aria-label="Plan intake and corrections">
           <p className="rail-title">{t("railPlanTitle")}</p>
 
@@ -547,25 +552,7 @@ export function FlowConsole() {
         </aside>
 
         <section className="center-pane" aria-label="Plan inspection">
-          <section className="stage-strip" aria-label="Production pipeline" id="stage-strip">
-            {currentPlan?.production_pipeline?.stages?.length
-              ? currentPlan.production_pipeline.stages.map((stage) => (
-                  <div className={`stage-node ${stage.status || ""} ${stage.id === currentPlan.production_pipeline?.current_stage ? "is-active" : ""}`} key={stage.id || stage.order}>
-                    <span>{String(stage.order ?? "").padStart(2, "0")}</span>
-                    <strong>{localizedStageTitle(stage, locale)}</strong>
-                  </div>
-                ))
-              : ["Gameplay", "ComfyUI", "Blender", "Review", "UE", "QA"].map((label, index) => (
-                  <div className={`stage-node ${index === 0 ? "is-active" : ""}`} key={label}>
-                    <span>{String(index + 1).padStart(2, "0")}</span>
-                    <strong>{label}</strong>
-                  </div>
-                ))}
-          </section>
-
           <section className="insight-row" aria-label="Plan metrics">
-            <Metric label={t("currentStage")} value={metrics.currentStage} id="metric-current-stage" />
-            <Metric label={t("nextStage")} value={metrics.nextStage} id="metric-next-stage" />
             <Metric label={t("reviewItems")} value={metrics.reviewItems} id="metric-review-items" />
             <Metric label={t("blockedTasks")} value={metrics.blockedTasks} id="metric-blocked-tasks" />
           </section>

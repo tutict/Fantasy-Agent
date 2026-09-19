@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import { FlowConsole } from "../console/FlowConsole";
+import { OrchestrationBoard } from "../orchestration/OrchestrationBoard";
 import {
   deleteLlmSettings,
   getLlmSettings,
@@ -10,41 +12,111 @@ import {
   testLlmSettings
 } from "../shared/api";
 import { makeTranslator, studioI18n } from "../shared/i18n";
-import {
-  HANDOFF_KEY,
-  STUDIO_LOCALE_KEY,
-  STUDIO_SIDEBAR_COLLAPSED_KEY,
-  STUDIO_SIDEBAR_WIDTH_KEY,
-  THEME_KEY,
-  initialLocale,
-  initialTheme
-} from "../shared/storage";
+import { useLocaleTheme } from "../shared/localeTheme";
+import { selectedEngineVersion } from "../shared/planModel";
+import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, readHandoffPlan } from "../shared/storage";
 import type {
   AgentRunResult,
-  Locale,
   LlmApiSettings,
   McpService,
   McpStatus,
-  Theme,
   ToolCatalog,
   ToolPermission
 } from "../shared/types";
+import { PlanningWorkbench } from "../workbench/PlanningWorkbench";
 import "../styles/studio.css";
 
-type PanelKey = "workbench" | "console" | "mcp" | "api" | "agent";
+type PanelKey = "workbench" | "pipeline" | "console" | "mcp" | "api" | "agent";
 
 const panels: Record<PanelKey, { titleKey: string; icon: string }> = {
   workbench: { titleKey: "workbench", icon: "PL" },
+  pipeline: { titleKey: "pipeline", icon: "OR" },
   console: { titleKey: "console", icon: "FC" },
   mcp: { titleKey: "mcp", icon: "MC" },
   api: { titleKey: "api", icon: "AI" },
   agent: { titleKey: "agent", icon: "AG" }
 };
 
+/** The three panels that are whole views, so they get their own URL. */
+const PANEL_ROUTES: Partial<Record<PanelKey, string>> = {
+  workbench: "/workbench",
+  pipeline: "/pipeline",
+  console: "/web-console"
+};
+
+const DEFAULT_PANEL: PanelKey = "workbench";
+
+function basePath(): string {
+  return import.meta.env.BASE_URL.replace(/\/$/, "");
+}
+
+/**
+ * The panel a pathname selects.
+ *
+ * This used to live in `main.tsx`, which rendered a different root component per
+ * path: `/workbench` got a bare `PlanningWorkbench`, `/web-console` a bare
+ * `FlowConsole`, everything else the shell with those two inside iframes. Two
+ * chromes for the same view, and the shell's copy of the path was decided by
+ * `src=` attributes. One root component now reads the path once.
+ */
+function panelFromPathname(): PanelKey {
+  const base = basePath();
+  const pathname = window.location.pathname;
+  const route = base && base !== "/" && pathname.startsWith(base) ? pathname.slice(base.length) || "/" : pathname;
+
+  if (route.startsWith("/web-console")) return "console";
+  if (route.startsWith("/pipeline")) return "pipeline";
+  return DEFAULT_PANEL;
+}
+
+/**
+ * The URL for a panel that has one.
+ *
+ * Two hosts serve these routes and they do not agree on the prefix. In
+ * production FastAPI serves `/web-console` and `/workbench` at the root and only
+ * the *assets* live under `BASE_URL`; in the dev server Vite serves the whole app
+ * under `BASE_URL`, so the route has to carry it. Pushing the base-prefixed path
+ * in production would send the next reload into a 404.
+ *
+ * `dev` and `base` are parameters rather than closed-over values so that the
+ * production branch is reachable from a test. `import.meta.env.DEV` is
+ * substituted at build time, so it is `true` in every test environment and the
+ * branch it guards cannot be taken through the module's own import -- which is
+ * exactly how a base-prefixed path shipped unnoticed until it was traced by
+ * hand.
+ */
+export function panelHref(
+  panel: PanelKey,
+  dev: boolean = import.meta.env.DEV,
+  base: string = basePath()
+): string | null {
+  const route = PANEL_ROUTES[panel];
+  if (!route) return null;
+
+  return dev && base ? `${base}${route}` : route;
+}
+
 export function StudioShell() {
-  const [locale, setLocale] = useState<Locale>(() => initialLocale(STUDIO_LOCALE_KEY));
-  const [theme, setTheme] = useState<Theme>(() => initialTheme());
-  const [activePanel, setActivePanel] = useState<PanelKey>("workbench");
+  // Locale and theme come from the single provider. The shell used to own its own
+  // copy and write the document element itself, which was fine while the views
+  // lived in iframes -- three documents, three <html>. They are inline now.
+  const { locale, theme, setLocale, setTheme } = useLocaleTheme();
+  const [activePanel, setActivePanel] = useState<PanelKey>(panelFromPathname);
+  // Mounted on first visit, then kept mounted and hidden with CSS.
+  //
+  // The console polls the execute-status endpoint while a job is in flight and
+  // holds the planning conversation in component state, so unmounting it on a
+  // panel switch would abandon a running job's progress tracking. Today the
+  // iframe stayed mounted forever and the question never came up; the difference
+  // after this change is that the second view is no longer fetched until it is
+  // first opened.
+  //
+  // The route is named rather than spelled out on purpose: the endpoint-coverage
+  // guard reads any api-path literal in a non-test source -- comment included --
+  // as a call site, because prose and code look the same to a regex. This comment
+  // used to carry the path, and the guard went red for an endpoint that does not
+  // exist. Writing the pattern here to explain that only repeats the mistake.
+  const [visitedPanels, setVisitedPanels] = useState<PanelKey[]>(() => [panelFromPathname()]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem(STUDIO_SIDEBAR_COLLAPSED_KEY) === "1");
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = Number(localStorage.getItem(STUDIO_SIDEBAR_WIDTH_KEY));
@@ -57,15 +129,27 @@ export function StudioShell() {
   const t = useMemo(() => makeTranslator(locale, studioI18n), [locale]);
 
   useEffect(() => {
-    document.documentElement.lang = locale;
     document.title = t("documentTitle");
-    localStorage.setItem(STUDIO_LOCALE_KEY, locale);
-  }, [locale, t]);
+  }, [t]);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem(THEME_KEY, theme);
-  }, [theme]);
+    setVisitedPanels((visited) => (visited.includes(activePanel) ? visited : [...visited, activePanel]));
+  }, [activePanel]);
+
+  // Back/forward move between the panels that have a route of their own.
+  useEffect(() => {
+    const syncFromHistory = () => setActivePanel(panelFromPathname());
+    window.addEventListener("popstate", syncFromHistory);
+    return () => window.removeEventListener("popstate", syncFromHistory);
+  }, []);
+
+  const selectPanel = useCallback((next: PanelKey) => {
+    setActivePanel(next);
+    const href = panelHref(next);
+    if (href && window.location.pathname !== href) {
+      window.history.pushState({ panel: next }, "", href);
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(STUDIO_SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? "1" : "0");
@@ -79,7 +163,7 @@ export function StudioShell() {
     setCheckingMcp(true);
     setMcpError(null);
     try {
-      setMcpStatus(await getMcpStatus(selectedEngineVersion()));
+      setMcpStatus(await getMcpStatus(handedOffEngineVersion()));
     } catch (error) {
       setMcpStatus(null);
       setMcpError(String(error));
@@ -94,13 +178,6 @@ export function StudioShell() {
     }
   }, [activePanel, checkingMcp, loadMcpStatus, mcpStatus]);
 
-  const localizedHref = (href: string, params: Record<string, string> = {}) => {
-    const search = new URLSearchParams({ locale, theme, ...params });
-    const base = import.meta.env.BASE_URL.replace(/\/$/, "");
-    const frontendRoute = href === "/web-console" && import.meta.env.DEV && base ? `${base}${href}` : href;
-    return `${frontendRoute}?${search.toString()}`;
-  };
-
   return (
     <main
       className={`studio-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`}
@@ -111,7 +188,7 @@ export function StudioShell() {
           <div className="brand-mark">FA</div>
           <div className="brand">
             <p>{t("productLabel")}</p>
-            <h1>Fantasy Agent</h1>
+            <h1>{t("brandName")}</h1>
           </div>
           <button
             className="collapse-button"
@@ -146,7 +223,7 @@ export function StudioShell() {
 
         <nav className="studio-nav" aria-label="Studio panels">
           {(Object.entries(panels) as Array<[PanelKey, { titleKey: string; icon: string }]>).map(([key, panel]) => (
-            <button className={activePanel === key ? "active" : ""} type="button" data-target={key} key={key} onClick={() => setActivePanel(key)}>
+            <button className={activePanel === key ? "active" : ""} type="button" data-target={key} key={key} onClick={() => selectPanel(key)}>
               <span className="nav-icon">{panel.icon}</span>
               <span className="nav-label">{t(panel.titleKey)}</span>
             </button>
@@ -189,20 +266,41 @@ export function StudioShell() {
         </header>
 
         <section className="studio-panel-frame">
-          <iframe
-            className={`studio-frame ${activePanel === "workbench" ? "active" : ""}`}
-            data-frame="workbench"
-            data-panel="workbench"
-            title={t("workbenchFrameTitle")}
-            src={localizedHref("/workbench", { embed: "1" })}
-          />
-          <iframe
-            className={`studio-frame ${activePanel === "console" ? "active" : ""}`}
-            data-frame="console"
-            data-panel="console"
-            title={t("consoleFrameTitle")}
-            src={localizedHref("/web-console", { embed: "1" })}
-          />
+          {visitedPanels.includes("workbench") && (
+            <section
+              className={`studio-frame ${activePanel === "workbench" ? "active" : ""}`}
+              data-frame="workbench"
+              data-panel="workbench"
+              aria-hidden={activePanel !== "workbench"}
+            >
+              <PlanningWorkbench />
+            </section>
+          )}
+          {visitedPanels.includes("pipeline") && (
+            <section
+              className={`studio-frame ${activePanel === "pipeline" ? "active" : ""}`}
+              data-frame="pipeline"
+              data-panel="pipeline"
+              aria-hidden={activePanel !== "pipeline"}
+            >
+              <OrchestrationBoard
+                active={activePanel === "pipeline"}
+                locale={locale}
+                t={t}
+                onOpenConsole={() => selectPanel("console")}
+              />
+            </section>
+          )}
+          {visitedPanels.includes("console") && (
+            <section
+              className={`studio-frame ${activePanel === "console" ? "active" : ""}`}
+              data-frame="console"
+              data-panel="console"
+              aria-hidden={activePanel !== "console"}
+            >
+              <FlowConsole active={activePanel === "console"} />
+            </section>
+          )}
           <section className={`mcp-panel ${activePanel === "mcp" ? "active" : ""}`} data-panel="mcp">
             <div className="mcp-header">
               <div>
@@ -217,7 +315,7 @@ export function StudioShell() {
               {checkingMcp
                 ? t("mcpChecking")
                 : mcpStatus
-                  ? `${t("mcpSelectedEngine")}: ${mcpStatus.engine || selectedEngineVersion()} - ${mcpStatus.required_ready ?? 0}/${mcpStatus.required_total ?? 0} ${t("mcpStatusSummary")}`
+                  ? `${t("mcpSelectedEngine")}: ${mcpStatus.engine || handedOffEngineVersion()} - ${mcpStatus.required_ready ?? 0}/${mcpStatus.required_total ?? 0} ${t("mcpStatusSummary")}`
                   : t("mcpChecking")}
             </p>
             <div className="mcp-status-grid" id="mcp-status-grid">
@@ -245,6 +343,7 @@ export function StudioShell() {
 function panelEndpoint(panel: PanelKey) {
   if (panel === "mcp") return "/api/tool-status";
   if (panel === "console") return "/web-console";
+  if (panel === "pipeline") return "/api/orchestration/run";
   if (panel === "api") return "/api/settings/llm";
   if (panel === "agent") return "/api/agent/run";
   return "/workbench";
@@ -746,26 +845,21 @@ function AgentPanel({ t }: { t: Translator }) {
   );
 }
 
-function selectedEngineVersion() {
-  try {
-    const handoff = JSON.parse(localStorage.getItem(HANDOFF_KEY) || "{}") as {
-      plan?: {
-        production_pipeline?: { stages?: Array<{ id?: string }> };
-        godot_plan?: { engine_version?: string };
-        unreal_plan?: { engine_version?: string };
-      };
-    };
-    const stages = handoff?.plan?.production_pipeline?.stages || [];
-    if (stages.some((stage) => String(stage.id || "").includes("godot"))) {
-      return handoff?.plan?.godot_plan?.engine_version || "Godot 4";
-    }
-    if (stages.some((stage) => String(stage.id || "").includes("unreal"))) {
-      return handoff?.plan?.unreal_plan?.engine_version || "UE5";
-    }
-  } catch {
-    return "UE5";
-  }
-  return "UE5";
+/**
+ * The engine version of the plan the workbench handed over.
+ *
+ * This used to be a second implementation here -- `JSON.parse` straight out of
+ * `localStorage`, then a substring match on stage ids. `shared/planModel.ts`
+ * already answered the same question from a plan, so there were two truths, and
+ * the copy here was the looser one: `id.includes("godot")` against a planModel
+ * check for the exact stage id. The contract makes them equivalent
+ * (`ProductionPipelineStage.id` is an 8-member `Literal`, and the only member
+ * containing "godot" is `godot_quick_play`), so folding them into one is a
+ * behaviour-preserving simplification rather than a behaviour change -- and it
+ * drops a decoder that answered "UE5" to both "no handoff" and "corrupt handoff".
+ */
+function handedOffEngineVersion(): string {
+  return selectedEngineVersion(readHandoffPlan());
 }
 
 function McpCard({ service, t }: { service: McpService; t: (key: string, args?: Record<string, unknown>) => string }) {

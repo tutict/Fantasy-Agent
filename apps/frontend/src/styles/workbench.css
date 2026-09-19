@@ -1,74 +1,10 @@
 /*
  * Planning workbench styles.
  *
- * Like the other top-level pages, this file carries its own copy of the design
- * tokens: `console.css` and `studio.css` each ship one, and the workbench is
- * loaded as its own document inside the Studio iframe.
+ * Custom properties live in `tokens.css` (imported once from `main.tsx`); this
+ * file carries layout only. `shared/tokenOwnership.test.ts` fails the build if a
+ * `--*` definition reappears here.
  */
-
-:root {
-  color-scheme: light;
-  --bg: #f4f7f3;
-  --grid-line-a: rgba(7, 10, 8, 0.045);
-  --grid-line-b: rgba(7, 10, 8, 0.035);
-  --chrome: rgba(247, 250, 246, 0.94);
-  --chrome-strong: rgba(255, 255, 255, 0.96);
-  --surface: rgba(255, 255, 255, 0.78);
-  --surface-strong: rgba(255, 255, 255, 0.92);
-  --surface-muted: rgba(7, 10, 8, 0.035);
-  --field: #ffffff;
-  --code-bg: rgba(7, 10, 8, 0.045);
-  --tab-bg: rgba(255, 255, 255, 0.62);
-  --pill-bg: rgba(3, 95, 82, 0.07);
-  --line: rgba(7, 10, 8, 0.12);
-  --line-strong: rgba(0, 118, 101, 0.36);
-  --text: #0b1713;
-  --text-soft: #3a463f;
-  --muted: #5d695f;
-  --muted-strong: #26332e;
-  --accent: #007966;
-  --accent-deep: #005c4d;
-  --accent-soft: rgba(0, 121, 102, 0.12);
-  --blue: #126fb5;
-  --blue-soft: rgba(18, 111, 181, 0.12);
-  --amber: #9a5b12;
-  --amber-soft: rgba(154, 91, 18, 0.12);
-  --danger: #b4232c;
-  --danger-soft: rgba(180, 35, 44, 0.11);
-  --shadow: 0 18px 44px rgba(19, 35, 29, 0.12);
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #070a08;
-  --grid-line-a: rgba(255, 255, 255, 0.018);
-  --grid-line-b: rgba(255, 255, 255, 0.014);
-  --chrome: rgba(8, 11, 9, 0.9);
-  --chrome-strong: rgba(8, 11, 9, 0.96);
-  --surface: rgba(255, 255, 255, 0.04);
-  --surface-strong: rgba(255, 255, 255, 0.07);
-  --surface-muted: rgba(255, 255, 255, 0.025);
-  --field: #0b0f0d;
-  --code-bg: rgba(0, 0, 0, 0.28);
-  --tab-bg: rgba(0, 0, 0, 0.16);
-  --pill-bg: rgba(0, 0, 0, 0.16);
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(0, 255, 204, 0.34);
-  --text: #ffffff;
-  --text-soft: #c7cfc8;
-  --muted: #8b938b;
-  --muted-strong: #b8c1b7;
-  --accent: #00ffcc;
-  --accent-deep: #0c8f7f;
-  --accent-soft: rgba(0, 255, 204, 0.12);
-  --blue: #39a8ff;
-  --blue-soft: rgba(57, 168, 255, 0.12);
-  --amber: #e8a356;
-  --amber-soft: rgba(232, 163, 86, 0.12);
-  --danger: #ff6b6b;
-  --danger-soft: rgba(255, 107, 107, 0.12);
-  --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
-}
 
 * {
   box-sizing: border-box;
@@ -96,13 +32,11 @@ button {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  min-height: 100vh;
+  /* Relative to the host frame rather than the viewport: the workbench used to
+     be its own document, and `.studio-frame` is shorter than the viewport by
+     the shell's top bar. */
+  min-height: 100%;
   padding: 14px;
-}
-
-.wb-shell.embedded {
-  padding: 10px;
-  gap: 10px;
 }
 
 .wb-topbar {

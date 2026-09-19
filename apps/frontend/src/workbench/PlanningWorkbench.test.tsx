@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlanningWorkbench } from "./PlanningWorkbench";
+import { LocaleThemeProvider } from "../shared/localeTheme";
 
 /**
  * These cover the behaviour that the retired static page got right by accident
@@ -9,6 +10,19 @@ import { PlanningWorkbench } from "./PlanningWorkbench";
  * question per answer, no plan tool may run before the idea is confirmed, and
  * a finished plan has to be handed to the flow console through localStorage.
  */
+
+/**
+ * The workbench reads locale and theme from the shared provider and throws
+ * outside it -- deliberately, so a forgotten provider fails loudly rather than
+ * growing a second copy of the locale.
+ */
+function renderWorkbench() {
+  return render(
+    <LocaleThemeProvider>
+      <PlanningWorkbench />
+    </LocaleThemeProvider>
+  );
+}
 
 interface CapturedCall {
   url: string;
@@ -198,7 +212,7 @@ function toolButton(tool: string) {
 
 describe("planning workbench interview", () => {
   it("treats the first message as the idea and the next ones as answers", async () => {
-    render(<PlanningWorkbench />);
+    renderWorkbench();
     send("rooftop parkour courier");
     send("a courier");
     send("wall-run");
@@ -212,7 +226,7 @@ describe("planning workbench interview", () => {
   });
 
   it("keeps plan tools locked until the idea is confirmed", async () => {
-    render(<PlanningWorkbench />);
+    renderWorkbench();
     send("rooftop parkour courier");
     fillSeed();
 
@@ -223,7 +237,7 @@ describe("planning workbench interview", () => {
   });
 
   it("exposes every backend planning tool, not just the three the old page wired", () => {
-    render(<PlanningWorkbench />);
+    renderWorkbench();
     const wired = Array.from(document.querySelectorAll("[data-tool]")).map((node) =>
       node.getAttribute("data-tool")
     );
@@ -245,7 +259,7 @@ describe("planning workbench interview", () => {
 describe("planning workbench tool calls", () => {
   it("posts the interview answers when extracting an idea seed", async () => {
     responder = () => seedEnvelope();
-    render(<PlanningWorkbench />);
+    renderWorkbench();
     send("rooftop parkour courier");
     send("a courier");
 
@@ -261,7 +275,7 @@ describe("planning workbench tool calls", () => {
 
   it("fills the editor from a returned seed", async () => {
     responder = () => seedEnvelope();
-    render(<PlanningWorkbench />);
+    renderWorkbench();
     send("rooftop parkour courier");
     fireEvent.click(screen.getByText("Extract idea"));
 
@@ -274,7 +288,7 @@ describe("planning workbench tool calls", () => {
 
   it("generates a plan and hands it to the flow console", async () => {
     responder = (url) => (url.includes("generate_game_production_plan") ? planEnvelope() : {});
-    render(<PlanningWorkbench />);
+    renderWorkbench();
     send("rooftop parkour courier");
     fillSeed();
     fireEvent.click(confirmButton());
@@ -290,9 +304,9 @@ describe("planning workbench tool calls", () => {
     expect(screen.getByTestId("plan-title").textContent).toBe("Neon Rooftops");
   });
 
-  it("renders the pipeline and tasks returned by the backend", async () => {
+  it("renders the tasks returned by the backend", async () => {
     responder = (url) => (url.includes("generate_game_production_plan") ? planEnvelope() : {});
-    render(<PlanningWorkbench />);
+    renderWorkbench();
     send("rooftop parkour courier");
     fillSeed();
     fireEvent.click(confirmButton());
@@ -301,19 +315,11 @@ describe("planning workbench tool calls", () => {
 
     await waitFor(() => expect(screen.getByTestId("plan-title").textContent).toBe("Neon Rooftops"));
 
-    fireEvent.click(panelTab("pipeline"));
-    await waitFor(() => expect(document.body.textContent).toContain("Godot quick play"));
-    expect(document.body.textContent).toContain("Confirmation required");
-    /**
-     * The contract has carried `depends_on` since the beginning and `kind`
-     * since the orchestrator work landed; the panel rendered neither, so a
-     * human gate looked exactly like an agent stage that forgot its tools.
-     */
-    expect(document.body.textContent).toContain("Human gate");
-    expect(document.body.textContent).toContain("Dependencies: godot_quick_play");
-    expect(document.body.textContent).toContain("Risks: approval blocks the import");
-    expect(document.body.textContent).toContain("2 stages");
-
+    // There used to be a `pipeline` tab here, asserting this view rendered the
+    // plan's stages along with `depends_on`, `kind` and `risks`. That tab is
+    // gone: stages are the orchestration board's, and those four assertions
+    // moved to `orchestration/OrchestrationBoard.test.tsx`, where the same
+    // fields are checked against the one place they are drawn.
     fireEvent.click(panelTab("tasks"));
     await waitFor(() => expect(document.body.textContent).toContain("Assemble scene"));
     expect(document.body.textContent).toContain("Dependencies: t0");
@@ -322,7 +328,7 @@ describe("planning workbench tool calls", () => {
 
   it("shows the GDD for the active locale", async () => {
     responder = (url) => (url.includes("generate_game_production_plan") ? planEnvelope() : {});
-    const { container } = render(<PlanningWorkbench />);
+    const { container } = renderWorkbench();
     send("rooftop parkour courier");
     fillSeed();
     fireEvent.click(confirmButton());
@@ -346,7 +352,7 @@ describe("planning workbench tool calls", () => {
             _meta: { toolName: "prepare_qa_plan", activePanel: "qa" }
           }
         : {};
-    render(<PlanningWorkbench />);
+    renderWorkbench();
     send("rooftop parkour courier");
     fillSeed();
     fireEvent.click(confirmButton());
@@ -371,7 +377,7 @@ describe("planning workbench tool calls", () => {
         )
       )
     );
-    render(<PlanningWorkbench />);
+    renderWorkbench();
     send("rooftop parkour courier");
     fillSeed();
     fireEvent.click(confirmButton());

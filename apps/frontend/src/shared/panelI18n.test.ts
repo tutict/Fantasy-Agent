@@ -169,14 +169,11 @@ describe("shared panel translation keys", () => {
 });
 
 describe("single implementation", () => {
-  const SHARED_PANELS = [
-    "OverviewPanel",
-    "PipelinePanel",
-    "TasksPanel",
-    "BuildPanel",
-    "VisualsPanel",
-    "QaPanel"
-  ];
+  // `PipelinePanel` used to be on this list. It is gone rather than shared:
+  // stage rows belong to the orchestration board, which renders the runtime
+  // status a plan-time row cannot. `orchestrationOwnership.test.ts` is what
+  // keeps them from coming back.
+  const SHARED_PANELS = ["OverviewPanel", "TasksPanel", "BuildPanel", "VisualsPanel", "QaPanel"];
 
   it("exports each shared panel from the shared module", () => {
     const missing = SHARED_PANELS.filter(

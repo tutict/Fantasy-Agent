@@ -33,7 +33,12 @@ def test_web_console_ui_exposes_flow_console_sections():
     frontend_storage = module.REPO_ROOT.joinpath("apps/frontend/src/shared/storage.ts").read_text(encoding="utf-8")
 
     assert module.health()["agent"] == "fantasy-agent-studio"
-    assert 'id="stage-strip"' in frontend_source
+    # The stage strip used to be asserted here. It moved to the orchestration
+    # board, which is now the only reader of `production_pipeline` -- so this
+    # side of the boundary is pinned as an *absence*, and
+    # `test_orchestration_board_owns_the_stage_rows` pins the other side. A
+    # "presence in either file" assertion would let the dead copy keep passing.
+    assert 'id="stage-strip"' not in frontend_source
     assert 'id="gate-summary"' in frontend_source
     assert 'id={`${tab}-panel`}' in frontend_source
     assert 'id="activity-log"' in frontend_source
@@ -75,6 +80,40 @@ def test_web_console_ui_exposes_flow_console_sections():
         module.ManualCorrectionOpenRequest(target_id="blender", confirmed_side_effects=False)
     )
     assert blocked["status"] == "blocked"
+
+
+def test_orchestration_board_owns_the_stage_rows():
+    """The board is the only reader of `production_pipeline`.
+
+    F3 moved the stage rows out of the console and out of the workbench, because
+    a plan has to be *run* from the same view that draws it -- and the two had
+    drifted into showing a plan-time snapshot of what the console was actually
+    executing. The console test above pins this boundary as an absence; this
+    pins the other side, so "the rows are gone from both" cannot pass as a fix.
+
+    Only the load-bearing anchors are asserted here. What each card *does* with
+    them (human gates get an approval entry point rather than an approve button,
+    a rework click sends `rewind_stage`, a refusal list is shown) is covered by
+    `apps/frontend/src/orchestration/OrchestrationBoard.test.tsx`, where it can
+    be clicked; duplicating it as text matching would produce two guards that
+    can only disagree.
+    """
+
+    module = _load_studio_app()
+    board_source = module.REPO_ROOT.joinpath(
+        "apps/frontend/src/orchestration/OrchestrationBoard.tsx"
+    ).read_text(encoding="utf-8")
+
+    assert 'data-testid="orchestration-board"' in board_source
+    assert 'id="orchestration-cards"' in board_source
+    # Plan status and run status are two vocabularies over one card, and the card
+    # root carries both: rendering only one of them hides either "the plan says
+    # this is ready" or "the run is blocked on approval", which is the whole
+    # reason the split exists. `data-stage` is what makes the rows rows.
+    assert (
+        "data-stage={card.id} data-status={card.status} "
+        "data-plan-status={card.plan_status}"
+    ) in board_source
 
 
 def test_ui_routes_refuse_to_serve_a_stale_page_when_the_bundle_is_missing(monkeypatch, tmp_path):

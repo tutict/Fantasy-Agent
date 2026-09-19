@@ -203,10 +203,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "C1 the ComfyUI panel answers for itself instead of asking the resolver",
         "apps/studio/app/main.py",
         b"    target = local_tools._comfyui_target()\n",
-        (
-            b'    target = {"status": "ready", "target": "http://127.0.0.1:8188",'
-            b' "metadata": {}}\n'
-        ),
+        (b'    target = {"status": "ready", "target": "http://127.0.0.1:8188", "metadata": {}}\n'),
         "tests/test_studio_app.py::test_the_comfyui_panel_asks_the_shared_resolver_instead_of_probing_again",
     ),
     (
@@ -263,7 +260,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "fantasy_agent/local_tools.py",
         (
             b"    try:\n"
-            b"        payload = json.loads(manifest.read_text(encoding=\"utf-8-sig\"))\n"
+            b'        payload = json.loads(manifest.read_text(encoding="utf-8-sig"))\n'
             b"    except (OSError, ValueError):\n"
             b"        return []\n"
         ),
@@ -526,10 +523,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
     (
         "D16 a hidden argument the model sent is kept",
         "fantasy_agent/tool_registry.py",
-        (
-            b"        for argument in hidden:\n"
-            b"            args.pop(argument, None)\n"
-        ),
+        (b"        for argument in hidden:\n            args.pop(argument, None)\n"),
         (
             b"        for argument in hidden:\n"
             b"            pass  # mutation: the model's value is kept\n"
@@ -539,10 +533,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
     (
         "D17 a spec's own words go into a GDScript literal unescaped",
         "fantasy_agent/gameplay_codegen.py",
-        (
-            b"    return \" \".join(text.split()).replace(\"\\\\\", \"\\\\\\\\\")"
-            b".replace('\"', \"'\")\n"
-        ),
+        (b'    return " ".join(text.split()).replace("\\\\", "\\\\\\\\").replace(\'"\', "\'")\n'),
         b"    return text.replace('\"', \"'\")\n",
         "tests/test_gameplay_codegen_axis.py::test_spec_text_cannot_break_the_generated_literal",
     ),
@@ -609,10 +600,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
     (
         "T6 the declared orders stop being renumbered",
         "fantasy_agent/workflows.py",
-        (
-            b"    for index, stage in enumerate(stages, start=1):\n"
-            b"        stage.order = index\n"
-        ),
+        (b"    for index, stage in enumerate(stages, start=1):\n        stage.order = index\n"),
         b"",
         "tests/test_pipeline_contract.py::test_the_order_is_a_dense_sequence_covering_every_stage_once",
     ),
@@ -629,6 +617,357 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         b'        next_stage="comfyui_visual_production",\n',
         b'        next_stage="unreal_production",\n',
         "tests/test_pipeline_contract.py::test_the_pipeline_references_only_stages_a_route_actually_builds",
+    ),
+    (
+        # The default value, not a construction site: `_pipeline_stage()` never
+        # passes `exit_checks`, so a dangerous default arrives on *every* stage
+        # of both routes. Same shape as T4 -- a field whose default is the only
+        # thing standing between the table and an unreviewed engine launch.
+        "T9 the exit checks default to a tool that launches a process",
+        "fantasy_agent/contracts.py",
+        b"    exit_checks: list[str] = Field(default_factory=list)\n",
+        b'    exit_checks: list[str] = Field(default_factory=lambda: ["run_godot_import"])\n',
+        "tests/test_pipeline_contract.py::test_every_exit_check_is_a_tool_that_cannot_launch_or_write_anything",
+    ),
+    (
+        "T10 a failing exit check stops failing the stage",
+        "fantasy_agent/orchestrator.py",
+        b'            if check.status != "ok":\n',
+        b"            if False:\n",
+        "tests/test_orchestrator.py::test_an_exit_check_that_reports_a_problem_makes_the_stage_failed",
+    ),
+    (
+        # A check nobody can run is a check that verified nothing, so skipping
+        # an unresolvable name turns a typo in the table into a stage that
+        # reports itself verified.
+        #
+        # The mutation `continue`s rather than deleting the branch. An earlier
+        # version of this case replaced the condition with `False`, and the
+        # guard stayed green -- correctly: `ToolRegistry.call` answers an unknown
+        # name with an `error` outcome, so the stage still failed and the test's
+        # assertion (`the name is in the detail`) still held. That is an
+        # equivalent mutation, not a missed one: behaviour did not change, so
+        # there was nothing for a behavioural guard to catch. Only the *skip*
+        # is a regression the guard is about.
+        "T11 an unresolvable exit check is skipped instead of failing the stage",
+        "fantasy_agent/orchestrator.py",
+        (
+            b"            if self._registry.get(name) is None:\n"
+            b"                outcome.status = FAILED\n"
+            b"                outcome.detail = (\n"
+            b'                    f"exit check {name} is not a registered tool, so this stage "\n'
+            b'                    "would have been reported verified without being checked"\n'
+            b"                )\n"
+            b"                return\n"
+        ),
+        b"            if self._registry.get(name) is None:\n                continue\n",
+        "tests/test_orchestrator.py::test_an_exit_check_that_names_nothing_fails_the_stage_instead_of_being_skipped",
+    ),
+    (
+        # The check has to go through the *full* registry: routing it through
+        # the stage's slice looks harmless and then silently skips every check
+        # the stage does not also offer the model.
+        "T12 the exit check is looked up in the model's whitelist",
+        "fantasy_agent/orchestrator.py",
+        b"            check = self._registry.call(name, {})\n",
+        (b"            check = self._registry.scoped(outcome.tools).call(name, {})\n"),
+        "tests/test_orchestrator.py::test_an_exit_check_runs_even_when_it_is_not_in_the_stages_whitelist",
+    ),
+    (
+        # The contract's own Literal is the source of truth for "which stage ids
+        # exist", so a stage nobody translated is a rework path that dead-ends.
+        "T13 an orchestration stage loses its translation",
+        "fantasy_agent/pipeline_state.py",
+        b'    "optimization_testing": ("validate",),\n',
+        b"",
+        "tests/test_pipeline_state.py::test_every_orchestration_stage_has_a_translation_entry",
+    ),
+    (
+        "T14 the reverse lookup stops finding anything",
+        "fantasy_agent/pipeline_state.py",
+        b"        if executor_stage in executor_stages\n",
+        b"        if executor_stage == executor_stages\n",
+        "tests/test_pipeline_state.py::test_a_translation_is_readable_in_both_directions",
+    ),
+    (
+        # `>=` is what makes the target itself re-run; with `>` a rework would
+        # drop everything *after* the node and leave the broken node finished.
+        "T15 the rewind spares the stage it was aimed at",
+        "fantasy_agent/orchestrator.py",
+        b"                if position >= cutoff and other in self._outcomes\n",
+        b"                if position > cutoff and other in self._outcomes\n",
+        "tests/test_orchestrator.py::test_rewinding_from_a_stage_makes_the_next_pass_redo_it",
+    ),
+    (
+        # `resume_stage_for` refuses unknown targets so a typo surfaces; a
+        # default here would undo that one layer later and rewind a stage the
+        # hint never named.
+        "T16 an unknown rework target silently rewinds `create`",
+        "fantasy_agent/orchestrator.py",
+        (
+            b"        executor_stage = resume_stage_for(rework_target, code)\n"
+            b"        if executor_stage is None:\n"
+            b"            return None\n"
+        ),
+        b'        executor_stage = resume_stage_for(rework_target, code) or "create"\n',
+        "tests/test_orchestrator.py::test_an_unrecognised_hint_leaves_the_run_alone",
+    ),
+    (
+        # An unknown stage id and "this stage owns no process step" are two
+        # different answers, and only the second one is empty.
+        "T17 an unknown orchestration stage translates to no steps",
+        "fantasy_agent/pipeline_state.py",
+        (
+            b"    except KeyError:\n"
+            b'        known = ", ".join(sorted(ORCHESTRATION_TO_EXECUTOR_STAGES))\n'
+            b"        raise ValueError(\n"
+            b'            f"unknown orchestration stage {stage_id!r}; known stages: {known}"\n'
+            b"        ) from None\n"
+        ),
+        b"    except KeyError:\n        return ()\n",
+        "tests/test_pipeline_state.py::test_translating_an_unknown_orchestration_stage_fails_loudly",
+    ),
+    (
+        # The stage-level gate. Without it `requires_confirmation` is a badge,
+        # and a global grant would authorise every stage in the plan.
+        "T18 a stage that asks for confirmation runs anyway",
+        "fantasy_agent/orchestrator.py",
+        b"        if stage.requires_confirmation and stage.id not in self._confirmed:\n",
+        b"        if False:\n",
+        "tests/test_orchestrator.py::test_a_stage_that_asks_for_confirmation_waits_for_a_person",
+    ),
+    (
+        # The approval is a user action that arrives with the request; dropping
+        # it means "approve stage 3" is silently ignored and the stage waits
+        # forever with a live button in front of it.
+        "T19 an approval never reaches the orchestrator",
+        "fantasy_agent/orchestrator.py",
+        b"        self.confirm(confirm_stages)\n",
+        b"        self.confirm(())\n",
+        "tests/test_orchestrator.py::test_confirming_the_stage_lets_it_run",
+    ),
+    (
+        # A human gate is waiting for a decision, not for an approval that would
+        # let it run, so listing it offers the operator a dead control.
+        "T20 the human gate is offered as an approve-able stage",
+        "fantasy_agent/orchestrator.py",
+        b"            and stage.kind != HUMAN_STAGE_KIND\n",
+        b"",
+        "tests/test_orchestrator.py::test_the_result_lists_who_is_still_waiting_on_a_person",
+    ),
+    (
+        "T21 an unknown stage can be confirmed into the session",
+        "fantasy_agent/orchestrator.py",
+        b"            executor_stages_for(stage_id)  # raises ValueError for an unknown id\n",
+        b"            pass  # mutation: the id is stored without being checked\n",
+        "tests/test_orchestrator.py::test_confirming_an_unknown_stage_is_a_loud_error",
+    ),
+    (
+        # The request model has the field and the handler ignores it -- the
+        # "call site written, request model not" shape, one layer over.
+        "T22 the orchestration endpoint drops the approvals it was sent",
+        "apps/studio/app/main.py",
+        b"            confirm_stages=req.confirm_stages,\n",
+        b"            confirm_stages=(),\n",
+        "tests/test_studio_app.py::test_a_second_request_reuses_the_session_it_was_given",
+    ),
+    (
+        "Y1 the close button quits instead of hiding",
+        "apps/studio/tray.py",
+        (b"        self.hide_window()\n        return False\n"),
+        (b"        self.hide_window()\n        return True\n"),
+        "tests/test_studio_tray.py::test_closing_the_window_hides_it_instead_of_quitting",
+    ),
+    (
+        "Y2 quitting is cancelled too, so the app cannot be shut down",
+        "apps/studio/tray.py",
+        b"        if self._quitting:\n            return True\n",
+        b"        if False:\n            return True\n",
+        "tests/test_studio_tray.py::test_an_explicit_quit_lets_the_close_through",
+    ),
+    (
+        "Y3 showing a minimised window leaves it minimised",
+        "apps/studio/tray.py",
+        (b"        self._window.restore()\n        self._window.show()\n"),
+        (b"        self._window.show()\n        self._window.restore()\n"),
+        "tests/test_studio_tray.py::test_showing_restores_before_showing",
+    ),
+    (
+        "Y4 window calls run on the GUI thread and deadlock",
+        "apps/studio/tray.py",
+        b"        threading.Thread(target=target, daemon=True).start()",
+        b"        target()",
+        "tests/test_studio_tray.py::test_window_operations_do_not_run_on_the_gui_thread",
+    ),
+    (
+        "Y5 the tray icon thread is never stopped",
+        "apps/studio/tray.py",
+        (b"        if self._icon is not None:\n            self._icon.stop()\n"),
+        b"        if False and self._icon is not None:\n            self._icon.stop()\n",
+        "tests/test_studio_tray.py::test_the_quit_menu_item_stops_the_icon_and_destroys_the_window",
+    ),
+    (
+        # Swallowing the tray error is what keeps the window alive; turning the
+        # handler into `finally:` logs the same line but re-raises, so a missing
+        # notification area or pystray install takes the whole app down.
+        #
+        # Why this shape and not "delete the try/except": deleting it leaves the
+        # comment body and the logger line over-indented under a `try:` that is
+        # gone, so the module dies with IndentationError at import. That does
+        # turn the guard red, but every other test touching desktop.py turns red
+        # with it -- the mutation proves the file is broken, not that this guard
+        # is what catches the regression. `finally:` keeps the file importable.
+        # An earlier needle covering only `except Exception:` was paired with a
+        # byte-identical mutant -- a no-op reported as MISSED. Check both ends.
+        "Y6 a missing tray takes the whole window down",
+        "apps/studio/desktop.py",
+        b"        except Exception:\n",
+        b"        finally:\n",
+        "tests/test_desktop_launcher.py::test_a_failing_tray_does_not_take_the_window_down_with_it",
+    ),
+    # ── F4: one document, one owner ─────────────────────────────────────────
+    # The console, the workbench and the shell were three documents inside
+    # iframes. That made three writers of `document.documentElement` harmless
+    # (three `<html>` elements) and let the locale cross the boundary as
+    # `?locale=` in a frame's `src`. Inlined into one document, every
+    # document-level global needs exactly one writer -- otherwise the winner is
+    # whoever's effect runs last, which is decided by mount order.
+    #
+    # `tests/test_studio_app.py` reads the shipped source and pins that. These
+    # cases hold that pin to its promise. There is no engine here, only a text
+    # read, which is exactly why the guard can exist at all: React state races
+    # do not reproduce in pytest.
+    (
+        # The shape F4 removed. `panelHref` is still in the file for the routed
+        # links, so this mutant compiles -- a broken import would prove the file
+        # is broken rather than that the guard has teeth.
+        "F4-1 the shell puts a view back inside a frame",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        b"              <PlanningWorkbench />\n",
+        b'              <iframe src={panelHref("workbench") ?? ""} title="workbench" />\n',
+        "tests/test_studio_app.py::test_studio_shell_includes_bilingual_ui_controls",
+    ),
+    (
+        # The starting panel goes back to a constant. A deep link to
+        # `/web-console` then opens the workbench instead, silently.
+        "F4-2 the shell stops deriving the panel from the path",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        b"  const [activePanel, setActivePanel] = useState<PanelKey>(panelFromPathname);\n",
+        b'  const [activePanel, setActivePanel] = useState<PanelKey>("console");\n',
+        "tests/test_studio_app.py::test_studio_shell_includes_bilingual_ui_controls",
+    ),
+    (
+        # The first step of a second copy of the locale, and a shape that is
+        # valid TypeScript on its own -- the import is all the guard needs to
+        # see, which is the point: the key must have one home.
+        "F4-3 the shell grows a second copy of the locale key",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        (
+            b'import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, '
+            b'readHandoffPlan } from "../shared/storage";\n'
+        ),
+        (
+            b"import {\n"
+            b"  STUDIO_SIDEBAR_COLLAPSED_KEY,\n"
+            b"  STUDIO_SIDEBAR_WIDTH_KEY,\n"
+            b"  STUDIO_LOCALE_KEY,\n"
+            b"  readHandoffPlan,\n"
+            b'} from "../shared/storage";\n'
+        ),
+        "tests/test_studio_app.py::test_studio_shell_includes_bilingual_ui_controls",
+    ),
+    (
+        # `selectedEngineVersion`'s second implementation, restored. The loose
+        # `HANDOFF_KEY`-by-literal decode is what the shell used to do; the
+        # guard pins the call, so the identifier can no longer satisfy it.
+        "F4-4 the engine version is decoded out of localStorage again",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        b"  return selectedEngineVersion(readHandoffPlan());\n",
+        (
+            b'  const raw = JSON.parse(localStorage.getItem("fantasy-agent-planning-handoff") || "null");\n'
+            b'  return raw?.engine_version ?? "godot";\n'
+        ),
+        "tests/test_studio_app.py::test_studio_shell_includes_bilingual_ui_controls",
+    ),
+    (
+        # The provider stops being the one writer of the document element. A
+        # comment keeps the file parseable; deleting the line outright would
+        # leave the second effect body over-indented under a `useEffect` that is
+        # still there, and the harness would be reporting a syntax error.
+        #
+        # This case earned its keep before it ever went green: the guard it
+        # targets read `"document.documentElement.lang" in locale_theme_source`,
+        # and the module's own docstring names that expression while explaining
+        # what the three old documents each did. The substring survived the
+        # assignment being deleted, so the case came back MISSED and the assertion
+        # is now pinned to `... = locale`. A name-only scan is not a writer scan.
+        "F4-5 the provider stops putting the locale on the document",
+        "apps/frontend/src/shared/localeTheme.tsx",
+        b"    document.documentElement.lang = locale;\n",
+        b"    void locale;  // mutation: the locale no longer reaches the document\n",
+        "tests/test_studio_app.py::test_studio_shell_includes_bilingual_ui_controls",
+    ),
+    (
+        # Same guard, the other effect. Kept separate from F4-5 because the two
+        # assignments are independent lines: one mutation cannot prove both, and
+        # the theme half is the one whose substring happened to be unique -- it
+        # would have gone vacuous the moment anyone named it in a comment.
+        "F4-6 the provider stops putting the theme on the document",
+        "apps/frontend/src/shared/localeTheme.tsx",
+        b"    document.documentElement.dataset.theme = theme;\n",
+        b"    void theme;  // mutation: the theme no longer reaches the document\n",
+        "tests/test_studio_app.py::test_studio_shell_includes_bilingual_ui_controls",
+    ),
+    (
+        # Distinct from F4-3: that one is caught by the shell-source pin, this
+        # one by the store-key guard, which scans every source file for a key
+        # spelled outside `shared/storage.ts`. A rename would otherwise cut the
+        # shell off from the handoff with nothing going red.
+        "F4-7 the handoff key is spelled out a second time",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        (
+            b'import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, '
+            b'readHandoffPlan } from "../shared/storage";\n'
+        ),
+        (
+            b'import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, '
+            b'readHandoffPlan } from "../shared/storage";\n'
+            b'\nconst MIRRORED_HANDOFF_KEY = "fantasy-agent-planning-handoff";\n'
+        ),
+        "tests/test_studio_app.py::test_store_keys_are_defined_once_and_imported_everywhere",
+    ),
+    (
+        "F3-a the console takes the stage rows back",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        # The console used to render `production_pipeline`'s stage strip. F3 moved
+        # the rows to the orchestration board and pinned the console as an
+        # *absence*; this is that absence's realistic regression -- the strip
+        # comes back under its old id, next to the log.
+        b'className="activity-log"',
+        b'className="activity-log" id="stage-strip"',
+        "tests/test_web_console_app.py::test_web_console_ui_exposes_flow_console_sections",
+    ),
+    (
+        "F3-b the card root drops the plan status",
+        "apps/frontend/src/orchestration/OrchestrationBoard.tsx",
+        # One vocabulary for both statuses is the plausible simplification, and it
+        # is what makes a card claim "running" off a value the plan wrote once.
+        b"data-stage={card.id} data-status={card.status} data-plan-status={card.plan_status}",
+        b"data-stage={card.id} data-status={card.status}",
+        "tests/test_web_console_app.py::test_orchestration_board_owns_the_stage_rows",
+    ),
+    (
+        "S2 an oversized skill brief stops being cut",
+        "fantasy_agent/agent_skills.py",
+        # This is not a hypothetical mutant: it is the code as it stood before
+        # the ceiling was applied. `MAX_BRIEF_CHARS` was exported with a comment
+        # promising it bounds every turn's system prompt, and nothing read it --
+        # so the promise held only while no skill happened to grow, and the
+        # neighbouring size test passed off today's sizes rather than the cut.
+        # The guard that fails here feeds in a brief that does not fit.
+        b"    return _strip_sections(text)[:MAX_BRIEF_CHARS]\n",
+        b"    return _strip_sections(text)\n",
+        "tests/test_agent_skills.py::test_an_oversized_brief_is_cut_to_the_ceiling",
     ),
 )
 
@@ -791,8 +1130,7 @@ def main(argv: list[str] | None = None) -> int:
     selected = [
         case
         for case in CASES
-        if not options.only
-        or any(token.casefold() in case[0].casefold() for token in options.only)
+        if not options.only or any(token.casefold() in case[0].casefold() for token in options.only)
     ]
     if not selected:
         # Silently running nothing would exit 0 and read as "all proven".
@@ -861,9 +1199,7 @@ def main(argv: list[str] | None = None) -> int:
     proven = f"{caught}/{len(selected)} mutations caught"
     if len(selected) != len(CASES):
         proven += f" (--only: {len(CASES) - len(selected)} of {len(CASES)} cases not run)"
-    excused = (
-        f"; not applicable here (no engine): {not_applicable}" if not_applicable else ""
-    )
+    excused = f"; not applicable here (no engine): {not_applicable}" if not_applicable else ""
     print(f"{proven}{excused}; every source restored byte-identically")
     return 0
 

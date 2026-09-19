@@ -13,21 +13,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { callWorkbenchTool } from "../shared/api";
 import { workbenchI18n, makeTranslator } from "../shared/i18n";
-import {
-  THEME_KEY,
-  WORKBENCH_LOCALE_KEY,
-  initialLocale,
-  initialTheme,
-  savePlanningHandoff
-} from "../shared/storage";
+import { useLocaleTheme } from "../shared/localeTheme";
+import { savePlanningHandoff } from "../shared/storage";
 import type {
   DirectorBuildPlan,
   IdeaSeed,
   InterviewAnswer,
-  Locale,
   PromptRequest,
   StatusState,
-  Theme,
   WorkbenchConfig,
   WorkbenchPanelKey,
   WorkbenchToolResult
@@ -39,7 +32,6 @@ import {
   GddPanel,
   OverviewPanel,
   PANEL_KEYS,
-  PipelinePanel,
   QaPanel,
   TasksPanel,
   ToolActions,
@@ -71,11 +63,6 @@ import {
 
 export const EXTRACT_TOOL = "extract_idea_seed";
 
-function isEmbed(): boolean {
-  if (typeof window === "undefined") return false;
-  return new URLSearchParams(window.location.search).get("embed") === "1";
-}
-
 /** Only merge keys the tool actually returned, so one tool cannot blank another's output. */
 function mergePlanPatch(
   previous: DirectorBuildPlan | null,
@@ -89,8 +76,11 @@ function mergePlanPatch(
 }
 
 export function PlanningWorkbench() {
-  const [locale, setLocale] = useState<Locale>(() => initialLocale(WORKBENCH_LOCALE_KEY));
-  const [theme, setTheme] = useState<Theme>(() => initialTheme());
+  // Locale and theme belong to the provider. This view used to own them and write
+  // `document.documentElement` plus `document.title` itself -- three views each
+  // setting the title meant the winner was decided by mount order once they
+  // shared a document, so the shell sets the title and the views no longer do.
+  const { locale, theme, setLocale, setTheme } = useLocaleTheme();
   const [status, setStatus] = useState<StatusState>("idle");
   const [error, setError] = useState<string | null>(null);
 
@@ -106,15 +96,6 @@ export function PlanningWorkbench() {
   const [running, setRunning] = useState<string | null>(null);
 
   const t = useMemo(() => makeTranslator(locale, workbenchI18n), [locale]);
-  const embedded = useMemo(isEmbed, []);
-
-  useEffect(() => {
-    document.documentElement.lang = locale;
-    document.documentElement.dataset.theme = theme;
-    document.title = t("navPlanning");
-    localStorage.setItem(WORKBENCH_LOCALE_KEY, locale);
-    localStorage.setItem(THEME_KEY, theme);
-  }, [locale, theme, t]);
 
   const question = currentInterviewQuestion(answers, locale);
   const busy = running !== null;
@@ -208,8 +189,11 @@ export function PlanningWorkbench() {
         });
       }
 
-      const panel = resultPanel(meta.toolName ?? "", meta);
-      if (panel) setActivePanel(panel as WorkbenchPanelKey);
+      // `resultPanel` returns a tab this view actually has: the backend names
+      // panels in its own vocabulary, and one of them (`pipeline`) is a
+      // separate view now. It used to be cast in unchecked, which landed on the
+      // default tab with nothing to say why.
+      setActivePanel(resultPanel(meta.toolName ?? "", meta));
     },
     [applyPromptRequest, locale, syncFieldsFromSeed]
   );
@@ -313,8 +297,6 @@ export function PlanningWorkbench() {
 
   const panelBody = () => {
     switch (activePanel) {
-      case "pipeline":
-        return <PipelinePanel plan={plan} t={t} locale={locale} />;
       case "tasks":
         return <TasksPanel plan={plan} t={t} locale={locale} />;
       case "build":
@@ -333,7 +315,7 @@ export function PlanningWorkbench() {
   };
 
   return (
-    <div className={`wb-shell${embedded ? " embedded" : ""}`} data-testid="planning-workbench">
+    <div className="wb-shell" data-testid="planning-workbench">
       <header className="wb-topbar">
         <div className="wb-brand">
           <span className="wb-eyebrow">{t("appEyebrow")}</span>

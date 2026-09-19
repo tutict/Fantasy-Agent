@@ -19,6 +19,8 @@ import type {
   LlmApiTestResult,
   ManualTargetsPayload,
   McpStatus,
+  OrchestrationRunRequest,
+  OrchestrationSession,
   ProductionSpecBundle,
   PromptRequest,
   SessionState,
@@ -220,6 +222,41 @@ export function runAgent(request: AgentRunRequest): Promise<AgentRunResult> {
 export function getMcpStatus(engine: string): Promise<McpStatus> {
   const query = new URLSearchParams({ engine });
   return jsonRequest<McpStatus>(`/api/tool-status?${query.toString()}`);
+}
+
+/**
+ * Advance the orchestration board's plan one pass.
+ *
+ * Synchronous, like `/api/agent/run`: a pass is a handful of model round-trips
+ * rather than a multi-minute engine build, so the response is the whole result.
+ * Failures come back as `status: "error"` with the stage cards still attached --
+ * never an HTTP 500 -- because the board has to keep rendering the stages it
+ * already has instead of losing them to an error screen.
+ *
+ * The approvals are read off the request and nothing else; see
+ * `OrchestrationRunRequest`.
+ */
+export function runOrchestration(
+  request: OrchestrationRunRequest
+): Promise<OrchestrationSession> {
+  return jsonRequest<OrchestrationSession>("/api/orchestration/run", {
+    method: "POST",
+    body: JSON.stringify(request)
+  });
+}
+
+/**
+ * What a session has done so far, without advancing it.
+ *
+ * Read-only, so there is no approval flag to thread through. An id the server
+ * has never seen answers `found: false` with the stage translation still
+ * present, which is what lets the board offer its drill-down before the first
+ * run.
+ */
+export function getOrchestrationState(sessionId: string): Promise<OrchestrationSession> {
+  return jsonRequest<OrchestrationSession>(
+    `/api/orchestration/${encodeURIComponent(sessionId)}`
+  );
 }
 
 /**

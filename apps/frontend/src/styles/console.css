@@ -1,66 +1,8 @@
-:root {
-  color-scheme: light;
-  --bg: #f4f7f3;
-  --grid-line-a: rgba(7, 10, 8, 0.045);
-  --grid-line-b: rgba(7, 10, 8, 0.035);
-  --chrome: rgba(247, 250, 246, 0.94);
-  --chrome-strong: rgba(255, 255, 255, 0.96);
-  --surface: rgba(255, 255, 255, 0.78);
-  --surface-strong: rgba(255, 255, 255, 0.92);
-  --surface-muted: rgba(7, 10, 8, 0.035);
-  --field: #ffffff;
-  --code-bg: rgba(7, 10, 8, 0.045);
-  --tab-bg: rgba(255, 255, 255, 0.62);
-  --pill-bg: rgba(3, 95, 82, 0.07);
-  --line: rgba(7, 10, 8, 0.12);
-  --line-strong: rgba(0, 118, 101, 0.36);
-  --text: #0b1713;
-  --text-soft: #3a463f;
-  --muted: #5d695f;
-  --muted-strong: #26332e;
-  --accent: #007966;
-  --accent-deep: #005c4d;
-  --accent-soft: rgba(0, 121, 102, 0.12);
-  --blue: #126fb5;
-  --blue-soft: rgba(18, 111, 181, 0.12);
-  --amber: #9a5b12;
-  --amber-soft: rgba(154, 91, 18, 0.12);
-  --danger: #b4232c;
-  --danger-soft: rgba(180, 35, 44, 0.11);
-  --shadow: 0 18px 44px rgba(19, 35, 29, 0.12);
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #070a08;
-  --grid-line-a: rgba(255, 255, 255, 0.018);
-  --grid-line-b: rgba(255, 255, 255, 0.014);
-  --chrome: rgba(8, 11, 9, 0.9);
-  --chrome-strong: rgba(8, 11, 9, 0.96);
-  --surface: rgba(255, 255, 255, 0.04);
-  --surface-strong: rgba(255, 255, 255, 0.07);
-  --surface-muted: rgba(255, 255, 255, 0.025);
-  --field: #0b0f0d;
-  --code-bg: rgba(0, 0, 0, 0.28);
-  --tab-bg: rgba(0, 0, 0, 0.16);
-  --pill-bg: rgba(0, 0, 0, 0.16);
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(0, 255, 204, 0.34);
-  --text: #ffffff;
-  --text-soft: #c7cfc8;
-  --muted: #8b938b;
-  --muted-strong: #b8c1b7;
-  --accent: #00ffcc;
-  --accent-deep: #0c8f7f;
-  --accent-soft: rgba(0, 255, 204, 0.12);
-  --blue: #39a8ff;
-  --blue-soft: rgba(57, 168, 255, 0.12);
-  --amber: #e8a356;
-  --amber-soft: rgba(232, 163, 86, 0.12);
-  --danger: #ff6b6b;
-  --danger-soft: rgba(255, 107, 107, 0.12);
-  --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
-}
+/*
+ * Custom properties live in `tokens.css` (imported once from `main.tsx`).
+ * This file carries layout only -- `shared/tokenOwnership.test.ts` fails the
+ * build if a `--*` definition reappears here.
+ */
 
 * {
   box-sizing: border-box;
@@ -118,7 +60,11 @@ input:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  height: 100vh;
+  /* Fills the frame it is rendered in, not the viewport: the console used to be
+     its own document, where those were the same height. It now renders inside
+     `.studio-frame`, whose top edge sits below the shell's own top bar, so
+     `100vh` would overflow by that bar's height. */
+  height: 100%;
   max-width: 1880px;
   margin: 0 auto;
   overflow: hidden;
@@ -663,59 +609,22 @@ input[type="text"]:focus {
 }
 
 /* --------------------------------------------------------------------------
-   Center pane: stage strip, metrics, grouped tabs, panel content
+   Center pane: metrics, grouped tabs, panel content
 -------------------------------------------------------------------------- */
 
-.stage-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
-  gap: 1px;
-  border-bottom: 1px solid var(--line);
-  background: var(--line);
-}
-
-.stage-node {
-  display: grid;
-  min-height: 60px;
-  align-content: center;
-  gap: 4px;
-  background: var(--chrome);
-  padding: 10px 12px;
-  transition:
-    background 160ms ease,
-    color 160ms ease;
-}
-
-.stage-node span {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.stage-node strong {
-  overflow: hidden;
-  color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 13px;
-}
-
-.stage-node.ready,
-.stage-node.is-active {
-  background: var(--accent-soft);
-}
-
-.stage-node.blocked {
-  color: var(--danger);
-}
-
-.stage-node.pending {
-  color: var(--blue);
-}
-
+/*
+ * The stage track that used to sit above this row is gone: it rendered
+ * `production_pipeline.stages`, and the orchestration board is the one place
+ * that renders a stage now -- with the runtime status a plan-time row could
+ * never show. The selectors went with it.
+ *
+ * `auto-fit` rather than `repeat(4, ...)`: the row lost two of its four metrics
+ * in the same change, and a fixed column count would have left the two that
+ * remain in a quarter-width cell each.
+ */
 .insight-row {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   border-bottom: 1px solid var(--line);
 }
 
@@ -1515,10 +1424,11 @@ input[type="text"]:focus {
 
 @media (max-width: 1180px) {
   /* Stacked single-column: let the page scroll instead of viewport-locking,
-     so the rail content isn't clipped inside a fixed-height shell. */
+     so the rail content isn't clipped inside a fixed-height shell. The height
+     is relative to the host frame, not the viewport -- see `.shell` above. */
   .shell {
     height: auto;
-    min-height: 100vh;
+    min-height: 100%;
     overflow: visible;
   }
 
@@ -1599,17 +1509,10 @@ input[type="text"]:focus {
     margin-left: 0;
   }
 
-  .stage-strip,
   .insight-row,
   .split-output,
   .review-layout {
     grid-template-columns: 1fr;
-  }
-
-  .stage-node {
-    grid-template-columns: 38px minmax(0, 1fr);
-    align-items: center;
-    min-height: 46px;
   }
 
   .metric {

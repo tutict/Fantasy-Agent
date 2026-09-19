@@ -11,20 +11,25 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
-from fantasy_agent.contracts import PromptRequest
+from fantasy_agent.contracts import ProductionPipelineStageId, PromptRequest
 from fantasy_agent.executor import execute_godot_demo
 from fantasy_agent.godot_mcp import GodotMCPBridge
 from fantasy_agent.pipeline_state import (
     GODOT_STAGE_ORDER,
+    ORCHESTRATION_TO_EXECUTOR_STAGES,
     RESUMABLE_STAGES,
     REWORK_TARGET_STAGES,
+    UNREAL_STAGE_ORDER,
     PipelineState,
     StageState,
+    executor_stages_for,
     load_state,
     normalize_resume_from,
+    orchestration_stages_for,
     record_stage,
     stages_before,
 )
@@ -234,6 +239,89 @@ def test_resume_without_a_previous_run_skips_nothing(tmp_path: Path):
 
     assert not [s for s in result.stages if s.status == "skipped"]
     assert result.ok
+
+
+# ── orchestration vocabulary ─────────────────────────────────────────────────
+
+
+def test_every_orchestration_stage_has_a_translation_entry():
+    """A stage id the table forgets is a stage rework can never land on.
+
+    Driven off the contract's own Literal rather than a hand-kept list, so
+    adding a stage id without a translation fails here instead of at the first
+    rework of that stage.
+    """
+
+    declared = set(get_args(ProductionPipelineStageId))
+
+    assert set(ORCHESTRATION_TO_EXECUTOR_STAGES) == declared, (
+        "the translation table and the stage-id contract have drifted"
+    )
+
+
+def test_every_translated_name_is_a_real_execution_stage():
+    """Otherwise the translation sends a rework to a node that does not exist.
+
+    Both routes' tuples are accepted -- `unreal_production` translates to
+    Unreal's chain, which shares only some names with Godot's.
+    """
+
+    known = set(GODOT_STAGE_ORDER) | set(UNREAL_STAGE_ORDER)
+    for stage_id, executor_stages in ORCHESTRATION_TO_EXECUTOR_STAGES.items():
+        unknown = sorted(set(executor_stages) - known)
+        assert not unknown, f"{stage_id} translates to stages that do not exist: {unknown}"
+
+
+def test_only_the_human_gate_translates_to_nothing():
+    """Empty is a legal, meaningful value -- not a missing entry.
+
+    The measured executor confirms exactly one stage with no process step:
+    `creative_review`, because it is a person reading art direction, not a node
+    that runs. Its neighbour `approval_gate` is a *manifest filter* that
+    happens during `asset_integration`, which is why that stage is not empty
+    either.
+
+    The plan for this work predicted two empty stages, `gameplay_orchestration`
+    among them. The executor says otherwise: its first two steps --
+    `spec_validation` and `preflight` -- read the spec and plan that stage
+    produces, so leaving it empty would give a `prompt`-target rework nowhere to
+    land and send every prompt fix down the full replay this table exists to
+    avoid.
+    """
+
+    empty = sorted(
+        stage_id for stage_id, stages in ORCHESTRATION_TO_EXECUTOR_STAGES.items() if not stages
+    )
+
+    assert empty == ["creative_review"], f"unexpected stages translate to no process step: {empty}"
+    assert ORCHESTRATION_TO_EXECUTOR_STAGES["gameplay_orchestration"] == (
+        "spec_validation",
+        "preflight",
+    )
+
+
+def test_a_translation_is_readable_in_both_directions():
+    """Forward is the table; backward is what a failing node needs.
+
+    Both halves carry weight: forward answers "what does this stage actually
+    run", backward answers "this node failed, which stage owns it".
+    """
+
+    assert executor_stages_for("blender_modeling") == ("blender",)
+    assert orchestration_stages_for("blender") == ("blender_modeling",)
+    # A name two routes both use maps back to both, so the caller picks by the
+    # plan in hand rather than by a notion of "the" route baked into the table.
+    assert set(orchestration_stages_for("create")) == {"godot_quick_play", "unreal_production"}
+    # A name nothing claims is empty rather than an error: it is a lookup that
+    # found nothing, not a broken input.
+    assert orchestration_stages_for("no_such_executor_stage") == ()
+
+
+def test_translating_an_unknown_orchestration_stage_fails_loudly():
+    """Unknown id and "translated to nothing" must not read the same."""
+
+    with pytest.raises(ValueError, match="unknown orchestration stage"):
+        executor_stages_for("creative_revieww")
 
 
 # ── ordering helpers ─────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 /**
- * The six plan panels the flow console and the planning workbench share.
+ * The five plan panels the flow console and the planning workbench share.
  *
  * These existed twice: once in `console/rendering.tsx` and once in
  * `workbench/PlanPanels.tsx`. The two copies did not render the same fields --
@@ -9,7 +9,13 @@
  * either copy. The agreed shape is the union: every panel renders everything
  * both entries used to show.
  *
- * Because of that union, a panel here may call a translation key that only one
+ * A sixth panel used to live here: `PipelinePanel`, which rendered
+ * `production_pipeline.stages` as a list of stage rows. It is not shared any
+ * more, it is *gone* -- stage rows are the orchestration board's job
+ * (`src/orchestration/`), which renders the run state a plan-time row cannot
+ * show. See the F3 section of `docs/superpowers/plans/2026-09-16-frontend-ui-replan.md`.
+ *
+ * Because of the union, a panel here may call a translation key that only one
  * of the two dictionaries defines. `shared/panelI18n.test.ts` holds the exact
  * list of those keys and fails when it grows, which is what keeps a merged
  * panel from rendering a raw key name to an operator.
@@ -21,7 +27,6 @@ import type {
   DirectorBuildPlan,
   IdeaSeed,
   Locale,
-  PipelineStage,
   QaPlan,
   TaskBreakdown,
   TaskItem
@@ -93,66 +98,6 @@ export function OverviewPanel({
       <ListBlock title={t("assetNeeds")} items={spec?.asset_needs ?? []} />
       <ListBlock title={t("qaFocus")} items={spec?.qa_focus ?? []} />
       <ListBlock title={t("next")} items={plan.next_actions ?? []} wide />
-    </div>
-  );
-}
-
-function StageRow({ stage, locale, t }: { stage: PipelineStage; locale: Locale; t: Translator }) {
-  return (
-    <div className="wb-row">
-      <h4>{`${String(stage.order ?? 0).padStart(2, "0")} ${localizedTitle(stage, locale)}`}</h4>
-      <p>{stage.purpose}</p>
-      <PillRow>
-        <Pill>{stage.status}</Pill>
-        {stage.kind === "human" ? <Pill variant="human">{t("humanGate")}</Pill> : null}
-        {stage.owner_agent ? <Pill>{`${t("owner")}: ${stage.owner_agent}`}</Pill> : null}
-        {stage.requires_confirmation ? <Pill variant="warn">{t("confirmation")}</Pill> : null}
-        {stage.depends_on?.length ? (
-          <Pill>{`${t("dependencies")}: ${stage.depends_on.join(", ")}`}</Pill>
-        ) : null}
-        {stage.mcp_tools?.length ? (
-          <Pill>{`${t("tools")}: ${stage.mcp_tools.join(", ")}`}</Pill>
-        ) : null}
-      </PillRow>
-      {stage.quality_gates?.length ? (
-        <PillRow>
-          <Pill>{`${t("quality")}: ${stage.quality_gates.join(" / ")}`}</Pill>
-        </PillRow>
-      ) : null}
-      {stage.risks?.length ? (
-        <PillRow>
-          <Pill>{`${t("risks")}: ${stage.risks.join(" / ")}`}</Pill>
-        </PillRow>
-      ) : null}
-    </div>
-  );
-}
-
-export function PipelinePanel({
-  plan,
-  locale,
-  t
-}: {
-  plan?: DirectorBuildPlan | null;
-  locale: Locale;
-  t: Translator;
-}) {
-  const pipeline = plan?.production_pipeline;
-  if (!pipeline) return <p className="wb-empty">{t("noPlan")}</p>;
-
-  return (
-    <div className="wb-block-grid" id="pipeline-output">
-      <TextBlock title={t("projectGoal")} body={pipeline.goal} wide />
-      <TextBlock title={t("recommended")} body={pipeline.next_stage ?? "-"} wide />
-      <PillRow>
-        <Pill>{pipeline.project_name}</Pill>
-        <Pill>{`${t("currentStage")}: ${pipeline.current_stage ?? "-"}`}</Pill>
-        <Pill>{`${t("nextStage")}: ${pipeline.next_stage ?? "-"}`}</Pill>
-        <Pill>{t("stagesCount", { count: (pipeline.stages ?? []).length })}</Pill>
-      </PillRow>
-      {(pipeline.stages ?? []).map((stage) => (
-        <StageRow key={stage.id ?? stage.title ?? stage.order} stage={stage} locale={locale} t={t} />
-      ))}
     </div>
   );
 }

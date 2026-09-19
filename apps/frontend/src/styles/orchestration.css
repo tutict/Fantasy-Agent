@@ -1,0 +1,284 @@
+/*
+ * The orchestration board's own sheet.
+ *
+ * Imported by `OrchestrationBoard.tsx` and nowhere else, so the board's styles
+ * travel with the board the way `console.css` travels with the console. The
+ * board deliberately does *not* emit the `wb-*` names the shared plan panels
+ * use: those rules live in `workbench.css`, which reaches the bundle only
+ * because the shell statically imports the workbench. That is exactly the
+ * implicit dependency `panelStyles.test.ts` was written about -- the console
+ * rendered the shared panels unstyled for a while because nobody had noticed the
+ * sheet it needed was loaded by a *different* view.
+ *
+ * Controls (`api-header`, `api-form`, `api-toggle`, `primary-action`) are the
+ * shell's own, reused from `studio.css` -- the same set `ApiSettingsPanel` and
+ * `AgentPanel` use, so the three panels keep one form language.
+ *
+ * No custom properties are defined here. Every token comes from `tokens.css`,
+ * which `main.tsx` imports once; `tokenOwnership.test.ts` fails on a second
+ * root-scoped definition, and there is nothing this board needs to add to that
+ * set.
+ */
+
+.or-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 2px 32px;
+}
+
+.or-plan-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-muted);
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+
+.or-meta-line {
+  overflow-wrap: anywhere;
+}
+
+.or-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.or-link:hover {
+  color: var(--accent-deep);
+}
+
+.or-pending {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.or-gates {
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--blue-soft);
+}
+
+.or-gates h4 {
+  margin: 0 0 8px;
+  color: var(--blue);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.or-gate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
+.or-cards {
+  display: grid;
+  gap: 12px;
+}
+
+.or-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+/* The left edge carries the runtime state, which is the thing a board is for. */
+.or-card[data-status="done"] {
+  border-left-color: var(--accent);
+}
+
+.or-card[data-status="failed"] {
+  border-left-color: var(--danger);
+}
+
+.or-card[data-status="awaiting_confirmation"],
+.or-card[data-status="awaiting_human"] {
+  border-left-color: var(--amber);
+}
+
+.or-card[data-status="running"] {
+  border-left-color: var(--blue);
+}
+
+.or-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.or-card-head h3 {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 180px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.or-order {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.or-status {
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--muted-strong);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.or-status[data-status="done"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.or-status[data-status="failed"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.or-status[data-status="awaiting_confirmation"],
+.or-status[data-status="awaiting_human"] {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.or-status[data-status="running"] {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+/* Dimmer than the runtime pill: the plan-time status is context, not the news. */
+.or-status-plan {
+  opacity: 0.72;
+}
+
+.or-purpose,
+.or-line,
+.or-note,
+.or-answer {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+
+.or-note {
+  color: var(--muted);
+}
+
+.or-line-detail {
+  color: var(--danger);
+}
+
+.or-answer {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--muted-strong);
+  white-space: pre-wrap;
+}
+
+.or-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.or-pill {
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--muted-strong);
+  font-size: 11px;
+}
+
+.or-pill-human {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.or-pill-ok {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.or-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.or-button {
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--tab-bg);
+  color: var(--muted-strong);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.or-button:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.or-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.or-button.is-on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.or-steps {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.or-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}

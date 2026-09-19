@@ -1,24 +1,23 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  BuildPanel,
-  OverviewPanel,
-  PipelinePanel,
-  QaPanel,
-  TasksPanel,
-  VisualsPanel
-} from "./rendering";
+import { BuildPanel, OverviewPanel, QaPanel, TasksPanel, VisualsPanel } from "./rendering";
 import { consoleI18n, makeTranslator } from "../shared/i18n";
 import type { DirectorBuildPlan, PipelineStage } from "../shared/types";
 
 /**
- * Safety net for F1: the six panels the console shares with the planning
- * workbench (overview / pipeline / tasks / build / visuals / qa) are about to
- * be lifted into `shared/panels/` so they exist once instead of twice. This
- * file pins what the console half renders *today* so the lift cannot quietly
- * change it, and names the fields the console half does not render yet but
- * will once the two implementations are merged into the union field set.
+ * Safety net for F1: the plan panels the console shares with the planning
+ * workbench (overview / tasks / build / visuals / qa) are about to be lifted
+ * into `shared/panels/` so they exist once instead of twice. This file pins
+ * what the console half renders *today* so the lift cannot quietly change it,
+ * and names the fields the console half does not render yet but will once the
+ * two implementations are merged into the union field set.
+ *
+ * `PipelinePanel` used to be covered here too. It is gone rather than shared --
+ * the orchestration board renders stage rows now, including the runtime status
+ * this panel never had -- and its cases moved to
+ * `orchestration/OrchestrationBoard.test.tsx`, where the field-coverage
+ * assertions still apply to the one place things are actually rendered.
  *
  * Why the console side needs its own net: workbench coverage rides on a heavy
  * interaction chain (send -> fillSeed -> confirmButton -> toolButton ->
@@ -145,146 +144,6 @@ describe("console overview panel", () => {
     expect(screen.getByText("become the courier")).toBeTruthy();
     expect(screen.getByText("Core action")).toBeTruthy();
     expect(screen.getByText("wall-run")).toBeTruthy();
-  });
-});
-
-describe("console pipeline panel", () => {
-  it("marks the human gate and names what the stage waits for", () => {
-    render(
-      <PipelinePanel
-        locale="en"
-        t={t}
-        plan={plan({
-          production_pipeline: {
-            project_name: "neon-rooftops",
-            goal: "ship a 10 minute slice",
-            current_stage: "creative_review",
-            next_stage: "asset_integration",
-            stages: [
-              stage({
-                id: "creative_review",
-                order: 4,
-                title: "Creative review",
-                status: "blocked",
-                owner_agent: "creative-review-agent",
-                kind: "human",
-                depends_on: ["comfyui_visual_production", "blender_modeling"],
-                requires_confirmation: true
-              })
-            ]
-          }
-        })}
-      />
-    );
-
-    expect(screen.getByText("Human gate")).toBeTruthy();
-    expect(screen.getByText("Dependencies: comfyui_visual_production, blender_modeling")).toBeTruthy();
-    // Still the executor's own pills, so the gate reads alongside its status.
-    expect(screen.getByText("blocked")).toBeTruthy();
-    expect(screen.getByText("Owner: creative-review-agent")).toBeTruthy();
-  });
-
-  it("shows no gate marker when every stage is an agent stage", () => {
-    render(
-      <PipelinePanel
-        locale="en"
-        t={t}
-        plan={plan({
-          production_pipeline: {
-            project_name: "neon-rooftops",
-            goal: "ship a 10 minute slice",
-            current_stage: "godot_quick_play",
-            next_stage: "creative_review",
-            stages: [stage()]
-          }
-        })}
-      />
-    );
-
-    expect(screen.queryByText("Human gate")).toBeNull();
-    expect(screen.queryByText(/^Dependencies:/)).toBeNull();
-  });
-
-  it("shows the quality gates and the risks that block the stage", () => {
-    render(
-      <PipelinePanel
-        locale="en"
-        t={t}
-        plan={plan({
-          production_pipeline: {
-            project_name: "neon-rooftops",
-            goal: "ship a 10 minute slice",
-            current_stage: "godot_quick_play",
-            next_stage: "creative_review",
-            stages: [
-              stage({
-                quality_gates: ["runs at 60fps", "no missing scripts"],
-                risks: ["approval blocks the import"],
-                mcp_tools: ["godot-mcp"]
-              })
-            ]
-          }
-        })}
-      />
-    );
-
-    // The merged panel folds each list into one pill, the workbench's shape:
-    // the console used to explode them into <ul> bullets.
-    expect(screen.getByText("Quality gates: runs at 60fps / no missing scripts")).toBeTruthy();
-    expect(screen.getByText("Risks: approval blocks the import")).toBeTruthy();
-    expect(screen.getByText("Tools: godot-mcp")).toBeTruthy();
-  });
-
-  it("renders the header and no stage rows when the pipeline has no stages", () => {
-    const { container } = render(
-      <PipelinePanel
-        locale="en"
-        t={t}
-        plan={plan({
-          production_pipeline: {
-            project_name: "neon-rooftops",
-            goal: "ship a 10 minute slice",
-            current_stage: "godot_quick_play",
-            next_stage: "creative_review",
-            stages: []
-          }
-        })}
-      />
-    );
-
-    expect(within(container).getByText("neon-rooftops")).toBeTruthy();
-    expect(container.querySelectorAll(".stage-row")).toHaveLength(0);
-    expect(container.querySelector("#pipeline-output")).toBeTruthy();
-  });
-
-  it("names the current and next stage and counts the stages", () => {
-    render(
-      <PipelinePanel
-        locale="en"
-        t={t}
-        plan={plan({
-          production_pipeline: {
-            project_name: "neon-rooftops",
-            goal: "ship a 10 minute slice",
-            current_stage: "godot_quick_play",
-            next_stage: "creative_review",
-            stages: [stage(), stage({ id: "creative_review", order: 2, title: "Creative review" })]
-          }
-        })}
-      />
-    );
-
-    expect(screen.getByText("Current stage: godot_quick_play")).toBeTruthy();
-    expect(screen.getByText("Next stage: creative_review")).toBeTruthy();
-    expect(screen.getByText("2 stages")).toBeTruthy();
-    expect(screen.getByText("Project goal")).toBeTruthy();
-  });
-
-  it("says there is no plan rather than rendering an empty board", () => {
-    // Was a bare shell with no text; the union keeps the workbench's message,
-    // which is the one an operator can act on.
-    render(<PipelinePanel locale="en" t={t} plan={{}} />);
-    expect(screen.getByText(/No plan yet/)).toBeTruthy();
   });
 });
 
@@ -509,27 +368,5 @@ describe("console panel list fallbacks", () => {
     expect(screen.getAllByText("-")).toHaveLength(4);
     expect(screen.getByText("Smoke tests")).toBeTruthy();
     expect(screen.getByText("Packaging checks")).toBeTruthy();
-  });
-
-  it("keeps a section visible when its list is empty instead of dropping the heading", () => {
-    render(
-      <PipelinePanel
-        locale="en"
-        t={t}
-        plan={plan({
-          production_pipeline: {
-            project_name: "p",
-            goal: "g",
-            current_stage: "c",
-            next_stage: "n",
-            stages: [stage({ quality_gates: [] })]
-          }
-        })}
-      />
-    );
-    // The stage declares no quality gates, so the quality pill is absent --
-    // but the stage row itself and its status pill are still there.
-    expect(screen.queryByText(/^Quality gates:/)).toBeNull();
-    expect(screen.getByText("ready")).toBeTruthy();
   });
 });

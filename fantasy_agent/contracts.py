@@ -1007,6 +1007,13 @@ class ProductionPipelineStage(StrictModel):
     outputs: list[str]
     artifacts: list[str] = Field(default_factory=list)
     mcp_tools: list[str] = Field(default_factory=list)
+    #: Read-only tool names the orchestrator runs once the stage's agent has
+    #: finished; every one of them must report ``ok`` for the stage to count as
+    #: done. Empty means no machine check, which is the state every stage is in
+    #: today: the 21 exported ``quality_gates`` are prose ("Average session
+    #: remains within 10 minutes."), and inventing a check DSL for them is a
+    #: different project.
+    exit_checks: list[str] = Field(default_factory=list)
     quality_gates: list[str] = Field(default_factory=list)
     side_effects: list[str] = Field(default_factory=list)
     depends_on: list[ProductionPipelineStageId] = Field(default_factory=list)

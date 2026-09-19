@@ -1,22 +1,28 @@
 /**
  * Workbench-specific panel wiring.
  *
- * The six plan panels the workbench shares with the flow console now live once,
- * in `shared/panels/PlanPanels.tsx`, and are re-exported here so this entry
- * point's imports stay put. What remains is the workbench's own surface: the
- * GDD and DSL views, the tool-action grid, and the panel key order.
+ * The five plan panels the workbench shares with the flow console now live
+ * once, in `shared/panels/PlanPanels.tsx`, and are re-exported here so this
+ * entry point's imports stay put. What remains is the workbench's own surface:
+ * the GDD and DSL views, the tool-action grid, and the panel key order.
+ *
+ * The pipeline panel is not here any more. It was a stage *snapshot* -- the plan
+ * as authored, with a status column that never moves -- and the orchestration
+ * board (`src/orchestration/`) is where stages are rendered now, with the
+ * runtime state the snapshot could not show. That is why `pipeline` is also
+ * gone from `PANEL_KEYS`: a tab that opens a second, differently-wrong view of
+ * the same object is worse than no tab.
  *
  * Every backend string lands in JSX text position, so React escapes it. The
  * retired static page hand-rolled `escapeHtml` for this; React makes that
  * unnecessary, which is the point of the rewrite.
  */
 
-import type { IdeaSeed, DirectorBuildPlan, WorkbenchPanelKey } from "../shared/types";
+import type { IdeaSeed, DirectorBuildPlan } from "../shared/types";
 
 export {
   BuildPanel,
   OverviewPanel,
-  PipelinePanel,
   QaPanel,
   TasksPanel,
   VisualsPanel,
@@ -58,16 +64,12 @@ export function DslPanel({
   return <pre className="wb-pre">{JSON.stringify(payload, null, 2)}</pre>;
 }
 
-export const PANEL_KEYS: WorkbenchPanelKey[] = [
-  "overview",
-  "pipeline",
-  "tasks",
-  "build",
-  "visuals",
-  "gdd",
-  "qa",
-  "dsl"
-];
+/**
+ * Re-exported rather than defined here: `workbenchModel.resultPanel` validates
+ * a tool result's panel against this list, and a second copy would be a second
+ * answer to "which tabs exist".
+ */
+export { PANEL_KEYS } from "./workbenchModel";
 
 /** Tools that share the plan payload; the retired page only wired three of these. */
 export const PLAN_TOOLS: Array<{ tool: string; labelKey: string }> = [

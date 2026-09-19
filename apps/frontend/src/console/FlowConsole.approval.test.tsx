@@ -2,6 +2,7 @@ import { cleanup, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FlowConsole } from "./FlowConsole";
+import { LocaleThemeProvider } from "../shared/localeTheme";
 
 /**
  * The approval gate lives in the UI: opening a correction target spawns a
@@ -29,7 +30,14 @@ function emptyJsonFetch() {
 }
 
 async function renderConsole() {
-  const view = render(<FlowConsole />);
+  // The console reads locale and theme from the shared provider and throws
+  // outside it -- deliberately, so a forgotten provider fails loudly instead of
+  // silently growing a second copy of the locale.
+  const view = render(
+    <LocaleThemeProvider>
+      <FlowConsole />
+    </LocaleThemeProvider>
+  );
   const button = await waitFor(() => {
     const found = view.container.querySelector<HTMLButtonElement>(
       `[data-manual-target="${OPENABLE_TARGET}"]`
