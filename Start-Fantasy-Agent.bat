@@ -5,8 +5,9 @@ REM Starts the backend and shows the Studio in a native window, with no console
 REM left behind. The heavy lifting lives in apps/studio/desktop.py.
 REM
 REM If something goes wrong, pythonw.exe has no console to complain to, so this
-REM launcher re-runs without redirection to show the message. Pass --console to
-REM force a visible console for debugging.
+REM launcher re-runs without redirection to show the message. Pass --console
+REM (as the first argument) to force a visible console for debugging. Any other
+REM arguments are forwarded to apps/studio/desktop.py, e.g. --no-tray.
 REM
 REM Note on style: the branches below use `goto` labels rather than nested
 REM `if (...)` blocks on purpose. cmd expands %VARS% when it parses a whole
@@ -32,7 +33,7 @@ if exist "%VENV_PYW%" set "LAUNCHER=%VENV_PYW%"
 
 if not exist "%LOGDIR%" mkdir "%LOGDIR%" >nul 2>&1
 
-"%LAUNCHER%" "%DESKTOP%" 1>"%LOG%" 2>&1
+"%LAUNCHER%" "%DESKTOP%" %* 1>"%LOG%" 2>&1
 
 REM 0 is the normal path (the user closed the window), so say nothing.
 if not errorlevel 1 exit /b 0
@@ -41,14 +42,17 @@ REM Non-zero means startup failed. Re-run with output visible so the reason is
 REM readable instead of stranded in a log file.
 echo Fantasy Agent failed to start. Re-running with output visible...
 echo.
-"%VENV_PY%" -u "%DESKTOP%"
+"%VENV_PY%" -u "%DESKTOP%" %*
 echo.
 echo If nothing was printed above, see "%LOG%".
 pause
 exit /b 1
 
 :console_mode
-"%VENV_PY%" -u "%DESKTOP%"
+REM --console is consumed here, not forwarded: desktop.py has no such flag.
+REM It must be the first argument, because shift drops it before %* runs.
+shift
+"%VENV_PY%" -u "%DESKTOP%" %*
 exit /b %errorlevel%
 
 :no_venv

@@ -16,6 +16,7 @@ import importlib.util
 import socket
 import subprocess
 import sys
+import time
 import types
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -390,6 +391,67 @@ def test_the_launcher_smoke_test_needs_no_window():
     smoke_body = source.split("def run_smoke", 1)[1].split("\ndef ", 1)[0]
     assert "open_window" not in smoke_body, "run_smoke must never open a window"
     assert "wait_for_health" in smoke_body, "run_smoke must confirm the backend is healthy"
+
+
+class _DeadProcess:
+    """A child that exits before answering: poll() returns immediately."""
+
+    returncode = 1
+
+    def poll(self) -> int:
+        return self.returncode
+
+
+def test_wait_for_health_gives_up_when_the_backend_dies():
+    """A backend that exits before answering has already decided the outcome.
+
+    Without the child check, a crash at startup cost the full 90-second budget
+    spinning on a port nobody would ever listen on -- and the report said
+    "no health response" instead of naming the exit.
+    """
+
+    module = _load_launcher()
+    url = f"http://127.0.0.1:{9}/health"  # discard port: nothing answers here
+
+    started = time.monotonic()
+    assert module.wait_for_health(url, timeout=30.0, process=_DeadProcess()) is False
+    assert time.monotonic() - started < 5.0, (
+        "a dead backend must short-circuit the wait instead of spending it"
+    )
+
+
+def test_wait_for_health_still_times_out_without_a_process():
+    """The parameter is optional: the plain signature keeps its old meaning."""
+
+    module = _load_launcher()
+    url = f"http://127.0.0.1:{9}/health"
+
+    started = time.monotonic()
+    assert module.wait_for_health(url, timeout=1.0) is False
+    assert time.monotonic() - started >= 1.0, "the deadline must still be respected"
+
+
+def test_the_batch_launcher_forwards_arguments_to_the_desktop_entry():
+    """README documents `Start-Fantasy-Agent.bat --no-tray`; the bat must pass it on.
+
+    The file used to swallow every argument: desktop.py's flags were
+    unreachable through the double-click entry, and --no-tray silently did
+    the opposite of what the README promised (close still hid to the tray).
+    """
+
+    text = BAT_PATH.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+
+    forwarded = [line for line in lines if "%DESKTOP%" in line and "desktop.py" not in line]
+    assert forwarded, "the bat must invoke the desktop launcher"
+    assert all("%*" in line for line in forwarded), (
+        f"every desktop invocation must forward the caller's arguments: {forwarded}"
+    )
+
+    # --console is consumed by the bat itself (desktop.py has no such flag), so
+    # the console branch must drop it before forwarding the rest.
+    console_branch = text.split(":console_mode", 1)[1]
+    assert "shift" in console_branch, "the console branch must consume --console before %*"
 
 
 def test_open_window_configures_the_renderer_before_showing_it():

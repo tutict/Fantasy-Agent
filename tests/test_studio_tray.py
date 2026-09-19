@@ -24,6 +24,8 @@ import types
 from pathlib import Path
 from typing import Self
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 TRAY_PATH = REPO_ROOT / "apps" / "studio" / "tray.py"
 
@@ -72,6 +74,11 @@ class _FakeClosing:
 
     def __add__(self, handler: object) -> Self:
         self._handlers.append(handler)
+        return self
+
+    def __isub__(self, handler: object) -> Self:
+        if handler in self._handlers:
+            self._handlers.remove(handler)
         return self
 
 
@@ -312,6 +319,48 @@ def test_request_quit_is_safe_before_the_icon_exists():
     controller = tray.TrayController()
     controller.request_quit()  # must not raise
     assert controller.is_quitting is True
+
+
+def test_a_failed_icon_leaves_no_close_hook_behind():
+    """A half-set-up tray must not turn the fallback window into a trap.
+
+    ``setup()`` subscribes the close hook *before* the icon exists; if the
+    icon then fails, the shell falls back to a plain window while the hook
+    still hides on close. No tray icon means nothing can ever show or quit
+    the hidden window again -- the user's only way out is the task manager.
+    The failure has to undo the subscription it already made.
+    """
+
+    tray = _load_tray()
+    boom = types.ModuleType("pystray")
+
+    # Menu/MenuItem must exist: setup() evaluates them as arguments before it
+    # reaches Icon(), and this test is about the Icon() failure specifically.
+    boom.Menu = lambda *items: items  # type: ignore[attr-defined]
+    boom.MenuItem = lambda *args, **kwargs: (args, kwargs)  # type: ignore[attr-defined]
+    boom.Menu.SEPARATOR = object()  # type: ignore[attr-defined]
+
+    def _explode(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("no notification area in this session")
+
+    boom.Icon = _explode  # type: ignore[attr-defined]
+    sys.modules["pystray"] = boom
+    try:
+        controller = tray.TrayController()
+        window = _FakeWindow()
+        with pytest.raises(RuntimeError):
+            controller.setup(window, icon_dir=REPO_ROOT / "generated" / "desktop" / "icons")
+    finally:
+        del sys.modules["pystray"]
+
+    assert window.events.closing.handlers == [], (
+        "a failed tray must not leave the close hook subscribed"
+    )
+    assert controller.window is None
+    # The real window keeps no reference to the controller either way: the hook
+    # lived on the window's event, and that subscription is what was undone.
+    # (Calling close_requested() here would be meaningless -- it is the
+    # *window's* event that decides close-vs-hide, not the bare controller.)
 
 
 def test_the_tray_image_is_generated_not_committed():

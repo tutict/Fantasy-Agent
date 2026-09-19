@@ -98,6 +98,21 @@ class TrayController:
         self._window = window
         window.events.closing += self.close_requested
 
+    def detach_window(self) -> None:
+        """Undo :meth:`attach_window`: drop the close hook.
+
+        The hook exists to hide the window *instead of* closing it, which is
+        only a policy a running tray can enforce. If the icon never came up,
+        a surviving hook makes the app unkillable from the user's point of
+        view: no tray icon, close hides instead of exits, nothing left to
+        click. This is why ``setup()`` calls it when the icon fails, before
+        letting the exception reach the shell's "fall back to a plain window"
+        handler.
+        """
+        if self._window is not None:
+            self._window.events.closing -= self.close_requested
+            self._window = None
+
     def setup(self, window: Any, *, icon_dir: Any | None = None) -> TrayIcon:
         """Attach the window, build the icon, and start it on its own thread.
 
@@ -113,18 +128,26 @@ class TrayController:
         if self._window is None:
             self.attach_window(window)
 
-        self._icon = pystray.Icon(
-            "fantasy-agent",
-            icon=_tray_image(icon_dir),
-            title=self.tooltip,
-            menu=pystray.Menu(
-                pystray.MenuItem(self.tooltip, None, enabled=False),
-                pystray.Menu.SEPARATOR,
-                pystray.MenuItem(TRAY_MENU_SHOW, self._on_show_selected, default=True),
-                pystray.MenuItem(TRAY_MENU_QUIT, self._on_quit_selected),
-            ),
-        )
-        self._icon.run_detached()
+        try:
+            self._icon = pystray.Icon(
+                "fantasy-agent",
+                icon=_tray_image(icon_dir),
+                title=self.tooltip,
+                menu=pystray.Menu(
+                    pystray.MenuItem(self.tooltip, None, enabled=False),
+                    pystray.Menu.SEPARATOR,
+                    pystray.MenuItem(TRAY_MENU_SHOW, self._on_show_selected, default=True),
+                    pystray.MenuItem(TRAY_MENU_QUIT, self._on_quit_selected),
+                ),
+            )
+            self._icon.run_detached()
+        except Exception:
+            # The close hook was subscribed above; if the icon never came up it
+            # must go, or the shell's plain-window fallback would still hide on
+            # close with no tray to leave the exit path in. Re-raised so the
+            # caller logs the failure it was handed.
+            self.detach_window()
+            raise
         logger.info("tray icon started")
         return self._icon
 

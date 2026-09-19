@@ -112,19 +112,37 @@ def find_free_port(preferred: int, span: int = PORT_SEARCH_SPAN) -> int:
 
 
 def health_ok(url: str, timeout: float = 1.0) -> bool:
-    """True when the health endpoint answers with a non-error status."""
+    """True when the health endpoint answers 200.
+
+    ``urlopen`` raises ``HTTPError`` for 4xx/5xx, so anything non-200 lands in
+    the except below -- the response path only ever sees 2xx/3xx, and the only
+    status ``/health`` answers with is 200.
+    """
     try:
         # URL is always a literal 127.0.0.1 health endpoint built by plan_startup.
         with urllib.request.urlopen(url, timeout=timeout) as response:
-            return 200 <= response.status < 500
+            return response.status == 200
     except (urllib.error.URLError, OSError, ValueError):
         return False
 
 
-def wait_for_health(url: str, timeout: float = HEALTH_TIMEOUT_SECONDS) -> bool:
-    """Poll the health endpoint until it answers or the deadline passes."""
+def wait_for_health(
+    url: str,
+    timeout: float = HEALTH_TIMEOUT_SECONDS,
+    process: subprocess.Popen[bytes] | None = None,
+) -> bool:
+    """Poll the health endpoint until it answers or the deadline passes.
+
+    ``process`` is the backend child. When it exits before answering, the
+    outcome is already decided -- no answer is coming -- so this returns
+    immediately instead of spending the remaining budget on a port nobody
+    will ever listen on (a crash at startup used to cost the full 90 seconds
+    before anyone looked at why).
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if process is not None and process.poll() is not None:
+            return False
         if health_ok(url):
             return True
         time.sleep(HEALTH_POLL_INTERVAL)
@@ -342,8 +360,14 @@ def run_smoke(plan: StartupPlan) -> int:
     """Start the backend, confirm health, stop it. Never opens a window."""
     process = spawn_backend(plan)
     try:
-        if not wait_for_health(plan.health_url):
-            print(f"冒烟测试失败：{plan.health_url} 没有健康检查响应", file=sys.stderr)
+        if not wait_for_health(plan.health_url, process=process):
+            if process.poll() is not None:
+                print(
+                    f"冒烟测试失败：后端进程已退出（退出码 {process.returncode}）",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"冒烟测试失败：{plan.health_url} 没有健康检查响应", file=sys.stderr)
             return 1
         print(f"冒烟测试通过：{plan.health_url}")
         return 0
@@ -414,12 +438,18 @@ def main(argv: list[str] | None = None) -> int:
 
     backend = spawn_backend(plan)
     try:
-        if not wait_for_health(plan.health_url):
-            print(
-                f"灵构工坊启动失败：后端在 {HEALTH_TIMEOUT_SECONDS:.0f} 秒内没有响应 "
-                f"{plan.health_url} within {HEALTH_TIMEOUT_SECONDS:.0f}s.",
-                file=sys.stderr,
-            )
+        if not wait_for_health(plan.health_url, process=backend):
+            if backend.poll() is not None:
+                print(
+                    f"灵构工坊启动失败：后端进程已退出（退出码 {backend.returncode}）。",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"灵构工坊启动失败：后端在 {HEALTH_TIMEOUT_SECONDS:.0f} 秒内没有响应 "
+                    f"{plan.health_url}。",
+                    file=sys.stderr,
+                )
             return 1
         open_window(plan, with_tray=not args.no_tray)
     finally:
