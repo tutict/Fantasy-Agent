@@ -27,17 +27,37 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - **`--basetemp` 必须落在 OS 临时根目录下**（`tempfile.gettempdir()`，脚本里的 `TEMP_ROOT`），别挪回仓库内。护栏的放行条件是「路径在 OS 临时根之下」，`generated/test-tmp/` 不满足——实测把 base 目录放仓库里跑一次就会触发 `SAFE_DELETE_BULK_CONFIRM_REQUIRED`，`SystemExit` 从 fixture 收尾里逃出来，`_pytest/fixtures.py` 的 `assert not self._finalizers` 接着让后面 156 条测试集体 `failed on setup`，真正坏掉的那条被淹没在里面。挪到 OS 临时根之后 3 连跑全绿、零护栏命中。`tests/test_run_tests_runner.py` 钉着这两条（目录在豁免根下、且不在仓库里）。
 - `tests/test_dependency_guards.py` 守住几件「人工复核会过、之后会悄悄回归」的事：lock 的 `resolved` 必须全指向官方源（挡镜像污染）、每个包必须有 `integrity`、父包声明的依赖必须都记进 lock（挡平台二进制缺失——本地装得好好的，换 CI 的 runner 就 `npm ci` 找不到可执行文件）、依赖范围不得写 `latest`、`[tool.ruff.lint]` 不得出现 `select` 白名单。
 - lint 跟随 ruff 默认规则集，不设 `select` 白名单：新版本启用新规则时 CI 变红，规则会被读到并采纳，而不是被 pin 掉。单条规则确实不适用就就地写 `# noqa: CODE - 理由`——`fantasy_agent/` 里 20 处 `except Exception` 都是这么标的。
+- **前端守卫的变异验证走另一条链**：`python scripts/mutation_check_frontend_guards.py`（vitest 侧，`--only` / `--list` 同款）。两套脚本不合并——一个驱动 `scripts/run_tests.py` 读 junit，一个驱动 vitest 读它自己的汇总行，合成一个脚本等于一个脚本里塞两个 runner。该脚本比后端那套多两件事：**先跑一遍未变异的基线要求它是绿的**（否则一个本来就红的文件会「抓住」每一条变异），以及**要求红的是那条被点名的测试**（别的测试红了报 `OTHER`，算未证明）。新增/改动前端守卫时先往它的 `CASES` 里补用例，别再写一次性脚本。
 
-## 前端（apps/frontend + apps/studio/static）
+## 前端（apps/frontend）
 
+- 只有**一代**前端：`apps/frontend/` 的 Vite + React/TSX 应用，经 `apps/frontend/dist/` 由 Studio 服务。上上代手写静态页（`apps/studio/static/`）已整体退场，`_frontend_index_or()` 在 dist 缺失时**响亮失败**（503 + 指名 `npm run frontend:build`），不再静默端出另一套 UI。所以「用户看到的是哪个界面」不再取决于上次构建是几天前。
+- **不要**在 `apps/studio/static/` 下新增或恢复文件；`escapeHtml()` 那套手写页约定随之作废。React 侧插值默认转义，别用 `dangerouslySetInnerHTML`。
 - 策划工作台在 `apps/frontend/src/workbench/`（`PlanningWorkbench` 主组件 + `workbenchModel` 纯函数 + `PlanPanels` 八个面板）。旧静态页 `planning-workbench.html` 已删除，`/workbench` 与其它路由一样走 dist 优先。
 - 工作台通过 `POST /api/tools/{name}` 调后端策划工具。工具名是跨端契约：改动任一侧后跑 `tests/test_workbench_tool_coverage.py`，前端引用不存在的工具、或后端新增未接 UI 的工具都会红。
 - 工作台只做策划，不写文件、不起进程 —— 执行一律在流程控制台。所以这里没有 `confirmed_side_effects` 之类的审批标记，唯一闸门是「点子确认后才能跑计划工具」。
 - 新增/改名后端端点后，跑 `tests/test_frontend_endpoint_coverage.py`：前端引用了不存在的端点会红；后端新增了前端没接的端点必须登记进 `KNOWN_WITHOUT_UI` 并写明原因。
 - i18n 的中英字典必须同步加 key：`npm run frontend:test` 里的字典一致性测试会抓单边缺失和空文案。
-- 仍在用的静态页（`apps/studio/static/index.html`、`apps/studio/static/web-console/app.js`）往 DOM 里插后端字符串一律走 `escapeHtml()`；`list()` 已内置转义，不要绕过它自己拼 `<li>`。React 侧插值默认转义，别用 `dangerouslySetInnerHTML`。
+- **设计 token 只在一个地方定义**：`styles/tokens.css`（28 个自定义属性 × 明暗两套），由 `main.tsx` 导入**一次**。其余 `styles/*.css` 只放布局，不得在根作用域（`:root` / `[data-theme]`）定义 `--*`——多份全局 `:root` 同时生效时，同一个 token 取哪个值由打包顺序决定，没有任何检查会报。组件作用域的 `--*`（如 `.studio-shell` 的 `--sidebar-width`）是合法的局部状态，不受此限。`shared/tokenOwnership.test.ts` 双向钉着这条。
+- **locale / theme 同理，只有一个 owner**：`shared/localeTheme.tsx` 的 `LocaleThemeProvider` 持有 state 并写 `document.documentElement`，由 `main.tsx` 挂载**一次**。三个视图（shell / 工作台 / 流程控制台）都是它的读者，谁也不准自己写 `documentElement`、谁也不准再建一个 provider；`useLocaleTheme()` 在 provider 外**抛错**而不是回落默认值，回落会静默重建「两个真相」。视图**内联在同一 document 里**（`visitedPanels` 首次访问才挂载、之后 CSS 隐藏，切走不卸载——console 有在飞的 job 轮询），所以 `/web-console`、`/workbench` 是同一个 SPA 的路由，不是 iframe。`shared/localeOwnership.test.ts` 逐条钉着，行为面在 `studio/StudioShell.test.tsx`。
+  - 判据写**赋值 / 调用形态**（`documentElement.lang =`、`selectedEngineVersion(readHandoffPlan())`），不写裸标识符：这些文件自己的注释和错误消息里就会提到这些名字，裸子串扫描会被散文满足——**真空通过**，已经栽过三次。
+  - `panelHref` 的 `dev` / `base` 是显式参数，因为 `import.meta.env.DEV` 编译期内联、测试里恒为真，生产分支否则没有任何测试够得着（它就是这么漏掉一次 404 的）。
 - 提交前跑：`npm run frontend:typecheck`、`npm run frontend:test`、`npm run frontend:build`（CI 会跑同样的三条加后端 pytest + ruff）。
+- **`npm run frontend:test` 在 Windows 上要求 `process.cwd()` 的盘符大小写与磁盘一致。** 某些 shell（包括 Agent 的 Bash 工具）拿到小写 `c:\...`，此时 vitest 默认 pool 会让**每一个**测试文件在收集阶段就挂：`Vitest failed to find the runner` / `Vitest failed to find the current suite` / `TypeError: Cannot read properties of undefined (reading 'config')`，汇总成 `Test Files 19 failed / Tests no tests`。这是跑法不是回归——首行 `RUN v5.0.0 c:/...` 是小写就是它，`C:/...` 才是好的。修法是让子进程 cwd 规范大小写，**不要改 `vitest.config.ts`**（CI 在 Linux 上没这个问题）。`--pool=vmThreads` 能绕开但会制造 `vi.mock` 失效、相对 URL `fetch` 报 `Failed to parse URL` 两类假失败，不是替代品。上游：vitest-dev/vitest#10812。细节见 `docs/superpowers/plans/2026-09-16-frontend-ui-replan.md` §5。
 - 依赖不要写 `latest`；锁版本靠 `package-lock.json`，新增依赖后确认 lock 已同步（`tests/test_dependency_guards.py` 会检查，见上方「测试与校验」）。
+- 面向人的项目名是「灵构工坊」；`Fantasy Agent` / `fantasy-agent` / `fantasy_agent` 是实现标识，不改。中文模式下界面不得出现硬编码的 `Fantasy Agent`——`tests/test_product_name.py` 钉着这条（它抓过三处：两个 shell 的 `<h1>` 和一个 `aria-label`）。
+- 界面重规划的分阶段计划在 `docs/superpowers/plans/2026-09-16-frontend-ui-replan.md`（F0–F5）。动前端结构前先读它的状态行，别另起一套。
+
+## 桌面外壳与打包（apps/studio/desktop.py、tray.py、icons.py）
+
+- `desktop.py` 是双击入口：起后端子进程 → 等 `/health` → 开原生窗口。它**不复用** `scripts/start-fantasy-agent.ps1`，因为那个脚本最后一行是前台阻塞的 uvicorn，Python 调它会挂住；两条路径各自实现同一套启动序列，改一条要看另一条。
+- `open_window` 里 `private_mode=False` + `storage_path` 是**必需配置而不是优化**：用默认的临时 profile，WebView2 能取到 HTML 但渲染器起不来，窗口全白。A/B 探针实测过（默认 profile 抓 0 个资产，持久 profile 抓到样式表、图片、脚本和 favicon）。
+- 关闭窗口 = 隐藏到托盘，不是退出。唯一的退出路径是托盘菜单。`tray.py` 的 `close_requested` **必须**在 quitting 时返回 `True`：无条件返回 `False` 会让应用从自己的菜单里都关不掉。这套不对称有 6 个变异用例钉着（`scripts/mutation_check_all_guards.py` 的 Y1–Y6）。
+- 窗口调用（hide/show/destroy）必须走 worker 线程。它们阻塞在 `shown` 事件上，而那个事件由 GUI 线程 set——在 GUI 线程里等就是死锁。
+- 托盘失败不得拖垮窗口：启动钩子里吞掉异常并记日志。没有通知区域的会话仍然要能开窗口。
+- 图标由 `icons.py` 用代码画（托盘 / 窗口 / 安装包共用一份绘制），仓库里不放图标二进制。
+- 打包走 `scripts/package_desktop.py --target <platform>`，**只能构建当前平台**，跨平台明确报错。`dist/` 已 gitignore。三平台由 `.github/workflows/release.yml` 的矩阵各自在原生 runner 上构建，产物进草稿 release。
+- 产物**未签名、未公证**。README 和 release notes 都这么写。接入证书之前不得把任何发布描述为"已签名"——`tests/test_packaging.py` 会抓这类措辞。
 
 ## 语言规则
 

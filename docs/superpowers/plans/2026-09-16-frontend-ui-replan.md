@@ -1,6 +1,6 @@
 # 前端 UI 重新规划
 
-> 状态：F0 已落地；F1 已全部落地（2026-09-18，`2dfe487` + `99d16e4` + `ad8adf3` + `fa7b702`，含删 console 重复 tab）；**F5 第一步已落地**（2026-09-18，`d73762a`：`apps/studio/static/` 退场 + `_frontend_index_or` 响亮失败 + 测试依赖修完）；F2–F4 待定，F5 剩余两项（文档）待定。
+> 状态：F0 已落地；F1 已全部落地（2026-09-18，`2dfe487` + `99d16e4` + `ad8adf3` + `fa7b702`，含删 console 重复 tab）；**F5 第一步已落地**（2026-09-18，`d73762a`：`apps/studio/static/` 退场 + `_frontend_index_or` 响亮失败 + 测试依赖修完）；**F2 已落地**（2026-09-19，tokens.css 单一来源 + `tokenOwnership.test.ts` 4 条守卫）；**F4 已落地**（2026-09-19，iframe → 路由 + locale/theme 单一 owner + `visitedPanels` 切走不卸载；15 个变异全红，四处守卫真空/漏判被变异照出来）；**F3 已落地**（2026-09-19，编排板 + `/pipeline` 路由 + 旧 stage 渲染从 console/workbench 退场；前端 221 passed / 19 files，后端读前端源码的守卫改成按归属断言），F5 剩余文档项部分已补（`AGENTS.md` / `README.md` 已改，`docs/ui/web-console.md` 未动）。
 > 上游依赖：`docs/superpowers/plans/2026-09-16-internal-pi-task-orchestration.md`——编排 Task 2–6 会改变这个界面**必须显示什么**。
 > 本文所有数字都是本轮实测，复现命令见 §5。
 
@@ -64,6 +64,8 @@
 `console.css` ∩ `workbench.css` = 28 个 token，值**全部相同**，差异数 0 → **112 行纯重复**。三份都被 `main.tsx` 静态 import，全站生效（没有 CSS Modules、没有 scoped），所以"哪个文件是 token 的准"没有唯一答案。
 
 **现在一致不是因为有人守着它，是因为还没人只改其中一份。** 一次主题调色漏掉一份就会分叉，而没有任何检查会发现。
+
+> **2026-09-19 更正**：上表的「差异数 0」只对 `console.css` ∩ `workbench.css` 成立。`studio.css` 与另两份**已经分叉**——`--chrome`（明暗各一）、`--code-bg`、`--surface-muted`、`--muted-strong`（暗色）共 4 个 token 各有两个值（`studio.css:6,28,30,31,37`）。三份 `:root` 都是全局顶层且都在 `main.tsx` 的导入图里，所以这 4 个 token 当时是**两个定义同时生效**。构建产物实测 `studio.css` 排最后 ⇒ studio 的值才是实际渲染的那一组。F2 采用该组值，因此收敛是零渲染变化。这条更正说明：分叉不是「将来会」，是**当时已经**发生了。
 
 （本轮做过一次"引用了但没定义的自定义属性"扫描，`console.css` 只命中 `--mono`，它带着 fallback（`var(--mono, ui-monospace, …)`）——**误报**，记在这里以免下次重跑再被骗一次。）
 
@@ -224,24 +226,56 @@ Studio 外壳（单页，一层路由）
 
 守卫的 key 提取读**源码文本**（`?raw` 导入），不读运行时模块：esbuild 转换后 `Function.prototype.toString()` 不保证保留 `t("...")` 调用，运行时提取器会静默少报——而少报的守卫比没有更坏。这条已用变异验证：从 `consoleI18n` 删掉 `humanGate`，两条独立断言都报红。
 
-### F2 token 收敛
+### F2 token 收敛（**已落地**，2026-09-19）
 
-- [ ] 新增 `apps/frontend/src/styles/tokens.css`（28 token × light/dark），三份样式表 import 它并删掉自己的 `:root` 块。
-- [ ] 守卫：除 `tokens.css` 外，任何 `styles/*.css` 不得定义 `--*` 自定义属性。
-- [ ] 验证：`frontend:build` 后 dist CSS 里 token 定义处数 = 56。
+- [x] 新增 `apps/frontend/src/styles/tokens.css`（28 个根作用域 token × 明暗两套），由 `main.tsx` 导入**一次**；`console.css` / `workbench.css` / `studio.css` 各自的 `:root` 块删除，只剩布局。
+- [x] 守卫 `shared/tokenOwnership.test.ts`（4 条）：除 `tokens.css` 外任何样式表不得在**根作用域**定义 `--*`；`tokens.css` 只允许被一个模块导入且必须是 `main.tsx`；暗色块不得有明色块没有的 token；外加一条读盘下限护栏。**4 个变异全部报红**（往 workbench.css 塞回 `:root`、删掉 main.tsx 的导入、让第二个模块也导入、只给暗色块加 token），全部逐字节还原。
+- [x] 验证：`frontend:build` 后 dist CSS 里根作用域自定义属性定义处数 = **56**（28 × 2），与预期一致；CSS 40.45 → **39.59 kB**。
 
-### F3 编排板（依赖编排 Task 2 落地）
+**与计划不同的两点，都是实测改的：**
 
-- [ ] 新增 `apps/frontend/src/orchestration/`，把 `production_pipeline` 的渲染从两个 panel 里搬进来（定调③）。
-- [ ] 阶段卡从"计划快照"改成"运行状态"：区分计划态与运行态 `status`；`kind="human"` 的阶段给确认入口而不是工具清单。
-- [ ] 接入 `ORCHESTRATION_TO_EXECUTOR_STAGES`（编排 Task 4 的产物），阶段卡可下钻到执行层 stage。
-- [ ] 出口校验、阶段级确认、返工按钮随编排 Task 3 / 4 / 5 依次接线。
+1. **§1.4 说「三份 token 值全部相同，差异数 0」——实测不止相同，`studio.css` 与另两份已经分叉。** `--chrome`（明+暗）、`--code-bg`、`--surface-muted`、`--muted-strong`（暗）共 4 个 token 两个值。三份 `:root` 全是全局顶层、且都在 `main.tsx` 的静态导入图里，所以**同一个 token 同时有两个定义在生效**，取哪个由打包顺序决定。去哪一侧？直接量构建产物：`studio.css` 排在最后，**studio 的值才是用户一直看到的那一组**。所以 tokens.css 对这 4 个 token 采用 studio 的值 ⇒ **可证明的零渲染变化**；改为 console/workbench 的值会是一次（极小的）视觉改动，属于另一个决定。
 
-### F4 入口收敛（iframe → 路由）
+2. **`--sidebar-width` 不是 token，是组件状态。** 它由 `StudioShell.tsx:107` 的内联样式按实例写入、由 `.studio-shell.sidebar-collapsed` 覆写为 82px。第一版把它一并搬进 tokens.css 是错的，守卫当场报红。正解：默认值 `282px` 移到 `.studio-shell`（与使用它的组件放在一起），守卫的判据收紧为**根作用域**——组件作用域的 `--*` 是合法 CSS 模式，不该被禁止。
 
-- [ ] 三个视图改成同一 SPA 的路由。**先定**：保留"切走不卸载"（等价于现在的 `display: none`）还是明确接受状态丢失。
-- [ ] locale / theme 单一来源，去掉查询参数传递与没人读的 `embed=1`。
-- [ ] `selectedEngineVersion()` 两套实现合一（读 plan）。
+### F3 编排板（**已落地**，2026-09-19）
+
+- [x] 新增 `apps/frontend/src/orchestration/`（`orchestrationModel.ts` 纯函数 + `OrchestrationBoard.tsx` 组件 + `styles/orchestration.css`），把 `production_pipeline` 的渲染从两个 panel 里搬进来（定调③）。搬完之后 **console 的 `stage-strip` 与 workbench 的 `pipeline` tab 都删了**——`production_pipeline` 现在只有这一个读者，改字段不必再改三处。
+- [x] 阶段卡从"计划快照"改成"运行状态"：区分计划态与运行态 `status`；`kind="human"` 的阶段给确认入口而不是工具清单。
+- [x] 接入 `ORCHESTRATION_TO_EXECUTOR_STAGES`（编排 Task 4 的产物），阶段卡可下钻到执行层 stage。
+- [x] 出口校验、阶段级确认、返工按钮随编排 Task 3 / 4 / 5 / 6 依次接线。
+
+**落地时改掉的接口语义（不是实现细节）**：`POST /api/orchestration/run` 收的是 **`plan`，不是 `prompt`**。原设计让后端用 prompt 重建计划，但板子画的是用户**正在看的**那一份——重建等于让卡片和运行分属两份计划，两边对不上的时候没人能说清哪边是对的。这条由 `tests/test_studio_app.py::test_the_run_advances_the_plan_it_was_given_not_a_rebuilt_one` 钉住。
+
+**入口形态**：`/pipeline` 是路由（与 `/`、`/web-console` 并列，`GET /pipeline` 由 `_frontend_index_or()` 提供），不是 panel 里的一个 tab。原因是它跟 console / workbench 是**并列的三个入口**，不是同一个视图的第三种切法；`WorkbenchPanelKey` 里因此删掉了 `"pipeline"`。
+
+**为什么 human gate 不给 approve 按钮**：编排器把人类闸门排除在 `pending_confirmations` 之外（批准它不会让它跑），所以板子对 `kind="human"` 只给「打开审批界面」入口。给个按不动的 approve 按钮，比不给更糟——它会教用户以为闸门是坏的。
+
+### F4 入口收敛（iframe → 路由）（**已落地**，2026-09-19）
+
+- [x] 三个视图改成同一 SPA 的路由。**决定：保留「切走不卸载」**，用 `visitedPanels` 实现——首次访问才挂载，之后保持挂载、由 CSS `display:none` 隐藏。理由是风险清单里那条：console 在飞的 job 轮询和未保存的策划对话都在组件 state 里，卸载就是丢进度，这不是样式取舍。
+- [x] locale / theme 单一来源：新增 `shared/localeTheme.tsx`（`LocaleThemeProvider` + `useLocaleTheme`）。三个视图各自的 `useState<Locale>` / `useState<Theme>` 与 `document.documentElement` 写入全部删除，`main.tsx` 成为唯一挂载点。`useLocaleTheme()` 在 provider 外**抛错**而不是回落默认值——回落会静默重建「两个真相」，而且由「哪个视图忘了挂 provider」决定。
+- [x] 去掉查询参数传递与 `embed=1`：删 `localizedHref` / `localizedRoute`，console 的「新标签页打开工作台」改为裸 `window.open("/workbench")`（新文档从共享 localStorage key 读）；删 `isEmbed()` / `.wb-shell.embedded`；`i18n.ts` 删 `consoleFrameTitle` / `workbenchFrameTitle`。
+- [x] `selectedEngineVersion()` 两套实现合一：shell 的 `handedOffEngineVersion()` 改为 `selectedEngineVersion(readHandoffPlan())`。
+  **等价性可证**：`ProductionPipelineStage.id` 是 8 元 `Literal`，含 `"godot"` 的只有 `godot_quick_play`、含 `"unreal"` 的只有 `unreal_production`，所以旧版 `id.includes("godot")` 与新版 `=== "godot_quick_play"` 在任何合法计划上等价 ⇒ 行为保持而非行为改变。
+- [x] 存储层：删 `CONSOLE_LOCALE_KEY` / `WORKBENCH_LOCALE_KEY`，只留 `STUDIO_LOCALE_KEY`；新增 `decodeStoredHandoff()`（区分 empty / invalid / handoff / plan 四态）与 `readHandoffPlan()`，`readPlanningHandoff()` 复用同一解码器。
+
+**F4 抓出的三个真缺陷**（都不是重构引入的新问题，是重构把它照出来的）：
+
+1. **`panelHref` 的生产分支会给 `/frontend/web-console`（404）。** 被删的 `localizedHref` 原本带 DEV/生产分支，重写时漏了。教训在 `import.meta.env.DEV` 上：编译期内联 ⇒ 测试环境恒为真 ⇒ **这个分支没有任何测试够得着**，所以它当初才能悄悄上线。已把 `dev` / `base` 改成显式参数（带默认值），生产分支由行为测试覆盖（`FE4-6` 变异钉着）。
+2. **守卫真空。** `assert "document.documentElement.lang" in locale_theme_source` 被 `localeTheme.tsx` 自己的注释散文满足——删掉真赋值，断言照样通过。同一形态当天出现三次（另两处：`"readHandoffPlan"` 被导入行满足、`<LocaleThemeProvider>` 被 provider 的错误消息字符串满足）。**判据一律收紧为赋值 / 调用形态**，不用裸标识符；`localeOwnership` 侧同样改为 `documentElement\.lang\s*=` 这样的赋值匹配。
+3. **散文制造假阳性（反方向）。** 我在 `StudioShell` 的 `visitedPanels` 注释里写「console 轮询 `/api/jobs/{id}`」——那条路径**后端根本不存在**，而 `test_frontend_endpoint_coverage.py` 把非测试源码里任何 api-path 字面量都当调用点，于是它报红；**更糟的是我改注释解释这件事时又把那个字面量写了一遍**，第二次报红。前端注释里提端点**只能用文字描述**。这条不属于 F4 的选择，属于 F4 写下的注释。
+
+**F4 的守卫与验证：**
+
+| 守卫 | 钉什么 |
+|---|---|
+| `shared/localeOwnership.test.ts`（9 条） | 每个文档级全局恰好一个 writer：`documentElement.lang` / `.dataset.theme` / `document.title` 的**赋值**；`STUDIO_LOCALE_KEY` 只在 provider + storage；`<LocaleThemeProvider>` 只在 `main.tsx`（provider 自身模块除外，它在抛错消息里提到自己）；`selectedEngineVersion` 唯一实现且无无参调用；不再构造 `?locale=`/`?theme=` 查询串与 `embed`；shell 无 iframe |
+| `studio/StudioShell.test.tsx`（11 条） | 行为面：无 iframe、首次访问才挂载、切走仍挂载、深链 URL、`panelHref` 的 dev / 生产两分支与无路由面板返回 `null`、provider 外抛错、locale 透传进视图、theme 只写一次 |
+| `tests/test_studio_app.py` | 读发布源码钉结构（`<iframe` 不在 shell、`FrameTitle` 不在字典、`STUDIO_LOCALE_KEY` 不在 shell、两个赋值在 provider、`panelFromPathname` 起手、`selectedEngineVersion(readHandoffPlan())` 的调用形态） |
+| `scripts/mutation_check_frontend_guards.py`（**新增**） | 前端守卫的变异验证（前端套不进 pytest harness）：8 个变异全部报红、逐字节 sha256 还原、先证明基线是绿的 |
+
+变异验证合计 **15 个**：后端侧 7 个（`F4-1`…`F4-7`，进 `scripts/mutation_check_all_guards.py`，该文件现 76 个用例）＋ 前端侧 8 个（`FE4-1`…`FE4-8`）。**全部报红，全部逐字节还原。**
 
 ### F5 清理与文档
 
@@ -250,7 +284,7 @@ Studio 外壳（单页，一层路由）
   - 「修 3 条断言的右半边」落地方式与预想不同：3 条断言不是"右半边要改"，而是**左半边（旧静态页）删掉后暴露出右半边本身就写错了**——`data-target="console"` 在 React 里根本不存在（是 `data-target={key}` 由 map 生成）、`fantasy-agent-planning-handoff` 属于 `shared/storage.ts` 而非 console 组件、`fantasy-agent-studio-locale` 是导入常量。原来那个 `or` 让这些错误断言一直由死页兜着。
   - 顺手补了一条 `test_store_keys_are_defined_once_and_imported_everywhere`：`StudioShell.tsx:599` 原先把 handoff key 写成字符串字面量（而非导入 `HANDOFF_KEY`），意味着 key 有两个定义、重命名时 shell 会静默读不到 handoff 而没有任何测试会红。已改为导入，并由新测试钉住。
 - [ ] 重写 `docs/ui/web-console.md`（它描述的入口已不存在）或并入 `docs/ui/studio.md`：三层导航、面板归属、`KNOWN_WITHOUT_UI` 的边界。
-- [ ] `README.md:193` 目录注释同步。
+- [x] `README.md:193` 目录注释同步（2026-09-19）：改为 `frontend/  # 唯一的界面源码（Vite + React/TSX）；dist 缺失时界面路由 503，不再回退旧页`（现第 223 行）。同轮还改掉了 `AGENTS.md` 那章标题里的 `apps/studio/static`。
 - [x] 删除 console 中与策划层重复的 tab（2026-09-18，`d73762a` 之后）。原计划删 6 个，实际按计划删 6 个 —— 但**核实后确认 `pipeline` 与 `qa` 同样有 workbench 等价物**（workbench 的 `panelBody()` 对二者都有 case），只是计划当初漏列。工程师定调「按计划删 6 个」，故 `pipeline`/`qa` 保留。
   - 删的是**入口不是实现**：6 个面板的实现都在 `shared/panels/PlanPanels.tsx`，workbench 继续用，一个字没动。console 的 tab 从 10 个降到 2 个（`review` / `specs`）—— 这两个是 console 独有（workbench 完全不引用 `ReviewPanel` / `SpecBundlePanel`）。执行面板（rail）不在 tab 体系内，未受影响。
   - 连带清理：`consoleI18n` 删 13 个死 key（227 → 214）、删死组件 `EmptyState`、删 `setGddLocale` 调用点、删 `console.css` 里 `.empty-state` / `.signal-map` / `.signal-route` / `.signal-dot` / `.dot-a/b/c` / `@keyframes pulse` 整段（CSS 37.10 → 36.09 kB）。
@@ -260,21 +294,51 @@ Studio 外壳（单页，一层路由）
 
 ## 5. 验证
 
-| 项 | 命令 | F0 实测（2026-09-16） | 安全网后（2026-09-18） | 静态页退场后（2026-09-18） | 删重复 tab 后（2026-09-18） |
-|---|---|---|---|---|---|
-| 前端类型 | `npm run frontend:typecheck` | clean | clean | clean | clean |
-| 前端测试 | `npm run frontend:test` | 69 passed | **90 passed / 5 todo（95）** | **103 passed（9 files）** | **106 passed（9 files）** |
-| 前端构建 | `npm run frontend:build` | — | ✓ built（29 modules，340.63 kB） | ✓ built（32 modules，335.95 kB） | ✓ built（32 modules，333.25 kB / CSS 36.09 kB） |
-| Ruff | `.venv/Scripts/python.exe -m ruff check .` | — | — | All checks passed | All checks passed |
-| 读前端源码的后端测试 | `.venv/Scripts/python.exe scripts/run_tests.py tests/test_studio_app.py tests/test_web_console_app.py -q` | **43 passed** | 未动后端，未跑 | **40 passed** | 未重跑（并入全量） |
-| 全量后端 | `.venv/Scripts/python.exe scripts/run_tests.py` | 未跑（本轮只动前端资产） | 未跑（同上） | **590 passed / 0 failed（108.16s）** | **590 passed / 0 failed（112.28s）** |
+| 项 | 命令 | F0 实测（2026-09-16） | 安全网后（2026-09-18） | 静态页退场后（2026-09-18） | 删重复 tab 后（2026-09-18） | F2 token 收敛后（2026-09-19） | F4 落地后（2026-09-19） | F3 落地后（2026-09-19） | 四轴 review 后（2026-09-19） |
+|---|---|---|---|---|---|---|---|---|---|
+| 前端类型 | `npm run frontend:typecheck` | clean | clean | clean | clean | clean | clean | clean | clean |
+| 前端测试 | `npm run frontend:test` | 69 passed | **90 passed / 5 todo（95）** | **103 passed（9 files）** | **106 passed（9 files）** | **173 passed（15 files）** | **193 passed（17 files）** | **221 passed（19 files）** | **221 passed（19 files）** |
+| 前端构建 | `npm run frontend:build` | — | ✓ built（29 modules，340.63 kB） | ✓ built（32 modules，335.95 kB） | ✓ built（32 modules，333.25 kB / CSS 36.09 kB） | ✓ built（35 modules，CSS **39.59 kB**） | ✓ built（JS 350.59 kB / CSS **39.57 kB**） | ✓ built（39 modules，JS 362.18 kB / CSS 42.33 kB） | ✓ built（39 modules，JS 362.18 kB / CSS 42.33 kB） |
+| Ruff | `.venv/Scripts/python.exe -m ruff check .` | — | — | All checks passed | All checks passed | All checks passed | All checks passed | All checks passed | All checks passed |
+| 读前端源码的后端测试 | `.venv/Scripts/python.exe scripts/run_tests.py tests/test_studio_app.py tests/test_web_console_app.py -q` | **43 passed** | 未动后端，未跑 | **40 passed** | 未重跑（并入全量） | 未重跑（并入全量） | 未重跑（并入全量） | **47 passed**（含新增的 board 归属测试） | 未重跑（并入全量） |
+| 全量后端 | `.venv/Scripts/python.exe scripts/run_tests.py` | 未跑（本轮只动前端资产） | 未跑（同上） | **590 passed / 0 failed（108.16s）** | **590 passed / 0 failed（112.28s）** | **650 passed / 0 failed（84.23s）** | **673 passed / 0 failed（95.31s）** | **733 passed / 0 failed（103.30s）** | **734 passed / 0 failed（94.83s）** |
+| token 守卫变异 | `mutate_tokens.py`（4 个变异） | — | — | — | — | **4/4 caught，全部逐字节还原** | 已并入 `mutation_check_frontend_guards.py` | — | — |
+| F4 守卫变异（后端侧） | `scripts/mutation_check_all_guards.py --only F4-` | — | — | — | — | — | **7/7 caught** | 全量 **92/92 caught** | 全量 **93/93 caught**（新增 `S2`） |
+| F4 守卫变异（前端侧） | `scripts/mutation_check_frontend_guards.py` | — | — | — | — | — | **8/8 caught** | **8/8 caught** | **8/8 caught**，且该脚本**已接进 `ci.yml`** |
+| F3 守卫变异（后端侧） | `scripts/mutation_check_all_guards.py --only F3-` | — | — | — | — | — | — | **2/2 caught** | **2/2 caught** |
+| brief 上限变异（后端侧） | `scripts/mutation_check_all_guards.py --only "an oversized skill brief"` | — | — | — | — | — | — | — | **1/1 caught** |
+
+**四轴 review 的处置（2026-09-19）**：四路并发只读复核（正确性 / 安全性 / 可维护性 / 测试覆盖），报出的条目逐条实证复核后改了三条、驳回三条。**子 agent 的摘要必须自己验证再动手**——这次三条 P2 里有一条是读打包快照（`dist/`）读出来的误报，一条「沙箱无外网所以没实测」的疑点实测是错的。
+
+改动的三条：
+
+1. **P1 — 前端变异 harness 物理上接不进 CI。** `scripts/mutation_check_frontend_guards.py` 把 vitest 定位成 `node_modules/.bin/vitest.cmd`，而 npm 只在 Windows 写 `.cmd`；POSIX 上那个 shim 是无扩展名的 shell 脚本。于是它一边被 `AGENTS.md` 写成「前端守卫的变异验证走另一条链」，一边在 ubuntu runner 上必然 `SystemExit`——**一个只在有人记得才在本机跑的 harness，和不存在差别不大**。改成 `node_modules/vitest/vitest.mjs` + `node`（每个平台同一个文件，顺带省掉 shim 的子 shell），并把它接进 `ci.yml` 的 frontend job（那个 job 因此也装 Python，脚本只用标准库）。
+2. **P2 — `MAX_BRIEF_CHARS` 是死常量。** 它的注释承诺给每条 brief 封顶（*"it rides in the system prompt of every turn of every stage"*），但全仓只有定义 + `__all__` 两个读取点，旁边的尺寸测试还**把 4000 又写了一遍**——同一个数字两处，改一处不会提醒另一处。现在 `skill_brief` 真的截断，尺寸测试改成读常量，并新增 `test_an_oversized_brief_is_cut_to_the_ceiling`（往临时目录里放一个超长 `SKILL.md`）：它证的是「切了」，不是「今天的 brief 恰好够短」。配变异 `S2`，摘掉切片必须红（实测 `AssertionError: assert 8406 == 4000`）。
+3. **P2 — `AGENTS.md` 说 `tokens.css` 有「29 个自定义属性」，实际 28**（56 条定义 = 28 × 明暗）。
+
+驳回的三条（附证据，免得下一个人重新查一遍）：
+
+- **「`executor.py` 的 `StageResult("assets")` 不在 `ORCHESTRATION_TO_EXECUTOR_STAGES` 里」（正确性轴）**——它确实是源码里的（`fantasy_agent/executor.py:832`，不是 `dist/` 快照），也确实是唯一没出现在任何表里的阶段名。但它是「没有任何非 preflight 阶段」时补的一条 `blocked` **诊断**（`detail="No asset workers selected"`），不是可续跑的执行步。塞进 `GODOT_STAGE_ORDER` 反而会改掉续跑语义。P3，不改。
+- **「`_ORCHESTRATION_SESSIONS` 无上限，可被无限增长耗尽内存」（安全性轴）**——Studio 只监听 `127.0.0.1`（`desktop.py` 里 host 写死），是本地单用户工具；`main.py` 里也没有 `CORSMiddleware`。P3，不改。
+- **「`.agents/` 是未跟踪目录」（可维护性轴）**——空目录，git 本来就不跟踪，不会进版本库。
+
+两条「未实测」被实测掉：`pywebview>=6.2` 是真实版本（PyPI 最新 **6.2.1**，安全性轴当时因沙箱无外网标了未验证）；`_strip_sections` 剥的 `## 输入` / `## 输出` 与 7 个 `SKILL.md` 的真实标题一致，七个目录名全部存在。
+
+跑法注意（第三次，2026-09-19）：**`--basetemp` 的父目录要先建。**`pytest --basetemp=D:\...\fa-full2\p` 在 `fa-full2` 不存在时不会自己建父目录，每个用例在 setup 阶段报 `FileNotFoundError`——首跑拿到 `480 passed, 254 errors in 19.67s`，看着像代码崩了，其实是跑法（同样的错子 agent 也踩过一次）。先 `mkdir -p` 那个父目录，或者直接用 `scripts/run_tests.py`。
+
+还有一条与本轮无关但值得记的观察：`scripts/run_tests.py` 的收尾归档在 `generated/test-tmp/` 涨到 1600+ 个报告后变得**主导墙钟时间**（pytest 自己 94.83s 就结束，任务会在「running」上再挂十几分钟）。`tests/test_run_tests_runner.py` 会调它，所以全量跑也吃这个代价。
+
 
 **跑法注意（踩过一次）**：不要给 vitest 传 `--root apps/frontend`。根 `vitest.config.ts` 已经设了 `root: "apps/frontend"`，命令行再传一次会覆盖掉配置里的 `environment: "jsdom"`，回落到 node 环境后 workbench 那 10 条全部报 `localStorage is not defined`——看起来像真回归、其实是跑法错了（20 failed / 49 passed）。正确命令是裸的 `npm run frontend:test`。
+
+**跑法注意（第二次，2026-09-19）**：vitest 在 Windows 上要求 `process.cwd()` 的盘符大小写与磁盘一致。某些 shell（本机 Agent 的 Bash 工具就是）拿到的是小写 `c:\...`，此时 vitest 的默认 pool 会让**每一个**测试文件在收集阶段就挂掉，报 `Vitest failed to find the runner` / `Vitest failed to find the current suite` / `TypeError: Cannot read properties of undefined (reading 'config')`，汇总行是 `Test Files 19 failed (19) / Tests no tests`——看着像全仓崩了，其实是跑法。判别信号：`RUN v5.0.0 c:/...` 是小写盘符，`RUN v5.0.0 C:/...` 才是好的。修法是让子进程 cwd 规范大小写（例如先 `process.chdir("C:/.../Fantasy-Agent")` 再 spawn），**不要改 config**：CI 在 Linux 上没这个问题，工程师自己的终端也是规范盘符。上游：vitest-dev/vitest#10812；同形报错在 angular-cli#33559 里被明确归到盘符大小写。另：`--pool=vmThreads` 能绕开，但会引入 `vi.mock` 失效和相对 URL `fetch` 报 `Failed to parse URL` 两类假失败，**不是**替代品。
 
 ## 6. 风险
 
 - **console 的测试面比 workbench 薄得多**：补安全网前是 console 10 条（FlowConsole 4 + approval 4 + rendering 2）、workbench 36 条（PlanningWorkbench 10 + workbenchModel 26）。F1 是纯重构但跨两个入口——**先把 console 的断言补到能承重再动刀**，否则重构会静默改掉 console 的行为而全绿。**2026-09-18 已补**：console 32 条、前端总计 95（90 passed / 5 todo）。
-- **iframe → 路由会改变状态生命周期**：现在两个应用常驻 DOM、切走不卸载；改路由后默认卸载，未保存的对话 / 编辑会丢。这是 F4 的第一个待决问题，不是实现细节。
+- **iframe → 路由会改变状态生命周期**：现在两个应用常驻 DOM、切走不卸载；改路由后默认卸载，未保存的对话 / 编辑会丢。这是 F4 的第一个待决问题，不是实现细节。**2026-09-19 已决**：保留「切走不卸载」（`visitedPanels`），并且这个决定由 `StudioShell.test.tsx` 的 "keeps a visited view mounted once the user switches away" 与变异 `FE4-5` 钉住——不然下一个人改成 `activePanel ===` 就静默丢掉在飞的 job。
+- **F4 之后：前端守卫有了独立的变异 harness，但它只覆盖 F4 这 8 个用例。** `tokenOwnership.test.ts` / `panelI18n.test.ts` / `panelStyles.test.ts` / `i18n.test.ts` 的变异验证仍是各轮次的一次性脚本（`mutate_tokens.py` 已不在盘上）。下一轮要动这些守卫时，先往 `scripts/mutation_check_frontend_guards.py` 里补用例，别再写临时脚本。**2026-09-19 补充**：F3 的两条归属守卫走的是**后端** harness（`mutation_check_all_guards.py --only F3-` 的 F3-a「console 把 stage 行拿回去」/ F3-b「卡片根丢掉计划态」），因为那两条守卫本身就是"读前端源码的 pytest"。前端 harness 仍是 8 条、仍只覆盖 F4——上面的要求没变。
+- **F1 与 F3 有顺序依赖**：编排板的字段清单要先定下来再抽公共面板，否则抽完还得再改一遍。**2026-09-19 已解除**：F3 落地后卡片字段清单定在 `orchestrationModel.ts` 的 `BoardCard`（字段名刻意保持 snake_case 镜像 wire，避免重命名时静默丢字段）。
 - **删遗留静态页会让 3 条断言立刻变红**（不是"可能"）——它们现在只由 legacy 满足。要连带改测试，别把它当成纯删除提交。
 - **F1 与 F3 有顺序依赖**：编排板的字段清单要先定下来再抽公共面板，否则抽完还得再改一遍。
 
