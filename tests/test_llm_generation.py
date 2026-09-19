@@ -9,9 +9,11 @@ Covers the three behaviors that matter:
 
 from __future__ import annotations
 
-import importlib
+import importlib.util
 import io
 import json
+import sys
+from pathlib import Path
 from unittest import mock
 from urllib import error
 
@@ -36,9 +38,51 @@ def _valid_spec_payload() -> dict:
 
 
 def test_import_llm_does_not_construct_client():
-    """Importing the module must not build a client or need credentials."""
-    module = importlib.reload(llm)
-    assert module._client is None
+    """Importing the module must not build a client or need credentials.
+
+    Executed against a throwaway copy of the module rather than by reloading the
+    live one. ``importlib.reload`` re-executes the module and rebinds
+    ``llm.LLMError`` to a *new* class object, while ``fantasy_agent.agent_loop``
+    keeps the one it bound at import time -- so after a reload, the loop's
+    ``except LLMError`` silently stops catching ``llm.LLMError``, and any test
+    that depends on it passes or fails according to file ordering. Reloading also
+    did not make this test any stronger than it looks: a reload resets
+    ``_client`` either way, so the assertion was never about the live module's
+    accumulated state. Executing the source somewhere disposable proves the same
+    property -- importing builds nothing -- and leaves the live module, and its
+    exception classes, untouched.
+    """
+
+    probe = _load_llm_probe()
+
+    assert probe._client is None
+    assert probe is not llm
+
+
+def _load_llm_probe():
+    """A second, private instance of ``fantasy_agent.llm`` from the same source.
+
+    Registered in ``sys.modules`` *before* ``exec_module``, like the tray and
+    launcher probes: ``llm.py`` declares dataclasses, and the stdlib resolves
+    ``cls.__module__`` through ``sys.modules.get(...)`` while decorating them. An
+    unregistered module makes that lookup return ``None`` and the exec dies with
+    ``AttributeError: 'NoneType' object has no attribute '__dict__'``.
+    """
+
+    module_name = "fantasy_agent_llm_import_probe"
+    assert llm.__file__ is not None
+    spec = importlib.util.spec_from_file_location(module_name, Path(llm.__file__))
+    assert spec is not None
+    loader = spec.loader
+    assert loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        loader.exec_module(module)
+    except BaseException:
+        sys.modules.pop(module_name, None)
+        raise
+    return module
 
 
 def test_llm_path_used_when_payload_valid():
