@@ -1,0 +1,143 @@
+name: Release
+
+# Packaging needs a native interpreter and installer toolchain per platform, so
+# this fan-outs across the three runners rather than trying to cross-compile.
+# PyInstaller does not cross-compile at all, and a .deb needs dpkg-deb.
+#
+# Triggered by a version tag. Nothing here publishes automatically: the upload
+# step creates a draft release, and a human decides whether the unsigned
+# artefacts are good enough to publish. An unsigned binary that is described as
+# a release is the failure mode this gate exists to prevent.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build the artefacts but do not upload them"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Package (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      # One platform failing should not hide whether the other two built, since
+      # the usual cause is a single toolchain (Inno Setup, hdiutil, dpkg-deb)
+      # rather than a problem in the payload every platform shares.
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows
+            runner: windows-latest
+            extension: exe
+          - target: macos
+            runner: macos-latest
+            extension: dmg
+          - target: linux
+            runner: ubuntu-latest
+            extension: deb
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e ".[desktop]" pyinstaller
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # The installer toolchains are only available on their own runners, so
+      # each is installed where it applies. A missing tool does not fail the
+      # run: package_desktop.py reports it as skipped and still produces the
+      # directory bundle, which is the artefact that was actually tested.
+      - name: Install Inno Setup (Windows)
+        if: matrix.target == 'windows'
+        run: choco install innosetup --no-progress -y
+
+      - name: Install AppImage tooling (Linux)
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y dpkg-dev
+
+      - name: Package
+        run: python scripts/package_desktop.py --target ${{ matrix.target }} --zip
+
+      # The version in the file names comes from pyproject.toml, so the upload
+      # step globs rather than reconstructing the name -- a second copy of the
+      # version is how an artefact gets uploaded under the wrong tag.
+      - name: Upload artefacts
+        if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: linggou-studio-${{ matrix.target }}
+          path: |
+            dist/*.${{ matrix.extension }}
+            dist/*.zip
+          if-no-files-found: warn
+
+  release:
+    name: Draft release
+    needs: build
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefacts
+          merge-multiple: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # The body is generated from pyproject.toml so the release notes cannot
+      # disagree with what was built. The unsigned warning is not optional: it
+      # is the honest description of these artefacts.
+      - name: Compose release notes
+        run: |
+          python - <<'PY' > notes.md
+          import pathlib, re
+
+          text = pathlib.Path("pyproject.toml").read_text(encoding="utf-8")
+          match = re.search(r'^version\s*=\s*"([^"]+)"', text, re.MULTILINE)
+          version = match.group(1) if match else "unknown"
+
+          print(f"灵构工坊 {version}")
+          print()
+          print("构建产物（**未签名**）：")
+          print()
+          print("- Windows：`灵构工坊-Setup-*.exe`")
+          print("- macOS：`灵构工坊-*.dmg`（未经公证）")
+          print("- Linux：`.deb` 与 `.AppImage`")
+          print()
+          print("> 这些产物没有代码签名。首次运行会触发 SmartScreen / Gatekeeper 警告，")
+          print("> 这是预期行为，不是构建失败。在接入证书之前，请不要把任何一次发布描述为")
+          print("> “已签名”或“已公证”。")
+          PY
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          body_path: notes.md
+          files: artefacts/**

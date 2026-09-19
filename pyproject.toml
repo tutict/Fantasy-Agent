@@ -18,6 +18,18 @@ orchestration = [
 llm = [
     "anthropic>=0.40"
 ]
+# Native-window launch (apps/studio/desktop.py). Optional on purpose: the Studio
+# runs fine in a browser without it, and pywebview pulls in pythonnet, which
+# only matters on Windows. Install with `pip install -e .[desktop]`.
+#
+# pystray and Pillow are here because the desktop shell is not optional about
+# having a tray -- closing the window hides it rather than quitting, and the
+# tray menu is the way back. Pillow is also what draws the icons (icons.py).
+desktop = [
+    "pywebview>=6.2",
+    "pystray>=0.19",
+    "pillow>=11.0"
+]
 dev = [
     "pytest>=9.1",
     "ruff>=0.16"

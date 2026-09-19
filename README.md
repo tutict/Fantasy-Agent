@@ -89,35 +89,63 @@ flowchart LR
 - **工具环境检测**：检测 Blender、ComfyUI、Unreal、Godot 和 GitHub CLI 在本机是否可用，并给出下一步动作。
 - **API 接入**：配置可选的大模型 API，让玩法与 GDD 生成从确定性模板升级为模型生成。
 
-Windows 快速启动：
+Windows 快速启动（推荐，桌面窗口）：
 
 ```bat
 Start-Fantasy-Agent.bat
 ```
 
-启动后打开：
+双击后会做三件事：准备 Python 环境、启动后端、在**原生窗口**里打开界面。不需要终端，
+也不会拉起浏览器。
 
-```text
-http://127.0.0.1:7860
+**关闭窗口不会退出应用**，而是收进系统托盘——后端继续跑，下次打开是即时的，不用再等
+健康检查。要真正退出，用托盘菜单里的「退出」。这是托盘的常规行为，对这个工具尤其划算：
+后端启动最慢要几十秒，每次关窗口都重建一遍纯属浪费。
+
+托盘需要 `pystray` 和 `Pillow`（都在 `[desktop]` 依赖组里）。如果托盘起不来（比如没有
+通知区域的会话），窗口仍然正常打开，只是关掉即退出——托盘失败不会拖垮窗口。
+
+调试时想看控制台输出，传 `--console`：
+
+```bat
+Start-Fantasy-Agent.bat --console
 ```
 
-手动启动：
+不想用托盘（关窗口即退出），传 `--no-tray`：
+
+```bat
+Start-Fantasy-Agent.bat --no-tray
+```
+
+桌面启动器的其它用法：
 
 ```powershell
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir apps/studio --host 127.0.0.1 --port 7860
+# 打印将要使用的端口与地址，不启动任何东西
+.\.venv\Scripts\python.exe apps/studio/desktop.py --print-plan
+
+# 只验证后端能起来（起进程 → 查 /health → 停进程），不开窗口
+.\.venv\Scripts\python.exe apps/studio/desktop.py --smoke-test
+
+# 换端口
+.\.venv\Scripts\python.exe apps/studio/desktop.py --port 7900
+
+# 关闭窗口即退出，不驻留托盘
+.\.venv\Scripts\python.exe apps/studio/desktop.py --no-tray
 ```
 
-安静启动，不显示每次浏览器资源请求日志：
+桌面窗口依赖 `pywebview`、`pystray` 和 `Pillow`，它们不在核心依赖里。首次使用装一次：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e .[desktop]
+```
+
+浏览器启动方式（原有方式，仍然可用）：
 
 ```powershell
 .\scripts\start-fantasy-agent.ps1
 ```
 
-调试 HTTP 请求时打开详细访问日志：
-
-```powershell
-.\scripts\start-fantasy-agent.ps1 -VerboseAccessLog
-```
+启动后打开 `http://127.0.0.1:7860`。
 
 只做启动冒烟测试，测完即停：
 
@@ -125,11 +153,11 @@ http://127.0.0.1:7860
 .\scripts\start-fantasy-agent.ps1 -SmokeTest -NoOpen
 ```
 
-前端界面：`start-fantasy-agent.ps1` 会在 `apps/frontend/dist/index.html` 缺失时自动构建
-React 界面（只在缺失时跑一次）；没有 Node 或 `node_modules` 时退回静态页并给出提示，
-此时执行面板**没有取消按钮**。加 `-SkipBuild` 可直接跳过构建。手动构建用 `npx vite build`。
+前端界面：两条启动路径都会在 `apps/frontend/dist/index.html` 缺失时自动构建 React 界面
+（只在缺失时跑一次）。加 `-SkipBuild`（PS 脚本）或 `--skip-build`（桌面启动器）可跳过构建，
+但此时界面路由会返回 503。手动构建用 `npx vite build`。
 
-如果 `7860` 已被占用，可以换端口：
+如果 `7860` 已被占用，两条路径都会自动向上找空闲端口；也可以手动指定：
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir apps/studio --host 127.0.0.1 --port 7861
@@ -190,7 +218,9 @@ React 界面（只在缺失时跑一次）；没有 Node 或 `node_modules` 时�
 Fantasy-Agent/
 |-- apps/
 |   |-- studio/                 # 唯一的独立工作台进程（Web 入口 + 全部 REST 规划 API）
-|   `-- frontend/               # 可选的 React/TSX 面板源码
+|   |   |-- app/main.py         # FastAPI 应用
+|   |   `-- desktop.py          # 桌面窗口入口（托管后端 + 原生 WebView）
+|   `-- frontend/               # 唯一的界面源码（Vite + React/TSX）；dist 缺失时界面路由 503，不再回退旧页
 |-- fantasy_agent/              # 共享合约、库内生产角色、工作流、本地工具桥接
 |-- skills/                     # 角色行为与流程说明
 |-- mcp/                        # 本地工具（Blender/ComfyUI/Unreal/Godot/GitHub）合约
@@ -198,7 +228,7 @@ Fantasy-Agent/
 |-- generated/                  # 生成计划、资产、manifest 和日志
 |-- examples/                   # 示例 prompt 与产物
 |-- docs/                       # 架构、流程、DSL 和界面文档
-|-- scripts/                    # 单入口启动脚本
+|-- scripts/                    # 启动脚本
 `-- gameplay-schema.yaml        # Gameplay DSL schema
 ```
 
@@ -268,14 +298,46 @@ python -m venv .venv
 pip install -e .[dev]
 ```
 
+需要桌面窗口时额外装一次 `.[desktop]`（见上方「Windows 快速启动」）。
+
 运行测试：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pytest
+.\.venv\Scripts\python.exe scripts/run_tests.py
 .\.venv\Scripts\python.exe -m ruff check fantasy_agent tests apps
 ```
 
+测试必须走 `scripts/run_tests.py`，**不要**直接 `python -m pytest`。原因见 `AGENTS.md`
+的「测试与校验」一节：pytest 默认的临时目录回收方式会在本机触发护栏，导致退出码失真——
+测试可能是通过的，却报不出来。脚本接受 pytest 参数，例如
+`scripts/run_tests.py -k desktop -v`。
+
 Studio 是唯一入口，没有需要单独启动的 Agent 服务。
+
+## 打包
+
+```powershell
+.\.venv\Scripts\python.exe scripts/package_desktop.py --target windows --zip
+```
+
+产物写到 `dist/`（已 gitignore）：Windows 出安装包，macOS 出 `.app` / `.dmg`，
+Linux 出 `.deb` / `.AppImage`。
+
+**脚本只能构建当前平台的产物，跨平台会被明确拒绝。** PyInstaller 不支持交叉编译，
+`.dmg` 需要 macOS 的 `hdiutil`，`.deb` 需要 `dpkg-deb`——在 Windows 上"成功"构建出来的
+macOS 包，在 macOS 上起不来。所以三个平台各自在原生 runner 上跑，由
+`.github/workflows/release.yml` 的矩阵负责；打 tag（`v*`）触发，产物进**草稿** release，
+由人决定要不要发。
+
+应用图标不是提交进仓库的二进制文件，而是由 `apps/studio/icons.py` 用代码画出来的
+（托盘图标、窗口图标、安装包图标共用同一份绘制，改一处三处一起变）。
+
+**这些产物目前都没有代码签名**，也没有 macOS 公证。首次运行会触发 SmartScreen /
+Gatekeeper 警告，这是预期行为。在接入证书之前，不要把任何一次发布描述为"已签名"或
+"已公证"——`tests/test_packaging.py` 会把这类措辞当成缺陷。
+
+安装工具链缺失时脚本会**跳过**该步骤并打印出来（例如本机没有 Inno Setup 就不产 `.exe`），
+不会静默降级成一个残缺的包；目录形态的 bundle 始终会产出，那是被测试过的那个形态。
 
 REST 规划 API 示例：
 
