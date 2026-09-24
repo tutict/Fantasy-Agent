@@ -7,6 +7,7 @@ from pathlib import Path
 
 import yaml
 
+from fantasy_agent.artifact_identity import compute_artifact_identity
 from fantasy_agent.contracts import AssetApprovalManifest
 from fantasy_agent.godot_mcp import DEFAULT_WORKSPACE_ROOT, GodotMCPSafetyError
 from fantasy_agent.path_safety import WorkspacePathError, resolve_workspace_path
@@ -65,13 +66,13 @@ def filter_approved_blender_assets(
     manifest: AssetApprovalManifest,
     *,
     manifest_path: str = DEFAULT_APPROVAL_MANIFEST_PATH,
+    workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT,
 ) -> ApprovalFilterResult:
-    allowed: set[str] = set()
-    for decision in manifest.decisions:
-        if decision.source != "blender" or decision.decision != "approved":
-            continue
-        allowed.update(_match_keys(decision.asset_id))
-        allowed.update(_match_keys(decision.asset_path))
+    approved_decisions = [
+        decision
+        for decision in manifest.decisions
+        if decision.source == "blender" and decision.decision == "approved"
+    ]
 
     result = ApprovalFilterResult(
         manifest_path=manifest_path,
@@ -82,7 +83,23 @@ def filter_approved_blender_assets(
     )
     for rel in exported_assets:
         keys = _match_keys(rel)
-        if keys & allowed:
+        matching_decisions = [
+            decision
+            for decision in approved_decisions
+            if keys & (_match_keys(decision.asset_id) | _match_keys(decision.asset_path))
+        ]
+        current_identity = None
+        if any(decision.artifact_identity is not None for decision in matching_decisions):
+            try:
+                current_path = resolve_workspace_path(rel, workspace_root=workspace_root)
+                current_identity = compute_artifact_identity(current_path)
+            except OSError:
+                current_identity = None
+        if any(
+            decision.artifact_identity is not None
+            and decision.artifact_identity == current_identity
+            for decision in matching_decisions
+        ):
             result.approved.append(rel)
         else:
             result.skipped.append(rel)

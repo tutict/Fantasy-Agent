@@ -6,9 +6,11 @@ import threading
 import time
 from pathlib import Path
 
+import pytest
 from pydantic import BaseModel
 
 from fantasy_agent.contracts import PromptRequest
+from fantasy_agent.path_safety import WorkspacePathError
 
 
 def _load_studio_app():
@@ -19,6 +21,21 @@ def _load_studio_app():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _materialize_review_artifacts(review, root: Path, *, target: str = 'unreal'):
+    for item in review.items:
+        artifact_path = Path(item.asset_path)
+        if (
+            target == 'godot'
+            and item.source == 'blender'
+            and artifact_path.suffix.casefold() == '.fbx'
+        ):
+            artifact_path = artifact_path.with_suffix('.glb')
+        artifact_path = root / artifact_path
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_bytes(f'reviewed-{item.asset_id}'.encode())
+    return review
 
 
 def test_studio_serves_combined_desktop_panel():
@@ -667,13 +684,24 @@ def test_write_approval_manifest_api_writes_generated_yaml(monkeypatch, tmp_path
     plan = run_director_workflow(
         PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
     )
-    review = plan.creative_review
+    review = _materialize_review_artifacts(
+        plan.creative_review,
+        tmp_path,
+        target='godot',
+    )
     first = review.items[0].asset_id
     second = review.items[1].asset_id
+    blender_item = next(item for item in review.items if item.source == 'blender')
     req = module.ApprovalManifestRequest(
         review=review,
-        decisions={first: "approved", second: "needs_revision"},
+        target='godot',
+        decisions={
+            first: "approved",
+            second: "needs_revision",
+            blender_item.asset_id: "approved",
+        },
     )
+    assert req.target == 'godot'
 
     response = module.write_approval_manifest(req)
 
@@ -685,6 +713,70 @@ def test_write_approval_manifest_api_writes_generated_yaml(monkeypatch, tmp_path
     assert "approved_asset_ids:" in text
     assert first in text
     assert second in response.manifest.revision_asset_ids
+    blender_decision = next(
+        decision
+        for decision in response.manifest.decisions
+        if decision.asset_id == blender_item.asset_id
+    )
+    assert blender_item.asset_path.endswith('.fbx')
+    assert blender_decision.asset_path == Path(blender_item.asset_path).with_suffix(
+        '.glb'
+    ).as_posix()
+    assert blender_decision.artifact_identity is not None
+
+
+@pytest.mark.parametrize(
+    ('case', 'expected_error'),
+    [
+        ('missing', FileNotFoundError),
+        ('outside', WorkspacePathError),
+        ('traversal', WorkspacePathError),
+        ('symlink', WorkspacePathError),
+    ],
+)
+def test_write_approval_manifest_api_rejects_invalid_public_blender_glb(
+    case,
+    expected_error,
+    monkeypatch,
+    tmp_path: Path,
+):
+    from fantasy_agent.workflows import run_director_workflow
+
+    module = _load_studio_app()
+    workspace_root = tmp_path / 'workspace'
+    workspace_root.mkdir()
+    outside_glb = tmp_path / 'outside.glb'
+    outside_glb.write_bytes(b'outside-secret')
+    monkeypatch.setattr(module, 'REPO_ROOT', workspace_root)
+    plan = run_director_workflow(
+        PromptRequest(prompt='rooftop parkour chase', target_minutes=10)
+    )
+    blender_item = next(
+        item for item in plan.creative_review.items if item.source == 'blender'
+    )
+    if case == 'outside':
+        review_item = blender_item.model_copy(
+            update={'asset_path': (tmp_path / 'outside.fbx').as_posix()}
+        )
+    elif case == 'traversal':
+        review_item = blender_item.model_copy(update={'asset_path': '../outside.fbx'})
+    elif case == 'symlink':
+        linked_glb = workspace_root / 'linked.glb'
+        linked_glb.symlink_to(outside_glb)
+        review_item = blender_item.model_copy(update={'asset_path': 'linked.fbx'})
+    else:
+        review_item = blender_item
+    invalid_review = plan.creative_review.model_copy(update={'items': [review_item]})
+
+    with pytest.raises(expected_error):
+        module.write_approval_manifest(
+            module.ApprovalManifestRequest(
+                review=invalid_review,
+                target='godot',
+                decisions={review_item.asset_id: 'approved'},
+            )
+        )
+    assert not (workspace_root / 'generated' / 'asset-approval-manifest.yaml').exists()
 
 
 def test_asset_execute_confirmation_gate_runs_no_job():
@@ -780,12 +872,13 @@ def test_approval_manifest_api_returns_synchronized_bundle(monkeypatch, tmp_path
         PromptRequest(prompt="a stealth courier escapes a haunted station")
     )
     assert plan.production_spec_bundle is not None
-    item = plan.creative_review.items[0]
+    review = _materialize_review_artifacts(plan.creative_review, tmp_path)
+    item = review.items[0]
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
 
     response = module.write_approval_manifest(
         module.ApprovalManifestRequest(
-            review=plan.creative_review,
+            review=review,
             decisions={item.asset_id: "approved"},
             production_spec_bundle=plan.production_spec_bundle,
         )

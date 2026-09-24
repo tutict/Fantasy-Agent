@@ -96,6 +96,7 @@ class ManualCorrectionOpenRequest(StrictModel):
 
 class ApprovalManifestRequest(StrictModel):
     review: CreativeReviewReport
+    target: str = 'unreal'
     decisions: dict[str, str] = Field(default_factory=dict)
     production_spec_bundle: ProductionSpecBundle | None = None
 
@@ -951,7 +952,12 @@ def preview_spec_bundle(req: SpecBundlePreviewRequest) -> SpecBundlePreviewRespo
 def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestResponse:
     import yaml
 
-    manifest = build_asset_approval_manifest(req.review, req.decisions)
+    manifest = build_asset_approval_manifest(
+        req.review,
+        req.decisions,
+        target=req.target,
+        workspace_root=REPO_ROOT,
+    )
     path = _approval_manifest_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(

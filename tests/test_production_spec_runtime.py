@@ -27,6 +27,17 @@ def _bundle():
     return plan.production_spec_bundle
 
 
+def _materialize_review_artifacts(review, root: Path):
+    for item in review.items:
+        artifact_path = Path(item.asset_path)
+        if item.source == 'blender' and artifact_path.suffix.casefold() == '.fbx':
+            artifact_path = artifact_path.with_suffix('.glb')
+        artifact_path = root / artifact_path
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        artifact_path.write_bytes(f'reviewed-{item.asset_id}'.encode())
+    return review
+
+
 def test_load_production_spec_bundle_accepts_yaml_and_json(tmp_path: Path):
     bundle = _bundle()
     yaml_path = tmp_path / "bundle.yaml"
@@ -221,15 +232,18 @@ def test_director_plan_review_ids_cover_bundle_asset_ids():
     assert bundle_ids <= review_ids
 
 
-def test_full_approval_round_trip_does_not_demote_bundle_assets():
+def test_full_approval_round_trip_does_not_demote_bundle_assets(tmp_path: Path):
     from fantasy_agent.production_spec_runtime import director_plan_from_production_spec_bundle
     from fantasy_agent.workflows import build_asset_approval_manifest
 
     bundle = _bundle()
     rebuilt = director_plan_from_production_spec_bundle(bundle, engine_version="Godot 4")
+    review = _materialize_review_artifacts(rebuilt.creative_review, tmp_path)
     manifest = build_asset_approval_manifest(
-        rebuilt.creative_review,
+        review,
         {item.asset_id: "approved" for item in rebuilt.creative_review.items},
+        target='godot',
+        workspace_root=tmp_path,
     )
 
     synced = sync_bundle_with_approval_manifest(bundle, manifest)
