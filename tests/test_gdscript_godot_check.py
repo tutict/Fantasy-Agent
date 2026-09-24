@@ -388,9 +388,11 @@ def test_generated_scripts_load_and_run_in_godot(tmp_path, axis):
             check=False,  # failures are asserted through FAILURE_MARKERS below
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=120,
         )
-        output = result.stdout + result.stderr
+        output = (result.stdout or "") + (result.stderr or "")
         bad = [marker for marker in FAILURE_MARKERS if marker in output]
         assert not bad, f"{axis}/{name} -> {bad}\n{output}"
 
@@ -408,9 +410,11 @@ def test_generated_scripts_load_and_run_in_godot(tmp_path, axis):
         check=False,  # the harness reports through markers, not the exit code
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=180,
     )
-    output = result.stdout + result.stderr
+    output = (result.stdout or "") + (result.stderr or "")
     bad = [marker for marker in FAILURE_MARKERS if marker in output]
     assert not bad, f"{axis} runtime -> {bad}\n{output}"
 
@@ -553,14 +557,16 @@ def _play(project: Path) -> dict[str, str]:
         check=False,  # the playtest reports through PT| lines, not the exit code
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=300,
     )
-    output = result.stdout + result.stderr
+    output = (result.stdout or "") + (result.stderr or "")
     bad = [marker for marker in FAILURE_MARKERS if marker in output]
     assert not bad, f"{project.name} -> {bad}\n{output}"
 
     report: dict[str, str] = {}
-    for line in result.stdout.splitlines():
+    for line in (result.stdout or "").splitlines():
         if line.startswith("PT|"):
             _, key, value = line.split("|", 2)
             report[key] = value
