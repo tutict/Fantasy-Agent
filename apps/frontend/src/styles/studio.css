@@ -737,3 +737,28 @@ iframe:focus-visible {
     display: none;
   }
 }
+
+.brand-mark { display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid var(--line-strong); border-radius: var(--radius-m); background: var(--brand); color: var(--on-brand); font-weight: 700; }
+.nav-index { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 50%; background: var(--surface-muted); color: var(--text); }
+.studio-nav button.active .nav-index { background: var(--brand); color: var(--on-brand); }
+.settings-nav { display: grid; gap: 6px; margin-top: 18px; }
+.settings-nav summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted-strong); }
+.settings-nav button { min-height: 44px; display: flex; align-items: center; padding: 0 12px; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; }
+.settings-nav button.active { background: var(--accent-soft); color: var(--accent-deep); }
+.studio-topbar { min-height: auto; align-items: stretch; }
+.studio-topbar .journey-header { width: 100%; margin: 0; }
+.nav-copy { display: grid; min-width: 0; }
+.nav-state { color: var(--muted); font-size: var(--text-s); }
+.studio-nav button[data-state="upcoming"] .nav-index { background: transparent; }
+.studio-nav button[data-state="current"] .nav-index { border-radius: 50%; background: var(--status-running); color: var(--on-brand); }
+.studio-nav button[data-state="complete"] .nav-index { border-radius: 4px; background: var(--status-success); color: var(--on-brand); }
+.studio-nav button[data-state="blocked"] .nav-index { border-radius: 2px; background: var(--status-danger); color: var(--on-danger); }
+.studio-nav button[data-state="attention"] .nav-index { border-radius: 4px; background: var(--status-waiting); color: var(--on-danger); }
+.journey-nav > summary { display: none; min-height: var(--size-control); align-items: center; cursor: pointer; color: var(--muted-strong); }
+@media (min-width: 901px) {
+  .journey-nav > .studio-nav { display: grid !important; }
+}
+@media (max-width: 900px) {
+  .journey-nav > summary { display: flex; }
+  .studio-nav { display: grid; grid-template-columns: 1fr; }
+}

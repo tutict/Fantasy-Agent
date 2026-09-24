@@ -1,6 +1,7 @@
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { JourneyProvider } from "../shared/journeyContext";
 import { FlowConsole } from "./FlowConsole";
 import { LocaleThemeProvider } from "../shared/localeTheme";
 
@@ -9,8 +10,7 @@ import { LocaleThemeProvider } from "../shared/localeTheme";
  * local editor, so the backend refuses unless the caller passes
  * `confirmed_side_effects: true` -- and the console may only pass `true` after
  * the human confirmed. These tests mount the real console so that deleting the
- * confirmation (or hardcoding `true` again) fails the suite. `api.test.ts`
- * covers the transport; this covers the decision.
+ * confirmation (or hardcoding `true` again) fails the suite.
  */
 const { openMock } = vi.hoisted(() => ({ openMock: vi.fn() }));
 
@@ -19,8 +19,6 @@ vi.mock("../shared/api", async (importOriginal) => {
   return { ...actual, openManualCorrectionTarget: openMock };
 });
 
-// `generated` is openable in the fallback roster, so its button is enabled even
-// though no plan is loaded and the targets endpoint is stubbed empty.
 const OPENABLE_TARGET = "generated";
 
 function emptyJsonFetch() {
@@ -30,12 +28,9 @@ function emptyJsonFetch() {
 }
 
 async function renderConsole() {
-  // The console reads locale and theme from the shared provider and throws
-  // outside it -- deliberately, so a forgotten provider fails loudly instead of
-  // silently growing a second copy of the locale.
   const view = render(
     <LocaleThemeProvider>
-      <FlowConsole />
+      <JourneyProvider><FlowConsole /></JourneyProvider>
     </LocaleThemeProvider>
   );
   const button = await waitFor(() => {
@@ -61,50 +56,34 @@ beforeEach(() => {
 
 describe("manual correction approval gate", () => {
   it("does not call the backend when the user cancels the confirmation", async () => {
-    const confirmSpy = vi.fn().mockReturnValue(false);
-    vi.stubGlobal("confirm", confirmSpy);
-
     const { button } = await renderConsole();
-    button.click();
-
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
+    fireEvent.click(button);
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(openMock).not.toHaveBeenCalled();
   });
 
   it("passes confirmation through only after the user accepts", async () => {
-    vi.stubGlobal("confirm", vi.fn().mockReturnValue(true));
-
     const { button } = await renderConsole();
-    button.click();
-
-    await waitFor(() => expect(openMock).toHaveBeenCalled());
-    expect(openMock).toHaveBeenCalledWith(OPENABLE_TARGET, expect.any(String), true);
+    fireEvent.click(button);
+    const dialog = await screen.findByRole("dialog");
+    expect(openMock).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Open" }));
+    await waitFor(() => expect(openMock).toHaveBeenCalledWith(OPENABLE_TARGET, expect.any(String), true));
   });
 
   it("names the target in the confirmation prompt", async () => {
-    const confirmSpy = vi.fn().mockReturnValue(false);
-    vi.stubGlobal("confirm", confirmSpy);
-
     const { button } = await renderConsole();
-    button.click();
-
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
-    const message = confirmSpy.mock.calls[0][0] as string;
-    // The prompt has to name what is about to open -- a generic "Are you sure?"
-    // would not tell the user which application is being launched.
-    expect(message).toContain("Generated");
-    expect(message.toLowerCase()).toContain("open");
+    fireEvent.click(button);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("Generated");
+    expect(dialog.textContent?.toLowerCase()).toContain("open");
   });
 
   it("never approves without asking", async () => {
-    const confirmSpy = vi.fn().mockReturnValue(false);
-    vi.stubGlobal("confirm", confirmSpy);
-
     const { button } = await renderConsole();
-    button.click();
-    await waitFor(() => expect(confirmSpy).toHaveBeenCalled());
-
-    const approvals = openMock.mock.calls.filter((call) => call[2] === true);
-    expect(approvals).toHaveLength(0);
+    fireEvent.click(button);
+    await screen.findByRole("dialog");
+    expect(openMock.mock.calls.filter((call) => call[2] === true)).toHaveLength(0);
   });
 });

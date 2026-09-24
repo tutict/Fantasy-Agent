@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useJourney } from "../shared/journeyContext";
 
 import { callWorkbenchTool } from "../shared/api";
 import { workbenchI18n, makeTranslator } from "../shared/i18n";
@@ -76,6 +77,7 @@ function mergePlanPatch(
 }
 
 export function PlanningWorkbench() {
+  const { update } = useJourney();
   // Locale and theme belong to the provider. This view used to own them and write
   // `document.documentElement` plus `document.title` itself -- three views each
   // setting the title meant the winner was decided by mount order once they
@@ -90,6 +92,7 @@ export function PlanningWorkbench() {
   const [seed, setSeed] = useState<IdeaSeed | null>(null);
   const [seedConfirmed, setSeedConfirmed] = useState(false);
   const [plan, setPlan] = useState<DirectorBuildPlan | null>(null);
+  useEffect(() => update({ plan }), [plan, update]);
   const [fields, setFields] = useState<SeedEditorFields>(EMPTY_SEED_FIELDS);
   const [config, setConfig] = useState<WorkbenchConfig>(() => defaultConfig());
   const [activePanel, setActivePanel] = useState<WorkbenchPanelKey>("overview");

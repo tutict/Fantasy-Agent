@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { studioI18n, makeTranslator } from "../shared/i18n";
 import { HANDOFF_KEY } from "../shared/storage";
 import type { DirectorBuildPlan, OrchestrationSession } from "../shared/types";
+import { JourneyProvider } from "../shared/journeyContext";
 import { OrchestrationBoard } from "./OrchestrationBoard";
 
 /**
@@ -154,13 +155,13 @@ function stubFetch(handler: (url: string, body: Record<string, unknown> | null) 
 
 function board(overrides: Partial<Parameters<typeof OrchestrationBoard>[0]> = {}) {
   return (
-    <OrchestrationBoard
+    <JourneyProvider><OrchestrationBoard
       active
       locale="en"
       t={t}
       onOpenConsole={() => undefined}
       {...overrides}
-    />
+     /></JourneyProvider>
   );
 }
 

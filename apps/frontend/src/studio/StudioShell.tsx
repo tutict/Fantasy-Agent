@@ -14,6 +14,9 @@ import {
 import { makeTranslator, studioI18n } from "../shared/i18n";
 import { useLocaleTheme } from "../shared/localeTheme";
 import { selectedEngineVersion } from "../shared/planModel";
+import { useJourney } from "../shared/journeyContext";
+import { JOURNEY_PANELS, JOURNEY_STATE_KEYS, JOURNEY_STEP_KEYS, type JourneyStepId } from "../shared/productionJourney";
+import { Disclosure, JourneyHeader } from "../shared/ui/primitives";
 import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, readHandoffPlan } from "../shared/storage";
 import type {
   AgentRunResult,
@@ -45,6 +48,10 @@ const PANEL_ROUTES: Partial<Record<PanelKey, string>> = {
 };
 
 const DEFAULT_PANEL: PanelKey = "workbench";
+const JOURNEY_STEPS: JourneyStepId[] = ["idea", "plan", "orchestrate", "execute", "review", "qa"];
+const SETTING_NAV: PanelKey[] = ["mcp", "api", "agent"];
+
+
 
 function basePath(): string {
   return import.meta.env.BASE_URL.replace(/\/$/, "");
@@ -101,6 +108,7 @@ export function StudioShell() {
   // copy and write the document element itself, which was fine while the views
   // lived in iframes -- three documents, three <html>. They are inline now.
   const { locale, theme, setLocale, setTheme } = useLocaleTheme();
+  const { snapshot, update } = useJourney();
   const [activePanel, setActivePanel] = useState<PanelKey>(panelFromPathname);
   // Mounted on first visit, then kept mounted and hidden with CSS.
   //
@@ -129,6 +137,10 @@ export function StudioShell() {
   const t = useMemo(() => makeTranslator(locale, studioI18n), [locale]);
 
   useEffect(() => {
+    update({ plan: readHandoffPlan() });
+  }, [update]);
+
+  useEffect(() => {
     document.title = t("documentTitle");
   }, [t]);
 
@@ -143,7 +155,11 @@ export function StudioShell() {
     return () => window.removeEventListener("popstate", syncFromHistory);
   }, []);
 
-  const selectPanel = useCallback((next: PanelKey) => {
+  const [consoleFocus, setConsoleFocus] = useState<"review" | "specs">("review");
+  const [reviewStage, setReviewStage] = useState("");
+  const selectPanel = useCallback((next: PanelKey, step?: JourneyStepId) => {
+    if (step === "review") setConsoleFocus("review");
+    if (step === "qa") setConsoleFocus("specs");
     setActivePanel(next);
     const href = panelHref(next);
     if (href && window.location.pathname !== href) {
@@ -185,7 +201,7 @@ export function StudioShell() {
     >
       <aside className="studio-sidebar">
         <header className="studio-sidebar-header">
-          <div className="brand-mark">FA</div>
+          <div className="brand-mark" aria-hidden="true">灵</div>
           <div className="brand">
             <p>{t("productLabel")}</p>
             <h1>{t("brandName")}</h1>
@@ -221,14 +237,31 @@ export function StudioShell() {
           </button>
         </div>
 
-        <nav className="studio-nav" aria-label="Studio panels">
-          {(Object.entries(panels) as Array<[PanelKey, { titleKey: string; icon: string }]>).map(([key, panel]) => (
+        <details className="journey-nav" open>
+          <summary>{t("journeyLabel")}</summary>
+          <nav className="studio-nav" aria-label={t("journeyLabel")}>
+            {JOURNEY_STEPS.map((step, index) => {
+              const panel = JOURNEY_PANELS[step];
+              const stepState = snapshot.steps.find((item) => item.id === step)?.state ?? "upcoming";
+              return (
+                <button className={activePanel === panel ? "active" : ""} type="button" data-target={panel} data-journey={step} data-state={stepState} key={step} onClick={() => selectPanel(panel, step)}>
+                  <span className="nav-index" aria-hidden="true">{index + 1}</span>
+                  <span className="nav-copy">
+                    <span className="nav-label">{t(JOURNEY_STEP_KEYS[step])}</span>
+                    <span className="nav-state">{t(JOURNEY_STATE_KEYS[stepState])}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
+        </details>
+        <Disclosure className="settings-nav" title={t("journeySettings")}>
+          {SETTING_NAV.map((key) => (
             <button className={activePanel === key ? "active" : ""} type="button" data-target={key} key={key} onClick={() => selectPanel(key)}>
-              <span className="nav-icon">{panel.icon}</span>
-              <span className="nav-label">{t(panel.titleKey)}</span>
+              <span className="nav-label">{t(panels[key].titleKey)}</span>
             </button>
           ))}
-        </nav>
+        </Disclosure>
 
         <section className="studio-status">
           <strong>{t(panels[activePanel].titleKey)}</strong>
@@ -259,10 +292,7 @@ export function StudioShell() {
 
       <section className="studio-main">
         <header className="studio-topbar">
-          <div>
-            <p>{t("productLabel")}</p>
-            <h2 id="panel-title">{t(panels[activePanel].titleKey)}</h2>
-          </div>
+          <JourneyHeader snapshot={snapshot} t={t} />
         </header>
 
         <section className="studio-panel-frame">
@@ -287,7 +317,7 @@ export function StudioShell() {
                 active={activePanel === "pipeline"}
                 locale={locale}
                 t={t}
-                onOpenConsole={() => selectPanel("console")}
+                onOpenConsole={(stageId) => { setReviewStage(stageId || ""); selectPanel("console", "review"); }}
               />
             </section>
           )}
@@ -298,7 +328,7 @@ export function StudioShell() {
               data-panel="console"
               aria-hidden={activePanel !== "console"}
             >
-              <FlowConsole active={activePanel === "console"} />
+              <FlowConsole active={activePanel === "console"} focus={consoleFocus} reviewStage={reviewStage} />
             </section>
           )}
           <section className={`mcp-panel ${activePanel === "mcp" ? "active" : ""}`} data-panel="mcp">

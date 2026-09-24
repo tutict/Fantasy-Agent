@@ -19,7 +19,7 @@ body {
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: var(--font-ui);
 }
 
 button {

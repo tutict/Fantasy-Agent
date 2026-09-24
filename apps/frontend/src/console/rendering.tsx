@@ -99,7 +99,7 @@ export function ReviewPanel({
 }) {
   const items = review?.items || [];
   return (
-    <div className="review-layout">
+    <div className="review-layout" id="approval-creative_review">
       <div className="review-board" id="review-output">
         {items.length ? (
           items.map((item) => (
@@ -166,7 +166,7 @@ function ReviewItem({
     ["rejected", t("reject")]
   ];
   return (
-    <section className="review-item">
+    <section className="review-item" id={`review-asset-${item.asset_id || "unknown"}`} data-review-asset={item.asset_id || ""}>
       <div>
         <h3>{item.asset_id}</h3>
         <p>{item.user_prompt}</p>

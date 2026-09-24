@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useJourney } from "../shared/journeyContext";
+import { operationPhase, operationReason } from "../shared/productionJourney";
+import { ConfirmDialog, LogBlock, StatusBadge } from "../shared/ui/primitives";
 import type { ReactNode } from "react";
 import {
   openManualCorrectionTarget as openManualCorrectionTargetApi,
@@ -91,7 +94,8 @@ const tabGroups: Array<{ labelKey: string; tabs: Array<[TabKey, string]> }> = [
  * passes the real value: a view it keeps mounted after the operator switches
  * away is no longer the view a fresh handoff is addressed to.
  */
-export function FlowConsole({ active = true }: { active?: boolean } = {}) {
+export function FlowConsole({ active = true, focus = "review", reviewStage = "" }: { active?: boolean; focus?: "review" | "specs"; reviewStage?: string } = {}) {
+  const { update } = useJourney();
   // Locale and theme are the provider's, not this view's. The console used to
   // own both and write `document.documentElement` itself -- correct while it was
   // its own document, wrong now that it renders inside the shell, where two
@@ -101,7 +105,10 @@ export function FlowConsole({ active = true }: { active?: boolean } = {}) {
   const [selectedCorrectionMode, setSelectedCorrectionMode] = useState<CorrectionMode>("gameplay");
   const [correctionEntries, setCorrectionEntries] = useState<Array<{ mode: CorrectionMode; notes: string; createdAt: string }>>([]);
   const [correctionNotes, setCorrectionNotes] = useState("");
-  const [activeTab, setActiveTab] = useState<TabKey>("review");
+  const [activeTab, setActiveTab] = useState<TabKey>(focus);
+  const [pendingResume, setPendingResume] = useState<string | null>(null);
+  const [pendingManualTarget, setPendingManualTarget] = useState<string | null>(null);
+  const [reviewTarget, setReviewTarget] = useState(reviewStage);
   const [withAssets, setWithAssets] = useState(false);
   const [withVisuals, setWithVisuals] = useState(false);
   const [withGameplay, setWithGameplay] = useState(false);
@@ -117,6 +124,11 @@ export function FlowConsole({ active = true }: { active?: boolean } = {}) {
   const [pollAssetJobId, setPollAssetJobId] = useState<string | null>(null);
 
   const t = useMemo(() => makeTranslator(locale, consoleI18n), [locale]);
+
+  useEffect(() => {
+    if (active) setActiveTab(focus);
+    if (reviewStage) setReviewTarget(reviewStage);
+  }, [active, focus, reviewStage]);
   const { activityEntries, addActivity } = useActivityLog();
   const { enemyTuning, setEnemyTuningValue } = useEnemyTuning();
   const {
@@ -164,6 +176,22 @@ export function FlowConsole({ active = true }: { active?: boolean } = {}) {
     [t]
   );
 
+  const reviewPending = Object.values(reviewDecisions).filter((decision) => !decision || decision === "pending" || decision === "needs_revision").length;
+  const qaStatus = specPreview?.executable_qa?.status || "";
+  useEffect(() => update({ plan: currentPlan, executionStatus: status, reviewPending, qaStatus }), [currentPlan, qaStatus, reviewPending, status, update]);
+const demoPhase = operationPhase({
+    status,
+    confirming: Boolean(generateEffects) || Boolean(pendingResume),
+    hasPreview: Boolean(generateEffects),
+    resumable: Boolean(sessionState?.failed?.length)
+  });
+  const demoReasonKey = !currentPlan ? "operationNeedsPlan" : operationReason(demoPhase);
+  useEffect(() => {
+    if (!active || activeTab !== "review" || !reviewTarget) return;
+    const asset = document.getElementById(`review-asset-${reviewTarget}`);
+    const gate = document.getElementById(`approval-${reviewTarget}`);
+    (asset || gate)?.scrollIntoView?.({ block: "nearest" });
+  }, [active, activeTab, reviewTarget]);
   const targets = manualTargetsPayload?.targets?.length ? manualTargetsPayload.targets : fallbackManualTargets();
   const recommendedTarget = targets.find((target) => target.id === recommendedManualTargetId()) || targets[0];
   const enemies = currentPlan?.gameplay_spec?.enemies || [];
@@ -216,14 +244,12 @@ export function FlowConsole({ active = true }: { active?: boolean } = {}) {
       return;
     }
     const target = targetId === "engine" ? recommendedManualTargetId() : targetId;
-    // The backend gate (local_tools.open_manual_correction_target) refuses
-    // without this confirmation, and spawning an editor is a real side effect.
-    // Ask first instead of passing `true` blindly.
-    const label = t(manualTargetKeys[target]?.label || "manualTargetPlanning");
-    if (!window.confirm(t("manualOpenConfirm", { target: label }))) {
-      addActivity(t("manualOpenCancelled"), target);
-      return;
-    }
+    // The backend gate refuses without confirmation. The dialog is the second
+    // step; this click only names the process that would start.
+    setPendingManualTarget(target);
+  };
+
+  const confirmManualTarget = async (target: string) => {
     try {
       const result = await openManualCorrectionTargetApi(target, selectedEngineVersion(currentPlan), true);
       const label = result.detail_key ? t(result.detail_key) : result.detail || result.status || "";
@@ -626,9 +652,10 @@ export function FlowConsole({ active = true }: { active?: boolean } = {}) {
                 <input type="checkbox" id="asset-with-visuals" checked={assetWithVisuals} onChange={(event) => setAssetWithVisuals(event.target.checked)} /> <span>{t("generateWithVisuals")}</span>
               </label>
             </div>
-            <button className="secondary-action" type="button" id="asset-execute-button" disabled={status === "running"} onClick={() => void onAssetExecutionClick()}>
+            <button className="secondary-action" type="button" id="asset-execute-button" disabled={status === "running" || !currentPlan} aria-describedby="asset-phase-reason" onClick={() => void onAssetExecutionClick()}>
               {t("assetExecutionButton")}
             </button>
+            <p id="asset-phase-reason">{!currentPlan ? t("operationNeedsPlan") : status === "running" ? t("operationCancelable") : assetEffects ? t("operationConfirming") : t("operationIdle")}</p>
             {pollAssetJobId ? (
               <button className="secondary-action" type="button" id="asset-execute-stop" disabled={assetCancelling} onClick={() => void cancelAssetJob()}>
                 {assetCancelling ? t("stoppingJob") : t("stopJob")}
@@ -636,12 +663,12 @@ export function FlowConsole({ active = true }: { active?: boolean } = {}) {
             ) : null}
             {assetEffects ? (
               <div id="asset-execute-confirm" className="generate-confirm">
-                <strong>{t("generateConfirmTitle")}</strong>
-                <p>{t("generateConfirmIntro")}</p>
+                <strong>{t("assetConfirmTitle")}</strong>
+                <p>{t("assetConfirmIntro")}</p>
                 <ul>{assetEffects.map((effect) => <li key={effect}>{effect}</li>)}</ul>
                 <div className="handoff-actions">
                   <button className="primary-action" type="button" id="asset-execute-proceed" onClick={() => void startAssetWorkers()}>
-                    {t("generateConfirmProceed")}
+                    {t("assetConfirmProceed")}
                   </button>
                   <button className="ghost-action" type="button" id="asset-execute-cancel" onClick={() => setAssetEffects(null)}>
                     {t("generateConfirmCancel")}
@@ -708,9 +735,11 @@ export function FlowConsole({ active = true }: { active?: boolean } = {}) {
                 </div>
               </div>
             ) : null}
-            <button className="primary-action" type="button" id="generate-demo-button" disabled={status === "running"} onClick={() => void onGenerateClick()}>
+            <StatusBadge status={demoPhase} label={t(operationReason(demoPhase))} />
+            <button className="primary-action" type="button" id="generate-demo-button" disabled={status === "running" || !currentPlan} aria-describedby="generate-phase-reason" onClick={() => void onGenerateClick()}>
               {t("generateButton")}
             </button>
+            <p id="generate-phase-reason">{t(demoReasonKey)}</p>
             {pollJobId ? (
               <button className="secondary-action" type="button" id="generate-stop" disabled={demoCancelling} onClick={() => void cancelDemoJob()}>
                 {demoCancelling ? t("stoppingJob") : t("stopJob")}
@@ -753,14 +782,14 @@ export function FlowConsole({ active = true }: { active?: boolean } = {}) {
                     <li key={stage.name} className={`rework-item rework-${stage.status || "unknown"}`}>
                       <span className="rework-name">{stage.name}</span>
                       <span className="rework-status">{stage.status}</span>
-                      <button
-                        className="ghost-action"
-                        type="button"
-                        disabled={status === "running" || !stage.name}
-                        onClick={() => void startGenerate(stage.name)}
-                      >
-                        {t("reworkResume")}
-                      </button>
+                      {stage.status === "failed" ? (
+                        <div className="recovery-actions" aria-label={t("recoveryTitle")}>
+                          <a href="#activity-drawer">{t("recoveryLogs")}</a>
+                          <a href="#correction-notes">{t("recoveryEditInput")}</a>
+                          <button className="ghost-action" type="button" disabled={status === "running" || !stage.name} onClick={() => setPendingResume(stage.name || null)}>{t("reworkResume")}</button>
+                        </div>
+                      ) : null}
+                      <span id={`rework-reason-${stage.name}`}>{stage.status === "failed" ? t("operationResumable") : t("operationIdle")}</span>
                     </li>
                   ))}
                 </ul>
@@ -773,6 +802,7 @@ export function FlowConsole({ active = true }: { active?: boolean } = {}) {
               <strong>{t("activityTitle")}</strong>
               <span id="activity-count">{activityEntries.length}</span>
             </div>
+            <LogBlock title={t("activityTitle")} lines={activityEntries.map((entry) => `${entry.time} ${entry.label}: ${entry.message}`)} />
             <ol id="activity-log" className="activity-log">
               {activityEntries.map((entry, index) => (
                 <li key={`${entry.time}-${index}`}>
@@ -788,6 +818,34 @@ export function FlowConsole({ active = true }: { active?: boolean } = {}) {
           </section>
         </aside>
       </section>
+
+
+      <ConfirmDialog
+        open={Boolean(pendingResume)}
+        title={t("reworkResume")}
+        body={t("reworkConfirm", { stage: pendingResume || "" })}
+        confirmLabel={t("reworkResume")}
+        cancelLabel={t("generateConfirmCancel")}
+        onCancel={() => setPendingResume(null)}
+        onConfirm={() => { const stage = pendingResume; setPendingResume(null); if (stage) void startGenerate(stage); }}
+      />
+      <ConfirmDialog
+        open={Boolean(pendingManualTarget)}
+        title={t("manualOpen")}
+        body={t("manualOpenConfirm", { target: t(manualTargetKeys[pendingManualTarget || ""]?.label || "manualTargetPlanning") })}
+        confirmLabel={t("manualOpen")}
+        cancelLabel={t("generateConfirmCancel")}
+        onCancel={() => {
+          const target = pendingManualTarget;
+          setPendingManualTarget(null);
+          if (target) addActivity(t("manualOpenCancelled"), target);
+        }}
+        onConfirm={() => {
+          const target = pendingManualTarget;
+          setPendingManualTarget(null);
+          if (target) void confirmManualTarget(target);
+        }}
+      />
     </main>
   );
 }

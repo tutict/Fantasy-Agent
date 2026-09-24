@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { JourneyProvider } from "../shared/journeyContext";
 import { LocaleThemeProvider } from "../shared/localeTheme";
 import { StudioShell, panelHref } from "./StudioShell";
 
@@ -43,9 +44,7 @@ function navButton(panel: string) {
 
 function renderShell() {
   return render(
-    <LocaleThemeProvider>
-      <StudioShell />
-    </LocaleThemeProvider>
+    <LocaleThemeProvider><JourneyProvider><StudioShell /></JourneyProvider></LocaleThemeProvider>
   );
 }
 
@@ -152,6 +151,38 @@ describe("locale and theme have one owner", () => {
     expect(document.documentElement.lang).toBe("en");
   });
 
+
+  it("keeps the six-step journey and its header while the view changes", () => {
+    localStorage.setItem("fantasy-agent-studio-locale", "zh-CN");
+    renderShell();
+    for (const label of ["点子", "计划", "编排", "执行", "审阅", "质量"]) {
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
+    }
+    expect(screen.getByText("还没有项目")).toBeTruthy();
+    expect((document.querySelector('[data-journey="idea"]') as HTMLButtonElement).dataset.state).toBe("current");
+    fireEvent.click(document.querySelector('[data-journey="execute"]') as HTMLButtonElement);
+    expect(screen.getByText("还没有项目")).toBeTruthy();
+    expect(screen.getByText("设置")).toBeTruthy();
+  });
+
+  it("restores the handed-off project into the journey on a fresh render", () => {
+    localStorage.setItem("fantasy-agent-studio-locale", "zh-CN");
+    localStorage.setItem(
+      "fantasy-agent-planning-handoff",
+      JSON.stringify({
+        plan: {
+          gameplay_spec: { title: "Rooftop Chase", target_session_minutes: 12 },
+          production_pipeline: { stages: [{ id: "godot_quick_play" }] },
+          godot_plan: { engine_version: "Godot 4.6" }
+        }
+      })
+    );
+    renderShell();
+    expect(document.querySelector(".journey-header h2")?.textContent).toBe("Rooftop Chase");
+    expect(screen.getByText("Godot 4.6")).toBeTruthy();
+    fireEvent.click(document.querySelector('[data-journey="execute"]') as HTMLButtonElement);
+    expect(document.querySelector(".journey-header h2")?.textContent).toBe("Rooftop Chase");
+  });
   it("writes the theme to the document once, from the provider", async () => {
     renderShell();
 

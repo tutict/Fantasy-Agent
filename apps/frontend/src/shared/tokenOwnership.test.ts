@@ -133,6 +133,10 @@ describe("design token ownership", () => {
     expect(importers[0], "the importer must be the app root, which every route loads").toBe(
       "main.tsx"
     );
+    const uiImporters = Object.entries(sources)
+      .filter(([, source]) => source.includes("styles/ui.css"))
+      .map(([path]) => path.replace(/^\.\.\//, ""));
+    expect(uiImporters).toEqual(["main.tsx"]);
   });
 
   it("does not leave a token with a dark value and no light value", () => {

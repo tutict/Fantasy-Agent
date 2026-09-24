@@ -3,7 +3,9 @@ import { createRoot } from "react-dom/client";
 // Tokens first, and only here. Every view needs them, and importing them from a
 // view stylesheet would let Vite inline a second copy (see tokens.css).
 import "./styles/tokens.css";
+import "./styles/ui.css";
 import { LocaleThemeProvider } from "./shared/localeTheme";
+import { JourneyProvider } from "./shared/journeyContext";
 import { StudioShell } from "./studio/StudioShell";
 
 // One root component, one entry.
@@ -31,7 +33,9 @@ window.__fantasyAgentRoot = root;
 root.render(
   <StrictMode>
     <LocaleThemeProvider>
+        <JourneyProvider>
       <StudioShell />
-    </LocaleThemeProvider>
+    </JourneyProvider>
+      </LocaleThemeProvider>
   </StrictMode>
 );

@@ -1,91 +1,164 @@
-/*
- * Design tokens -- the single definition of every custom property in the app.
- *
- * Before this file existed, `console.css`, `workbench.css` and `studio.css` each
- * carried their own `:root` block. All three are reachable from `main.tsx`, so
- * all three blocks applied to every route at once, and for a token defined twice
- * the winner was whichever stylesheet the bundler happened to emit last. Measured
- * on the built CSS: `studio.css` came last, so its values were the ones users
- * actually saw -- which is why this file keeps them for the four tokens that had
- * drifted apart (`--chrome` in both themes, and `--code-bg`, `--surface-muted`,
- * `--muted-strong` in dark). Reading the values below and the values in
- * `studio.css` before this change gives the same pixels; what changes is that
- * the outcome no longer depends on bundle order.
- *
- * Imported once, from `main.tsx`. Do not re-import it from a route stylesheet:
- * Vite resolves `@import` by inlining, so three importers would put three copies
- * of this block back into the bundle -- the duplication this file exists to end.
- *
- * Only *document-root* tokens belong here. `--sidebar-width` stayed in
- * `studio.css`: `StudioShell` sets it per instance through an inline style and
- * `.studio-shell.sidebar-collapsed` overrides it, so it is component state, not
- * a theme value. The guard below draws the line at root scope for that reason.
- *
- * `shared/tokenOwnership.test.ts` enforces both halves: no stylesheet outside
- * this one may define a token at root scope, and this file must be imported
- * exactly once, from the app root.
- */
-
+/* Drafting table. One owner: main.tsx imports this file once.
+   Groups: brand, text, surface, line, status, focus, data.
+   Legacy names (--accent, --amber, --danger, --blue) alias those groups. */
 :root {
   color-scheme: light;
-  --bg: #f4f7f3;
-  --grid-line-a: rgba(7, 10, 8, 0.045);
-  --grid-line-b: rgba(7, 10, 8, 0.035);
-  --chrome: rgba(247, 250, 246, 0.96);
-  --chrome-strong: rgba(255, 255, 255, 0.96);
-  --surface: rgba(255, 255, 255, 0.78);
-  --surface-strong: rgba(255, 255, 255, 0.92);
-  --surface-muted: rgba(7, 10, 8, 0.035);
-  --field: #ffffff;
-  --code-bg: rgba(7, 10, 8, 0.045);
-  --tab-bg: rgba(255, 255, 255, 0.62);
-  --pill-bg: rgba(3, 95, 82, 0.07);
-  --line: rgba(7, 10, 8, 0.12);
-  --line-strong: rgba(0, 118, 101, 0.36);
-  --text: #0b1713;
-  --text-soft: #3a463f;
-  --muted: #5d695f;
-  --muted-strong: #26332e;
-  --accent: #007966;
-  --accent-deep: #005c4d;
-  --accent-soft: rgba(0, 121, 102, 0.12);
-  --blue: #126fb5;
-  --blue-soft: rgba(18, 111, 181, 0.12);
-  --amber: #9a5b12;
-  --amber-soft: rgba(154, 91, 18, 0.12);
-  --danger: #b4232c;
-  --danger-soft: rgba(180, 35, 44, 0.11);
-  --shadow: 0 18px 44px rgba(19, 35, 29, 0.12);
+  --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Mono", "Sarasa Mono SC", Consolas, monospace;
+  --mono: var(--font-mono);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --size-control: 44px;
+  --size-sidebar: 292px;
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 16px;
+  --text-s: 12px;
+  --text-m: 14px;
+  --text-l: 16px;
+  --text-xl: 24px;
+  --text-2xl: 34px;
+  --duration-fast: 140ms;
+  --duration-slow: 180ms;
+  --layer-sticky: 10;
+  --layer-overlay: 20;
+  --layer-dialog: 30;
+  --shadow-s: 0 1px 0 rgba(28, 25, 23, .08);
+  --shadow-l: 0 18px 40px rgba(28, 25, 23, .12);
+  --shadow: var(--shadow-l);
+  --focus-ring: 0 0 0 3px var(--focus-soft);
+
+  --brand: #1f5c52;
+  --brand-strong: #143f38;
+  --brand-soft: #d7ebe4;
+  --on-brand: #fbf8f1;
+  --text: #1c1917;
+  --text-soft: #44403c;
+  --muted: #57534e;
+  --muted-strong: #292524;
+  --bg: #f3efe6;
+  --surface: #fffdf8;
+  --surface-strong: #ffffff;
+  --surface-muted: #e7e1d6;
+  --chrome: #f7f3ea;
+  --chrome-strong: #fbf8f1;
+  --field: #fffdf8;
+  --field-bg: var(--field);
+  --code-bg: #ece7dc;
+  --tab-bg: #efeadd;
+  --pill-bg: #e7efe8;
+  --grid-line-a: rgba(28, 25, 23, .045);
+  --grid-line-b: rgba(28, 25, 23, .025);
+  --line: #d8d0c3;
+  --line-strong: #6f5648;
+  --status-running: #1e4e8c;
+  --status-running-soft: #dce7f1;
+  --status-success: #146c43;
+  --status-success-soft: #dcefe4;
+  --status-waiting: #7a4e12;
+  --status-waiting-soft: #f4e6cf;
+  --status-warning: #8a3e24;
+  --status-warning-soft: #f3e4d8;
+  --status-danger: #8e1e1e;
+  --status-danger-soft: #f8d9d4;
+  --status-human: #5b2d6e;
+  --status-human-soft: #eadff2;
+  --status-info: #3f4d63;
+  --status-info-soft: #e6e8ee;
+  --on-danger: #fffdf8;
+  --focus: #143f38;
+  --focus-soft: rgba(20, 63, 56, .28);
+  --data-1: #9a3412;
+  --data-2: #1d4e89;
+  --data-3: #3f6212;
+  --data-4: #6b3f69;
+  --data-5: #854d0e;
+  --data-6: #1e3a4c;
+
+  --accent: var(--brand);
+  --accent-deep: var(--brand-strong);
+  --accent-soft: var(--brand-soft);
+  --blue: var(--status-running);
+  --blue-soft: var(--status-running-soft);
+  --amber: var(--status-warning);
+  --amber-soft: var(--status-warning-soft);
+  --danger: var(--status-danger);
+  --danger-soft: var(--status-danger-soft);
+  --ok: var(--status-success);
+  --warn: var(--status-warning);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #070a08;
-  --grid-line-a: rgba(255, 255, 255, 0.018);
-  --grid-line-b: rgba(255, 255, 255, 0.014);
-  --chrome: rgba(6, 8, 7, 0.94);
-  --chrome-strong: rgba(8, 11, 9, 0.96);
-  --surface: rgba(255, 255, 255, 0.04);
-  --surface-strong: rgba(255, 255, 255, 0.07);
-  --surface-muted: rgba(255, 255, 255, 0.032);
-  --field: #0b0f0d;
-  --code-bg: rgba(0, 0, 0, 0.24);
-  --tab-bg: rgba(0, 0, 0, 0.16);
-  --pill-bg: rgba(0, 0, 0, 0.16);
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(0, 255, 204, 0.34);
-  --text: #ffffff;
-  --text-soft: #c7cfc8;
-  --muted: #8b938b;
-  --muted-strong: #bac2b8;
-  --accent: #00ffcc;
-  --accent-deep: #0c8f7f;
-  --accent-soft: rgba(0, 255, 204, 0.12);
-  --blue: #39a8ff;
-  --blue-soft: rgba(57, 168, 255, 0.12);
-  --amber: #e8a356;
-  --amber-soft: rgba(232, 163, 86, 0.12);
-  --danger: #ff6b6b;
-  --danger-soft: rgba(255, 107, 107, 0.12);
-  --shadow: 0 22px 70px rgba(0, 0, 0, 0.38);
+  --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Mono", "Sarasa Mono SC", Consolas, monospace;
+  --mono: var(--font-mono);
+  --size-control: 44px;
+  --focus-ring: 0 0 0 3px var(--focus-soft);
+  --shadow-l: 0 20px 48px rgba(0, 0, 0, .38);
+  --shadow: var(--shadow-l);
+
+  --brand: #8fd0c2;
+  --brand-strong: #b7e6dc;
+  --brand-soft: #1e3330;
+  --on-brand: #10211c;
+  --text: #f6f1e8;
+  --text-soft: #ddd6cb;
+  --muted: #c4bdb2;
+  --muted-strong: #ece7df;
+  --bg: #121614;
+  --surface: #1c2220;
+  --surface-strong: #242b28;
+  --surface-muted: #2a312e;
+  --chrome: #171c19;
+  --chrome-strong: #171c19;
+  --field: #151a18;
+  --field-bg: var(--field);
+  --code-bg: #101412;
+  --tab-bg: #202623;
+  --pill-bg: #24302c;
+  --grid-line-a: rgba(236, 230, 220, .035);
+  --grid-line-b: rgba(236, 230, 220, .02);
+  --line: #3a433f;
+  --line-strong: #c4a48c;
+  --status-running: #c5d7ee;
+  --status-running-soft: #243040;
+  --status-success: #b6e07a;
+  --status-success-soft: #243328;
+  --status-waiting: #efd0a0;
+  --status-waiting-soft: #3a3224;
+  --status-warning: #f0c2ae;
+  --status-warning-soft: #3a2b23;
+  --status-danger: #f3c1bb;
+  --status-danger-soft: #3d2422;
+  --status-human: #e4c6ee;
+  --status-human-soft: #342838;
+  --status-info: #d9d3c4;
+  --status-info-soft: #2c3330;
+  --on-danger: #2a1210;
+  --focus: #d7ebe4;
+  --focus-soft: rgba(143, 208, 194, .32);
+  --data-1: #e7a08a;
+  --data-2: #9ec0e8;
+  --data-3: #c5d98a;
+  --data-4: #e0b3dc;
+  --data-5: #f0d48a;
+  --data-6: #b7d4cf;
+
+  --accent: var(--brand);
+  --accent-deep: var(--brand-strong);
+  --accent-soft: var(--brand-soft);
+  --blue: var(--status-running);
+  --blue-soft: var(--status-running-soft);
+  --amber: var(--status-warning);
+  --amber-soft: var(--status-warning-soft);
+  --danger: var(--status-danger);
+  --danger-soft: var(--status-danger-soft);
+  --ok: var(--status-success);
+  --warn: var(--status-warning);
 }

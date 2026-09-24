@@ -25,6 +25,8 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { useJourney } from "../shared/journeyContext";
+import { EmptyState } from "../shared/ui/primitives";
 
 import { getOrchestrationState, runOrchestration } from "../shared/api";
 import { localizedTitle } from "../shared/planModel";
@@ -66,8 +68,9 @@ export function OrchestrationBoard({
   active: boolean;
   locale: Locale;
   t: Translator;
-  onOpenConsole: () => void;
+  onOpenConsole: (stageId?: string) => void;
 }) {
+  const { update } = useJourney();
   const [plan, setPlan] = useState<DirectorBuildPlan | null>(() => readHandoffPlan());
   const [session, setSession] = useState<OrchestrationSession | null>(null);
   const [sessionId] = useState(() => readOrchestrationSessionId() || newSessionId());
@@ -143,6 +146,7 @@ export function OrchestrationBoard({
   );
 
   const cards = boardCards(plan, session);
+  useEffect(() => update({ plan, session }), [plan, session, update]);
   const pending = session?.pending_confirmations ?? [];
   const gates = cards.filter((card) => card.kind === HUMAN_STAGE_KIND);
 
@@ -239,9 +243,11 @@ export function OrchestrationBoard({
             type="submit"
             id="orchestration-run"
             disabled={busy || !cards.length}
+            aria-describedby="orchestration-run-reason"
           >
             {busy ? t("orchestrationRunning") : session ? t("orchestrationContinue") : t("orchestrationRun")}
           </button>
+          <p id="orchestration-run-reason">{busy ? t("operationRunning") : cards.length ? t("operationIdle") : t("operationNeedsPlan")}</p>
         </div>
       </form>
 
@@ -257,7 +263,7 @@ export function OrchestrationBoard({
           {gates.map((gate) => (
             <div className="or-gate" data-gate={gate.id} key={gate.id}>
               <span>{localizedTitle(gate, locale) || gate.id}</span>
-              <button className="or-link" type="button" onClick={onOpenConsole}>
+              <button className="or-link" type="button" onClick={() => onOpenConsole(gate.id)}>
                 {t("orchestrationOpenApproval")}
               </button>
             </div>
@@ -285,7 +291,7 @@ export function OrchestrationBoard({
           ))}
         </div>
       ) : (
-        <p className="or-empty">{t("orchestrationNoPlan")}</p>
+        <EmptyState title={t("orchestrationNoPlan")} body={t("operationNeedsPlan")} />
       )}
     </div>
   );
@@ -314,7 +320,7 @@ function StageCard({
   onToggleApproved: () => void;
   busy: boolean;
   onRework: () => void;
-  onOpenConsole: () => void;
+  onOpenConsole: (stageId?: string) => void;
 }) {
   const isHuman = card.kind === HUMAN_STAGE_KIND;
   const canApprove = approvableCards([card]).length > 0;
@@ -358,7 +364,7 @@ function StageCard({
       {isHuman ? (
         <p className="or-note">
           {t("orchestrationHumanGateNote")}{" "}
-          <button className="or-link" type="button" onClick={onOpenConsole}>
+          <button className="or-link" type="button" onClick={() => onOpenConsole(card.id)}>
             {t("orchestrationOpenApproval")}
           </button>
         </p>

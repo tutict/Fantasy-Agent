@@ -413,11 +413,11 @@ p {
 }
 
 .manual-tool-row[data-state="degraded"] {
-  border-color: rgba(232, 163, 86, 0.34);
+  border-color: var(--amber-soft);
 }
 
 .manual-tool-row[data-state="unavailable"] {
-  border-color: rgba(255, 107, 107, 0.34);
+  border-color: var(--danger-soft);
 }
 
 .manual-tool-name {
@@ -501,7 +501,7 @@ textarea:focus,
 input[type="text"]:focus {
   border-color: var(--line-strong);
   background: var(--field);
-  box-shadow: 0 0 0 3px rgba(0, 255, 204, 0.08);
+  box-shadow: 0 0 0 3px var(--focus-soft);
 }
 
 .primary-action,
@@ -518,14 +518,16 @@ input[type="text"]:focus {
 }
 
 .primary-action {
-  border: 1px solid rgba(0, 255, 204, 0.45);
-  background: var(--accent);
-  color: #00110e;
+  border: 1px solid var(--line-strong);
+  background: var(--brand);
+  color: var(--on-brand);
+  min-height: var(--size-control);
 }
 
 .primary-action:hover {
-  background: #66ffe0;
-  box-shadow: 0 0 0 4px rgba(0, 255, 204, 0.12);
+  background: var(--brand-strong);
+  color: var(--on-brand);
+  box-shadow: 0 0 0 4px var(--brand-soft);
   transform: translateY(-1px);
 }
 
@@ -542,7 +544,7 @@ input[type="text"]:focus {
 }
 
 .secondary-action:hover {
-  background: rgba(0, 255, 204, 0.18);
+  background: var(--accent-soft);
   transform: translateY(-1px);
 }
 
@@ -590,20 +592,20 @@ input[type="text"]:focus {
 }
 
 .status-chip[data-state="running"] {
-  border-color: rgba(57, 168, 255, 0.38);
+  border-color: var(--blue-soft);
   background: var(--blue-soft);
   color: var(--blue);
 }
 
 .status-chip.warning {
-  border-color: rgba(232, 163, 86, 0.38);
+  border-color: var(--amber-soft);
   background: var(--amber-soft);
   color: var(--amber);
 }
 
 .status-chip[data-state="error"],
 .status-chip.failed {
-  border-color: rgba(255, 107, 107, 0.38);
+  border-color: var(--danger-soft);
   background: var(--danger-soft);
   color: var(--danger);
 }
@@ -796,12 +798,12 @@ input[type="text"]:focus {
 
 .task-pill.blocked,
 .review-pill.rejected {
-  border-color: rgba(255, 107, 107, 0.38);
+  border-color: var(--danger-soft);
   color: var(--danger);
 }
 
 .review-pill.needs_revision {
-  border-color: rgba(232, 163, 86, 0.38);
+  border-color: var(--amber-soft);
   color: var(--amber);
 }
 
@@ -857,13 +859,13 @@ input[type="text"]:focus {
 }
 
 .review-action.active[data-decision="needs_revision"] {
-  border-color: rgba(232, 163, 86, 0.38);
+  border-color: var(--amber-soft);
   background: var(--amber-soft);
   color: var(--amber);
 }
 
 .review-action.active[data-decision="rejected"] {
-  border-color: rgba(255, 107, 107, 0.38);
+  border-color: var(--danger-soft);
   background: var(--danger-soft);
   color: var(--danger);
 }

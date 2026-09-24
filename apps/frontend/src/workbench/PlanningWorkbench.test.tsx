@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlanningWorkbench } from "./PlanningWorkbench";
+import { JourneyProvider } from "../shared/journeyContext";
 import { LocaleThemeProvider } from "../shared/localeTheme";
 
 /**
@@ -18,9 +19,7 @@ import { LocaleThemeProvider } from "../shared/localeTheme";
  */
 function renderWorkbench() {
   return render(
-    <LocaleThemeProvider>
-      <PlanningWorkbench />
-    </LocaleThemeProvider>
+    <LocaleThemeProvider><JourneyProvider><PlanningWorkbench /></JourneyProvider></LocaleThemeProvider>
   );
 }
 
