@@ -93,3 +93,33 @@ def test_producer_manifest_rejects_same_path_byte_replacement_before_copy(
         / "generated"
         / Path(exported_rel).name
     ).exists()
+
+
+def test_filter_skips_an_export_path_that_leaves_the_workspace(tmp_path: Path):
+    from fantasy_agent.approval_manifest import filter_approved_blender_assets
+    from fantasy_agent.contracts import (
+        ArtifactIdentity,
+        AssetApprovalDecision,
+        AssetApprovalManifest,
+    )
+
+    manifest = AssetApprovalManifest(
+        decisions=[
+            AssetApprovalDecision(
+                asset_id="marker",
+                source="blender",
+                asset_path="../secret.glb",
+                gameplay_role="objective_prop",
+                artifact_identity=ArtifactIdentity(digest="a" * 64),
+                decision="approved",
+            )
+        ],
+        approved_asset_ids=["marker"],
+    )
+    result = filter_approved_blender_assets(
+        ["../secret.glb"],
+        manifest,
+        workspace_root=tmp_path,
+    )
+    assert result.approved == []
+    assert result.skipped == ["../secret.glb"]

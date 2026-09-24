@@ -10,7 +10,6 @@ import pytest
 from pydantic import BaseModel
 
 from fantasy_agent.contracts import PromptRequest
-from fantasy_agent.path_safety import WorkspacePathError
 
 
 def _load_studio_app():
@@ -726,20 +725,22 @@ def test_write_approval_manifest_api_writes_generated_yaml(monkeypatch, tmp_path
 
 
 @pytest.mark.parametrize(
-    ('case', 'expected_error'),
+    ("case", "detail_part"),
     [
-        ('missing', FileNotFoundError),
-        ('outside', WorkspacePathError),
-        ('traversal', WorkspacePathError),
-        ('symlink', WorkspacePathError),
+        ("missing", "Reviewed artifact is missing"),
+        ("outside", "escapes workspace"),
+        ("traversal", "Parent traversal"),
+        ("symlink", "escapes workspace"),
     ],
 )
 def test_write_approval_manifest_api_rejects_invalid_public_blender_glb(
     case,
-    expected_error,
+    detail_part,
     monkeypatch,
     tmp_path: Path,
 ):
+    from fastapi import HTTPException
+
     from fantasy_agent.workflows import run_director_workflow
 
     module = _load_studio_app()
@@ -768,14 +769,16 @@ def test_write_approval_manifest_api_rejects_invalid_public_blender_glb(
         review_item = blender_item
     invalid_review = plan.creative_review.model_copy(update={'items': [review_item]})
 
-    with pytest.raises(expected_error):
+    with pytest.raises(HTTPException) as rejected:
         module.write_approval_manifest(
             module.ApprovalManifestRequest(
                 review=invalid_review,
-                target='godot',
-                decisions={review_item.asset_id: 'approved'},
+                target="godot",
+                decisions={review_item.asset_id: "approved"},
             )
         )
+    assert rejected.value.status_code == 400
+    assert detail_part in str(rejected.value.detail)
     assert not (workspace_root / 'generated' / 'asset-approval-manifest.yaml').exists()
 
 

@@ -32,6 +32,11 @@ def test_infer_demo_engine_follows_the_studio_rules(plan):
     assert infer_demo_engine(plan, "Godot 4") == "godot"
     assert infer_demo_engine(plan, "UE5") == "unreal"
     assert infer_demo_engine(plan, "unreal") == "unreal"
+    assert infer_demo_engine(plan, "UE5.4") == "unreal"
+    assert infer_demo_engine(plan, "Unreal Engine") == "unreal"
+    assert infer_demo_engine(plan, "value") == "godot"
+    assert infer_demo_engine(plan, "rescue the courier") == "godot"
+    assert infer_demo_engine(plan, "queue the next build") == "godot"
 
 
 def test_resolve_prefers_an_explicit_path_and_falls_back(monkeypatch):

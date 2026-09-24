@@ -93,7 +93,7 @@ def filter_approved_blender_assets(
             try:
                 current_path = resolve_workspace_path(rel, workspace_root=workspace_root)
                 current_identity = compute_artifact_identity(current_path)
-            except OSError:
+            except (OSError, WorkspacePathError):
                 current_identity = None
         if any(
             decision.artifact_identity is not None

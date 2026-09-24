@@ -180,8 +180,17 @@ describe("locale and theme have one owner", () => {
     renderShell();
     expect(document.querySelector(".journey-header h2")?.textContent).toBe("Rooftop Chase");
     expect(screen.getByText("Godot 4.6")).toBeTruthy();
+    const activeSteps = [...document.querySelectorAll(".studio-nav button.active")].map((button) => button.getAttribute("data-journey"));
+    expect(activeSteps).toEqual(["plan"]);
+    expect(document.querySelector('[data-journey="plan"]')?.getAttribute("aria-current")).toBe("step");
+
     fireEvent.click(document.querySelector('[data-journey="execute"]') as HTMLButtonElement);
     expect(document.querySelector(".journey-header h2")?.textContent).toBe("Rooftop Chase");
+    const viewedSteps = [...document.querySelectorAll(".studio-nav button.active")].map((button) => button.getAttribute("data-journey"));
+    expect(viewedSteps).toEqual(["execute"]);
+    expect(document.querySelector('[data-journey="plan"]')?.getAttribute("aria-current")).toBe("step");
+    expect(document.querySelector('[data-journey="review"]')?.classList.contains("active")).toBe(false);
+    expect(document.querySelector('[data-journey="qa"]')?.classList.contains("active")).toBe(false);
   });
   it("writes the theme to the document once, from the provider", async () => {
     renderShell();

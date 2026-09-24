@@ -157,7 +157,9 @@ export function StudioShell() {
 
   const [consoleFocus, setConsoleFocus] = useState<"review" | "specs">("review");
   const [reviewStage, setReviewStage] = useState("");
+  const [chosenJourneyStep, setChosenJourneyStep] = useState<JourneyStepId | null>(null);
   const selectPanel = useCallback((next: PanelKey, step?: JourneyStepId) => {
+    if (step) setChosenJourneyStep(step);
     if (step === "review") setConsoleFocus("review");
     if (step === "qa") setConsoleFocus("specs");
     setActivePanel(next);
@@ -166,6 +168,13 @@ export function StudioShell() {
       window.history.pushState({ panel: next }, "", href);
     }
   }, []);
+
+  const viewedJourneyStep = useMemo(() => {
+    if (chosenJourneyStep && JOURNEY_PANELS[chosenJourneyStep] === activePanel) return chosenJourneyStep;
+    if (JOURNEY_PANELS[snapshot.currentStep] === activePanel) return snapshot.currentStep;
+    const stepsOnPanel = JOURNEY_STEPS.filter((step) => JOURNEY_PANELS[step] === activePanel);
+    return stepsOnPanel.length === 1 ? stepsOnPanel[0] : null;
+  }, [activePanel, chosenJourneyStep, snapshot.currentStep]);
 
   useEffect(() => {
     localStorage.setItem(STUDIO_SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? "1" : "0");
@@ -244,7 +253,7 @@ export function StudioShell() {
               const panel = JOURNEY_PANELS[step];
               const stepState = snapshot.steps.find((item) => item.id === step)?.state ?? "upcoming";
               return (
-                <button className={activePanel === panel ? "active" : ""} type="button" data-target={panel} data-journey={step} data-state={stepState} key={step} onClick={() => selectPanel(panel, step)}>
+                <button className={viewedJourneyStep === step ? "active" : ""} type="button" data-target={panel} data-journey={step} aria-current={snapshot.currentStep === step ? "step" : undefined} data-state={stepState} key={step} onClick={() => selectPanel(panel, step)}>
                   <span className="nav-index" aria-hidden="true">{index + 1}</span>
                   <span className="nav-copy">
                     <span className="nav-label">{t(JOURNEY_STEP_KEYS[step])}</span>

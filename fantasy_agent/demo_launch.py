@@ -7,6 +7,7 @@ be silently ignored.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -73,24 +74,41 @@ def new_session_id() -> str:
     return datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
 
 
+_ENGINE_TOKEN = re.compile(r"[a-z0-9]+")
+
+
+def _engine_tokens(text: str) -> list[str]:
+    return _ENGINE_TOKEN.findall(text.casefold())
+
+
+def _names_godot(text: str) -> bool:
+    return any(token == "godot" or token.startswith("godot") for token in _engine_tokens(text))
+
+
+def _names_unreal(text: str) -> bool:
+    for token in _engine_tokens(text):
+        if token == "unreal" or token.startswith("unreal"):
+            return True
+        # "ue" and "ue5" / "ue5.4", not the letters inside "value", "rescue", or "queue".
+        if token == "ue" or (token.startswith("ue") and token[2:].isdigit()):
+            return True
+    return False
+
+
 def infer_demo_engine(plan: DirectorBuildPlan, override: str = "") -> DemoEngine:
     """Pick the executor.
 
     This is not ``workflows._is_godot_engine``. That helper only stamps a
     version onto each engine plan. An empty override here falls through to
-    ``engine_choice`` when a spec has one, then to Godot.
+    ``engine_choice`` when a spec has one, then to Godot. Matching is by
+    token, so a word that merely contains "ue" does not select Unreal.
     """
 
-    text = (override or "").casefold()
-    if "godot" in text:
-        return "godot"
-    if "ue" in text or "unreal" in text:
-        return "unreal"
-    choice = (getattr(plan.gameplay_spec, "engine_choice", "") or "").casefold()
-    if "godot" in choice:
-        return "godot"
-    if "ue" in choice or "unreal" in choice:
-        return "unreal"
+    for text in (override or "", getattr(plan.gameplay_spec, "engine_choice", "") or ""):
+        if _names_godot(text):
+            return "godot"
+        if _names_unreal(text):
+            return "unreal"
     return "godot"
 
 

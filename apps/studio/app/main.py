@@ -50,6 +50,7 @@ from fantasy_agent.demo_launch import (
 from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
 from fantasy_agent.mcp import initial_mcp_contracts
+from fantasy_agent.path_safety import WorkspacePathError
 from fantasy_agent.planning_actions import PlanningAction, UnknownPlanningTool, run_planning_action
 from fantasy_agent.studio_jobs import InMemoryJobRegistry
 from fantasy_agent.tool_registry import tool_catalog
@@ -952,12 +953,25 @@ def preview_spec_bundle(req: SpecBundlePreviewRequest) -> SpecBundlePreviewRespo
 def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestResponse:
     import yaml
 
-    manifest = build_asset_approval_manifest(
-        req.review,
-        req.decisions,
-        target=req.target,
-        workspace_root=REPO_ROOT,
-    )
+    try:
+        manifest = build_asset_approval_manifest(
+            req.review,
+            req.decisions,
+            target=req.target,
+            workspace_root=REPO_ROOT,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Reviewed artifact is missing: {exc.filename or exc}",
+        ) from exc
+    except WorkspacePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Reviewed artifact cannot be read: {exc}",
+        ) from exc
     path = _approval_manifest_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
