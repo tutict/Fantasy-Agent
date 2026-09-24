@@ -564,7 +564,10 @@ def test_execute_starts_job_and_polls(monkeypatch):
             stages=[StageResult("create", "done"), StageResult("import", "done")],
         )
 
-    monkeypatch.setattr(module, "_build_execution_result", lambda req, *, confirmed, **_kwargs: fake_godot(req.plan, confirmed=confirmed))
+    def fake_launch(request):
+        return fake_godot(request.plan, confirmed=request.confirmed)
+
+    monkeypatch.setattr(module, "launch_demo", fake_launch)
 
     started = module.execute_demo(module.ExecuteDemoRequest(plan=plan, engine="Godot 4", confirmed=True))
     assert started["status"] == "running"
@@ -592,17 +595,17 @@ def test_execute_returns_and_reuses_a_session_id(monkeypatch):
     )
     seen: list[str] = []
 
-    def fake_execute(req, *, confirmed, session_id, **_kwargs):
-        seen.append(session_id)
-        if not confirmed:
+    def fake_launch(request):
+        seen.append(request.session_id)
+        if not request.confirmed:
             return ExecutionResult(
                 status="confirmation_required",
-                session_id=session_id,
+                session_id=request.session_id,
                 planned_side_effects=["write project"],
             )
-        return ExecutionResult(status="done", session_id=session_id)
+        return ExecutionResult(status="done", session_id=request.session_id)
 
-    monkeypatch.setattr(module, "_build_execution_result", fake_execute)
+    monkeypatch.setattr(module, "launch_demo", fake_launch)
 
     preview = module.execute_demo(
         module.ExecuteDemoRequest(plan=plan, engine="Godot 4", confirmed=False)
@@ -752,10 +755,10 @@ def test_execute_demo_job_ids_do_not_collide(monkeypatch):
         PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
     )
 
-    def fake_execute(req, *, confirmed, **_kwargs):
-        return ExecutionResult(status="done", session_id="x")
+    def fake_launch(request):
+        return ExecutionResult(status="done", session_id=request.session_id or "x")
 
-    monkeypatch.setattr(module, "_build_execution_result", fake_execute)
+    monkeypatch.setattr(module, "launch_demo", fake_launch)
     first = module.execute_demo(module.ExecuteDemoRequest(plan=plan, engine="godot", confirmed=True))
     second = module.execute_demo(module.ExecuteDemoRequest(plan=plan, engine="godot", confirmed=True))
 
@@ -847,7 +850,7 @@ def test_cancel_endpoint_stops_a_running_job(monkeypatch):
     )
     running = threading.Event()
 
-    def slow_execute(req, *, confirmed, **_kwargs):
+    def slow_launch(request):
         running.set()
         while True:
             event = process_runner.current_cancel_event()
@@ -855,7 +858,7 @@ def test_cancel_endpoint_stops_a_running_job(monkeypatch):
                 raise process_runner.ProcessCancelled("godot import")
             time.sleep(0.05)
 
-    monkeypatch.setattr(module, "_build_execution_result", slow_execute)
+    monkeypatch.setattr(module, "launch_demo", slow_launch)
 
     started = module.execute_demo(
         module.ExecuteDemoRequest(plan=plan, engine="Godot 4", confirmed=True)
@@ -952,11 +955,11 @@ def test_agent_run_rejects_an_empty_goal():
 
 
 def test_execute_wires_the_whole_request_through_the_real_builder(monkeypatch):
-    """At least one test must run the real ``_build_execution_result``.
+    """At least one test must run the real ``launch_demo``.
 
     The other execute tests replace it wholesale, so a request field that never
-    reaches the executor would still be green. This one stubs only the
-    outermost seam and asserts every field actually arrives.
+    reaches the executor would still be green. This one stubs only
+    ``execute_godot_demo`` and asserts every field actually arrives.
     """
     from fantasy_agent import executor, local_tools
     from fantasy_agent.executor import ExecutionResult
@@ -1438,3 +1441,87 @@ def test_a_second_request_reuses_the_session_it_was_given(tmp_path: Path):
     blender = next(e for e in second["stages"] if e["stage_id"] == "blender_modeling")
     assert blender["status"] == "blocked"
     assert blender["dispatched"] is False
+
+
+def test_unknown_workbench_tool_names_the_planning_list():
+    from fantasy_agent.planning_actions import PLANNING_TOOL_NAMES
+
+    module = _load_studio_app()
+    request = PromptRequest(
+        prompt="rooftop parkour chase with wall-runs and checkpoints",
+        target_minutes=10,
+    )
+    unknown = module._workbench_tool("does_not_exist", request.model_dump(mode="json"))
+    available = ", ".join(PLANNING_TOOL_NAMES)
+    assert unknown["isError"] is True
+    assert unknown["content"][0]["text"] == (
+        f"Unknown Studio planning tool 'does_not_exist'. Available tools: {available}."
+    )
+
+
+def test_workbench_slice_keeps_snake_and_camel_case():
+    module = _load_studio_app()
+    request = PromptRequest(
+        prompt="rooftop parkour chase with wall-runs and checkpoints",
+        target_minutes=10,
+        engine_version="Godot 4.6",
+    )
+    tool = module._workbench_tool("prepare_godot_plan", request.model_dump(mode="json"))
+    structured = tool["structuredContent"]
+    meta = tool["_meta"]
+    assert structured["kind"] == "godot_project_plan"
+    assert structured["godot_plan"]["engine_version"] == "Godot 4.6"
+    assert meta["godotPlan"] == structured["godot_plan"]
+    assert meta["activePanel"] == "build"
+    assert meta["toolName"] == "prepare_godot_plan"
+    assert tool["content"][0]["text"].startswith("Prepared Godot quick-play handoff")
+
+    pipeline = module._workbench_tool(
+        "prepare_production_pipeline", request.model_dump(mode="json")
+    )
+    assert pipeline["structuredContent"]["kind"] == "production_pipeline"
+    assert pipeline["_meta"]["activePanel"] == "pipeline"
+    assert pipeline["_meta"]["productionPipeline"] == pipeline["structuredContent"]["production_pipeline"]
+
+
+def test_execute_resume_errors_stay_http_400():
+    import pytest
+    from fastapi import HTTPException
+
+    from fantasy_agent.workflows import run_director_workflow
+
+    module = _load_studio_app()
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+    with pytest.raises(HTTPException) as missing:
+        module.execute_demo(
+            module.ExecuteDemoRequest(plan=plan, engine="Godot 4", resume_from="create")
+        )
+    assert missing.value.status_code == 400
+    assert missing.value.detail == "resume_from 需要同时提供 session_id，否则无法复用已完成的节点"
+
+    with pytest.raises(HTTPException) as unreal:
+        module.execute_demo(
+            module.ExecuteDemoRequest(
+                plan=plan,
+                engine="UE5",
+                session_id="sess-1",
+                resume_from="create",
+                confirmed=True,
+            )
+        )
+    assert unreal.value.status_code == 400
+    assert unreal.value.detail == "Unreal 续跑还没接线，不能在 Unreal 上静默忽略 resume_from"
+
+    with pytest.raises(HTTPException) as bad:
+        module.execute_demo(
+            module.ExecuteDemoRequest(
+                plan=plan,
+                engine="Godot 4",
+                session_id="sess-1",
+                resume_from="not-a-stage",
+            )
+        )
+    assert bad.value.status_code == 400
+    assert "未知的续跑节点" in bad.value.detail

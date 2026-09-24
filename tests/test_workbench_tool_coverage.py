@@ -1,9 +1,8 @@
 """The workbench tool names are a cross-boundary contract.
 
-``apps/studio/app/main.py::_workbench_tool`` implements a fixed set of planning
-tools; the React workbench calls them by name through ``/api/tools/{name}``.
-Nothing connects the two lists, so a renamed backend tool (or a typo in a
-button) would only show up as a runtime failure deep in a planning session.
+``PLANNING_TOOL_NAMES`` is the only list of planning tools. The React workbench
+calls them by name through ``/api/tools/{name}``. A renamed tool, or a typo in
+a button, would otherwise show up only as a runtime failure.
 """
 
 from __future__ import annotations
@@ -18,7 +17,6 @@ MAIN_PY = REPO_ROOT / "apps" / "studio" / "app" / "main.py"
 PLAN_PANELS = REPO_ROOT / "apps" / "frontend" / "src" / "workbench" / "PlanPanels.tsx"
 WORKBENCH = REPO_ROOT / "apps" / "frontend" / "src" / "workbench" / "PlanningWorkbench.tsx"
 
-BACKEND_TOOL_PATTERN = re.compile(r'if name == "([a-z_]+)":')
 FRONTEND_TOOL_PATTERN = re.compile(r'\{\s*tool:\s*"([a-z_]+)"')
 EXTRACT_TOOL_PATTERN = re.compile(r'EXTRACT_TOOL\s*=\s*"([a-z_]+)"')
 
@@ -27,9 +25,9 @@ KNOWN_WITHOUT_UI: dict[str, str] = {}
 
 
 def _backend_tools() -> set[str]:
-    if not MAIN_PY.exists():
-        pytest.skip(f"Studio backend not present at {MAIN_PY}")
-    return set(BACKEND_TOOL_PATTERN.findall(MAIN_PY.read_text(encoding="utf-8")))
+    from fantasy_agent.planning_actions import PLANNING_TOOL_NAMES
+
+    return set(PLANNING_TOOL_NAMES)
 
 
 def _frontend_tools() -> set[str]:
@@ -48,6 +46,24 @@ def test_backend_tool_names_are_discoverable():
     assert "generate_game_production_plan" in backend
     # The retired static page only wired three of these; the rewrite wires all.
     assert len(backend) >= 11
+
+
+def test_workbench_tool_does_not_branch_on_the_tool_name():
+    """The if-chain was a second implementation. It must not grow back."""
+
+    source = MAIN_PY.read_text(encoding="utf-8")
+    start = source.index("def _workbench_tool(")
+    end = source.index("\ndef ", start + 1)
+    assert "if name ==" not in source[start:end]
+
+
+def test_planning_actions_do_not_reprepare_engine_plans():
+    """Slice tools read the director plan. A second prepare_* call would drift."""
+
+    source = (REPO_ROOT / "fantasy_agent" / "planning_actions.py").read_text(encoding="utf-8")
+    assert "prepare_unreal_project(" not in source
+    assert "prepare_godot_project(" not in source
+    assert "decompose_production_tasks(" not in source
 
 
 def test_every_frontend_tool_exists_in_the_backend():

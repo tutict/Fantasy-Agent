@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, ValidationError
 
 from fantasy_agent import api_settings, local_tools
-from fantasy_agent.api_settings import public_settings
+from fantasy_agent.api_settings import llm_enabled, public_settings
 from fantasy_agent.blender_codegen import build_blender_script_artifact
 from fantasy_agent.contracts import (
     AssetApprovalManifest,
@@ -39,22 +39,28 @@ from fantasy_agent.contracts import (
     StrictModel,
     UnrealProjectPlan,
 )
+from fantasy_agent.demo_launch import (
+    DemoLaunch,
+    DemoLaunchError,
+    infer_demo_engine,
+    launch_demo,
+    new_session_id,
+    normalize_demo_resume,
+)
 from fantasy_agent.generation import design_from_prompt
-from fantasy_agent.idea_discovery import extract_idea_seed, prompt_request_from_seed
 from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
 from fantasy_agent.mcp import initial_mcp_contracts
+from fantasy_agent.planning_actions import PlanningAction, UnknownPlanningTool, run_planning_action
 from fantasy_agent.studio_jobs import InMemoryJobRegistry
 from fantasy_agent.tool_registry import tool_catalog
 from fantasy_agent.workflows import (
     build_asset_approval_manifest,
-    decompose_production_tasks,
     prepare_blender_assets,
     prepare_comfyui_visuals,
     prepare_creative_review,
     prepare_godot_project,
     prepare_qa_plan,
     prepare_unreal_project,
-    run_director_workflow,
 )
 
 STUDIO_NAME = "fantasy-agent-studio"
@@ -521,14 +527,21 @@ def correction_open(request: ManualCorrectionOpenRequest) -> dict[str, Any]:
     )
 
 
+
+def _planning(name: str, request: PromptRequest) -> PlanningAction:
+    """Run one prompt-shaped planning action with the Studio LLM switch."""
+
+    return run_planning_action(name, request.model_dump(mode="json"), use_llm=llm_enabled())
+
+
 @app.post("/api/plan", response_model=DirectorBuildPlan)
 def plan(request: PromptRequest) -> DirectorBuildPlan:
-    return run_director_workflow(request, use_llm=_use_llm())
+    return _planning("generate_game_production_plan", request).require_plan()
 
 
 @app.post("/api/tasks", response_model=DirectorTaskBreakdown)
 def tasks(request: PromptRequest) -> DirectorTaskBreakdown:
-    return decompose_production_tasks(request)
+    return _planning("decompose_production_tasks", request).require_breakdown()
 
 
 @app.get("/api/tool-contracts")
@@ -551,16 +564,6 @@ def tool_catalog_endpoint() -> dict[str, Any]:
     return tool_catalog()
 
 
-def _use_llm() -> bool:
-    """Whether the LLM backend should be attempted for this request.
-
-    Driven by the API access panel in the Studio; falls back to the
-    ``FANTASY_AGENT_USE_LLM`` environment flag when it is set.
-    """
-
-    return api_settings.llm_enabled()
-
-
 class IdeaSeedResponse(BaseModel):
     idea_seed: IdeaSeed
     prompt_request: PromptRequest
@@ -573,30 +576,33 @@ IdeaSeedResponse.model_rebuild()
 def idea_seed(request: IdeaDiscoveryRequest) -> IdeaSeedResponse:
     """Turn interview answers into an IdeaSeed and a ready-to-plan PromptRequest."""
 
-    seed = extract_idea_seed(request)
-    return IdeaSeedResponse(
-        idea_seed=seed,
-        prompt_request=prompt_request_from_seed(seed, request),
+    action = run_planning_action(
+        "extract_idea_seed",
+        request.model_dump(mode="json"),
+        use_llm=llm_enabled(),
     )
+    if action.seed is None or action.prompt_request is None:
+        raise RuntimeError("extract_idea_seed did not produce a seed")
+    return IdeaSeedResponse(idea_seed=action.seed, prompt_request=action.prompt_request)
 
 
 @app.post("/api/design", response_model=GameplaySpec)
 def design(request: PromptRequest) -> GameplaySpec:
-    return design_from_prompt(request, use_llm=_use_llm())
+    return design_from_prompt(request, use_llm=llm_enabled())
 
 
 @app.post("/api/gdd", response_model=GDDDocument)
 def gdd(request: PromptRequest) -> GDDDocument:
-    return run_director_workflow(request, use_llm=_use_llm()).gdd
+    return _planning("render_gdd", request).require_plan().gdd
 
 
 @app.post("/api/pipeline")
 def pipeline(request: PromptRequest) -> dict[str, Any]:
-    plan = run_director_workflow(request, use_llm=_use_llm())
+    built = _planning("prepare_production_pipeline", request).require_plan()
     return {
-        "gameplay_title": plan.gameplay_spec.title,
+        "gameplay_title": built.gameplay_spec.title,
         "production_pipeline": (
-            plan.production_pipeline.model_dump(mode="json") if plan.production_pipeline else None
+            built.production_pipeline.model_dump(mode="json") if built.production_pipeline else None
         ),
     }
 
@@ -688,165 +694,204 @@ def _plan_headline(prefix: str, plan: DirectorBuildPlan) -> str:
     )
 
 
-def _workbench_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Run a workbench planning tool by name against the local workflows."""
-
-    if name == "extract_idea_seed":
-        request = IdeaDiscoveryRequest.model_validate(arguments)
-        seed = extract_idea_seed(request)
-        prompt_request = prompt_request_from_seed(seed, request)
-        seed_payload = seed.model_dump(mode="json")
-        prompt_payload = prompt_request.model_dump(mode="json")
-        return _workbench_result(
-            name,
-            {"kind": "idea_seed", "idea_seed": seed_payload, "prompt_request": prompt_payload},
-            (
-                "Extracted an IdeaSeed for planning. "
-                f"Core action: {seed.core_action}. Next step: generate a production plan from the seed."
-            ),
-            {"ideaSeed": seed_payload, "promptRequest": prompt_payload, "activePanel": "discovery"},
-        )
-
-    request = PromptRequest.model_validate(arguments)
-
-    if name == "decompose_production_tasks":
-        breakdown = decompose_production_tasks(request)
-        payload = breakdown.model_dump(mode="json")
-        return _workbench_result(
-            name,
-            {"kind": "director_task_breakdown", "task_breakdown": payload},
-            (
-                f"Prepared {len(breakdown.tasks)} production tasks. "
-                f"Recommended next task: {breakdown.recommended_next_task}. "
-                "Execution tasks still require explicit confirmation."
-            ),
-            {"taskBreakdown": payload, "activePanel": "tasks"},
-        )
-
-    plan = run_director_workflow(request, use_llm=_use_llm())
-    spec = plan.gameplay_spec
-    summary = _plan_summary(plan)
-
-    if name == "generate_game_production_plan":
-        plan_payload = plan.model_dump(mode="json")
-        task_payload = plan.task_breakdown.model_dump(mode="json") if plan.task_breakdown else None
-        pipeline_payload = (
-            plan.production_pipeline.model_dump(mode="json") if plan.production_pipeline else None
-        )
-        return _workbench_result(
-            name,
-            {
-                "kind": "director_build_plan",
-                "summary": summary,
-                "plan": plan_payload,
-                "task_breakdown": task_payload,
-                "production_pipeline": pipeline_payload,
-            },
-            _plan_headline("Generated full production plan", plan),
-            {
-                "plan": plan_payload,
-                "taskBreakdown": task_payload,
-                "productionPipeline": pipeline_payload,
-                "activePanel": "overview",
-            },
-        )
-
-    if name == "render_gdd":
-        gdd_payload = plan.gdd.model_dump(mode="json")
-        return _workbench_result(
-            name,
-            {"kind": "gdd_document", "summary": summary, "gdd": gdd_payload},
-            _plan_headline("Rendered GDD", plan),
-            {"gdd": gdd_payload, "activePanel": "gdd"},
-        )
-
-    if name == "prepare_production_pipeline":
-        pipeline_payload = (
-            plan.production_pipeline.model_dump(mode="json") if plan.production_pipeline else None
-        )
-        return _workbench_result(
-            name,
-            {"kind": "production_pipeline", "summary": summary, "production_pipeline": pipeline_payload},
-            _plan_headline("Prepared production pipeline", plan),
-            {"productionPipeline": pipeline_payload, "activePanel": "pipeline"},
-        )
-
-    if name == "prepare_unreal_plan":
-        unreal_plan = prepare_unreal_project(spec, request.engine_version)
-        payload = unreal_plan.model_dump(mode="json")
-        return _workbench_result(
-            name,
-            {"kind": "unreal_project_plan", "gameplay_title": spec.title, "unreal_plan": payload},
-            f"Prepared Unreal handoff for {spec.title}: {', '.join(unreal_plan.maps)}.",
-            {"unrealPlan": payload, "activePanel": "build"},
-        )
-
-    if name == "prepare_godot_plan":
-        godot_plan = prepare_godot_project(spec)
-        payload = godot_plan.model_dump(mode="json")
-        return _workbench_result(
-            name,
-            {"kind": "godot_project_plan", "gameplay_title": spec.title, "godot_plan": payload},
-            f"Prepared Godot quick-play handoff for {spec.title}: {', '.join(godot_plan.scenes)}.",
-            {"godotPlan": payload, "activePanel": "build"},
-        )
-
-    if name == "prepare_blender_plan":
-        blender_plan = prepare_blender_assets(spec)
-        payload = blender_plan.model_dump(mode="json")
-        return _workbench_result(
-            name,
-            {"kind": "blender_asset_plan", "gameplay_title": spec.title, "blender_plan": payload},
-            f"Prepared {len(blender_plan.jobs)} Blender greybox asset jobs for {spec.title}.",
-            {"blenderPlan": payload, "activePanel": "build"},
-        )
-
-    if name == "prepare_comfyui_plan":
-        comfyui_plan = prepare_comfyui_visuals(spec)
-        payload = comfyui_plan.model_dump(mode="json")
-        return _workbench_result(
-            name,
-            {"kind": "comfyui_visual_plan", "gameplay_title": spec.title, "comfyui_plan": payload},
-            f"Prepared {len(comfyui_plan.jobs)} ComfyUI visual reference jobs for {spec.title}.",
-            {"comfyuiPlan": payload, "activePanel": "visuals"},
-        )
-
-    if name == "prepare_creative_review_plan":
-        review = prepare_creative_review(
-            spec,
-            prepare_blender_assets(spec),
-            prepare_comfyui_visuals(spec),
-        )
-        payload = review.model_dump(mode="json")
-        return _workbench_result(
-            name,
-            {"kind": "creative_review_report", "gameplay_title": spec.title, "creative_review": payload},
-            (
-                f"Prepared {len(review.items)} creative review items for {spec.title}. "
-                "Unreal ingest remains blocked until user approvals are recorded."
-            ),
-            {"creativeReview": payload, "activePanel": "visuals"},
-        )
-
-    if name == "prepare_qa_plan":
-        qa_plan = prepare_qa_plan(spec)
-        payload = qa_plan.model_dump(mode="json")
-        return _workbench_result(
-            name,
-            {"kind": "qa_plan", "gameplay_title": spec.title, "qa_plan": payload},
-            f"Prepared QA checks for a {qa_plan.target_session_minutes}-minute slice of {spec.title}.",
-            {"qaPlan": payload, "activePanel": "qa"},
-        )
-
-    available = (
-        "extract_idea_seed, decompose_production_tasks, generate_game_production_plan, render_gdd, "
-        "prepare_production_pipeline, prepare_unreal_plan, prepare_godot_plan, prepare_blender_plan, "
-        "prepare_comfyui_plan, prepare_creative_review_plan, prepare_qa_plan"
+def _seed_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    if action.seed is None or action.prompt_request is None:
+        raise RuntimeError("extract_idea_seed did not produce a seed")
+    seed_payload = action.seed.model_dump(mode="json")
+    prompt_payload = action.prompt_request.model_dump(mode="json")
+    text = (
+        "Extracted an IdeaSeed for planning. "
+        f"Core action: {action.seed.core_action}. "
+        "Next step: generate a production plan from the seed."
     )
-    return {
-        "isError": True,
-        "content": [{"type": "text", "text": f"Unknown Studio planning tool '{name}'. Available tools: {available}."}],
-    }
+    return (
+        {"idea_seed": seed_payload, "prompt_request": prompt_payload},
+        text,
+        {
+            "ideaSeed": seed_payload,
+            "promptRequest": prompt_payload,
+            "activePanel": "discovery",
+        },
+    )
+
+
+def _tasks_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    breakdown = action.require_breakdown()
+    payload = breakdown.model_dump(mode="json")
+    text = (
+        f"Prepared {len(breakdown.tasks)} production tasks. "
+        f"Recommended next task: {breakdown.recommended_next_task}. "
+        "Execution tasks still require explicit confirmation."
+    )
+    return (
+        {"task_breakdown": payload},
+        text,
+        {"taskBreakdown": payload, "activePanel": "tasks"},
+    )
+
+
+def _full_plan_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    built = action.require_plan()
+    plan_payload = built.model_dump(mode="json")
+    task_payload = _json_model(built.task_breakdown)
+    pipeline_payload = _json_model(built.production_pipeline)
+    return (
+        {
+            "summary": _plan_summary(built),
+            "plan": plan_payload,
+            "task_breakdown": task_payload,
+            "production_pipeline": pipeline_payload,
+        },
+        _plan_headline("Generated full production plan", built),
+        {
+            "plan": plan_payload,
+            "taskBreakdown": task_payload,
+            "productionPipeline": pipeline_payload,
+            "activePanel": "overview",
+        },
+    )
+
+
+def _gdd_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    built = action.require_plan()
+    gdd_payload = built.gdd.model_dump(mode="json")
+    return (
+        {"summary": _plan_summary(built), "gdd": gdd_payload},
+        _plan_headline("Rendered GDD", built),
+        {"gdd": gdd_payload, "activePanel": "gdd"},
+    )
+
+
+def _pipeline_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    built = action.require_plan()
+    pipeline_payload = _json_model(built.production_pipeline)
+    return (
+        {"summary": _plan_summary(built), "production_pipeline": pipeline_payload},
+        _plan_headline("Prepared production pipeline", built),
+        {"productionPipeline": pipeline_payload, "activePanel": "pipeline"},
+    )
+
+
+def _unreal_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    built = action.require_plan()
+    payload = built.unreal_plan.model_dump(mode="json")
+    title = built.gameplay_spec.title
+    text = f"Prepared Unreal handoff for {title}: {', '.join(built.unreal_plan.maps)}."
+    return (
+        {"gameplay_title": title, "unreal_plan": payload},
+        text,
+        {"unrealPlan": payload, "activePanel": "build"},
+    )
+
+
+def _godot_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    built = action.require_plan()
+    payload = built.godot_plan.model_dump(mode="json")
+    title = built.gameplay_spec.title
+    text = f"Prepared Godot quick-play handoff for {title}: {', '.join(built.godot_plan.scenes)}."
+    return (
+        {"gameplay_title": title, "godot_plan": payload},
+        text,
+        {"godotPlan": payload, "activePanel": "build"},
+    )
+
+
+def _blender_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    built = action.require_plan()
+    payload = built.blender_plan.model_dump(mode="json")
+    title = built.gameplay_spec.title
+    text = f"Prepared {len(built.blender_plan.jobs)} Blender greybox asset jobs for {title}."
+    return (
+        {"gameplay_title": title, "blender_plan": payload},
+        text,
+        {"blenderPlan": payload, "activePanel": "build"},
+    )
+
+
+def _comfyui_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    built = action.require_plan()
+    payload = built.comfyui_plan.model_dump(mode="json")
+    title = built.gameplay_spec.title
+    text = f"Prepared {len(built.comfyui_plan.jobs)} ComfyUI visual reference jobs for {title}."
+    return (
+        {"gameplay_title": title, "comfyui_plan": payload},
+        text,
+        {"comfyuiPlan": payload, "activePanel": "visuals"},
+    )
+
+
+def _review_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    built = action.require_plan()
+    payload = built.creative_review.model_dump(mode="json")
+    title = built.gameplay_spec.title
+    text = (
+        f"Prepared {len(built.creative_review.items)} creative review items for {title}. "
+        "Unreal ingest remains blocked until user approvals are recorded."
+    )
+    return (
+        {"gameplay_title": title, "creative_review": payload},
+        text,
+        {"creativeReview": payload, "activePanel": "visuals"},
+    )
+
+
+def _qa_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    built = action.require_plan()
+    payload = built.qa_plan.model_dump(mode="json")
+    title = built.gameplay_spec.title
+    text = (
+        f"Prepared QA checks for a {built.qa_plan.target_session_minutes}-minute "
+        f"slice of {title}."
+    )
+    return (
+        {"gameplay_title": title, "qa_plan": payload},
+        text,
+        {"qaPlan": payload, "activePanel": "qa"},
+    )
+
+
+_ENVELOPE_BUILDERS = {
+    "extract_idea_seed": _seed_envelope,
+    "decompose_production_tasks": _tasks_envelope,
+    "generate_game_production_plan": _full_plan_envelope,
+    "render_gdd": _gdd_envelope,
+    "prepare_production_pipeline": _pipeline_envelope,
+    "prepare_unreal_plan": _unreal_envelope,
+    "prepare_godot_plan": _godot_envelope,
+    "prepare_blender_plan": _blender_envelope,
+    "prepare_comfyui_plan": _comfyui_envelope,
+    "prepare_creative_review_plan": _review_envelope,
+    "prepare_qa_plan": _qa_envelope,
+}
+
+
+def _json_model(model: Any) -> Any:
+    if model is None:
+        return None
+    return model.model_dump(mode="json")
+
+
+def _workbench_envelope(action: PlanningAction) -> dict[str, Any]:
+    structured, content_text, meta = _ENVELOPE_BUILDERS[action.name](action)
+    return _workbench_result(
+        action.name,
+        {"kind": action.kind, **structured},
+        content_text,
+        meta,
+    )
+
+
+def _workbench_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Adapt one planning action into the envelope the workbench already reads."""
+
+    try:
+        action = run_planning_action(name, arguments, use_llm=llm_enabled())
+    except UnknownPlanningTool as exc:
+        return {
+            "isError": True,
+            "content": [{"type": "text", "text": str(exc)}],
+        }
+    return _workbench_envelope(action)
 
 
 @app.get("/workbench")
@@ -869,82 +914,6 @@ async def workbench_tool(tool_name: str, request: Request) -> dict[str, Any]:
     arguments = await request.json()
     return _workbench_tool(tool_name, arguments or {})
 
-
-
-def _infer_engine(plan: DirectorBuildPlan, override: str) -> str:
-    """Return 'godot' or 'unreal' from an explicit override or the plan."""
-    text = (override or "").casefold()
-    if "godot" in text:
-        return "godot"
-    if "ue" in text or "unreal" in text:
-        return "unreal"
-    choice = (getattr(plan.gameplay_spec, "engine_choice", "") or "").casefold()
-    if "godot" in choice:
-        return "godot"
-    if "ue" in choice or "unreal" in choice:
-        return "unreal"
-    # Default to Godot - the lighter, fully self-contained path.
-    return "godot"
-
-
-def _build_execution_result(
-    req: ExecuteDemoRequest, *, confirmed: bool, session_id: str
-):
-    """Call the right executor; returns an ExecutionResult."""
-    from fantasy_agent.executor import execute_godot_demo, execute_unreal_demo
-    from fantasy_agent.local_tools import (
-        _find_blender,
-        _find_godot,
-        _find_unreal,
-        _unreal_cmd_executable,
-    )
-
-    engine = _infer_engine(req.plan, req.engine)
-    if engine == "unreal":
-        return execute_unreal_demo(
-            req.plan,
-            session_id=session_id,
-            confirmed=confirmed,
-            unreal_cmd=_unreal_cmd_executable(_find_unreal()) or "UnrealEditor-Cmd",
-        )
-    return execute_godot_demo(
-        req.plan,
-        session_id=session_id,
-        confirmed=confirmed,
-        godot_exe=_find_godot() or "godot",
-        with_assets=req.with_assets,
-        blender_exe=_find_blender() or "blender",
-        with_visuals=req.with_visuals,
-        with_gameplay=req.with_gameplay,
-        enemy_tuning=req.enemy_tuning,
-        approval_manifest_path=req.approval_manifest_path,
-        resume_from=req.resume_from or None,
-    )
-
-
-def _validate_resume_request(req: ExecuteDemoRequest) -> None:
-    """Reject a resume that cannot actually resume.
-
-    Two silent-degradation traps: an unknown node name used to fall through to
-    "skip nothing" (a full replay of every expensive node), and resuming
-    without a session id silently started a brand-new session with no prior
-    state to reuse. Both now fail loudly at the boundary.
-    """
-
-    if not req.resume_from:
-        return
-    if not req.session_id:
-        raise HTTPException(
-            status_code=400,
-            detail="resume_from 需要同时提供 session_id，否则无法复用已完成的节点",
-        )
-    from fantasy_agent.pipeline_state import normalize_resume_from
-
-    try:
-        # Accept a re-work target ("spec") as well as a stage name ("blender").
-        req.resume_from = normalize_resume_from(req.resume_from)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 def _approval_manifest_path() -> Path:
@@ -1054,23 +1023,52 @@ def asset_execute_cancel(job_id: str) -> dict[str, Any]:
     return _ASSET_JOB_REGISTRY.cancel(job_id)
 
 
+def _resume_http_detail(exc: DemoLaunchError) -> str:
+    """Studio keeps its own sentences; the library error speaks CLI English."""
+
+    if exc.code == "resume_needs_session":
+        return "resume_from 需要同时提供 session_id，否则无法复用已完成的节点"
+    if exc.code == "resume_not_supported":
+        return "Unreal 续跑还没接线，不能在 Unreal 上静默忽略 resume_from"
+    return str(exc)
+
+
+def _demo_request(req: ExecuteDemoRequest, *, confirmed: bool, session_id: str) -> DemoLaunch:
+    return DemoLaunch(
+        plan=req.plan,
+        engine=req.engine,
+        confirmed=confirmed,
+        session_id=session_id,
+        resume_from=req.resume_from or None,
+        with_assets=req.with_assets,
+        with_visuals=req.with_visuals,
+        with_gameplay=req.with_gameplay,
+        enemy_tuning=req.enemy_tuning,
+        approval_manifest_path=req.approval_manifest_path,
+    )
+
+
 @app.post("/api/execute")
 def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
-    from datetime import UTC, datetime
-
-    engine = _infer_engine(req.plan, req.engine)
-    # Own the session id here so the caller gets it back immediately and can
-    # resume this exact run later instead of starting a new one.
-    session_id = req.session_id or datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    _validate_resume_request(req)
+    engine = infer_demo_engine(req.plan, req.engine)
+    # Validate against the caller-supplied session id before minting one.
+    # A resume with no id must fail here, not start a new session in the worker.
+    try:
+        normalize_demo_resume(
+            req.plan,
+            req.engine,
+            session_id=req.session_id,
+            resume_from=req.resume_from or None,
+        )
+    except DemoLaunchError as exc:
+        raise HTTPException(status_code=400, detail=_resume_http_detail(exc)) from exc
+    session_id = req.session_id or new_session_id()
     if not req.confirmed:
-        # Confirmation gate: report side effects without writing or executing.
-        preview = _build_execution_result(req, confirmed=False, session_id=session_id)
+        preview = launch_demo(_demo_request(req, confirmed=False, session_id=session_id))
         return {**_EXECUTE_JOB_REGISTRY.preview(preview, engine=engine), "session_id": session_id}
 
-    job_id = _EXECUTE_JOB_REGISTRY.submit(
-        lambda: _build_execution_result(req, confirmed=True, session_id=session_id)
-    )
+    confirmed = _demo_request(req, confirmed=True, session_id=session_id)
+    job_id = _EXECUTE_JOB_REGISTRY.submit(lambda: launch_demo(confirmed))
     return {"status": "running", "job_id": job_id, "engine": engine, "session_id": session_id}
 
 
@@ -1276,7 +1274,7 @@ def run_orchestration(req: OrchestrationRunRequest) -> dict[str, Any]:
         }
 
     try:
-        engine = _infer_engine(req.plan, req.engine)
+        engine = infer_demo_engine(req.plan, req.engine)
         session_id = req.session_id.strip() or f"orch-{uuid4().hex[:12]}"
         session = _ORCHESTRATION_SESSIONS.get(session_id)
         if session is None:

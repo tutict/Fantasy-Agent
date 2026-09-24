@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import UTC, datetime
 from pathlib import Path
 
 from fantasy_agent.contracts import PromptRequest
@@ -25,7 +24,6 @@ from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.pipeline_state import (
     GODOT_STAGE_ORDER,
     REWORK_TARGET_STAGES,
-    normalize_resume_from,
 )
 from fantasy_agent.workflows import run_director_workflow
 
@@ -310,26 +308,43 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_executor(plan, args) -> int:
-    engine = (args.engine or "").casefold()
-    if "ue" in engine or "unreal" in engine:
-        return _run_unreal_executor(plan, args)
-    return _run_godot_executor(plan, args)
+    from fantasy_agent.demo_launch import (
+        DemoLaunch,
+        DemoLaunchError,
+        infer_demo_engine,
+        launch_demo,
+        resolve_demo_executables,
+    )
+    from fantasy_agent.executor import format_execution_report
 
-
-def _run_unreal_executor(plan, args) -> int:
-    from fantasy_agent.executor import execute_unreal_demo, format_execution_report
-    from fantasy_agent.local_tools import _find_unreal, _unreal_cmd_executable
-
-    if args.with_assets or args.with_visuals:
+    engine = infer_demo_engine(plan, args.engine or "")
+    tools = resolve_demo_executables(
+        godot_exe=args.godot_exe,
+        blender_exe=args.blender_exe,
+        unreal_cmd=args.unreal_exe,
+    )
+    run_import = not args.no_import
+    if engine == "unreal" and (args.with_assets or args.with_visuals):
         print(
             "[note] --with-assets/--with-visuals are not applied on the Unreal path in M4 "
             "(project generation + DataValidation only); ignoring.",
             file=sys.stderr,
         )
-
-    run_validation = not args.no_import
-    unreal_cmd = args.unreal_exe or _unreal_cmd_executable(_find_unreal())
-    if run_validation and not unreal_cmd:
+    if engine == "godot" and args.execute and run_import and not tools.godot_found:
+        print(
+            "No Godot executable found. Pass --godot-exe PATH or use --no-import "
+            "to stop after validation.",
+            file=sys.stderr,
+        )
+        return 2
+    if engine == "godot" and args.with_assets and not tools.blender_found:
+        print(
+            "No Blender executable found. Pass --blender-exe PATH or drop "
+            "--with-assets to build a greybox-only demo.",
+            file=sys.stderr,
+        )
+        return 2
+    if engine == "unreal" and run_import and not tools.unreal_found:
         print(
             "No Unreal executable found. Pass --unreal-exe PATH or use --no-import "
             "to stop after project generation.",
@@ -337,74 +352,27 @@ def _run_unreal_executor(plan, args) -> int:
         )
         return 2
 
-    session_id = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    result = execute_unreal_demo(
-        plan,
-        session_id=session_id,
-        confirmed=args.yes,
-        unreal_cmd=unreal_cmd or "UnrealEditor-Cmd",
-        run_validation=run_validation,
-    )
+    try:
+        result = launch_demo(
+            DemoLaunch(
+                plan=plan,
+                engine=args.engine or "",
+                confirmed=args.yes,
+                session_id=args.session_id or "",
+                resume_from=args.from_stage,
+                with_assets=args.with_assets,
+                with_visuals=args.with_visuals,
+                with_gameplay=args.with_gameplay,
+                approval_manifest_path=args.approval_manifest_path,
+                run_import=run_import,
+                comfyui_endpoint=args.comfyui_endpoint,
+                resolved=tools,
+            )
+        )
+    except DemoLaunchError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
     print(format_execution_report(result))
     if result.status == "confirmation_required":
         return 0
     return 0 if result.ok else 1
-
-
-def _run_godot_executor(plan, args) -> int:
-    from fantasy_agent.executor import execute_godot_demo, format_execution_report
-    from fantasy_agent.local_tools import _find_blender, _find_godot
-
-    godot_exe = args.godot_exe or _find_godot()
-    if args.execute and not args.no_import and not godot_exe:
-        print(
-            "No Godot executable found. Pass --godot-exe PATH or use --no-import "
-            "to stop after validation.",
-            file=sys.stderr,
-        )
-        return 2
-
-    blender_exe = args.blender_exe or _find_blender()
-    if args.with_assets and not blender_exe:
-        print(
-            "No Blender executable found. Pass --blender-exe PATH or drop "
-            "--with-assets to build a greybox-only demo.",
-            file=sys.stderr,
-        )
-        return 2
-
-    if args.from_stage and not args.session_id:
-        print("--from-stage needs --session-id to know which run to resume.", file=sys.stderr)
-        return 2
-    # Accept a re-work target ("spec") as well as a stage name ("blender") so
-    # following a pre-flight hint works instead of being rejected.
-    if args.from_stage:
-        try:
-            args.from_stage = normalize_resume_from(args.from_stage)
-        except ValueError as exc:
-            print(str(exc), file=sys.stderr)
-            return 2
-
-    session_id = args.session_id or datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-    result = execute_godot_demo(
-        plan,
-        session_id=session_id,
-        confirmed=args.yes,
-        godot_exe=godot_exe or "godot",
-        run_import=not args.no_import,
-        with_assets=args.with_assets,
-        blender_exe=blender_exe or "blender",
-        with_visuals=args.with_visuals,
-        comfyui_endpoint=args.comfyui_endpoint,
-        with_gameplay=args.with_gameplay,
-        approval_manifest_path=args.approval_manifest_path,
-        resume_from=args.from_stage,
-    )
-    print(format_execution_report(result))
-    if result.status == "confirmation_required":
-        return 0
-    return 0 if result.ok else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

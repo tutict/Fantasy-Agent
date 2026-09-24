@@ -377,61 +377,29 @@ _SEED_SCHEMA: dict[str, Any] = {
 
 
 def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
-    """The planning tools, wired to the deterministic workflows.
+    """The planning tools, wired to the shared planning actions.
 
     Pass ``target`` to add them to an existing registry so both sets share one
     artifact store -- which is what lets an engine tool read the plan a
     planning tool just produced.
+
+    Handlers call ``llm_enabled()`` so the agent loop follows the same switch
+    as Studio. ``run_director_workflow`` still treats a missing ``use_llm`` as
+    the env flag only; that default is for direct library calls.
     """
 
-    from fantasy_agent.contracts import IdeaDiscoveryRequest, PromptRequest
-    from fantasy_agent.idea_discovery import extract_idea_seed
-    from fantasy_agent.workflows import (
-        decompose_production_tasks,
-        run_director_workflow,
-    )
+    from fantasy_agent.planning_actions import registry_payload, run_planning_action
 
     registry = target or ToolRegistry()
 
-    def _seed(arguments: dict[str, Any]) -> dict[str, Any]:
-        request = IdeaDiscoveryRequest.model_validate(arguments)
-        seed = extract_idea_seed(request)
-        return {
-            "message": f"IdeaSeed: core action '{seed.core_action}'.",
-            "data": {"idea_seed": seed.model_dump(mode="json")},
-        }
+    def _bind(tool_name: str):
+        def handler(arguments: dict[str, Any]) -> dict[str, Any]:
+            from fantasy_agent.api_settings import llm_enabled
 
-    def _plan(arguments: dict[str, Any]) -> dict[str, Any]:
-        request = PromptRequest.model_validate(arguments)
-        plan = run_director_workflow(request)
-        spec = plan.gameplay_spec
-        return {
-            "message": (
-                f"Production plan for '{spec.title}': {len(spec.core_loop)} loop steps, "
-                f"{len(spec.level_beats)} level beats, {len(spec.systems)} systems. "
-                f"Win: {spec.win_state}"
-            ),
-            "data": {"summary": plan.model_dump(mode="json")},
-        }
+            action = run_planning_action(tool_name, arguments, use_llm=llm_enabled())
+            return {"message": action.message, "data": registry_payload(action)}
 
-    def _tasks(arguments: dict[str, Any]) -> dict[str, Any]:
-        request = PromptRequest.model_validate(arguments)
-        breakdown = decompose_production_tasks(request)
-        return {
-            "message": (
-                f"{len(breakdown.tasks)} production tasks; "
-                f"recommended next: {breakdown.recommended_next_task}."
-            ),
-            "data": {"task_breakdown": breakdown.model_dump(mode="json")},
-        }
-
-    def _gdd(arguments: dict[str, Any]) -> dict[str, Any]:
-        request = PromptRequest.model_validate(arguments)
-        plan = run_director_workflow(request)
-        return {
-            "message": f"GDD rendered for '{plan.gameplay_spec.title}'.",
-            "data": {"gdd": plan.gdd.model_dump(mode="json")},
-        }
+        return handler
 
     registry.register(
         ToolSpec(
@@ -441,7 +409,7 @@ def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
                 "verbs, tone). Use this first when the idea is thin."
             ),
             input_schema=_SEED_SCHEMA,
-            handler=_seed,
+            handler=_bind("extract_idea_seed"),
         )
     )
     registry.register(
@@ -452,7 +420,7 @@ def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
                 "breakdown and engine handoffs. The main planning call."
             ),
             input_schema=_PROMPT_SCHEMA,
-            handler=_plan,
+            handler=_bind("generate_game_production_plan"),
         )
     )
     registry.register(
@@ -460,7 +428,7 @@ def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
             name="decompose_production_tasks",
             description="Break an idea into ordered production tasks with a recommended next step.",
             input_schema=_PROMPT_SCHEMA,
-            handler=_tasks,
+            handler=_bind("decompose_production_tasks"),
         )
     )
     registry.register(
@@ -468,10 +436,11 @@ def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
             name="render_gdd",
             description="Render the structured game design document for an idea.",
             input_schema=_PROMPT_SCHEMA,
-            handler=_gdd,
+            handler=_bind("render_gdd"),
         )
     )
     return registry
+
 
 
 # Which sub-plan of a DirectorBuildPlan each engine tool consumes. The model
