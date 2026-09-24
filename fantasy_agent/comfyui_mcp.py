@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from urllib import parse
 
 from pydantic import ValidationError
 
@@ -231,9 +232,12 @@ class ComfyUIMCPBridge(BaseMCPBridge):
     ) -> ComfyUICapabilityProbeResult:
         endpoint, endpoint_warnings = self._resolve_endpoint(request)
         if endpoint is None:
+            reported_endpoint = request.endpoint
+            if _has_url_credentials(reported_endpoint):
+                reported_endpoint = "credential-bearing endpoint rejected"
             return ComfyUICapabilityProbeResult(
                 status="unavailable",
-                endpoint=request.endpoint,
+                endpoint=reported_endpoint,
                 blockers=["No reachable ComfyUI endpoint found."],
                 warnings=endpoint_warnings,
             )
@@ -350,6 +354,10 @@ class ComfyUIMCPBridge(BaseMCPBridge):
         manifest: ComfyUIRunManifest,
         allow_remote_endpoint: bool,
     ) -> list[str]:
+        if _has_url_credentials(manifest.endpoint):
+            raise ComfyUIMCPSafetyError(
+                "ComfyUI endpoint must not include URL credentials."
+            )
         if not allow_remote_endpoint and not local_tools._is_local_http_endpoint(manifest.endpoint):
             raise ComfyUIMCPSafetyError(
                 f"ComfyUI endpoint must be local unless allow_remote_endpoint=true: {manifest.endpoint}"
@@ -379,6 +387,9 @@ class ComfyUIMCPBridge(BaseMCPBridge):
             candidates = _dedupe([request.endpoint, *request.endpoint_candidates])
         warnings: list[str] = []
         for endpoint in candidates:
+            if _has_url_credentials(endpoint):
+                warnings.append("Skipped ComfyUI endpoint containing URL credentials.")
+                continue
             if not request.allow_remote_endpoint and not local_tools._is_local_http_endpoint(endpoint):
                 warnings.append(f"Skipped non-local ComfyUI endpoint: {endpoint}")
                 continue
@@ -619,6 +630,13 @@ def _slug(value: str) -> str:
     while "__" in slug:
         slug = slug.replace("__", "_")
     return slug or "comfyui"
+
+
+def _has_url_credentials(endpoint: str | None) -> bool:
+    if not endpoint:
+        return False
+    parsed = parse.urlparse(endpoint)
+    return parsed.username is not None or parsed.password is not None
 
 
 def _extract_image_refs(history: dict[str, Any], prompt_id: str) -> list[dict[str, str]]:
