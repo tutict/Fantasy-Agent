@@ -21,6 +21,9 @@ import type {
   McpStatus,
   OrchestrationRunRequest,
   OrchestrationSession,
+  PlaytestJob,
+  PlaytestPreview,
+  PlaytestStart,
   ProductionSpecBundle,
   PromptRequest,
   SessionState,
@@ -396,6 +399,47 @@ export function previewGameplaySpec(request: PromptRequest): Promise<GameplaySpe
   return jsonRequest<GameplaySpec>("/api/design", {
     method: "POST",
     body: JSON.stringify(request)
+  });
+}
+
+/**
+ * Headless playtest: run the generated prototype and measure it.
+ *
+ * Two-step like every other execution call -- the preview lists the side
+ * effects (an engine process really launches) and the start only happens once
+ * the human has confirmed them.
+ */
+export function previewPlaytest(request: {
+  project_dir: string;
+  runs?: number;
+  input_plan?: string;
+  goal_session_minutes?: number;
+}): Promise<PlaytestPreview> {
+  return jsonRequest<PlaytestPreview>("/api/playtest/run", {
+    method: "POST",
+    body: JSON.stringify({ ...request, confirmed: false })
+  });
+}
+
+export function startPlaytest(request: {
+  project_dir: string;
+  runs?: number;
+  input_plan?: string;
+  goal_session_minutes?: number;
+}): Promise<PlaytestStart> {
+  return jsonRequest<PlaytestStart>("/api/playtest/run", {
+    method: "POST",
+    body: JSON.stringify({ ...request, confirmed: true })
+  });
+}
+
+export function getPlaytestJob(jobId: string): Promise<PlaytestJob> {
+  return jsonRequest<PlaytestJob>(`/api/playtest/${encodeURIComponent(jobId)}`);
+}
+
+export function cancelPlaytestJob(jobId: string): Promise<JobCancelResponse> {
+  return jsonRequest<JobCancelResponse>(`/api/playtest/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST"
   });
 }
 

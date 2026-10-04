@@ -2,9 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import {
   cancelAssetExecutionJob,
   cancelExecuteJob,
+  cancelPlaytestJob,
   getAssetExecutionJob,
   getExecuteJob,
   getManualCorrectionTargets,
+  getPlaytestJob,
   previewGameplaySpec,
   previewSpecBundle,
   writeApprovalManifest
@@ -20,6 +22,7 @@ import type {
   ManualCorrectionTarget,
   ManualTargetsPayload,
   PlanningHandoff,
+  PlaytestResult,
   ProductionSpecBundle,
   PromptRequest,
   SpecBundlePreviewResponse,
@@ -418,7 +421,7 @@ export function usePlanningHandoff({
   };
 }
 
-export function useExecutionJobPolling({
+export function useExecutionJobPolling<T extends { project_dir?: string }>({
   jobId,
   setJobId,
   setResult,
@@ -433,14 +436,14 @@ export function useExecutionJobPolling({
 }: {
   jobId: string | null;
   setJobId: (jobId: string | null) => void;
-  setResult: (result: ExecuteResult | null) => void;
+  setResult: (result: T | null) => void;
   setStatus: (status: StatusState) => void;
   addActivity: (label: string, message: string) => void;
   doneLabel: string;
   failedLabel: string;
   cancelledLabel: string;
   projectDirOnDone?: boolean;
-  fetchJob: (jobId: string) => Promise<{ status?: string; result?: ExecuteResult; error?: string }>;
+  fetchJob: (jobId: string) => Promise<{ status?: string; result?: T; error?: string }>;
   cancelJob?: (jobId: string) => Promise<unknown>;
 }) {
   const [cancelling, setCancelling] = useState(false);
@@ -508,6 +511,23 @@ export function useDemoJobPolling(args: Omit<Parameters<typeof useExecutionJobPo
 
 export function useAssetJobPolling(args: Omit<Parameters<typeof useExecutionJobPolling>[0], "fetchJob" | "cancelJob">) {
   return useExecutionJobPolling({ ...args, fetchJob: getAssetExecutionJob, cancelJob: cancelAssetExecutionJob });
+}
+
+export function usePlaytestJobPolling(args: {
+  jobId: string | null;
+  setJobId: (jobId: string | null) => void;
+  setResult: (result: PlaytestResult | null) => void;
+  setStatus: (status: StatusState) => void;
+  addActivity: (label: string, message: string) => void;
+  doneLabel: string;
+  failedLabel: string;
+  cancelledLabel: string;
+}) {
+  return useExecutionJobPolling<PlaytestResult>({
+    ...args,
+    fetchJob: getPlaytestJob,
+    cancelJob: cancelPlaytestJob
+  });
 }
 
 export function useApprovalManifest({

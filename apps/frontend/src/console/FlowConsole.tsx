@@ -7,8 +7,10 @@ import {
   openManualCorrectionTarget as openManualCorrectionTargetApi,
   previewAssetExecution,
   previewExecute,
+  previewPlaytest,
   startAssetExecution,
   startExecute,
+  startPlaytest,
   getSessionState
 } from "../shared/api";
 import { consoleI18n, makeTranslator } from "../shared/i18n";
@@ -20,6 +22,8 @@ import type {
   ExecuteStage,
   Locale,
   ManualCorrectionTarget,
+  PlaytestReport,
+  PlaytestResult,
   SessionState,
   StatusState,
   Theme
@@ -40,6 +44,7 @@ import {
   useDemoJobPolling,
   useEnemyTuning,
   useManualTargets,
+  usePlaytestJobPolling,
   usePlanningHandoff,
   useSpecPreview,
   useSpecRegen
@@ -122,6 +127,10 @@ export function FlowConsole({ active = true, focus = "review", reviewStage = "" 
   const [assetEffects, setAssetEffects] = useState<string[] | null>(null);
   const [assetResult, setAssetResult] = useState<ExecuteResult | null>(null);
   const [pollAssetJobId, setPollAssetJobId] = useState<string | null>(null);
+  const [playtestRuns, setPlaytestRuns] = useState(3);
+  const [playtestEffects, setPlaytestEffects] = useState<string[] | null>(null);
+  const [playtestResult, setPlaytestResult] = useState<PlaytestResult | null>(null);
+  const [pollPlaytestJobId, setPollPlaytestJobId] = useState<string | null>(null);
 
   const t = useMemo(() => makeTranslator(locale, consoleI18n), [locale]);
 
@@ -217,6 +226,17 @@ const demoPhase = operationPhase({
     doneLabel: t("assetExecutionDone"),
     failedLabel: t("assetExecutionFailed"),
     cancelledLabel: t("assetExecutionCancelled")
+  });
+
+  const { cancelling: playtestCancelling, cancel: cancelPlaytestRun } = usePlaytestJobPolling({
+    jobId: pollPlaytestJobId,
+    setJobId: setPollPlaytestJobId,
+    setResult: setPlaytestResult,
+    setStatus,
+    addActivity,
+    doneLabel: t("playtestDone"),
+    failedLabel: t("playtestFailed"),
+    cancelledLabel: t("playtestCancelled")
   });
 
   const recordCorrection = () => {
@@ -339,6 +359,54 @@ const demoPhase = operationPhase({
       cancelled = true;
     };
   }, [currentPlan, pollJobId, sessionId]);
+
+  // The project a playtest measures: whatever the last run produced, or the
+  // session it belongs to. Without a directory there is nothing to play.
+  const playtestProjectDir =
+    playtestResult?.project_dir || generateResult?.project_dir || sessionState?.project_dir || "";
+
+  const onPlaytestClick = async () => {
+    if (!playtestProjectDir) {
+      addActivity(t("playtestFailed"), t("playtestNeedsProject"));
+      setStatus("error");
+      return;
+    }
+    try {
+      const preview = await previewPlaytest({
+        project_dir: playtestProjectDir,
+        runs: playtestRuns,
+        goal_session_minutes: currentPlan?.gameplay_spec?.target_session_minutes
+      });
+      setPlaytestEffects(preview.planned_side_effects || []);
+    } catch (error) {
+      setStatus("error");
+      addActivity(t("playtestFailed"), String(error));
+    }
+  };
+
+  const startPlaytestRun = async () => {
+    if (!playtestProjectDir) return;
+    setPlaytestEffects(null);
+    setPlaytestResult(null);
+    setStatus("running");
+    addActivity(t("playtestRunning"), playtestProjectDir);
+    try {
+      const started = await startPlaytest({
+        project_dir: playtestProjectDir,
+        runs: playtestRuns,
+        goal_session_minutes: currentPlan?.gameplay_spec?.target_session_minutes
+      });
+      if (started.job_id) {
+        setPollPlaytestJobId(started.job_id);
+      } else {
+        setStatus("error");
+        addActivity(t("playtestFailed"), started.status || "");
+      }
+    } catch (error) {
+      setStatus("error");
+      addActivity(t("playtestFailed"), String(error));
+    }
+  };
 
   const onAssetExecutionClick = async () => {
     if (!currentPlan) {
@@ -795,6 +863,61 @@ const demoPhase = operationPhase({
                 </ul>
               </div>
             ) : null}
+            <div className="playtest-panel" id="playtest-panel">
+              <div className="pane-section-header">
+                <h3>{t("playtestTitle")}</h3>
+              </div>
+              <p className="handoff-note">{t("playtestHint")}</p>
+              {playtestProjectDir ? (
+                <p className="handoff-note">
+                  {t("playtestProject")}: <code>{playtestProjectDir}</code>
+                </p>
+              ) : (
+                <p className="handoff-note">{t("playtestNeedsProject")}</p>
+              )}
+              <label className="playtest-field">
+                <span>{t("playtestRunsLabel")}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={playtestRuns}
+                  onChange={(event) => setPlaytestRuns(Number(event.target.value))}
+                />
+              </label>
+              <button
+                className="primary-action"
+                type="button"
+                id="playtest-run-button"
+                disabled={status === "running" || !playtestProjectDir}
+                onClick={() => void onPlaytestClick()}
+              >
+                {t("playtestRun")}
+              </button>
+              {pollPlaytestJobId ? (
+                <button className="secondary-action" type="button" id="playtest-stop" disabled={playtestCancelling} onClick={() => void cancelPlaytestRun()}>
+                  {playtestCancelling ? t("stoppingJob") : t("stopJob")}
+                </button>
+              ) : null}
+              {playtestEffects ? (
+                <div id="playtest-confirm" className="generate-confirm">
+                  <strong>{t("playtestConfirmTitle")}</strong>
+                  <p>{t("playtestConfirmIntro")}</p>
+                  <ul>{playtestEffects.map((effect) => <li key={effect}>{effect}</li>)}</ul>
+                  <div className="handoff-actions">
+                    <button className="primary-action" type="button" id="playtest-proceed" onClick={() => void startPlaytestRun()}>
+                      {t("generateConfirmProceed")}
+                    </button>
+                    <button className="ghost-action" type="button" id="playtest-cancel" onClick={() => setPlaytestEffects(null)}>
+                      {t("generateConfirmCancel")}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+              {playtestResult?.report ? (
+                <PlaytestReportCard report={playtestResult.report} t={t} onResume={(stage) => setPendingResume(stage)} />
+              ) : null}
+            </div>
           </section>
 
           <section className="rail-card activity-card" id="activity-drawer" aria-label="Activity log">
@@ -896,6 +1019,72 @@ export function ExecutionStageCard({ stage, t }: { stage: ExecuteStage; t: (key:
         </div>
       ) : null}
     </article>
+  );
+}
+
+/**
+ * What a measured playtest found.
+ *
+ * The verdict badge shows the *report* status, which is deliberately not the
+ * job status: a run that measured a failure still finished. Every finding
+ * carries the rework target the board understands, so "this is broken" and
+ * "resume from here" stay one click apart.
+ */
+export function PlaytestReportCard({
+  report,
+  t,
+  onResume
+}: {
+  report: PlaytestReport;
+  t: (key: string, args?: Record<string, unknown>) => string;
+  onResume?: (stage: string) => void;
+}) {
+  const aggregate = report.aggregate || {};
+  const runs = aggregate.runs ?? 0;
+  return (
+    <div className="playtest-report" id="playtest-report">
+      <span className={`playtest-verdict playtest-${report.status || "unknown"}`}>
+        {t(report.status === "passed" ? "playtestStatusPassed" : report.status === "warning" ? "playtestStatusWarning" : "playtestStatusFailed")}
+      </span>
+      <div className="playtest-metrics">
+        <Metric label={t("playtestRuns")} value={String(runs)} id="playtest-run-count" />
+        <Metric label={t("playtestPlayable")} value={`${aggregate.playable_runs ?? 0}/${runs}`} id="playtest-playable-count" />
+        <Metric label={t("playtestOutcomes")} value={`${aggregate.wins ?? 0} / ${aggregate.failures ?? 0} / ${aggregate.timeouts ?? 0}`} id="playtest-outcomes" />
+        <Metric
+          label={t("playtestSessionSeconds")}
+          value={`${(aggregate.session_seconds_p50 ?? 0).toFixed(1)}s p50 / ${(aggregate.session_seconds_p95 ?? 0).toFixed(1)}s p95`}
+          id="playtest-seconds"
+        />
+      </div>
+      {report.findings?.length ? (
+        <ul className="playtest-findings">
+          {report.findings.map((finding) => (
+            <li key={finding.code} className={`playtest-finding playtest-${finding.severity || "warning"}`}>
+              <strong>{finding.code}</strong>
+              <span>{finding.message}</span>
+              <span className="playtest-rework">
+                {t("playtestReworkTarget")}: {finding.rework_target}
+              </span>
+              {finding.resume_stage && onResume ? (
+                <button className="ghost-action" type="button" onClick={() => onResume(finding.resume_stage || "")}>
+                  {t("playtestResume", { stage: finding.resume_stage || "" })}
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {report.goal_notes?.length ? (
+        <ul className="playtest-notes">
+          {report.goal_notes.map((note) => <li key={note}>{note}</li>)}
+        </ul>
+      ) : null}
+      {report.artifact_paths?.length ? (
+        <p className="handoff-note">
+          {t("playtestArtifacts")}: <code>{report.artifact_paths.join(", ")}</code>
+        </p>
+      ) : null}
+    </div>
   );
 }
 

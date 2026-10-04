@@ -551,6 +551,90 @@ export type AssetExecutePreview = ExecutePreview;
 export type AssetExecuteStart = ExecuteStart;
 export type AssetExecuteJob = ExecuteJob;
 
+/**
+ * A measured headless playtest.
+ *
+ * `session_seconds` is engine-internal time, never a frame count: a headless
+ * run advances frames far faster than real time. Everything here is a lower
+ * bound on playability -- a bot can prove the loop is reachable, not that the
+ * slice is fun.
+ */
+export interface PlaytestSample {
+  run_index?: number;
+  outcome?: string;
+  reason?: string;
+  session_seconds?: number;
+  attempts?: number;
+  wins?: number;
+  failures?: number;
+  player_moved_distance?: number;
+  progress?: number;
+  frames?: number;
+  wall_msec?: number;
+  playable?: boolean;
+  degraded?: boolean;
+  degraded_reason?: string;
+  failure_reasons?: Record<string, number>;
+  script_errors?: string[];
+}
+
+export interface PlaytestAggregate {
+  runs?: number;
+  playable_runs?: number;
+  degraded_runs?: number;
+  wins?: number;
+  failures?: number;
+  timeouts?: number;
+  win_rate?: number;
+  playable_rate?: number;
+  session_seconds_p50?: number;
+  session_seconds_p95?: number;
+  failure_reasons?: Record<string, number>;
+  script_errors?: string[];
+}
+
+/** One measured gap, already translated into a rework target and a resume node. */
+export interface PlaytestFinding {
+  code?: string;
+  severity?: string;
+  message?: string;
+  rework_target?: string;
+  resume_stage?: string;
+}
+
+export interface PlaytestReport {
+  status?: string;
+  project_dir?: string;
+  engine?: string;
+  engine_executable?: string;
+  runs_requested?: number;
+  samples?: PlaytestSample[];
+  aggregate?: PlaytestAggregate;
+  findings?: PlaytestFinding[];
+  artifact_paths?: string[];
+  goal_session_minutes?: number;
+  goal_notes?: string[];
+  generated_at?: string;
+}
+
+export interface PlaytestResult {
+  status?: string;
+  project_dir?: string;
+  report?: PlaytestReport | null;
+  planned_side_effects?: string[];
+  summary?: string;
+}
+
+export type PlaytestPreview = ExecutePreview;
+export type PlaytestStart = ExecuteStart;
+
+export interface PlaytestJob {
+  job_id?: string;
+  status?: string;
+  result?: PlaytestResult;
+  error?: string;
+}
+
 export interface McpService {
   id?: string;
   label?: string;
