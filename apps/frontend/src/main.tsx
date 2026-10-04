@@ -33,9 +33,9 @@ window.__fantasyAgentRoot = root;
 root.render(
   <StrictMode>
     <LocaleThemeProvider>
-        <JourneyProvider>
-      <StudioShell />
-    </JourneyProvider>
-      </LocaleThemeProvider>
+      <JourneyProvider>
+        <StudioShell />
+      </JourneyProvider>
+    </LocaleThemeProvider>
   </StrictMode>
 );

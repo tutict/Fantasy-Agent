@@ -168,16 +168,59 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # valid JSX, so the mutant parses -- and the app would die at
         # `useLocaleTheme` on the first render. Nothing behavioural reads
         # main.tsx, which is why this guard is a source scan.
+        #
+        # The needle is the opening/closing provider pair rather than the whole
+        # `render` tree: a journey provider was nested inside it later, and
+        # pinning the full tree turned this case into a silent SKIP the first
+        # time anything inside the tree changed. The guard it serves only cares
+        # that the locale provider wraps the entry.
         "FE4-8 the entry point stops mounting the provider",
         "apps/frontend/src/main.tsx",
         (
+            b"  <StrictMode>\n"
             b"    <LocaleThemeProvider>\n"
-            b"      <StudioShell />\n"
+            b"      <JourneyProvider>\n"
+            b"        <StudioShell />\n"
+            b"      </JourneyProvider>\n"
             b"    </LocaleThemeProvider>\n"
+            b"  </StrictMode>\n"
         ),
-        b"      <StudioShell />\n",
+        (
+            b"  <StrictMode>\n"
+            b"    <JourneyProvider>\n"
+            b"      <StudioShell />\n"
+            b"    </JourneyProvider>\n"
+            b"  </StrictMode>\n"
+        ),
         "src/shared/localeOwnership.test.ts",
         "mounts the provider at the one entry point",
+    ),
+    (
+        # A playtest launches an engine, so the confirm block is the only thing
+        # standing between a click and a subprocess. The plausible regression is
+        # "proceed also tears down", which reads as harmless cleanup and quietly
+        # cancels the run the human just approved.
+        "FE5-1 the playtest confirm block also cancels on proceed",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        b'        <button className="primary-action" type="button" id="playtest-proceed" onClick={onProceed}>\n',
+        (
+            b'        <button className="primary-action" type="button" id="playtest-proceed" '
+            b'onClick={() => { onProceed(); onCancel(); }}>\n'
+        ),
+        "src/console/playtestPanel.test.tsx",
+        "runs the playtest only after the human accepts",
+    ),
+    (
+        # `rework_target` and `resume_stage` are two vocabularies: the first says
+        # what to change, the second which node to run from, and for `spec` they
+        # resolve to different stages. Swapping them sends the operator to the
+        # wrong node -- and the type accepts both because both are strings.
+        "FE5-2 a playtest finding resumes from the rework target",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        b"onClick={() => onResume(finding.resume_stage || \"\")}",
+        b"onClick={() => onResume(finding.rework_target || \"\")}",
+        "src/console/playtestPanel.test.tsx",
+        "resumes from the stage the backend translated, not one the panel made up",
     ),
 )
 
