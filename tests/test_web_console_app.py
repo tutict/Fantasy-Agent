@@ -29,6 +29,14 @@ def test_web_console_ui_exposes_flow_console_sections():
 
     module = _load_studio_app()
     frontend_source = module.REPO_ROOT.joinpath("apps/frontend/src/console/FlowConsole.tsx").read_text(encoding="utf-8")
+    # The console's small presentational pieces (Panel, Metric, SegmentedControl,
+    # AssetList) were split out of FlowConsole.tsx, and `Panel` is the one that
+    # owns the `${tab}-panel` id. Asserting it against FlowConsole.tsx pinned a
+    # location rather than a behaviour -- the same mistake this file's own
+    # docstring warns about, one level up: the assertion has to follow the code.
+    frontend_parts = (
+        module.REPO_ROOT.joinpath("apps/frontend/src/console/FlowConsole.parts.tsx").read_text(encoding="utf-8")
+    )
     frontend_i18n = module.REPO_ROOT.joinpath("apps/frontend/src/shared/i18n.ts").read_text(encoding="utf-8")
     frontend_storage = module.REPO_ROOT.joinpath("apps/frontend/src/shared/storage.ts").read_text(encoding="utf-8")
 
@@ -40,7 +48,7 @@ def test_web_console_ui_exposes_flow_console_sections():
     # "presence in either file" assertion would let the dead copy keep passing.
     assert 'id="stage-strip"' not in frontend_source
     assert 'id="gate-summary"' in frontend_source
-    assert 'id={`${tab}-panel`}' in frontend_source
+    assert 'id={`${tab}-panel`}' in frontend_parts
     assert 'id="activity-log"' in frontend_source
     assert 'id="load-handoff-button"' in frontend_source
     assert 'id="correction-notes"' in frontend_source
