@@ -40,15 +40,34 @@ function hexes(block: string): Map<string, string> {
 
 /**
  * Every declared value that is not plain opaque hex: 8-digit literals and
- * `rgba()` alike. Used to notice a translucent token that nobody put on
- * `ALPHA_TOKENS`.
+ * `rgba()` alike, plus the forms a first pass missed.
+ *
+ * Three shapes got through the first version of this function, each found by
+ * mutation rather than by reading:
+ *
+ *   - **4-digit hex** (`#0008`). Shorthand for `#00000088`, so it is 53% alpha
+ *     and every number computed from it as if it were opaque is wrong.
+ *   - **`hsla()`**. Same idea, different function name.
+ *   - **a value on the line after the declaration.** The pattern was anchored
+ *     `^\s*--name\s*:` and the value ran to the next `;`, but a value broken
+ *     across lines puts the opening `--name:` on one line and the colour on the
+ *     next, and a name whose *value* starts on the following line was never
+ *     collected at all.
+ *
+ * The third one is why the value is matched loosely and classified afterwards,
+ * rather than the declaration being parsed precisely and classified once.
  */
 function translucentValues(block: string): { name: string; value: string }[] {
   const out: { name: string; value: string }[] = [];
-  for (const match of block.matchAll(/^\s*(--[a-z0-9-]+)\s*:\s*([^;]+)/gm)) {
-    const value = match[2].trim().toLowerCase();
-    if (/^#[0-9a-f]{8}$/.test(value) && !value.endsWith("ff")) out.push({ name: match[1], value });
-    else if (/^rgba?\(/.test(value)) out.push({ name: match[1], value });
+  for (const match of block.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+)/g)) {
+    const name = match[1];
+    const value = match[2].trim().toLowerCase().replace(/\s+/g, " ");
+    // 4 or 8 digit hex: both carry an alpha channel. 6 digit is opaque.
+    if (/^#[0-9a-f]{4}([0-9a-f]{4})?$/.test(value) || /^#[0-9a-f]{8}$/.test(value)) {
+      if (!value.endsWith("ff")) out.push({ name, value });
+      continue;
+    }
+    if (/^(rgba?|hsla?)\(/.test(value)) out.push({ name, value });
   }
   return out;
 }
@@ -211,8 +230,33 @@ describe("drafting-table tokens", () => {
     // makes 13/14 wrong is not the gap but the *value*: 13 is the number this
     // project already burned, so it may not come back as a step. That is stated
     // as a fact about the number rather than as a gap measurement.
-    const steps = [...light.matchAll(/^\s*--text-[a-z0-9]+\s*:\s*(\d+(?:\.\d+)?)px\s*;/gm)]
-      .map((match) => Number(match[1]))
+    // The pattern only accepts `px`, which means a `rem` step is not counted
+    // rather than rejected. A mutation that set `--text-s: 0.9rem` therefore
+    // shortened the scale by one entry and every gap assertion still passed.
+    // So the unit is checked separately: a step declared in anything else is a
+    // failure, not a silent omission. The whole file is px-based, so this is not
+    // a style preference -- a rem step would be the one value on the ladder
+    // that moves with the user's font size, which is exactly what the ladder
+    // exists to prevent.
+    //
+    // The steps are the single-suffix names (`--text-xs`, `--text-s`, `--text-l`,
+    // `--text-xl`). `--text-soft` and `--text-placeholder` share the prefix but
+    // are colours, and holding a hex to a "must be px" rule would be nonsense.
+    // A step is a name whose value starts with a digit.
+    const declarations = [...light.matchAll(/^\s*(--text-[a-z0-9-]+)\s*:\s*([^;]+)/gm)]
+      .map((match) => ({ name: match[1], value: match[2].trim() }))
+      .filter((item) => /^\d/.test(item.value));
+    const wrongUnit = declarations
+      .filter((item) => !/^\d+(?:\.\d+)?px$/.test(item.value))
+      .map((item) => `${item.name}: ${item.value}`);
+    expect(
+      wrongUnit,
+      "a text step must be declared in px -- a rem or em step moves with the user's"
+        + " font size, which is the one thing the scale is supposed to stop"
+    ).toEqual([]);
+
+    const steps = declarations
+      .map((item) => Number(item.value.replace(/px$/, "")))
       .sort((left, right) => left - right);
 
     expect(steps.length).toBeGreaterThanOrEqual(3);
@@ -239,17 +283,24 @@ describe("drafting-table tokens", () => {
     // value coincided with its neighbour's. Collapsing it into `--text-s` is
     // what removed the fault line; a step that comes back without a reader is
     // how it would come back.
+    //
+    // The steps are picked by their value starting with a digit, the same test
+    // the scale test uses, so `--text-soft` and `--text-placeholder` (colours
+    // that share the prefix) are not treated as unreadable steps. The earlier
+    // version exempted `--text-placeholder` by name, which is a list that has to
+    // be remembered rather than a rule.
     const stylesDir = resolve(root, "styles");
     const sources = readdirSync(stylesDir)
       .filter((name) => name.endsWith(".css") && name !== "tokens.css")
       .map((name) => readFileSync(resolve(stylesDir, name), "utf8"))
       .join("\n");
-    const declared = [...light.matchAll(/^\s*(--text-[a-z0-9]+)\s*:/gm)].map((match) => match[1]);
+    const steps = [...light.matchAll(/^\s*(--text-[a-z0-9-]+)\s*:\s*([^;]+)/gm)]
+      .map((match) => ({ name: match[1], value: match[2].trim() }))
+      .filter((item) => /^\d/.test(item.value))
+      .map((item) => item.name);
 
-    expect(declared.length).toBeGreaterThanOrEqual(3);
-    const orphans = declared.filter(
-      (token) => !sources.includes(`var(${token})`) && !token.includes("placeholder")
-    );
+    expect(steps.length).toBeGreaterThanOrEqual(3);
+    const orphans = steps.filter((token) => !sources.includes(`var(${token})`));
     expect(orphans, "a text step nothing reads is a claim nobody kept").toEqual([]);
   });
 
