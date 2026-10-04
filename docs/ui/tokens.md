@@ -5,30 +5,46 @@
 
 ## 0. 为什么 token 数不许写死在任何文档里
 
-本文件早期版本与 `AGENTS.md` 都写「28 个自定义属性 × 明暗两套」。2026-10-04 实测：**明色 86 个、暗色 64 个**，漂移 3 倍。写死的数字必然再漂，所以本文只写结构与分组，不写数量。
+本文件早期版本与 `AGENTS.md` 都写「28 个自定义属性 × 明暗两套」，实际早已漂移了数倍。写死的数字必然再漂，所以本文只写结构与分组，不写数量——包括下面这份清单。
 
-当前实测（2026-10-04）：明色 86 / 暗色 64；**明有暗无的 22 个全是间距、字号、圆角、时长、层级**——这是对的，间距与字号不随主题变。
+要当前的数量，跑这条命令（它就是 `cssHygiene.test.ts` 的 `declaredTokens` 逻辑）：
+
+```bash
+python - <<'PY'
+import re, pathlib
+src = pathlib.Path("apps/frontend/src/styles/tokens.css").read_text(encoding="utf-8")
+light, dark = src.split(':root[data-theme="dark"]')
+decl = lambda b: {m.group(1) for m in re.finditer(r"^\s*(--[a-z0-9-]+)\s*:", b, re.M)}
+L, D = decl(light), decl(dark)
+print("明色", len(L), "暗色", len(D), "明有暗无", len(L - D))
+print(sorted(L - D))
+PY
+```
+
+**明有暗无的那一组应该只有间距、字号、圆角、时长、层级** —— 这是对的，这些不随主题变。出现别的（尤其是颜色）就是错，`tokenOwnership.test.ts` 钉着「暗有明无」为空集，那一边同理。
 
 ## 1. 分组
 
 | 组 | token | 用途 |
 |---|---|---|
 | 字体 | `--font-ui` `--font-mono` `--mono` | `--mono` 是 `--font-mono` 的别名 |
-| 间距 | `--space-1` … `--space-7` | 阶梯，见 `css-conventions.md` |
-| 控件 | `--size-control` `--size-sidebar` | `--size-sidebar` 是**零引用的历史值**，见 §4 |
-| 圆角 | `--radius-s/m/l` | 阶梯 |
-| 字号 | `--text-xs` … `--text-2xl` | 阶梯 |
+| 间距 | `--space-1` `--space-1_5` `--space-2` `--space-2_5` `--space-3` `--space-3_5` `--space-4` … `--space-7` | 阶梯，见 `css-conventions.md` |
+| 控件 | `--size-control` | |
+| 圆角 | `--radius-xs/s/m/m-lg/l` `--radius-pill` | 阶梯；`pill` 是 999px 那一档 |
+| 字号 | `--text-xs/s/m/l/xl` | 阶梯，明暗同值 |
 | 时长 | `--duration-fast` `--duration-slow` | 动效 |
 | 层级 | `--layer-sticky/overlay/dialog` | `z-index` 阶梯 |
 | 阴影 | `--shadow-s` `--shadow-l` `--shadow` | `--shadow` 是 `--shadow-l` 的别名 |
 | 品牌 | `--brand` `--brand-strong` `--brand-soft` `--on-brand` | 氧化铜 |
-| 文字 | `--text` `--text-soft` `--muted` `--muted-strong` | |
+| 文字 | `--text` `--text-soft` `--text-placeholder` `--muted` `--muted-strong` | |
 | 表面 | `--bg` `--surface` `--surface-strong` `--surface-muted` `--chrome` `--chrome-strong` | |
 | 输入 | `--field` `--code-bg` `--tab-bg` `--pill-bg` | |
 | 线 | `--line` `--line-strong` `--grid-line-a` `--grid-line-b` | |
 | 状态 | `--status-running/success/waiting/warning/danger/human/info` + 各自 `-soft` | 7 个互不复用，钉在 `visualSystem.test.ts` |
 | 焦点 | `--focus` `--focus-soft` `--focus-ring` | `--focus-ring` 是 box-shadow 表达式 |
 | 数据 | `--data-1` … `--data-6` | 图表/序列，非文本 ≥3:1 |
+
+阶梯的档位会随 token 治理增删，所以这里列的是**当前成员**而不是「共几档」。要确认某一档在不在，看 `tokens.css`；要确认它有没有人在用，看 `cssHygiene.test.ts` 的 "does not accumulate tokens nothing reads"。
 
 **正名与别名**：状态色是正名（`--status-success`），`--ok` / `--warn` / `--accent` / `--blue` / `--amber` / `--danger` 是兼容别名，都用 `var(--status-*)` 转指。**新代码写正名**。
 
@@ -55,15 +71,17 @@
 
 ## 4. 已知的债
 
-2026-10-04 实测的待清理项，本轮或后续处理：
+**这一节只写还存在的债。** 已经删掉的不要留在这里——2026-10-04 那一版把 `--text-2xl`、`--field-bg`、`--size-sidebar` 列成「待删」，而它们在这一轮之前就已经从 `tokens.css` 里删掉了，表格却没跟着改，于是它变成了「三个不存在的 token 各欠一次清理」的假债。
 
-| 项 | 状态 |
-|---|---|
-| `--space-7: 48px` / `--text-2xl: 34px` / `--field-bg` | 零引用，且被更小的档位覆盖 → 删 |
-| `--size-sidebar: 292px` | 零引用；组件实际硬编码 282px（`StudioShell.tsx:107` 内联）/ 82px（折叠）。**292 与 282 不等是漂移不是可用值** → 移到 `.studio-shell` 组件作用域 |
-| `--layer-overlay` | 零引用，待找 z-index 消费点或删 |
-| `--shadow-s` / `--layer-sticky` / `--space-1` / `--space-6` / `--text-m` / `--radius-s` | 零引用，但正好是本轮值层要启用的档位 → 启用 |
-| `--accent-deep` / `--accent-soft` / `--blue*` / `--amber*` / `--danger*` | **保留**：分别在用 2/17/10/10/10/23 处，是活跃的兼容层 |
+判定口径：一条债要成立，得能在 `tokens.css` 里 grep 到那个名字。grep 不到 = 已经还了，从这里划掉。
+
+剩余项：
+
+| 项 | 怎么确认的 | 状态 |
+|---|---|---|
+| `--layer-overlay` | `grep -- '--layer-overlay:' tokens.css` 有定义；全仓 `var(--layer-overlay)` 零引用 | 零引用，待找 z-index 消费点或删 |
+| `--accent-deep` / `--accent-soft` / `--blue*` / `--amber*` / `--danger*` | 全仓有引用 | **保留**：是活跃的兼容层，不是债 |
+| `UNREFERENCED_EXEMPT` 里那批（`--data-*` / `--status-*-soft` / `--duration-slow` / `--layer-sticky` / `--layer-overlay` / `--shadow-s` / `--space-6` / `--space-7`） | `cssHygiene.test.ts` 的豁免清单，逐条带理由 | 豁免而非债：调色板先于视图存在，或阶梯的上下界。改豁免清单必须是决定，不是绕过去 |
 
 ## 5. 写 token 时的两条纪律
 

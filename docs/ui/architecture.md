@@ -23,7 +23,7 @@
 - 设置类三个面板（`mcp` / `api` / `agent`）**没有自己的路由**，是 `StudioShell` 内的二级导航（`SETTING_NAV`），共用 `/workbench` 那条路径。
 - `basePath()` 读 `import.meta.env.BASE_URL` 并剥掉尾斜杠。**它必须是显式参数而不是内联读取**：`import.meta.env` 编译期内联，测试里恒为真，生产分支否则没有任何测试够得着（它就是这么漏掉一次 404 的）。变异用例 FE4-6 钉住这条。
 
-### 1.1 三视图内联，切走不卸载
+### 1.1 四面板内联，切走不卸载
 
 四个面板全部**内联在同一个 document 里**。`StudioShell.tsx:127` 的 `visitedPanels` 记录访问过的面板，首次访问即挂载，之后只由 CSS 隐藏、永不卸载（`:308/318/333` 三处条件渲染）。
 
@@ -36,8 +36,8 @@
 | 面板 key | 组件 | 样式表 | 状态 |
 |---|---|---|---|
 | `workbench` | `PlanningWorkbench.tsx`（468 行） | `workbench.css` + 共享 `wb-*` | — |
-| `pipeline` | `OrchestrationBoard.tsx`（470 行） | `orchestration.css`（`or-*`） | **无媒体查询**（2026-10-04 前） |
-| `console` | `FlowConsole.tsx`（1283 行） | `console.css` + `studio.css` 同页共存 | tab 只有 2 个：`review` / `specs` |
+| `pipeline` | `OrchestrationBoard.tsx`（470 行） | `orchestration.css`（`or-*`） | **无媒体查询**：它本来就是单列流式布局，加断点只会让它在某个宽度下突然变形 |
+| `console` | `FlowConsole.tsx`（已降到千行以内；`Metric` / `AssetList` / `Panel` / `SegmentedControl` 在 `FlowConsole.parts.tsx`，执行阶段/试玩/纠偏三张卡片各在自己目录） | `console.css` + `studio.css` 同页共存 | tab 只有 2 个：`review` / `specs` |
 | `mcp` / `api` / `agent` | `StudioShell.tsx` 内联 | `studio.css`（`mcp-*` / `api-*` / `agent-*`） | 设置类 |
 
 样式表的归属判据：**一个 class 只属于一张表**。`shared/panelStyles.test.ts` 钉着共享面板发出的每个 class 必须在 `workbench.css` 有定义、console 私有类必须留在 `console.css`。
@@ -66,9 +66,9 @@
 
 ## 5. 组件拆分判据
 
-**旧判据是「能不能测」，这是循环论证**——测试是拆分的结果，不是前提。按它办的结果是：`ExecutionStageCard` 等 4 个有测试的都拆出去了，`Metric`（8 行、6 处使用）却因为「测不到」永久内联在 `FlowConsole.tsx`。
+**旧判据是「能不能测」，这是循环论证**——测试是拆分的结果，不是前提。按它办的结果是：`ExecutionStageCard` 等 4 个有测试的都拆出去了，`Metric` 却因为「测不到」长期内联在 `FlowConsole.tsx`。
 
-**新判据，按序命中即拆**：
+**判据，按序命中即拆**：
 
 1. 被 **≥2 个文件**引用（含测试文件）→ 独立文件 + 必须导出
 2. **≥50 行** → 独立文件
@@ -78,7 +78,11 @@
 
 **明确不作为判据**：有没有测试、文件是否过长（长度只触发第 2 条，阈值是 50 行不是 500 行）。
 
-按这条，`Metric` / `AssetList` / `Panel` / `SegmentedControl` 留在 `console/FlowConsole.parts.tsx` 是**正确结果，不是遗留**。
+**「独立文件」指的是不在 `FlowConsole.tsx` 里，不一定是自己一个文件。** 这一条以前没写清楚，于是判据和现状看起来打架：判据 1 与 5 说 `Metric` 该拆（它被 3 个文件引用、7 处使用，两条都命中），而结论却说它「留在 `FlowConsole.parts.tsx` 是正确结果」。两句并不矛盾——`FlowConsole.parts.tsx` 就是那个独立文件，`Metric` 已经导出给 `PlaytestReportCard` 用了——但读者只看到矛盾。
+
+判据的**动作**是「移出 `FlowConsole.tsx`」，**不是**「每个组件一个文件」。同一个文件里可以放多个组件，只要它们共用同一个理由被拆出来。当前 `FlowConsole.parts.tsx` 装的是四个无 state、无异步、无路由知识的小组件（`AssetList` / `Metric` / `Panel` / `SegmentedControl`），外加两个纯格式化函数。
+
+`cssHygiene.test.ts` 的 `pairs` 现在列了 7 个组件而不是 2 个——新拆出来的组件漏进去过一次，代价是FE6-1 长期由别的守卫代红。**新增组件要同步加进那个清单**，它不是可选的完备性检查。
 
 ## 6. 状态的两个 owner
 

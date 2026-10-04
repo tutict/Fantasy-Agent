@@ -153,10 +153,16 @@ describe("shared panel styles", () => {
     // into console.css, the previous test would pass while the two sheets were
     // quietly duplicating each other. These belong to the console alone.
     //
-    // `stage-strip` was on this list until F3 removed the console's stage track
-    // -- it rendered the pipeline's stage rows, which the orchestration board
-    // does now. Its selectors went with it.
-    const consoleOwned = ["insight-row", "split-output", "review-item", "review-inspector"];
+    // The list is also a reverse check in spirit: a name here that nothing
+    // renders any more is a dead rule in console.css, and this test used to keep
+    // such a rule alive by requiring it to be defined. `split-output` sat here
+    // for exactly that long -- a two-column grid for a plan layout that the
+    // shared `wb-*` panels replaced, still styled, still asserted, rendered
+    // nowhere. Being on this list stopped looking like evidence.
+    //
+    // `stage-strip` left for the opposite reason: F3 removed the console's stage
+    // track, so its selectors went with it and the name came off the list.
+    const consoleOwned = ["insight-row", "review-item", "review-inspector"];
     const missing = consoleOwned.filter((name) => !consoleStyles.has(name));
     expect(missing, "console.css stopped styling the console's own surface").toEqual([]);
   });
