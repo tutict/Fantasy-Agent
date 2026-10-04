@@ -1,5 +1,13 @@
 # 前端 UI 重新规划
 
+> **本文已被超越（2026-10-04 标注）。** 最后更新 `68ab77e`（2026-09-19），此后 40 个提交里 `3af5854`（2026-09-25，「把界面收成一条制图台生产旅程」）做了一次**未记录在这里的视觉 + 旅程重构**：换了暖纸色 + 氧化铜配色、新增 `styles/ui.css` 与 `shared/ui/primitives.tsx`、新增 `shared/productionJourney.ts` 的六步旅程、四个视图共用 `JourneyHeader`。**因此本文 §3.2 line 150「不做视觉重设计」不再成立。**
+>
+> 另外本文内部对「删除 console 重复 tab」有三处状态：line 176 `- [ ] 未动`、line 207「走了 (b)，完成」、line 288 `- [x] 删除`——**讲的是同一件事**，以 line 288 为准（commit `d73762a` 之后）。line 176 是历史遗留的未更新项。
+>
+> **当改动依据请读 `docs/ui/architecture.md`；本文只作 F0–F5 的历史决策记录。** 保留它的理由是它 line 256/339 记录了 `visitedPanels`「切走不卸载」的决策理由（console 有在飞 job 轮询，卸载就是丢进度）——那是代码里只体现为结果、别处说不清的东西，删了就丢。
+>
+> 以下为 2026-09-19 的原始状态记录，数字均为当时实测。
+
 > 状态：F0 已落地；F1 已全部落地（2026-09-18，`2dfe487` + `99d16e4` + `ad8adf3` + `fa7b702`，含删 console 重复 tab）；**F5 第一步已落地**（2026-09-18，`d73762a`：`apps/studio/static/` 退场 + `_frontend_index_or` 响亮失败 + 测试依赖修完）；**F2 已落地**（2026-09-19，tokens.css 单一来源 + `tokenOwnership.test.ts` 4 条守卫）；**F4 已落地**（2026-09-19，iframe → 路由 + locale/theme 单一 owner + `visitedPanels` 切走不卸载；15 个变异全红，四处守卫真空/漏判被变异照出来）；**F3 已落地**（2026-09-19，编排板 + `/pipeline` 路由 + 旧 stage 渲染从 console/workbench 退场；前端 221 passed / 19 files，后端读前端源码的守卫改成按归属断言），F5 剩余文档项部分已补（`AGENTS.md` / `README.md` 已改，`docs/ui/web-console.md` 未动）。
 > 上游依赖：`docs/superpowers/plans/2026-09-16-internal-pi-task-orchestration.md`——编排 Task 2–6 会改变这个界面**必须显示什么**。
 > 本文所有数字都是本轮实测，复现命令见 §5。

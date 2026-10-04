@@ -1,5 +1,9 @@
 # 前端四轴 review（2026-09-10）
 
+> **已被超越（2026-10-04 标注），仅作历史。** 本文评审的是当时的 `apps/frontend/` 与 `apps/studio/static/`（旧版静态页）。此后 `d73762a` 让静态页整体退场、`3af5854`（2026-09-25）做了一次未记录在本文的视觉 + 旅程重构（暖纸色 + 氧化铜、新增 `styles/ui.css` 与 `shared/ui/primitives.tsx`、六步 `JourneyHeader`）。**本文对「旧静态页仅作 dist 缺失兜底」「workbench 以 iframe 嵌入」的描述均已失效**——它们现在是同一 SPA 内的路由。改动依据见 `docs/ui/architecture.md`。
+>
+> 本文留作四轴 review 方法的样本（子 agent 误报率、逐条复核的必要性），以及修复记录。
+
 > **状态：P1 三条已修、P2 六条中五条已修。** 处理记录见文末「修复记录」。
 
 评审对象：`apps/frontend/`（Vite + React/TSX 新版）与 `apps/studio/static/`（旧版静态页），后端 `apps/studio/app/main.py`（1182 行 FastAPI，38 个端点）。

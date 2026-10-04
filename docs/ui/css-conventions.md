@@ -1,0 +1,69 @@
+# CSS 约定
+
+> 这份是写样式时的硬约束。`shared/cssHygiene.test.ts` 把其中四条钉成测试，改样式前先跑一遍看它报什么。
+> token 本身见 `tokens.md`，界面结构见 `architecture.md`。
+
+## 1. 不写裸值
+
+`styles/*.css`（除 `tokens.css`）里**不得出现**裸的 `#hex`、`rgb(`、`hsl(`。颜色、字号、间距、圆角一律走 token。
+
+- `.tsx` 侧同规则由 `visualSystem.test.ts` 守住；CSS 侧由 `cssHygiene.test.ts` 守卫 1 守住。
+- 2026-10-04 之前 CSS 侧完全裸奔：`studio.css` 一家就有 5 处 `var(--accent, #hex)` 形式的**误导性 fallback**（`--accent` 明暗两块都定义了，所以 `#hex` 那个值从不渲染，但它让人以为焦点环是亮蓝色的）。这类代码比硬编码更坏：它看起来已经归了 token。
+
+## 2. 阶梯
+
+| 类别 | 允许的值 | 来源 |
+|---|---|---|
+| 字号 | 6 档：`--text-xs` 11px / `--text-s` 13px / `--text-m` 14px / `--text-l` 16px / `--text-xl` 24px / `--text-2xl` 34px | `tokens.css` |
+| 间距 | `--space-1` 4 / `-1_5` 6 / `-2` 8 / `-2_5` 10 / `-3` 12 / `-3_5` 14 / `-4` 16 / `-5` 24 / `-6` 32 / `-7` 48 | `tokens.css` |
+| 圆角 | 6 档：`--radius-xs` 2 / `--radius-s` 6 / `--radius-m` 10 / `--radius-m-lg` 12 / `--radius-l` 16 / `--radius-pill` 999px | `tokens.css` |
+
+**间距一律就近取整到阶梯**，不新增 5/7/9/11/13/18px 这类孤值。间距是**关系**，错 1px 会累积成布局抖动。
+
+**例外：单侧边框宽度 1px / 2px / 3px 保留**——状态条的语义宽度不是间距。
+
+**字号不就近**：只允许落在 6 档上。`12px` 与 `13px` 曾经并存（40 + 36 次，占字号声明的 55%），两值视觉几乎不可区分却制造同屏两种渲染质量，已合并为 13px。
+
+## 3. 焦点环：唯一来源是 `ui.css`
+
+```
+ui.css   .ui-button/button/a/input/select/textarea/summary/iframe:focus-visible
+         → outline: none; box-shadow: var(--focus-ring)
+         + @media (forced-colors: active) 兜底
+```
+
+**其余 `styles/*.css` 一律不得再写 `:focus-visible` 或 `:focus`。**
+
+- 为什么是 box-shadow 而不是 outline：`var(--focus-ring)` 用 `var(--focus-soft)`，**明暗自动跟随**；outline 版本要各自硬写颜色。
+- **`forced-colors` 兜底是必须的**：Windows 高对比度模式下浏览器会丢弃 box-shadow，只留 outline。没有那块，键盘用户在高对比度模式下看不见焦点。
+- 例外：`.api-field textarea` 上的 `outline: none` 可以留（它去掉的是 UA 默认环，与 box-shadow 配对），**但必须紧邻 `:focus-visible` 规则**，否则单焦点时没有环。
+
+## 4. 断点：4 档栅格
+
+| 值 | 语义 |
+|---|---|
+| 1360px | 三栏 cockpit → 两栏 |
+| 1100px | 侧栏折叠，双栏 → 单栏 |
+| 900px | 全局单栏 |
+| 560px | 手机 |
+
+**所有 `@media (max-width: Npx)` 的 N 必须 ∈ 这四个。** `cssHygiene.test.ts` 守卫 4 钉着。
+
+**断点不做成 token**：`@media` 不接受 `var()`，写成 `--bp-*` 就是零引用死 token，与「零引用 token 是债」自相矛盾。所以它们是文档约定 + 测试断言，不是 token。
+
+`orchestration.css`（编排板）曾长期 **0 个媒体查询**，2026-10-04 补了 900px 一档。编排板是桌面工具，**不加 560**。
+
+## 5. 命名与归属
+
+- 一个 class 只属于一张样式表。共享面板（`shared/panels/`）统一 `wb-*`，其 class 必须在 `workbench.css` 有定义。
+- console 私有类不加前缀；`playtest-*` / `rework-*` / `correction-*` / `manual-*` 四种都表示「带状态列表的侧面板」，写法保持一致。
+- **CSS class 不带视图名**：没有 `.workbench-*`、`.console-*`、`.orchestration-*`。判断新 class 归哪张表看它属于哪个面板，不看它在哪个文件里。
+- 状态类用 `X-state` 形态由模板字符串发出（如 `playtest-${status}`、`rework-${status}`），这类**不算死样式**——静态 grep 会误判。
+
+## 6. 加新样式前的检查
+
+1. 这个值在阶梯上吗？不在 → 加 token 或就近取整，别写裸值。
+2. 这个颜色有 token 吗？没有就在 `tokens.css` 明暗**成对**加，而不是在组件里硬编码 + 留 fallback。
+3. 这个 class 属于哪张表？跨表就是设计错误。
+4. 焦点环、`@media` 断点、reduced-motion 里有重复实现吗？分别是 `ui.css`、4 档栅格、`ui.css` 全局那一条。
+5. 改完跑 `npm run frontend:test` 与 `python scripts/mutation_check_frontend_guards.py`。

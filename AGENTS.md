@@ -38,7 +38,8 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - 工作台只做策划，不写文件、不起进程 —— 执行一律在流程控制台。所以这里没有 `confirmed_side_effects` 之类的审批标记，唯一闸门是「点子确认后才能跑计划工具」。
 - 新增/改名后端端点后，跑 `tests/test_frontend_endpoint_coverage.py`：前端引用了不存在的端点会红；后端新增了前端没接的端点必须登记进 `KNOWN_WITHOUT_UI` 并写明原因。
 - i18n 的中英字典必须同步加 key：`npm run frontend:test` 里的字典一致性测试会抓单边缺失和空文案。
-- **设计 token 只在一个地方定义**：`styles/tokens.css`（28 个自定义属性 × 明暗两套），由 `main.tsx` 导入**一次**。其余 `styles/*.css` 只放布局，不得在根作用域（`:root` / `[data-theme]`）定义 `--*`——多份全局 `:root` 同时生效时，同一个 token 取哪个值由打包顺序决定，没有任何检查会报。组件作用域的 `--*`（如 `.studio-shell` 的 `--sidebar-width`）是合法的局部状态，不受此限。`shared/tokenOwnership.test.ts` 双向钉着这条。
+- **设计 token 只在一个地方定义**：`styles/tokens.css`（明暗两套；**以该文件为准，不要在任何文档里写死数量**——写死过一次，实测 86/暗 64，而文档写 28，漂移 3 倍），由 `main.tsx` 导入**一次**。其余 `styles/*.css` 只放布局，不得在根作用域（`:root` / `[data-theme]`）定义 `--*`——多份全局 `:root` 同时生效时，同一个 token 取哪个值由打包顺序决定，没有任何检查会报。组件作用域的 `--*`（如 `.studio-shell` 的 `--sidebar-width`）是合法的局部状态，不受此限。`shared/tokenOwnership.test.ts` 双向钉着这条。
+- **裸值与断点也有守卫**：`styles/*.css`（除 `tokens.css`）不得出现裸 `#hex`/`rgb(`/`hsl(`，字号/间距/圆角必须落在 token 阶梯上，`@media` 断点必须 ∈ {1360, 1100, 900, 560} 四档。`shared/cssHygiene.test.ts` 钉着这四条，改样式前先读 `docs/ui/css-conventions.md`。
 - **locale / theme 同理，只有一个 owner**：`shared/localeTheme.tsx` 的 `LocaleThemeProvider` 持有 state 并写 `document.documentElement`，由 `main.tsx` 挂载**一次**。三个视图（shell / 工作台 / 流程控制台）都是它的读者，谁也不准自己写 `documentElement`、谁也不准再建一个 provider；`useLocaleTheme()` 在 provider 外**抛错**而不是回落默认值，回落会静默重建「两个真相」。视图**内联在同一 document 里**（`visitedPanels` 首次访问才挂载、之后 CSS 隐藏，切走不卸载——console 有在飞的 job 轮询），所以 `/web-console`、`/workbench` 是同一个 SPA 的路由，不是 iframe。`shared/localeOwnership.test.ts` 逐条钉着，行为面在 `studio/StudioShell.test.tsx`。
   - 判据写**赋值 / 调用形态**（`documentElement.lang =`、`selectedEngineVersion(readHandoffPlan())`），不写裸标识符：这些文件自己的注释和错误消息里就会提到这些名字，裸子串扫描会被散文满足——**真空通过**，已经栽过三次。
   - `panelHref` 的 `dev` / `base` 是显式参数，因为 `import.meta.env.DEV` 编译期内联、测试里恒为真，生产分支否则没有任何测试够得着（它就是这么漏掉一次 404 的）。
@@ -46,7 +47,8 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - **`npm run frontend:test` 在 Windows 上要求 `process.cwd()` 的盘符大小写与磁盘一致。** 某些 shell（包括 Agent 的 Bash 工具）拿到小写 `c:\...`，此时 vitest 默认 pool 会让**每一个**测试文件在收集阶段就挂：`Vitest failed to find the runner` / `Vitest failed to find the current suite` / `TypeError: Cannot read properties of undefined (reading 'config')`，汇总成 `Test Files 19 failed / Tests no tests`。这是跑法不是回归——首行 `RUN v5.0.0 c:/...` 是小写就是它，`C:/...` 才是好的。修法是让子进程 cwd 规范大小写，**不要改 `vitest.config.ts`**（CI 在 Linux 上没这个问题）。`--pool=vmThreads` 能绕开但会制造 `vi.mock` 失效、相对 URL `fetch` 报 `Failed to parse URL` 两类假失败，不是替代品。上游：vitest-dev/vitest#10812。细节见 `docs/superpowers/plans/2026-09-16-frontend-ui-replan.md` §5。
 - 依赖不要写 `latest`；锁版本靠 `package-lock.json`，新增依赖后确认 lock 已同步（`tests/test_dependency_guards.py` 会检查，见上方「测试与校验」）。
 - 面向人的项目名是「灵构工坊」；`Fantasy Agent` / `fantasy-agent` / `fantasy_agent` 是实现标识，不改。中文模式下界面不得出现硬编码的 `Fantasy Agent`——`tests/test_product_name.py` 钉着这条（它抓过三处：两个 shell 的 `<h1>` 和一个 `aria-label`）。
-- 界面重规划的分阶段计划在 `docs/superpowers/plans/2026-09-16-frontend-ui-replan.md`（F0–F5）。动前端结构前先读它的状态行，别另起一套。
+- 界面的**现行基线**在 `docs/ui/architecture.md`（导航结构 / 面板归属 / 视觉规则 / 命名约定 / token 体系 / 组件拆分判据），配套 `docs/ui/tokens.md` 与 `docs/ui/css-conventions.md`。**动前端结构或样式前读这三份。**
+- `docs/superpowers/plans/2026-09-16-frontend-ui-replan.md`（F0–F5）**已于 2026-09-25 被 `3af5854` 超越**：它 line 150 写的「不做视觉重设计」不再成立（那一轮换了暖纸色 + 氧化铜配色，新增 `styles/ui.css` 与 `shared/ui/primitives.tsx`），而它自己没记。它内部还有三处状态自相矛盾（line 176 / 207 / 288 讲的是同一件事）。**只当 F0–F5 的历史决策记录读，别当改动依据**——它 line 256/339 记录的 `visitedPanels`「切走不卸载」理由仍然有效，那是代码里只体现为结果、别处说不清的东西。
 
 ## 桌面外壳与打包（apps/studio/desktop.py、tray.py、icons.py）
 
