@@ -222,6 +222,119 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/console/playtestPanel.test.tsx",
         "resumes from the stage the backend translated, not one the panel made up",
     ),
+    (
+        # The card was renamed from .mcp-status-card to .stage-card because the
+        # console's copy renders an ExecuteStage, not an MCP tool status -- the
+        # old name coupled it to a parent it has nothing to do with. Renaming
+        # both sides was invisible: nothing compared the class a component
+        # emits against the sheet that styles it, so renaming the stylesheet and
+        # forgetting the JSX rendered an unstyled card with every test still
+        # green. The mutation renames one side only.
+        "FE6-1 a renamed class is only half renamed",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        b'className="stage-card"',
+        b'className="mcp-status-card"',
+        "src/shared/cssHygiene.test.ts",
+        "styles the base class a component hangs its modifiers on",
+    ),
+    (
+        # The other half of a rename, in the direction the forward check cannot
+        # see: the sheet still styles `.stage-card` and `.stage-top`, but the
+        # component has stopped rendering them -- so the rules are dead, and the
+        # next person to reuse the name inherits styling nobody chose.
+        #
+        # A whole-sheet reverse sweep was tried and abandoned: 66 of
+        # `console.css`'s classes are emitted from `rendering.tsx` or from the
+        # inline components below the main function, so "no emitter in this one
+        # file" is a statement about where markup lives, not about dead CSS.
+        # This pair is checked by name because their ownership is unambiguous.
+        "FE6-2 a card is unrendered and its rules become dead",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        b'<div className="stage-top">',
+        b'<div className="stage-top-unused">',
+        "src/shared/cssHygiene.test.ts",
+        "does not leave a stage-card rule behind after the card is renamed",
+    ),
+    (
+        # A hardcoded color slipping back into a stylesheet. The value layer
+        # removed 12 of them; `visualSystem.test.ts` only ever checked .tsx and
+        # `ui.css`, so all four non-token sheets were unguarded. This is the
+        # check that says they are not any more.
+        "FE6-3 a stylesheet grows a hardcoded color again",
+        "apps/frontend/src/styles/console.css",
+        b".rework-status {\n",
+        b'.rework-status {\n  color: #ff0000;\n',
+        "src/shared/cssHygiene.test.ts",
+        "keeps colors in tokens; a fallback in var() is not an exemption",
+    ),
+    (
+        # A `var(--x, #hex)` fallback reads as "already tokenised" to anyone
+        # skimming the file, but the hex never renders -- the variable is always
+        # defined, which is exactly why the fallback is there and wrong. Five of
+        # these lived in studio.css.
+        "FE6-4 a dead color fallback comes back",
+        "apps/frontend/src/styles/studio.css",
+        b"  --sidebar-width: 282px;\n  display: grid;\n",
+        b"  --sidebar-width: 282px;\n  color: var(--nonexistent-token, #6ea8fe);\n  display: grid;\n",
+        "src/shared/cssHygiene.test.ts",
+        "keeps colors in tokens; a fallback in var() is not an exemption",
+    ),
+    (
+        # An off-scale value: the whole reason 12px and 13px coexisted for
+        # months, rendering one screen at two font qualities.
+        "FE6-5 a value lands off the token scale",
+        "apps/frontend/src/styles/console.css",
+        b".rework-status {\n  color: var(--muted);\n",
+        b".rework-status {\n  color: var(--muted);\n  font-size: 13.7px;\n",
+        "src/shared/cssHygiene.test.ts",
+        "keeps font sizes, spacing and radii on the token scale",
+    ),
+    (
+        # A token nobody reads. `--size-sidebar` sat at 292px for months while
+        # the components hardcoded 282px and 82px; nothing noticed because
+        # nothing checked. A design system's credibility is the sum of its
+        # claims, and an unread token is a claim nobody kept.
+        "FE6-6 a token nothing reads joins the file",
+        "apps/frontend/src/styles/tokens.css",
+        b"  --radius-pill: 999px;\n",
+        b"  --radius-pill: 999px;\n  --nobody-reads-this: 4px;\n",
+        "src/shared/cssHygiene.test.ts",
+        "does not accumulate tokens nothing reads",
+    ),
+    (
+        # Breakpoint drift: six of them once, with 900 and 860 forty pixels apart
+        # applying to unrelated panels. They cannot be tokens -- `@media` does
+        # not take `var()` -- so the grid is a convention, and a convention with
+        # no check is a suggestion.
+        "FE6-7 a breakpoint joins the grid from outside it",
+        "apps/frontend/src/styles/console.css",
+        b"@media (max-width: 1100px) {\n",
+        b"@media (max-width: 1150px) {\n",
+        "src/shared/cssHygiene.test.ts",
+        "keeps breakpoints on the documented four-step grid",
+    ),
+    (
+        # High-contrast mode drops box-shadow, so without this the focus ring --
+        # the only cue a keyboard user has -- disappears exactly where it is
+        # needed most.
+        "FE6-8 high-contrast focus fallback is removed",
+        "apps/frontend/src/styles/ui.css",
+        b"@media (forced-colors: active) {",
+        b"@media (forced-colors: inactive) {",
+        "src/shared/ui/accessibility.test.ts",
+        "keeps a focus ring in high-contrast mode",
+    ),
+    (
+        # The shared focus rule dropping one selector. A ring that skips `select`
+        # leaves it reachable and invisible, which is worse than no ring at all:
+        # the operator cannot tell they are on the control.
+        "FE6-9 the shared focus rule drops a focusable element",
+        "apps/frontend/src/styles/ui.css",
+        b"textarea:focus-visible,\nsummary:focus-visible,\niframe:focus-visible {",
+        b"textarea:focus-visible,\nsummary:focus-visible {",
+        "src/shared/ui/accessibility.test.ts",
+        "gives every focusable element the ring, not just some of them",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.

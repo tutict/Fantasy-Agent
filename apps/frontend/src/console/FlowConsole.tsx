@@ -1014,8 +1014,8 @@ export function ExecutionStageCard({ stage, t }: { stage: ExecuteStage; t: (key:
   const hasApprovalPreview = stage.name === "approval_gate" && Object.keys(metadata).length > 0;
 
   return (
-    <article className="mcp-status-card" data-state={stage.status === "done" ? "ready" : stage.status === "failed" ? "unavailable" : "degraded"}>
-      <div className="mcp-status-top">
+    <article className="stage-card" data-state={stage.status === "done" ? "ready" : stage.status === "failed" ? "unavailable" : "degraded"}>
+      <div className="stage-top">
         <h4>{stage.name}</h4>
         <span className="mcp-state">{stage.status}</span>
       </div>

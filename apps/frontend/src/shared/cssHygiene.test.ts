@@ -158,6 +158,73 @@ describe("stylesheet hygiene", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("styles the base class a component hangs its modifiers on", () => {
+    // Renaming `.mcp-status-card` to `.stage-card` in console.css was silent:
+    // nothing compared the class a component emits against the sheet that is
+    // supposed to style it, so renaming one side and forgetting the other
+    // rendered an unstyled card and every test stayed green. This is the check
+    // that would have caught it.
+    //
+    // **The first class only.** `className="rail-card handoff-panel"` styles
+    // from `.rail-card`; `handoff-panel` is a modifier that may legitimately
+    // have no rules yet (it marks a panel planned to diverge). A modifier may
+    // be aspirational; a base may not.
+    //
+    // Scoped to the two components whose markup is static enough to read and
+    // whose styles live in one sheet each. Not swept across every class in the
+    // sheet: most of `console.css` is emitted by `rendering.tsx` and by the
+    // inline components further down `FlowConsole.tsx`, so a whole-sheet sweep
+    // reported 66 phantom "styled but never rendered" classes and would have
+    // been turned off within a week.
+    const pairs: [component: string, sheet: string][] = [
+      ["console/FlowConsole.tsx", "console.css"],
+      ["studio/StudioShell.tsx", "studio.css"]
+    ];
+    const problems: string[] = [];
+    for (const [component, sheetName] of pairs) {
+      const source = readFileSync(resolve(root, component), "utf8");
+      const sheet = readFileSync(resolve(stylesDir, sheetName), "utf8");
+      const bases = new Set(
+        [...source.matchAll(/className="([^"{}]+)"/g)].map((match) => match[1].trim().split(/\s+/)[0])
+      );
+      for (const name of bases) {
+        if (!name || name.includes("$")) continue;
+        if (!new RegExp(`\\.${name}(?![a-zA-Z0-9_-])`).test(sheet)) {
+          problems.push(`${component} renders class "${name}" but ${sheetName} does not define it`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it("does not leave a stage-card rule behind after the card is renamed", () => {
+    // The other half of the same accident, for the one class whose ownership
+    // is unambiguous. FE6-1 renames the emitter and FE6-2 renames the rule; a
+    // half-done rename leaves one of them pointing at a name nothing uses, and
+    // the forward check above cannot see it because it only looks at classes
+    // the component still emits.
+    //
+    // A whole-sheet reverse sweep was tried and abandoned: 66 of `console.css`'s
+    // classes are emitted from `rendering.tsx` or from the inline components
+    // below the main function, so "no emitter in this one file" is usually a
+    // statement about where the markup lives, not about dead CSS.
+    const source = readFileSync(resolve(root, "console/FlowConsole.tsx"), "utf8");
+    const sheet = readFileSync(resolve(stylesDir, "console.css"), "utf8");
+    const problems: string[] = [];
+    for (const name of ["stage-card", "stage-top"]) {
+      const styled = new RegExp(`\\.${name}(?![a-zA-Z0-9_-])`).test(sheet);
+      const rendered = source.includes(`"${name}"`);
+      if (styled !== rendered) {
+        problems.push(
+          rendered
+            ? `.${name} is rendered but console.css does not style it`
+            : `console.css styles .${name} but nothing renders it`
+        );
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
   it("does not accumulate tokens nothing reads", () => {
     const used = new Set<string>();
     for (const sheet of styleSheets()) {
