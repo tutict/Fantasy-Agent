@@ -35,7 +35,6 @@
   --shadow-s: 0 1px 0 rgba(28, 25, 23, .08);
   --shadow-l: 0 18px 40px rgba(28, 25, 23, .12);
   --shadow: var(--shadow-l);
-  --focus-ring: 0 0 0 3px var(--focus-soft);
 
   --brand: #1f5c52;
   --brand-strong: #143f38;
@@ -79,6 +78,7 @@
   --on-danger: #fffdf8;
   --focus: #143f38;
   --focus-soft: rgba(20, 63, 56, .28);
+  --focus-ring-color: #0d2b26;
   --data-1: #9a3412;
   --data-2: #1d4e89;
   --data-3: #3f6212;
@@ -103,7 +103,6 @@
   --font-mono: "Cascadia Mono", "Sarasa Mono SC", Consolas, monospace;
   --mono: var(--font-mono);
   --size-control: 44px;
-  --focus-ring: 0 0 0 3px var(--focus-soft);
   --shadow-l: 0 20px 48px rgba(0, 0, 0, .38);
   --shadow: var(--shadow-l);
 
@@ -149,6 +148,7 @@
   --on-danger: #2a1210;
   --focus: #d7ebe4;
   --focus-soft: rgba(143, 208, 194, .32);
+  --focus-ring-color: #cf9a4a;
   --data-1: #e7a08a;
   --data-2: #9ec0e8;
   --data-3: #c5d98a;

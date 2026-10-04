@@ -407,6 +407,30 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/shared/visualSystem.test.ts",
         "composite the translucent tokens instead of trusting their literals",
     ),
+    (
+        # The ring going back to being a translucent shadow. This is the whole
+        # regression: `box-shadow: 0 0 0 3px rgba(20, 63, 56, .28)` composites to
+        # 1.34:1 on every light surface, and no alpha reaches 3:1 before it is a
+        # solid slab. The outline is what makes it visible.
+        "FE7-5 the focus ring goes back to a translucent shadow",
+        "apps/frontend/src/styles/ui.css",
+        b"  outline: 2px solid var(--focus-ring-color);\n  outline-offset: 1px;\n  box-shadow: 0 0 0 4px var(--focus-soft);\n",
+        b"  outline: none;\n  box-shadow: 0 0 0 3px var(--focus-soft);\n",
+        "src/shared/ui/focusRing.test.ts",
+        "is drawn as an outline, not only as a shadow",
+    ),
+    (
+        # The dark ring painted in the brand colour. It was `#8fd0c2` to begin
+        # with, because that is `--brand` in the dark block -- so a keyboard user
+        # could not tell "focused" from "selected". It is `#cf9a4a` now, and the
+        # guard says the two may not be the same value.
+        "FE7-6 the dark focus ring is the brand colour",
+        "apps/frontend/src/styles/tokens.css",
+        b"  --focus-ring-color: #cf9a4a;\n",
+        b"  --focus-ring-color: #8fd0c2;\n",
+        "src/shared/ui/focusRing.test.ts",
+        "does not reuse the brand colour verbatim",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.

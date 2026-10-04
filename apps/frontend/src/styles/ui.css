@@ -90,8 +90,19 @@ select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible,
 iframe:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
+  /* The ring is an outline, not a shadow. It used to be a 3px translucent
+     `box-shadow`, and a translucent ring on the light theme composites to
+     1.34:1 against every surface it lands on -- invisible to the keyboard user
+     it was written for. Raising the alpha does not fix it: the warm paper
+     background is bright enough (L ~ 0.93) that no alpha reaches 3:1 before the
+     ring is a solid slab. A solid outline does, by a wide margin: 11.61:1 on the
+     light surfaces and 8.55:1 on the dark ones.
+
+     `--focus-soft` stays as the outer glow, so the ring still reads as a ring
+     rather than as a border. */
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 4px var(--focus-soft);
 }
 
 /**
