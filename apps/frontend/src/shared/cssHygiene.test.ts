@@ -208,12 +208,19 @@ describe("stylesheet hygiene", () => {
     // classes are emitted from `rendering.tsx` or from the inline components
     // below the main function, so "no emitter in this one file" is usually a
     // statement about where the markup lives, not about dead CSS.
-    const source = readFileSync(resolve(root, "console/FlowConsole.tsx"), "utf8");
+    //
+    // The emitters are followed across files: the card was split out of
+    // `FlowConsole.tsx` after this check was written, and it correctly failed
+    // then. What it asserts is that the two sides agree, not which file each
+    // happens to be in -- so a move is not a rename.
     const sheet = readFileSync(resolve(stylesDir, "console.css"), "utf8");
+    const sources = ["console/FlowConsole.tsx", "console/executionStage/ExecutionStageCard.tsx"].map((file) =>
+      readFileSync(resolve(root, file), "utf8")
+    );
     const problems: string[] = [];
     for (const name of ["stage-card", "stage-top"]) {
       const styled = new RegExp(`\\.${name}(?![a-zA-Z0-9_-])`).test(sheet);
-      const rendered = source.includes(`"${name}"`);
+      const rendered = sources.some((source) => source.includes(`"${name}"`));
       if (styled !== rendered) {
         problems.push(
           rendered

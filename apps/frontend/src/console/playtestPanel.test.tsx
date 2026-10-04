@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { consoleI18n, makeTranslator } from "../shared/i18n";
 import type { PlaytestReport } from "../shared/types";
-import { CorrectionReportCard, PlaytestConfirmBlock, PlaytestReportCard } from "./FlowConsole";
+import { CorrectionReportCard } from "./correction/CorrectionReportCard";
+import { PlaytestConfirmBlock } from "./playtest/PlaytestConfirmBlock";
+import { PlaytestReportCard } from "./playtest/PlaytestReportCard";
 
 /**
  * A playtest really launches an engine, so the two-step gate is the whole

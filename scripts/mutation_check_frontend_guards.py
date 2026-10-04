@@ -201,7 +201,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # "proceed also tears down", which reads as harmless cleanup and quietly
         # cancels the run the human just approved.
         "FE5-1 the playtest confirm block also cancels on proceed",
-        "apps/frontend/src/console/FlowConsole.tsx",
+        "apps/frontend/src/console/playtest/PlaytestConfirmBlock.tsx",
         b'        <button className="primary-action" type="button" id="playtest-proceed" onClick={onProceed}>\n',
         (
             b'        <button className="primary-action" type="button" id="playtest-proceed" '
@@ -216,7 +216,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # resolve to different stages. Swapping them sends the operator to the
         # wrong node -- and the type accepts both because both are strings.
         "FE5-2 a playtest finding resumes from the rework target",
-        "apps/frontend/src/console/FlowConsole.tsx",
+        "apps/frontend/src/console/playtest/PlaytestReportCard.tsx",
         b"onClick={() => onResume(finding.resume_stage || \"\")}",
         b"onClick={() => onResume(finding.rework_target || \"\")}",
         "src/console/playtestPanel.test.tsx",
@@ -231,7 +231,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # forgetting the JSX rendered an unstyled card with every test still
         # green. The mutation renames one side only.
         "FE6-1 a renamed class is only half renamed",
-        "apps/frontend/src/console/FlowConsole.tsx",
+        "apps/frontend/src/console/executionStage/ExecutionStageCard.tsx",
         b'className="stage-card"',
         b'className="mcp-status-card"',
         "src/shared/cssHygiene.test.ts",
@@ -249,7 +249,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # file" is a statement about where markup lives, not about dead CSS.
         # This pair is checked by name because their ownership is unambiguous.
         "FE6-2 a card is unrendered and its rules become dead",
-        "apps/frontend/src/console/FlowConsole.tsx",
+        "apps/frontend/src/console/executionStage/ExecutionStageCard.tsx",
         b'<div className="stage-top">',
         b'<div className="stage-top-unused">',
         "src/shared/cssHygiene.test.ts",
