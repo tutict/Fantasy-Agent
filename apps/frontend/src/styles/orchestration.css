@@ -141,7 +141,7 @@
   flex: 1 1 auto;
   min-width: 180px;
   color: var(--text);
-  font-size: var(--text-m);
+  font-size: var(--text-s);
 }
 
 .or-order {

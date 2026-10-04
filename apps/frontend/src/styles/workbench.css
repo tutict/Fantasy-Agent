@@ -66,7 +66,7 @@ button {
 }
 
 .wb-brand strong {
-  font-size: var(--text-m);
+  font-size: var(--text-s);
 }
 
 .wb-topbar-actions {
@@ -123,7 +123,7 @@ button {
 
 .wb-card-head h2 {
   margin: 0;
-  font-size: var(--text-m);
+  font-size: var(--text-s);
 }
 
 .wb-card-head p {
@@ -520,7 +520,7 @@ button {
 
 .wb-script-head h3 {
   margin: 0;
-  font-size: var(--text-m);
+  font-size: var(--text-s);
 }
 
 .wb-script-head p {

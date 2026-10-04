@@ -93,7 +93,7 @@ button:disabled {
   border-radius: var(--radius-m);
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: var(--text-m);
+  font-size: var(--text-s);
   font-weight: 900;
 }
 
@@ -309,7 +309,7 @@ p {
 }
 
 .pane-section-header h2 {
-  font-size: var(--text-m);
+  font-size: var(--text-s);
 }
 
 .handoff-chip {
@@ -640,7 +640,7 @@ input[type="text"] {
   overflow: hidden;
   margin-top: var(--space-1);
   color: var(--text);
-  font-size: var(--text-m);
+  font-size: var(--text-s);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

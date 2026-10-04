@@ -351,6 +351,34 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/shared/cssHygiene.test.ts",
         "keeps the focus ring in one place",
     ),
+    (
+        # The body text dropping back to 13px. This is the value the project
+        # already burned once: 12px and 13px coexisted across the sheets and
+        # rendered the same screen at two qualities, and when `--text-m: 14px`
+        # was merged away the replacement was free to become 13 again.
+        #
+        # The guard names the retired value rather than measuring the gap,
+        # because a "no two steps within 1px" rule passes on 11/13/16/24 -- the
+        # gaps there are 2, 3 and 8 -- and so cannot see this regression at all.
+        "FE7-1 the body text drops back to the retired 13px",
+        "apps/frontend/src/styles/tokens.css",
+        b"  --text-s: 14px;\n",
+        b"  --text-s: 13px;\n",
+        "src/shared/visualSystem.test.ts",
+        "keeps the type scale in steps big enough to tell apart",
+    ),
+    (
+        # A type step that nothing reads. `--text-m` sat at 14px with seven
+        # references and was the only step whose value coincided with a
+        # neighbour's; collapsing it is what removed the fault line. A step that
+        # comes back unreadable is how the fault line comes back.
+        "FE7-2 an unread type step returns to the scale",
+        "apps/frontend/src/styles/tokens.css",
+        b"  --text-s: 14px;\n",
+        b"  --text-s: 14px;\n  --text-m: 15px;\n",
+        "src/shared/visualSystem.test.ts",
+        "does not define a text step that nothing references",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.

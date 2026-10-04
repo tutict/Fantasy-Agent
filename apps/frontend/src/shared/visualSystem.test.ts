@@ -86,6 +86,60 @@ describe("drafting-table tokens", () => {
     }
   });
 
+  it("keeps the type scale in steps big enough to tell apart", () => {
+    // The scale used to be 11 / 13 / 14 / 16 / 24, and 13-to-14 was the fault
+    // line: `12px` and `13px` once coexisted 76 times across the sheets, which
+    // rendered the same screen at two qualities because nobody could see the
+    // difference. `13` and `14` is the same mistake one step apart.
+    //
+    // Two assertions, and the second is the one that earns its keep. A
+    // "no two steps closer than 2px" rule passes on 11/13/16/24 -- the gaps are
+    // 2, 3 and 8 -- so it cannot see the regression it was written for. What
+    // makes 13/14 wrong is not the gap but the *value*: 13 is the number this
+    // project already burned, so it may not come back as a step. That is stated
+    // as a fact about the number rather than as a gap measurement.
+    const steps = [...light.matchAll(/^\s*--text-[a-z0-9]+\s*:\s*(\d+(?:\.\d+)?)px\s*;/gm)]
+      .map((match) => Number(match[1]))
+      .sort((left, right) => left - right);
+
+    expect(steps.length).toBeGreaterThanOrEqual(3);
+    for (let index = 1; index < steps.length; index += 1) {
+      const gap = steps[index] - steps[index - 1];
+      expect(
+        gap,
+        `${steps[index - 1]}px and ${steps[index]}px are ${gap}px apart -- too close to tell apart on screen`
+      ).toBeGreaterThanOrEqual(2);
+    }
+
+    // 12px and 13px coexisted 76 times before this pass; 13 came back once as
+    // `--text-s` and had to be raised again. Naming the value is the only form
+    // of this rule that bites.
+    const retired = steps.filter((size) => size === 12 || size === 13);
+    expect(
+      retired,
+      "12px and 13px are retired: each was indistinguishable from a neighbour that was in use at the same time"
+    ).toEqual([]);
+  });
+
+  it("does not define a text step that nothing references", () => {
+    // `--text-m: 14px` had exactly seven references and was the only step whose
+    // value coincided with its neighbour's. Collapsing it into `--text-s` is
+    // what removed the fault line; a step that comes back without a reader is
+    // how it would come back.
+    const stylesDir = resolve(root, "styles");
+    const sources = readdirSync(stylesDir)
+      .filter((name) => name.endsWith(".css") && name !== "tokens.css")
+      .map((name) => readFileSync(resolve(stylesDir, name), "utf8"))
+      .join("\n");
+    const declared = [...light.matchAll(/^\s*(--text-[a-z0-9]+)\s*:/gm)].map((match) => match[1]);
+
+    expect(declared.length).toBeGreaterThanOrEqual(3);
+    const orphans = declared.filter(
+      (token) => !sources.includes(`var(${token})`) && !token.includes("placeholder")
+    );
+    expect(orphans, "a text step nothing reads is a claim nobody kept").toEqual([]);
+  });
+
   it("keeps new component styles on tokens instead of hardcoded colors", () => {
     const files = readdirSync(root, { recursive: true }) as string[];
     const offenders: string[] = [];
