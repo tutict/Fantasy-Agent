@@ -900,19 +900,7 @@ const demoPhase = operationPhase({
                 </button>
               ) : null}
               {playtestEffects ? (
-                <div id="playtest-confirm" className="generate-confirm">
-                  <strong>{t("playtestConfirmTitle")}</strong>
-                  <p>{t("playtestConfirmIntro")}</p>
-                  <ul>{playtestEffects.map((effect) => <li key={effect}>{effect}</li>)}</ul>
-                  <div className="handoff-actions">
-                    <button className="primary-action" type="button" id="playtest-proceed" onClick={() => void startPlaytestRun()}>
-                      {t("generateConfirmProceed")}
-                    </button>
-                    <button className="ghost-action" type="button" id="playtest-cancel" onClick={() => setPlaytestEffects(null)}>
-                      {t("generateConfirmCancel")}
-                    </button>
-                  </div>
-                </div>
+                <PlaytestConfirmBlock effects={playtestEffects} t={t} onProceed={() => void startPlaytestRun()} onCancel={() => setPlaytestEffects(null)} />
               ) : null}
               {playtestResult?.report ? (
                 <PlaytestReportCard report={playtestResult.report} t={t} onResume={(stage) => setPendingResume(stage)} />
@@ -1030,6 +1018,37 @@ export function ExecutionStageCard({ stage, t }: { stage: ExecuteStage; t: (key:
  * carries the rework target the board understands, so "this is broken" and
  * "resume from here" stay one click apart.
  */
+export function PlaytestConfirmBlock({
+  effects,
+  t,
+  onProceed,
+  onCancel
+}: {
+  effects: string[];
+  t: (key: string, args?: Record<string, unknown>) => string;
+  onProceed: () => void;
+  onCancel: () => void;
+}) {
+  // The engine really launches on proceed, so the block lists the effects the
+  // *backend* reported and wires proceed to the caller's confirmed run. It has
+  // no way to start a run itself -- that is the point of the split.
+  return (
+    <div id="playtest-confirm" className="generate-confirm">
+      <strong>{t("playtestConfirmTitle")}</strong>
+      <p>{t("playtestConfirmIntro")}</p>
+      <ul>{effects.map((effect) => <li key={effect}>{effect}</li>)}</ul>
+      <div className="handoff-actions">
+        <button className="primary-action" type="button" id="playtest-proceed" onClick={onProceed}>
+          {t("generateConfirmProceed")}
+        </button>
+        <button className="ghost-action" type="button" id="playtest-cancel" onClick={onCancel}>
+          {t("generateConfirmCancel")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function PlaytestReportCard({
   report,
   t,
