@@ -28,7 +28,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fantasy_agent.contracts import CorrectionDrift, CorrectionReport, CorrectionTweak
-from fantasy_agent.path_safety import WorkspacePathError, resolve_workspace_path
+from fantasy_agent.path_safety import (
+    WorkspacePathError,
+    display_workspace_path,
+    resolve_workspace_path,
+)
 
 MANIFEST_FILENAME = "fantasy-agent-godot-manifest.json"
 
@@ -290,7 +294,13 @@ def inspect_corrections(project_dir: str, *, workspace_root: Path | str) -> Corr
     manifest_path = project / MANIFEST_FILENAME
     report = CorrectionReport(
         project_dir=project_dir,
-        manifest_path=manifest_path.as_posix(),
+        # Workspace-relative, like every other path this report carries. The
+        # endpoint is reachable without a two-phase gate (the scan is read-only),
+        # so an absolute path here is an absolute path in an HTTP response: it
+        # carries the operator's home directory and machine layout to anyone who
+        # can reach 127.0.0.1:7860. `display_workspace_path` is the same function
+        # `drifted[].path` and `CorrectionTweak.script_path` already go through.
+        manifest_path=display_workspace_path(manifest_path, workspace_root=root),
         manifest_found=manifest_path.is_file(),
         inspected_at=datetime.now(UTC).isoformat(timespec="seconds"),
     )

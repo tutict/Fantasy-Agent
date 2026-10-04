@@ -4,6 +4,29 @@ export function CorrectionReportCard({ report, t }: { report: CorrectionReport; 
   const drifted = report.drifted || [];
   const recoverable = report.recoverable || [];
   const engineOnly = report.engine_only || [];
+
+  // Both numbers can be missing, and neither means "unchanged": `generated_value`
+  // is absent when the manifest recorded no baseline for the anchor, `value` when
+  // the script did not yield a number. Rendering those as empty slots next to an
+  // arrow produced " -> 4.0" and "8 -> ", neither of which tells the reader
+  // where the number came from -- and "no evidence" is the claim this report
+  // makes everywhere else too (`correctionHashUnknown` on a file).
+  const delta = (item: { generated_value?: number | null; value?: number }) => (
+    <>
+      {item.generated_value === null || item.generated_value === undefined ? (
+        <span className="task-pill">{t("correctionNoBaseline")}</span>
+      ) : (
+        item.generated_value
+      )}
+      {" → "}
+      {item.value === undefined ? (
+        <span className="task-pill">{t("correctionNoValue")}</span>
+      ) : (
+        <strong>{item.value}</strong>
+      )}
+    </>
+  );
+
   return (
     <div className="correction-report" id="correction-report">
       {!report.manifest_found ? (
@@ -30,9 +53,7 @@ export function CorrectionReportCard({ report, t }: { report: CorrectionReport; 
             {recoverable.map((item) => (
               <li key={`${item.script_path}-${item.anchor}`}>
                 <code>{item.anchor}</code>
-                <span>
-                  {item.generated_value} → <strong>{item.value}</strong>
-                </span>
+                <span>{delta(item)}</span>
                 <span className="playtest-rework">
                   {t("correctionSpecField")}: {item.spec_field}
                 </span>
@@ -48,9 +69,7 @@ export function CorrectionReportCard({ report, t }: { report: CorrectionReport; 
             {engineOnly.map((item) => (
               <li key={`${item.script_path}-${item.anchor}`}>
                 <code>{item.anchor}</code>
-                <span>
-                  {item.generated_value} → <strong>{item.value}</strong>
-                </span>
+                <span>{delta(item)}</span>
               </li>
             ))}
           </ul>

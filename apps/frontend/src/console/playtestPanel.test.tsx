@@ -197,4 +197,33 @@ describe("correction report card", () => {
     });
     expect(view.getByText(t("correctionHashUnknown"))).toBeTruthy();
   });
+
+  it("says a value has no baseline instead of showing an empty before-value", () => {
+    // `generated_value: null` means the manifest recorded no baseline for the
+    // anchor. Rendering it as an empty slot produced " -> 4.0", which reads as
+    // a value that changed from nothing -- and "no evidence" is the whole claim
+    // this report makes elsewhere too (`correctionHashUnknown`).
+    renderCard({
+      ...REPORT,
+      engine_only: [
+        { anchor: "SECRET_TUNNEL", variable: "secret_tunnel", value: 4, generated_value: null, spec_field: "" }
+      ]
+    });
+
+    expect(screen.getByText(t("correctionNoBaseline"))).toBeTruthy();
+    // The current value is still shown -- the operator still needs to see it.
+    expect(screen.getByText(/4/)).toBeTruthy();
+  });
+
+  it("says so when no value could be read either", () => {
+    // The other half of the same discipline: `value` is optional on the wire
+    // too, and "8 -> " is as uninformative as " -> 4.0". Silence is not a
+    // value.
+    renderCard({
+      ...REPORT,
+      engine_only: [{ anchor: "BROKEN", variable: "broken", spec_field: "" }]
+    });
+
+    expect(screen.getByText(t("correctionNoValue"))).toBeTruthy();
+  });
 });

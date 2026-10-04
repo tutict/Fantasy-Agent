@@ -213,6 +213,27 @@ def test_a_manifest_pointing_outside_the_workspace_is_refused(tmp_path):
     assert engine_only == [], "a path escaping the workspace is not read"
 
 
+def test_every_path_in_the_report_is_workspace_relative(tmp_path):
+    """`/api/corrections/inspect` deliberately has no two-phase gate -- the scan
+    is read-only -- which means an absolute path in the response is an absolute
+    path over HTTP. It carries the operator's home directory and machine layout
+    to anyone who can reach the port."""
+
+    project = _project(tmp_path)
+    report = inspect_corrections(_rel(project, tmp_path), workspace_root=tmp_path)
+
+    paths = [report.manifest_path]
+    paths += [item.path for item in report.drifted]
+    paths += [item.script_path for item in (*report.recoverable, *report.engine_only)]
+    for path in paths:
+        assert not Path(path).is_absolute(), f"{path} is absolute"
+        assert str(tmp_path) not in path, f"{path} leaks the workspace root"
+    # Same shape as the paths the manifest itself stores, so the operator can
+    # paste any of them back into a path box.
+    assert report.manifest_path.endswith(MANIFEST_FILENAME)
+    assert not report.manifest_path.startswith("/")
+
+
 def test_the_anchor_pattern_survives_the_alignment_it_is_pasted_from(tmp_path):
     """The real generator aligns its comments in columns; the pattern must not
     depend on a fixed number of spaces."""
