@@ -932,8 +932,10 @@ def test_studio_exposes_job_cancel_endpoints():
 
     assert "/api/execute/{job_id}/cancel" in routes
     assert "/api/assets/execute/{job_id}/cancel" in routes
+    assert "/api/playtest/{job_id}/cancel" in routes
     assert module.execute_cancel("nope") == {"status": "unknown", "job_id": "nope"}
     assert module.asset_execute_cancel("nope") == {"status": "unknown", "job_id": "nope"}
+    assert module.playtest_cancel("nope") == {"status": "unknown", "job_id": "nope"}
 
 
 def test_cancel_endpoint_stops_a_running_job(monkeypatch):

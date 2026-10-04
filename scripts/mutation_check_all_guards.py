@@ -969,6 +969,58 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         b"    return _strip_sections(text)\n",
         "tests/test_agent_skills.py::test_an_oversized_brief_is_cut_to_the_ceiling",
     ),
+    (
+        "PT1 the playtest counts runs instead of outcomes",
+        "fantasy_agent/godot_playtest.py",
+        # Counting the per-run counters rather than the outcome is the obvious
+        # simplification, and it is silently wrong: a sample built from a raw
+        # payload carries outcome="fail" with failures=0, so an all-failure run
+        # aggregates to zero failures and no finding ever names the win path.
+        (
+            b'    wins = sum(1 for s in samples if s.outcome == "win")\n'
+            b'    failures = sum(1 for s in samples if s.outcome == "fail")\n'
+        ),
+        (
+            b"    wins = sum(s.wins for s in samples)\n"
+            b"    failures = sum(s.failures for s in samples)\n"
+        ),
+        "tests/test_playtest.py::test_failures_without_a_win_warn_about_the_win_path",
+    ),
+    (
+        "PT2 a script error stops blocking",
+        "fantasy_agent/godot_playtest.py",
+        b'                "script_error",\n                "blocking",\n',
+        b'                "script_error",\n                "warning",\n',
+        "tests/test_playtest.py::test_script_errors_block_the_verdict",
+    ),
+    (
+        "PT3 an unobservable run stops blocking",
+        "fantasy_agent/godot_playtest.py",
+        # The whole point of the degraded path: if the probe cannot see the
+        # loop, the report must not be allowed to look merely warn-ish.
+        b'                "not_playable",\n                "blocking",\n',
+        b'                "not_playable",\n                "warning",\n',
+        "tests/test_playtest.py::test_degraded_runs_block_and_name_a_rework_target",
+    ),
+    (
+        "PT4 unmeasured runs collect playtest assertions",
+        "fantasy_agent/unreal_spec_adapter.py",
+        # The most tempting regression in the whole module: adding the playtest
+        # assertions unconditionally makes every QA report look measured, and an
+        # empty report passes them. A prototype nobody played would then answer
+        # "playtest_runs >= 1" off a zero that came from nothing.
+        (
+            b"    if playtest is not None:\n"
+            b"        assertions.extend(_playtest_assertions())\n"
+            b"        actuals.update(_playtest_actuals(playtest))\n"
+        ),
+        (
+            b"    if True:\n"
+            b"        assertions.extend(_playtest_assertions())\n"
+            b"        actuals.update(_playtest_actuals(playtest or PlaytestReport()))\n"
+        ),
+        "tests/test_playtest.py::test_static_qa_stays_silent_when_nobody_ran_the_prototype",
+    ),
 )
 
 
