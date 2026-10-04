@@ -56,6 +56,25 @@ function declaredTokens(block: string): string[] {
   return [...block.matchAll(/^\s*(--[a-z0-9-]+)\s*:/gm)].map((match) => match[1]);
 }
 
+/**
+ * The declaration value with every `var(...)` call blanked out.
+ *
+ * Blanking rather than deleting keeps the offsets stable so a reported column
+ * still points at the original text. The fallback argument matters here: it is
+ * the one place inside a token reference where a hex can hide, and the color
+ * check owns that, not this one.
+ */
+function withoutVarCalls(value: string): string {
+  let out = "";
+  let depth = 0;
+  for (const character of value) {
+    if (character === "(") depth += 1;
+    if (depth === 0) out += character;
+    if (character === ")") depth = Math.max(0, depth - 1);
+  }
+  return out;
+}
+
 function isExemptValue(line: string): boolean {
   return NOT_SPACING.some((pattern) => pattern.test(line));
 }
@@ -100,6 +119,19 @@ const UNREFERENCED_EXEMPT = new Set<string>([
 
 /** The four breakpoints, mirrored in `docs/ui/css-conventions.md`. */
 const BREAKPOINTS = [1360, 1100, 900, 560];
+
+/**
+ * The declarations the spacing/size guard is about, and nothing else.
+ *
+ * Group 1 is the property, group 2 the value. The property is there so the
+ * report names the declaration; the value is what gets scanned, and scanning it
+ * whole is the point -- the pattern this replaces only ever saw the leading
+ * item of a shorthand.
+ * The logical and physical sides are both spacing; `line-height` is here because
+ * it is a distance in the same sense `font-size` is.
+ */
+const SCALE_PROPERTIES =
+  /\b(font-size|line-height|gap|row-gap|column-gap|(?:padding|margin)(?:-[a-z]+)?|border-radius)\s*:([^;{}]*)/;
 
 /**
  * Three values that are deliberately not on the spacing ladder, each with the
@@ -147,11 +179,33 @@ describe("stylesheet hygiene", () => {
       sheet.source.split("\n").forEach((line, index) => {
         if (isExemptValue(line)) return;
         const where = `${sheet.name}:${index + 1}`;
-        // Token references and keywords are fine. What is left -- a bare px or
-        // em value -- is a value that exists nowhere else in the system.
-        const bare = [...line.matchAll(/(?:^|[\s;])(font-size|gap|row-gap|column-gap|padding(?:-[a-z]+)?|margin(?:-[a-z]+)?|border-radius):\s*(-?[\d.]+(?:px|em))/g)];
-        for (const match of bare) {
-          offenders.push(`${where}  ${match[1]}: ${match[2]}`);
+        // Token references and keywords are fine. What is left -- a bare px, rem
+        // or em value -- is a value that exists nowhere else in the system.
+        //
+        // `calc()` is a computed expression, not a stepped value: `1px + 0.5rem`
+        // has no ladder equivalent and cannot be given one without changing what
+        // it renders. Skipped explicitly rather than silently.
+        if (/[\s;(]calc\(/.test(line)) return;
+
+        // The property name is part of the pattern, not decoration: a bare
+        // `14px` is only a token-scale violation when it is a distance or a type
+        // size. `width: 320px` is a component dimension and `border: 1px` is a
+        // hairline -- neither belongs on the spacing ladder, and a guard that
+        // flagged them would drown its actual findings in noise.
+        const declaration = SCALE_PROPERTIES.exec(line);
+        if (declaration === null) return;
+
+        // **Every position in the value, not just the first.** The pattern this
+        // replaces was anchored to `prop:\s*<number>`, which only ever saw the
+        // leading item of a shorthand, so `padding: var(--space-2) 14px` went
+        // unexamined and 82 such declarations were sitting in the sheets.
+        // `var()` is blanked out first: the fallback argument is the one place
+        // inside a token reference where a hex can hide, and the color check owns
+        // that, not this one.
+        for (const match of withoutVarCalls(declaration[2]).matchAll(
+          /(?<![\w.-])-?(?:\d+\.?\d*|\.\d+)\s*(?:px|rem|em)\b/g
+        )) {
+          offenders.push(`${where}  ${declaration[1].trim()}: ${match[0].trim()}`);
         }
       });
     }
