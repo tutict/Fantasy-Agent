@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { consoleI18n, makeTranslator } from "../shared/i18n";
 import type { PlaytestReport } from "../shared/types";
-import { PlaytestConfirmBlock, PlaytestReportCard } from "./FlowConsole";
+import { CorrectionReportCard, PlaytestConfirmBlock, PlaytestReportCard } from "./FlowConsole";
 
 /**
  * A playtest really launches an engine, so the two-step gate is the whole
@@ -136,5 +136,63 @@ describe("playtest report card", () => {
       />
     );
     expect(view.container.querySelector(".playtest-finding button")).toBeNull();
+  });
+});
+
+describe("correction report card", () => {
+  const REPORT = {
+    manifest_found: true,
+    drifted: [{ path: "generated/godot/demo/scripts/player_controller.gd", kind: "script" }],
+    recoverable: [
+      {
+        anchor: "MOVE_SPEED",
+        variable: "move_speed",
+        value: 11.5,
+        generated_value: 8,
+        spec_field: "numeric.player_move_speed"
+      }
+    ],
+    engine_only: [
+      { anchor: "JUMP_VELOCITY", variable: "jump_velocity", value: 9.25, generated_value: 6, spec_field: "" }
+    ],
+    notes: ["The next generation overwrites every file listed above."]
+  };
+
+  function renderCard(report: unknown = REPORT) {
+    return render(<CorrectionReportCard report={report as never} t={t} />);
+  }
+
+  it("names the changed file so it can be found before it is lost", () => {
+    const view = renderCard();
+    expect(view.getByText("generated/godot/demo/scripts/player_controller.gd")).toBeTruthy();
+  });
+
+  it("shows the old and new value, not just the new one", () => {
+    renderCard();
+    // Without the before-value the operator cannot tell a hand edit from the
+    // number the pipeline generated.
+    expect(screen.getByText(/11\.5/)).toBeTruthy();
+    expect(screen.getByText(/8/)).toBeTruthy();
+  });
+
+  it("separates what can be saved from what cannot", () => {
+    renderCard();
+    expect(screen.getByText(t("correctionRecoverable"))).toBeTruthy();
+    expect(screen.getByText(t("correctionEngineOnly"))).toBeTruthy();
+    // The gap has to be stated, or an engine-only edit reads as safe.
+    expect(screen.getByText(t("correctionEngineOnlyHint"))).toBeTruthy();
+  });
+
+  it("says so when the project was not produced by this pipeline", () => {
+    renderCard({ manifest_found: false, notes: [] });
+    expect(screen.getByText(t("correctionNoManifest"))).toBeTruthy();
+  });
+
+  it("marks a file with no recorded hash as unverified rather than unchanged", () => {
+    const view = renderCard({
+      ...REPORT,
+      drifted: [{ path: "generated/godot/old/scripts/main.gd", kind: "script", hash_unknown: true }]
+    });
+    expect(view.getByText(t("correctionHashUnknown"))).toBeTruthy();
   });
 });

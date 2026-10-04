@@ -1021,6 +1021,85 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         ),
         "tests/test_playtest.py::test_static_qa_stays_silent_when_nobody_ran_the_prototype",
     ),
+    (
+        "CR1 drift detection trusts the file instead of the recorded hash",
+        "fantasy_agent/corrections.py",
+        # Without this comparison every artifact is reported as changed, and a
+        # report that always says "everything drifted" is a report nobody reads.
+        # The mutation makes the hash check vacuously true, which is exactly the
+        # shape of the bug: the scan still runs, it just stops being evidence.
+        (
+            b"        if current and current != expected:\n"
+            b"            drifted.append(\n"
+        ),
+        (
+            b"        if current and current == expected:\n"
+            b"            drifted.append(\n"
+        ),
+        "tests/test_corrections.py::test_an_untouched_project_reports_nothing",
+    ),
+    (
+        "CR2 a hand edit is reported from the file hash alone",
+        "fantasy_agent/corrections.py",
+        # Dropping the value comparison makes every anchor in an edited script
+        # look edited -- fifty neighbours burying the one number the operator
+        # actually changed. The test that pins this edits exactly one value.
+        (
+            b"            if only_changed and generated_value is not None "
+            b"and _same_number(value, generated_value):\n"
+            b"                continue\n"
+        ),
+        b"",
+        "tests/test_corrections.py::test_editing_one_value_does_not_report_its_neighbours",
+    ),
+    (
+        "CR3 an anchor with no baseline is called unchanged",
+        "fantasy_agent/corrections.py",
+        # Silently skipping an anchor the manifest has no baseline for is the
+        # same mistake as calling a missing hash "no drift": it reports
+        # "unchanged" on the strength of nothing. The test that pins this adds
+        # an anchor the manifest never recorded.
+        (
+            b"            if only_changed and generated_value is not None "
+            b"and _same_number(value, generated_value):\n"
+            b"                continue\n"
+        ),
+        (
+            b"            if generated_value is None:\n"
+            b"                continue\n"
+            b"            if only_changed and _same_number(value, generated_value):\n"
+            b"                continue\n"
+        ),
+        "tests/test_corrections.py::test_an_anchor_with_no_recorded_baseline_is_reported_as_unverified",
+    ),
+    (
+        "CR4 a manifest without hashes is called unchanged",
+        "fantasy_agent/corrections.py",
+        # A project generated before hashing existed has no evidence either way.
+        # Skipping those artifacts reads as "nothing changed", which is the one
+        # answer this report must never give without proof.
+        b"        if not expected:\n",
+        b"        if not expected:\n            continue\n",
+        "tests/test_corrections.py::test_a_project_without_a_recorded_hash_is_not_called_unchanged",
+    ),
+    (
+        "CR5 an unrecoverable edit stops saying so",
+        "fantasy_agent/corrections.py",
+        # Dropping the engine-only note leaves the operator thinking a change to
+        # a DSL-less constant is safe. It is not: the next run overwrites it.
+        (
+            b'        report.notes.append(\n'
+            b'            f"{len(engine_only)} edited value(s) are engine constants '
+            b'with no field in the "\n'
+        ),
+        (
+            b"        if False:\n"
+            b"            report.notes.append(\n"
+            b'                f"{len(engine_only)} edited value(s) are engine constants '
+            b'with no field in the "\n'
+        ),
+        "tests/test_corrections.py::test_a_value_with_no_dsl_home_is_reported_as_unrecoverable",
+    ),
 )
 
 

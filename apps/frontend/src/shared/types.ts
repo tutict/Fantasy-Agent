@@ -593,6 +593,43 @@ export interface PlaytestAggregate {
   script_errors?: string[];
 }
 
+/** One generated file that no longer matches the hash this run recorded. */
+export interface CorrectionDrift {
+  path?: string;
+  kind?: string;
+  recorded_sha256?: string;
+  current_sha256?: string;
+  /** A project generated before hash recording existed; "unchanged" is unknown. */
+  hash_unknown?: boolean;
+}
+
+/** One edited tunable. `spec_field` empty means the DSL has nowhere to put it. */
+export interface CorrectionTweak {
+  anchor?: string;
+  variable?: string;
+  value?: number;
+  generated_value?: number | null;
+  spec_field?: string;
+  script_path?: string;
+  line_number?: number;
+}
+
+export interface CorrectionReport {
+  project_dir?: string;
+  manifest_path?: string;
+  manifest_found?: boolean;
+  drifted?: CorrectionDrift[];
+  recoverable?: CorrectionTweak[];
+  engine_only?: CorrectionTweak[];
+  notes?: string[];
+  inspected_at?: string;
+}
+
+export interface CorrectionScan {
+  report?: CorrectionReport;
+  summary?: string;
+}
+
 /** One measured gap, already translated into a rework target and a resume node. */
 export interface PlaytestFinding {
   code?: string;

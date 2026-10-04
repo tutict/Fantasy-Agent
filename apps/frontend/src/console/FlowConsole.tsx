@@ -4,6 +4,7 @@ import { operationPhase, operationReason } from "../shared/productionJourney";
 import { ConfirmDialog, LogBlock, StatusBadge } from "../shared/ui/primitives";
 import type { ReactNode } from "react";
 import {
+  inspectCorrections,
   openManualCorrectionTarget as openManualCorrectionTargetApi,
   previewAssetExecution,
   previewExecute,
@@ -17,6 +18,7 @@ import { consoleI18n, makeTranslator } from "../shared/i18n";
 import { useLocaleTheme } from "../shared/localeTheme";
 import type {
   CorrectionMode,
+  CorrectionReport,
   EnemyPressureTuning,
   ExecuteResult,
   ExecuteStage,
@@ -110,6 +112,8 @@ export function FlowConsole({ active = true, focus = "review", reviewStage = "" 
   const [selectedCorrectionMode, setSelectedCorrectionMode] = useState<CorrectionMode>("gameplay");
   const [correctionEntries, setCorrectionEntries] = useState<Array<{ mode: CorrectionMode; notes: string; createdAt: string }>>([]);
   const [correctionNotes, setCorrectionNotes] = useState("");
+  const [correctionScan, setCorrectionScan] = useState<CorrectionReport | null>(null);
+  const [scanningCorrections, setScanningCorrections] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>(focus);
   const [pendingResume, setPendingResume] = useState<string | null>(null);
   const [pendingManualTarget, setPendingManualTarget] = useState<string | null>(null);
@@ -253,8 +257,33 @@ const demoPhase = operationPhase({
     addActivity(t("correctionRecorded"), `${modeLabel(selectedCorrectionMode)}: ${notes}`);
   };
 
-  const openManualTarget = async (targetId: string) => {
-    if (targetId === "planning") {
+  /**
+   * Ask the backend what changed in the project since this pipeline wrote it.
+   *
+   * Read-only, so unlike the other actions here it needs no confirmation --
+   * the panel's job is to make a silent overwrite visible, and a gate in front
+   * of "read the files" would train the operator to click through gates.
+   */
+  const scanCorrections = async () => {
+    if (!playtestProjectDir) {
+      addActivity(t("correctionScanFailed"), t("playtestNeedsProject"));
+      return;
+    }
+    setScanningCorrections(true);
+    try {
+      const scan = await inspectCorrections(playtestProjectDir);
+      setCorrectionScan(scan.report || null);
+      addActivity(t("correctionScanned"), scan.summary || "");
+    } catch (error) {
+      setCorrectionScan(null);
+      setStatus("error");
+      addActivity(t("correctionScanFailed"), String(error));
+    } finally {
+      setScanningCorrections(false);
+    }
+  };
+
+  const openManualTarget = async (targetId: string) => {    if (targetId === "planning") {
       // Opened as a document of its own, so it reads locale and theme from the
       // shared localStorage key -- the same one this window just wrote. It used
       // to carry them across as `?locale=&theme=`, which was the last remaining
@@ -616,6 +645,18 @@ const demoPhase = operationPhase({
                   <p>{manualTargetDetail(target)}</p>
                 </article>
               ))}
+            </div>
+            <div className="correction-scan">
+              <button
+                className="secondary-action"
+                type="button"
+                id="scan-corrections-button"
+                disabled={!playtestProjectDir || scanningCorrections}
+                onClick={() => void scanCorrections()}
+              >
+                {scanningCorrections ? t("correctionScanning") : t("correctionScan")}
+              </button>
+              {correctionScan ? <CorrectionReportCard report={correctionScan} t={t} /> : null}
             </div>
           </section>
 
@@ -1018,6 +1059,74 @@ export function ExecutionStageCard({ stage, t }: { stage: ExecuteStage; t: (key:
  * carries the rework target the board understands, so "this is broken" and
  * "resume from here" stay one click apart.
  */
+export function CorrectionReportCard({ report, t }: { report: CorrectionReport; t: (key: string, args?: Record<string, unknown>) => string }) {
+  const drifted = report.drifted || [];
+  const recoverable = report.recoverable || [];
+  const engineOnly = report.engine_only || [];
+  return (
+    <div className="correction-report" id="correction-report">
+      {!report.manifest_found ? (
+        <p className="handoff-note">{t("correctionNoManifest")}</p>
+      ) : null}
+      {drifted.length ? (
+        <div className="correction-block">
+          <strong>{t("correctionDrifted")}</strong>
+          <ul>
+            {drifted.map((item) => (
+              <li key={item.path} data-kind={item.kind}>
+                <code>{item.path}</code>
+                {item.hash_unknown ? <span className="task-pill">{t("correctionHashUnknown")}</span> : null}
+              </li>
+            ))}
+          </ul>
+          <p className="handoff-note">{t("correctionOverwriteWarning")}</p>
+        </div>
+      ) : null}
+      {recoverable.length ? (
+        <div className="correction-block" id="correction-recoverable">
+          <strong>{t("correctionRecoverable")}</strong>
+          <ul>
+            {recoverable.map((item) => (
+              <li key={`${item.script_path}-${item.anchor}`}>
+                <code>{item.anchor}</code>
+                <span>
+                  {item.generated_value} → <strong>{item.value}</strong>
+                </span>
+                <span className="playtest-rework">
+                  {t("correctionSpecField")}: {item.spec_field}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {engineOnly.length ? (
+        <div className="correction-block correction-block-warning" id="correction-engine-only">
+          <strong>{t("correctionEngineOnly")}</strong>
+          <ul>
+            {engineOnly.map((item) => (
+              <li key={`${item.script_path}-${item.anchor}`}>
+                <code>{item.anchor}</code>
+                <span>
+                  {item.generated_value} → <strong>{item.value}</strong>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="handoff-note">{t("correctionEngineOnlyHint")}</p>
+        </div>
+      ) : null}
+      {report.notes?.length ? (
+        <ul className="correction-notes">
+          {report.notes.map((note) => (
+            <li key={note}>{note}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 export function PlaytestConfirmBlock({
   effects,
   t,

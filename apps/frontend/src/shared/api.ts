@@ -8,6 +8,7 @@ import type {
   BlenderPlan,
   BlenderScriptArtifact,
   CreativeReview,
+  CorrectionScan,
   ExecuteJob,
   ExecutePreview,
   ExecuteStart,
@@ -93,6 +94,19 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 export function getManualCorrectionTargets(engine: string): Promise<ManualTargetsPayload> {
   const query = new URLSearchParams({ engine });
   return jsonRequest<ManualTargetsPayload>(`/api/manual-correction/targets?${query.toString()}`);
+}
+
+/**
+ * Scan a generated project for hand edits.
+ *
+ * Read-only: the backend starts no process and writes nothing, so there is no
+ * confirmation to gate. It answers "did my edit survive, and can it be saved"
+ * -- which is why it is a GET. The scan never modifies the project; adopting an
+ * edit is a separate, deliberate act.
+ */
+export function inspectCorrections(projectDir: string): Promise<CorrectionScan> {
+  const query = new URLSearchParams({ project_dir: projectDir });
+  return jsonRequest<CorrectionScan>(`/api/corrections/inspect?${query.toString()}`);
 }
 
 /**
