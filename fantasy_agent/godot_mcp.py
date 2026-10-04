@@ -21,7 +21,9 @@ from fantasy_agent.contracts import (
     GodotProjectValidationReport,
     ProductionSpecBundle,
 )
+from fantasy_agent.corrections import ANCHOR_RE, file_sha256
 from fantasy_agent.mcp_bridge import DEFAULT_WORKSPACE_ROOT, BaseMCPBridge
+from fantasy_agent.path_safety import WorkspacePathError, resolve_workspace_path
 from fantasy_agent.process_runner import (
     current_cancel_event,
     is_streaming_runner,
@@ -368,7 +370,12 @@ class GodotMCPBridge(BaseMCPBridge):
             if extra_path not in artifact.script_paths:
                 artifact.script_paths.append(extra_path)
             written.append(self._display_path(resolved))
-        self._write_text(manifest_path, json.dumps(_manifest(plan, artifact), indent=2))
+        self._write_text(
+            manifest_path,
+            json.dumps(
+                _manifest(plan, artifact, self.workspace_root, gameplay_scripts), indent=2
+            ),
+        )
         written.append(self._display_path(manifest_path))
         return written
 
@@ -1131,7 +1138,12 @@ func fantasy_agent_handoff() -> Dictionary:
 """
 
 
-def _manifest(plan: GodotProjectPlan, artifact: GodotProjectArtifact) -> dict[str, Any]:
+def _manifest(
+    plan: GodotProjectPlan,
+    artifact: GodotProjectArtifact,
+    workspace_root: Path | str,
+    gameplay_scripts: dict[str, str] | None = None,
+) -> dict[str, Any]:
     return {
         "schema_version": "0.1",
         "generated_by": "fantasy-agent.godot-builder",
@@ -1143,12 +1155,69 @@ def _manifest(plan: GodotProjectPlan, artifact: GodotProjectArtifact) -> dict[st
         "scene_paths": artifact.scene_paths,
         "script_paths": artifact.script_paths,
         "asset_dirs": artifact.asset_dirs,
+        # Hashes are what make "my hand edit survived" a checkable claim rather
+        # than a hope: corrections.detect_drift compares against this table.
+        "artifact_sha256": _artifact_hashes(artifact, workspace_root),
+        # The tuned values this build wrote, per script. Without them a scan
+        # could only tell "this file changed", not "this number changed", and
+        # every untouched anchor in an edited file would read as an edit.
+        "artifact_anchors": _script_anchors(artifact, gameplay_scripts or {}),
         "automation_steps": plan.automation_steps,
         "risks": [
             "Godot is used as a fast playable-loop validation target.",
             "Keep assets under res://assets/generated after Creative Review approval.",
         ],
     }
+
+
+def _script_anchors(artifact: GodotProjectArtifact, gameplay_scripts: dict[str, str]) -> dict[str, dict[str, float]]:
+    """Anchor values keyed by manifest path, parsed from the sources written.
+
+    Only the sources handed to this call are parsed: the engine script is
+    generated further down and is not in ``gameplay_scripts``, which is fine --
+    a script with no recorded baseline makes the scan report its anchors
+    conservatively rather than pretending they are unchanged.
+    """
+
+    project_dir = Path(artifact.project_dir)
+    anchors: dict[str, dict[str, float]] = {}
+    for relative, source in gameplay_scripts.items():
+        if not relative.endswith(".gd"):
+            continue
+        values = {
+            match.group("anchor"): float(match.group("value")) for match in ANCHOR_RE.finditer(source)
+        }
+        if not values:
+            continue
+        key = (project_dir / relative).as_posix()
+        anchors[key] = values
+    return anchors
+
+
+def _artifact_hashes(artifact: GodotProjectArtifact, workspace_root: Path | str) -> dict[str, str]:
+    """sha256 per produced file, keyed by the same path the manifest lists.
+
+    Computed after the files are written and before the manifest itself goes
+    out, so an entry is only present for a file that exists. A missing file
+    yields no entry rather than the hash of nothing.
+    """
+
+    paths: list[str] = []
+    for value in (artifact.script_paths, artifact.scene_paths, [artifact.project_file, artifact.main_scene_path]):
+        for item in value:
+            if item and item not in paths:
+                paths.append(item)
+
+    hashes: dict[str, str] = {}
+    for relative in paths:
+        try:
+            resolved = resolve_workspace_path(relative, workspace_root=workspace_root)
+        except WorkspacePathError:
+            continue
+        digest = file_sha256(resolved)
+        if digest:
+            hashes[relative] = digest
+    return hashes
 
 
 def _input_action_line(action: str) -> str:

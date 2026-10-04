@@ -1166,3 +1166,56 @@ class PlaytestReport(StrictModel):
     goal_session_minutes: float = Field(default=0.0, ge=0.0)
     goal_notes: list[str] = Field(default_factory=list)
     generated_at: str = ""
+
+
+class CorrectionDrift(StrictModel):
+    """One generated file that no longer matches what this run produced.
+
+    Reported, never acted on. A hand edit is the operator's work; this module's
+    job is to make it visible before the next generation overwrites it.
+    """
+
+    path: str
+    kind: Literal["script", "scene", "project", "other"] = "other"
+    recorded_sha256: str = ""
+    current_sha256: str = ""
+    #: Set when the recorded hash is missing -- a project generated before this
+    #: field existed. Absent evidence is not evidence of "unchanged".
+    hash_unknown: bool = False
+
+
+class CorrectionTweak(StrictModel):
+    """A numeric value the operator changed in a generated GDScript file.
+
+    The generator tags every tunable with a ``# [ANCHOR]`` comment, so the
+    value can be read back without guessing. What happens next depends on
+    whether the anchor has a home in the DSL:
+
+    - ``spec_field`` set: the change can be written back into the bundle.
+    - ``spec_field`` empty: the anchor is a hardcoded engine constant. The
+      edit is real and it is not recoverable through the spec, and saying so
+      is more useful than pretending otherwise.
+    """
+
+    anchor: str
+    variable: str
+    value: float
+    generated_value: float | None = None
+    spec_field: str = ""
+    script_path: str = ""
+    line_number: int = Field(default=0, ge=0)
+
+
+class CorrectionReport(StrictModel):
+    """What a hand-edit inspection found, and what can be done about it."""
+
+    project_dir: str = ""
+    manifest_path: str = ""
+    manifest_found: bool = False
+    drifted: list[CorrectionDrift] = Field(default_factory=list)
+    recoverable: list[CorrectionTweak] = Field(default_factory=list)
+    #: Hand edits to anchors with no DSL home. Kept as a separate list because
+    #: the answer to them is "this cannot be saved", not "here is a patch".
+    engine_only: list[CorrectionTweak] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    inspected_at: str = ""

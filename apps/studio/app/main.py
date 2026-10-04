@@ -40,6 +40,7 @@ from fantasy_agent.contracts import (
     StrictModel,
     UnrealProjectPlan,
 )
+from fantasy_agent.corrections import inspect_corrections, summarize_corrections
 from fantasy_agent.demo_launch import (
     DemoLaunch,
     DemoLaunchError,
@@ -52,7 +53,7 @@ from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.godot_playtest import PlaytestResult
 from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
 from fantasy_agent.mcp import initial_mcp_contracts
-from fantasy_agent.path_safety import WorkspacePathError
+from fantasy_agent.path_safety import WorkspacePathError, resolve_workspace_path
 from fantasy_agent.planning_actions import PlanningAction, UnknownPlanningTool, run_planning_action
 from fantasy_agent.studio_jobs import InMemoryJobRegistry
 from fantasy_agent.tool_registry import tool_catalog
@@ -535,6 +536,28 @@ def correction_open(request: ManualCorrectionOpenRequest) -> dict[str, Any]:
         engine=request.engine,
         confirmed_side_effects=request.confirmed_side_effects,
     )
+
+
+@app.get("/api/corrections/inspect")
+def corrections_inspect(project_dir: str) -> dict[str, Any]:
+    """Report hand edits in a generated project. Read-only, so no gate.
+
+    The scan starts no process and writes nothing: it compares the artifacts
+    against the hashes and anchor values this build recorded, and answers
+    "is my edit still there, and can it be saved". That is a question, not an
+    action, so it does not take a confirmation -- the two-step gate exists for
+    calls that touch the disk, and pretending otherwise would train the
+    operator to click through it.
+    """
+
+    if not project_dir.strip():
+        raise HTTPException(status_code=400, detail="project_dir is required")
+    try:
+        resolve_workspace_path(project_dir, workspace_root=REPO_ROOT)
+    except WorkspacePathError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    report = inspect_corrections(project_dir, workspace_root=REPO_ROOT)
+    return {"report": report.model_dump(mode="json"), "summary": summarize_corrections(report)}
 
 
 
