@@ -351,6 +351,11 @@ _SUMMARY = re.compile(r"^[ \t]*Tests[ \t]+(.+?)[ \t]*$", re.MULTILINE)
 #: consumer: `_classify` has to work on whatever comes back.
 _ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
+#: One `FAIL` line from vitest's "Failed Tests" section.
+#:
+#: `FAIL  src/shared/x.test.ts > describe > the test name`
+_FAILED_LINE = re.compile(r"^[ \t]*FAIL[ \t]+(.+?)[ \t]*$", re.MULTILINE)
+
 OUTCOMES: dict[str, str] = {
     "caught": "RED (caught)",
     "missed": "GREEN (MISSED!)",
@@ -415,6 +420,33 @@ def run(relative_test: str) -> tuple[int, str]:
     return completed.returncode, _ANSI.sub("", completed.stdout + completed.stderr)
 
 
+def _failed_titles(output: str) -> set[str]:
+    """The test names vitest itself listed as failures, and nothing else.
+
+    A name also appears on the `✓ <title>` line of every test that *passed*, so
+    searching the whole output cannot tell "the named guard went red" from "the
+    named guard is still green and something else in the same file went red".
+    That distinction is the entire point of the check below, and getting it wrong
+    is silent: the case is reported `caught` and the harness prints a clean
+    summary while proving nothing about the guard it was aimed at. It happened
+    here -- FE6-1 renamed a class in `ExecutionStageCard.tsx` and was "caught" by
+    a guard that never reads that file.
+
+    So the search is anchored to the `Failed Tests` section, which vitest only
+    prints when something failed, and whose `FAIL` lines are the sole place a
+    failing test's name appears.
+    """
+
+    marker = output.find("Failed Tests")
+    if marker < 0:
+        return set()
+    return {
+        # `file > describe > name`; the name is the last segment.
+        match.group(1).split(" > ")[-1].strip()
+        for match in _FAILED_LINE.finditer(output, marker)
+    }
+
+
 def _classify(status: int, output: str, title: str) -> Verdict:
     """Read the verdict out of vitest's own report, never out of its exit code."""
 
@@ -436,7 +468,7 @@ def _classify(status: int, output: str, title: str) -> Verdict:
     if status == 0:
         return Verdict("missed", counts)
 
-    if title not in output:
+    if title not in _failed_titles(output):
         # Something else in the file went red. The named guard was not what
         # caught it, so this proves nothing about the named guard.
         return Verdict("other", f"{counts} -- but '{title}' was not among the failures")

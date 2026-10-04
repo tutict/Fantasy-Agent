@@ -170,14 +170,26 @@ describe("stylesheet hygiene", () => {
     // have no rules yet (it marks a panel planned to diverge). A modifier may
     // be aspirational; a base may not.
     //
-    // Scoped to the two components whose markup is static enough to read and
-    // whose styles live in one sheet each. Not swept across every class in the
+    // Scoped to the components whose markup is static enough to read and whose
+    // styles live in one sheet each. Not swept across every class in the
     // sheet: most of `console.css` is emitted by `rendering.tsx` and by the
     // inline components further down `FlowConsole.tsx`, so a whole-sheet sweep
     // reported 66 phantom "styled but never rendered" classes and would have
     // been turned off within a week.
+    //
+    // The list is every console component with static `className` literals, not
+    // the two it started as. Leaving the extracted cards out was not a scoping
+    // decision, it was an oversight: FE6-1 renames a class in
+    // `ExecutionStageCard.tsx` and this check did not cover it, so the case
+    // passed on the strength of a *different* guard in this same file. Adding a
+    // component here is what makes its own mutation bite this guard.
     const pairs: [component: string, sheet: string][] = [
       ["console/FlowConsole.tsx", "console.css"],
+      ["console/FlowConsole.parts.tsx", "console.css"],
+      ["console/executionStage/ExecutionStageCard.tsx", "console.css"],
+      ["console/playtest/PlaytestReportCard.tsx", "console.css"],
+      ["console/playtest/PlaytestConfirmBlock.tsx", "console.css"],
+      ["console/correction/CorrectionReportCard.tsx", "console.css"],
       ["studio/StudioShell.tsx", "studio.css"]
     ];
     const problems: string[] = [];
