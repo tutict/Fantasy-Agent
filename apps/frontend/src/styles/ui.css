@@ -92,11 +92,16 @@ summary:focus-visible,
 iframe:focus-visible {
   /* The ring is an outline, not a shadow. It used to be a 3px translucent
      `box-shadow`, and a translucent ring on the light theme composites to
-     1.34:1 against every surface it lands on -- invisible to the keyboard user
-     it was written for. Raising the alpha does not fix it: the warm paper
-     background is bright enough (L ~ 0.93) that no alpha reaches 3:1 before the
-     ring is a solid slab. A solid outline does, by a wide margin: 11.61:1 on the
-     light surfaces and 8.55:1 on the dark ones.
+     1.64:1 against `--surface` -- invisible to the keyboard user it was
+     written for. Raising the alpha does not fix it: the warm paper background
+     is bright enough (L ~ 0.93) that no alpha reaches 3:1 before the ring is a
+     solid slab. (Measured: 0.28 -> 1.64, 0.55 -> 2.01, 0.70 -> 2.71,
+     0.80 -> 3.46.) The dark theme was no better: 2.07:1, also under 3.
+
+     A solid outline clears it by a wide margin -- measured over the ten
+     surfaces each theme actually declares: light 11.61 minimum, dark 5.31
+     minimum. The numbers are `focusRing.test.ts`'s, computed rather than
+     claimed, so a future colour change that loses them fails a test.
 
      `--focus-soft` stays as the outer glow, so the ring still reads as a ring
      rather than as a border. */
@@ -115,6 +120,16 @@ iframe:focus-visible {
  * two rules were never console-scoped: they applied to every field in the app
  * while the file they sat in said `console`. That is what "the focus ring has
  * one home" is protecting against -- a rule that reads as local and is not.
+ *
+ * One consequence worth knowing about: raising the border to `--line-strong`
+ * puts it next to the ring, and in the dark theme those two are 1.08:1 apart.
+ * They do not touch -- the ring is an outline at `outline-offset: 1px`, so there
+ * is a pixel of surface between them -- and the ring is 6.45:1 against
+ * `--surface` while the border is 7.43:1, so a reader sees three bands rather
+ * than one thick line. Every ring colour that separated from the warm
+ * `--line-strong` collided with a status colour instead (`focusRing.test.ts`
+ * names them); that test records the measured ratio so a worse trade cannot be
+ * made silently.
  */
 input[type="text"]:focus-visible,
 textarea:focus-visible {
