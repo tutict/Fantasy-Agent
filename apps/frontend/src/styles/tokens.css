@@ -7,22 +7,27 @@
   --font-mono: "Cascadia Mono", "Sarasa Mono SC", Consolas, monospace;
   --mono: var(--font-mono);
   --space-1: 4px;
+  --space-1_5: 6px;
   --space-2: 8px;
+  --space-2_5: 10px;
   --space-3: 12px;
+  --space-3_5: 14px;
   --space-4: 16px;
   --space-5: 24px;
   --space-6: 32px;
   --space-7: 48px;
   --size-control: 44px;
-  --size-sidebar: 292px;
+  --radius-xs: 2px;
   --radius-s: 6px;
   --radius-m: 10px;
+  --radius-m-lg: 12px;
   --radius-l: 16px;
-  --text-s: 12px;
+  --radius-pill: 999px;
+  --text-xs: 11px;
+  --text-s: 13px;
   --text-m: 14px;
   --text-l: 16px;
   --text-xl: 24px;
-  --text-2xl: 34px;
   --duration-fast: 140ms;
   --duration-slow: 180ms;
   --layer-sticky: 10;
@@ -48,13 +53,15 @@
   --chrome: #f7f3ea;
   --chrome-strong: #fbf8f1;
   --field: #fffdf8;
-  --field-bg: var(--field);
   --code-bg: #ece7dc;
   --tab-bg: #efeadd;
   --pill-bg: #e7efe8;
   --grid-line-a: rgba(28, 25, 23, .045);
   --grid-line-b: rgba(28, 25, 23, .025);
   --line: #d8d0c3;
+  --text-placeholder: #6b666080;
+  --surface-translucent: #ffffff6b;
+  --brand-tint: #035f5214;
   --line-strong: #6f5648;
   --status-running: #1e4e8c;
   --status-running-soft: #dce7f1;
@@ -89,8 +96,6 @@
   --amber-soft: var(--status-warning-soft);
   --danger: var(--status-danger);
   --danger-soft: var(--status-danger-soft);
-  --ok: var(--status-success);
-  --warn: var(--status-warning);
 }
 
 :root[data-theme="dark"] {
@@ -118,13 +123,15 @@
   --chrome: #171c19;
   --chrome-strong: #171c19;
   --field: #151a18;
-  --field-bg: var(--field);
   --code-bg: #101412;
   --tab-bg: #202623;
   --pill-bg: #24302c;
   --grid-line-a: rgba(236, 230, 220, .035);
   --grid-line-b: rgba(236, 230, 220, .02);
   --line: #3a433f;
+  --text-placeholder: #b6b0a680;
+  --surface-translucent: #0000001f;
+  --brand-tint: #8fd0c21f;
   --line-strong: #c4a48c;
   --status-running: #c5d7ee;
   --status-running-soft: #243040;
@@ -159,6 +166,4 @@
   --amber-soft: var(--status-warning-soft);
   --danger: var(--status-danger);
   --danger-soft: var(--status-danger-soft);
-  --ok: var(--status-success);
-  --warn: var(--status-warning);
 }

@@ -62,12 +62,12 @@ textarea {
 .journey-steps [data-state="current"] { color: var(--status-running); }
 .journey-steps [data-state="current"] .journey-mark { background: var(--status-running); color: var(--on-brand); border-radius: 50%; }
 .journey-steps [data-state="blocked"] { color: var(--status-danger); }
-.journey-steps [data-state="blocked"] .journey-mark { background: var(--status-danger); color: var(--on-danger); border-radius: 2px; }
+.journey-steps [data-state="blocked"] .journey-mark { background: var(--status-danger); color: var(--on-danger); border-radius: var(--radius-xs); }
 .journey-steps [data-state="attention"] { color: var(--status-waiting); }
 .journey-steps [data-state="attention"] .journey-mark { background: var(--status-waiting); color: var(--on-danger); transform: rotate(45deg); }
 .journey-steps [data-state="attention"] .journey-mark span { transform: rotate(-45deg); }
 .journey-steps [data-state="complete"] { color: var(--status-success); }
-.journey-steps [data-state="complete"] .journey-mark { background: var(--status-success); color: var(--on-brand); border-radius: 4px; }
+.journey-steps [data-state="complete"] .journey-mark { background: var(--status-success); color: var(--on-brand); border-radius: var(--radius-xs); }
 .journey-state { font-size: var(--text-s); }
 .journey-next em { color: var(--status-danger); font-style: normal; }
 .ui-button {
@@ -88,9 +88,23 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+iframe:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
+}
+
+/**
+ * Windows high-contrast mode drops box-shadow, so the ring above disappears
+ * exactly where a keyboard user most needs it. `CanvasText` is a system color
+ * keyword -- it resolves to whatever the OS theme uses for text, which is
+ * precisely the right thing to outline with here.
+ */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline: 2px solid CanvasText;
+    outline-offset: 2px;
+  }
 }
 .status-badge {
   display: inline-flex;
@@ -98,7 +112,7 @@ summary:focus-visible {
   align-items: center;
   gap: var(--space-2);
   padding: 0 var(--space-2);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--surface-muted);
   color: var(--text);
 }
@@ -117,7 +131,7 @@ summary:focus-visible {
 .status-badge[data-status="passed"] { color: var(--status-success); }
 .status-badge[data-status="succeeded"]::before,
 .status-badge[data-status="done"]::before,
-.status-badge[data-status="passed"]::before { border-radius: 2px; background: currentColor; }
+.status-badge[data-status="passed"]::before { border-radius: var(--radius-xs); background: currentColor; }
 .status-badge[data-status="failed"],
 .status-badge[data-status="error"],
 .status-badge[data-status="resumable"] { color: var(--status-danger); }

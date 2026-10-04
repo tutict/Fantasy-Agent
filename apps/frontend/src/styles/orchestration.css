@@ -23,21 +23,21 @@
 .or-shell {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 4px 2px 32px;
+  gap: var(--space-4);
+  padding: var(--space-1) 2px 32px;
 }
 
 .or-plan-meta {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 18px;
-  padding: 10px 14px;
+  gap: var(--space-2) 18px;
+  padding: var(--space-2_5) 14px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--radius-m);
   background: var(--surface-muted);
   color: var(--muted-strong);
-  font-size: 12px;
+  font-size: var(--text-s);
 }
 
 .or-meta-line {
@@ -60,26 +60,26 @@
 
 .or-pending {
   margin: 0;
-  padding: 10px 14px;
+  padding: var(--space-2_5) 14px;
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-m);
   background: var(--amber-soft);
   color: var(--amber);
-  font-size: 12px;
+  font-size: var(--text-s);
   overflow-wrap: anywhere;
 }
 
 .or-gates {
-  padding: 12px 14px;
+  padding: var(--space-3) 14px;
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-m);
   background: var(--blue-soft);
 }
 
 .or-gates h4 {
   margin: 0 0 8px;
   color: var(--blue);
-  font-size: 12px;
+  font-size: var(--text-s);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -89,25 +89,25 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 6px 0;
+  gap: var(--space-2_5);
+  padding: var(--space-1_5) 0;
   color: var(--text-soft);
-  font-size: 13px;
+  font-size: var(--text-s);
 }
 
 .or-cards {
   display: grid;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .or-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 14px 16px;
+  gap: var(--space-2);
+  padding: var(--space-3_5) 16px;
   border: 1px solid var(--line);
   border-left: 3px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-m-lg);
   background: var(--surface);
 }
 
@@ -133,7 +133,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2_5);
 }
 
 .or-card-head h3 {
@@ -141,22 +141,22 @@
   flex: 1 1 auto;
   min-width: 180px;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--text-m);
 }
 
 .or-order {
   color: var(--muted);
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: var(--text-s);
 }
 
 .or-status {
-  padding: 2px 9px;
+  padding: var(--space-1) 9px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--pill-bg);
   color: var(--muted-strong);
-  font-size: 11px;
+  font-size: var(--text-xs);
   white-space: nowrap;
 }
 
@@ -192,7 +192,7 @@
 .or-answer {
   margin: 0;
   color: var(--text-soft);
-  font-size: 12.5px;
+  font-size: var(--text-s);
   overflow-wrap: anywhere;
 }
 
@@ -205,8 +205,8 @@
 }
 
 .or-answer {
-  padding: 8px 10px;
-  border-radius: 8px;
+  padding: var(--space-2) 10px;
+  border-radius: var(--radius-s);
   background: var(--code-bg);
   color: var(--muted-strong);
   white-space: pre-wrap;
@@ -215,16 +215,16 @@
 .or-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-1_5);
 }
 
 .or-pill {
-  padding: 2px 9px;
+  padding: var(--space-1) 9px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--pill-bg);
   color: var(--muted-strong);
-  font-size: 11px;
+  font-size: var(--text-xs);
 }
 
 .or-pill-human {
@@ -240,17 +240,17 @@
 .or-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .or-button {
-  padding: 4px 12px;
+  padding: var(--space-1) 12px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-s);
   background: var(--tab-bg);
   color: var(--muted-strong);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-s);
   cursor: pointer;
 }
 
@@ -272,13 +272,13 @@
 
 .or-steps {
   margin: 0;
-  padding-left: 20px;
+  padding-left: var(--space-5);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-s);
 }
 
 .or-empty {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-s);
 }
