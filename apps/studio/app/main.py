@@ -31,6 +31,7 @@ from fantasy_agent.contracts import (
     GodotProjectPlan,
     IdeaDiscoveryRequest,
     IdeaSeed,
+    PlaytestRequest,
     ProductionSpecBundle,
     PromptRequest,
     QAPlan,
@@ -48,6 +49,7 @@ from fantasy_agent.demo_launch import (
     normalize_demo_resume,
 )
 from fantasy_agent.generation import design_from_prompt
+from fantasy_agent.godot_playtest import PlaytestResult
 from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
 from fantasy_agent.mcp import initial_mcp_contracts
 from fantasy_agent.path_safety import WorkspacePathError
@@ -156,6 +158,12 @@ ExecuteDemoRequest.model_rebuild()
 _EXECUTE_POOL = ThreadPoolExecutor(max_workers=1)
 _EXECUTE_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
 _ASSET_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
+# A playtest holds an engine process for up to max_wall_seconds (3600 by
+# contract). Sharing the one worker with execute/asset would let a single
+# long playtest starve both other queues, so it gets its own pool: slow
+# instead of blocking, which is the honest failure mode for a measurement job.
+_PLAYTEST_POOL = ThreadPoolExecutor(max_workers=1)
+_PLAYTEST_JOB_REGISTRY = InMemoryJobRegistry(_PLAYTEST_POOL)
 
 
 def _frontend_index_or() -> FileResponse:
@@ -1041,6 +1049,69 @@ def asset_execute_status(job_id: str) -> dict[str, Any]:
 @app.post("/api/assets/execute/{job_id}/cancel")
 def asset_execute_cancel(job_id: str) -> dict[str, Any]:
     return _ASSET_JOB_REGISTRY.cancel(job_id)
+
+
+class PlaytestRunRequest(PlaytestRequest):
+    """Wire shape of one playtest run.
+
+    It inherits the library contract instead of restating it, so the bounds
+    (runs, frame budget, wall clock, input plan) have exactly one definition.
+    That also means FastAPI validates them at the edge: an out-of-range
+    ``runs`` answers 422 instead of raising inside the job and surfacing as a
+    500 the poller cannot explain.
+    """
+
+    confirmed: bool = False
+    session_id: str = ""
+
+
+def _playtest_request(req: PlaytestRunRequest) -> PlaytestRequest:
+    return PlaytestRequest(**req.model_dump(exclude={"confirmed", "session_id"}))
+
+
+def _build_playtest_result(req: PlaytestRunRequest, *, confirmed: bool) -> PlaytestResult:
+    from fantasy_agent.godot_playtest import (
+        planned_playtest_side_effects,
+        run_playtest,
+        summarize_playtest,
+    )
+
+    request = _playtest_request(req)
+    if not confirmed:
+        return PlaytestResult(
+            status="confirmation_required",
+            project_dir=req.project_dir,
+            planned_side_effects=planned_playtest_side_effects(request),
+        )
+    report = run_playtest(request, workspace_root=REPO_ROOT, session_id=req.session_id or None)
+    # "done" is the *job* status the poller understands; the verdict lives in
+    # report.status, so a run that measured a failure is still a run that ran.
+    return PlaytestResult(
+        status="done",
+        project_dir=req.project_dir,
+        report=report,
+        planned_side_effects=planned_playtest_side_effects(request),
+        summary=summarize_playtest(report),
+    )
+
+
+@app.post("/api/playtest/run")
+def run_playtest_job(req: PlaytestRunRequest) -> dict[str, Any]:
+    if not req.confirmed:
+        return _PLAYTEST_JOB_REGISTRY.preview(_build_playtest_result(req, confirmed=False))
+
+    job_id = _PLAYTEST_JOB_REGISTRY.submit(lambda: _build_playtest_result(req, confirmed=True))
+    return {"status": "running", "job_id": job_id}
+
+
+@app.get("/api/playtest/{job_id}")
+def playtest_status(job_id: str) -> dict[str, Any]:
+    return _PLAYTEST_JOB_REGISTRY.status(job_id)
+
+
+@app.post("/api/playtest/{job_id}/cancel")
+def playtest_cancel(job_id: str) -> dict[str, Any]:
+    return _PLAYTEST_JOB_REGISTRY.cancel(job_id)
 
 
 def _resume_http_detail(exc: DemoLaunchError) -> str:

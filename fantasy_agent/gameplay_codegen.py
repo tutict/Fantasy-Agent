@@ -691,6 +691,12 @@ var _ended := false
 var _progress := 0
 var _hud: Label
 
+# [PLAYTEST] Structured outcome, read by the headless playtest probe. The HUD
+# text is for a human; these two are the machine-readable equivalent, so a
+# playtest never has to parse a sentence to learn how the run ended.
+var last_outcome := ""
+var last_reason := ""
+
 
 func _ready() -> void:
     add_to_group("game_manager")
@@ -753,12 +759,16 @@ func register_trigger() -> void:
 
 func _win() -> void:
     _ended = true
+    last_outcome = "win"
+    last_reason = "{win}"
     _update_hud("WIN — {win}")
     _schedule_return()
 
 
 func _fail(reason: String) -> void:
     _ended = true
+    last_outcome = "fail"
+    last_reason = reason
     _update_hud("FAIL — " + reason)
     _schedule_return()
 

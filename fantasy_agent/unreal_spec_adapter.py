@@ -7,6 +7,7 @@ from fantasy_agent.contracts import (
     ExecutableQAAssertion,
     ExecutableQAReport,
     ExecutableQAResult,
+    PlaytestReport,
     ProductionSpecBundle,
     SpecCompileResult,
     SpecTraceRecord,
@@ -56,7 +57,17 @@ def compile_unreal_spec_bundle(bundle: ProductionSpecBundle) -> SpecCompileResul
     return SpecCompileResult(target="unreal", artifacts=artifacts, traces=traces)
 
 
-def evaluate_executable_qa(bundle: ProductionSpecBundle) -> ExecutableQAReport:
+def evaluate_executable_qa(
+    bundle: ProductionSpecBundle,
+    playtest: PlaytestReport | None = None,
+) -> ExecutableQAReport:
+    """Judge the bundle, and judge the run when there is one.
+
+    ``playtest`` is optional on purpose: with no measured run the report keeps
+    its static assertions and says nothing about playability. Adding a
+    "playtest passed" assertion that nobody ran would be worse than silence.
+    """
+
     assertions = [
         ExecutableQAAssertion(
             assertion_id="session_target_range",
@@ -98,11 +109,56 @@ def evaluate_executable_qa(bundle: ProductionSpecBundle) -> ExecutableQAReport:
         "validation_status": bundle.validation.status if bundle.validation else "missing",
         "resource_approval": [asset.approval_status for asset in bundle.resource_pipeline.assets],
     }
+    if playtest is not None:
+        assertions.extend(_playtest_assertions())
+        actuals.update(_playtest_actuals(playtest))
     results = [_evaluate(assertion, actuals[assertion.metric_key]) for assertion in assertions]
     has_errors = any(not result.passed and result.severity == "error" for result in results)
     has_warnings = any(not result.passed for result in results)
     status = "failed" if has_errors else "warning" if has_warnings else "passed"
     return ExecutableQAReport(status=status, assertions=assertions, results=results)
+
+
+def _playtest_assertions() -> list[ExecutableQAAssertion]:
+    """Assertions that only exist when a run was actually measured."""
+
+    return [
+        ExecutableQAAssertion(
+            assertion_id="playtest_runs_observed",
+            metric_key="playtest_runs",
+            operator="gte",
+            expected=1,
+        ),
+        ExecutableQAAssertion(
+            assertion_id="playtest_loop_playable",
+            metric_key="playtest_playable_rate",
+            operator="gte",
+            expected=0.5,
+        ),
+        ExecutableQAAssertion(
+            assertion_id="playtest_reached_an_outcome",
+            metric_key="playtest_decided_runs",
+            operator="gte",
+            expected=1,
+            severity="warning",
+        ),
+        ExecutableQAAssertion(
+            assertion_id="playtest_no_script_errors",
+            metric_key="playtest_script_errors",
+            operator="eq",
+            expected=[],
+        ),
+    ]
+
+
+def _playtest_actuals(report: PlaytestReport) -> dict:
+    aggregate = report.aggregate
+    return {
+        "playtest_runs": aggregate.runs,
+        "playtest_playable_rate": aggregate.playable_rate,
+        "playtest_decided_runs": aggregate.runs - aggregate.timeouts,
+        "playtest_script_errors": aggregate.script_errors,
+    }
 
 
 def _datatable_payload(table) -> dict:

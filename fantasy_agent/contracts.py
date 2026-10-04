@@ -1078,3 +1078,91 @@ class MCPToolContract(StrictModel):
     output_schema_ref: str
     side_effects: list[str]
     safety_checks: list[str]
+
+
+class PlaytestRequest(StrictModel):
+    """One bounded headless playtest against a generated Godot project."""
+
+    project_dir: str = Field(min_length=1)
+    runs: int = Field(default=5, ge=1, le=20)
+    #: Frame budget for the whole playtest, not per run: one engine process
+    #: plays every attempt, and headless frames are not a duration anyway.
+    max_frames: int = Field(default=36000, ge=60, le=2_000_000)
+    max_wall_seconds: float = Field(default=180.0, ge=5.0, le=3600.0)
+    input_plan: Literal["forward", "forward_and_jump", "idle"] = "forward_and_jump"
+    godot_executable: str = ""
+    goal_session_minutes: float = Field(default=0.0, ge=0.0, le=60.0)
+
+
+class PlaytestSample(StrictModel):
+    """What one playtest run observed inside the engine.
+
+    ``session_seconds`` is engine-internal time read back from the generated
+    ``game_manager``, never a frame count: a headless run advances frames far
+    faster than real time, so frames are not a duration.
+    """
+
+    run_index: int = Field(ge=0)
+    outcome: str = ""
+    reason: str = ""
+    session_seconds: float = Field(default=0.0, ge=0.0)
+    attempts: int = Field(default=0, ge=0)
+    wins: int = Field(default=0, ge=0)
+    failures: int = Field(default=0, ge=0)
+    player_moved_distance: float = Field(default=0.0, ge=0.0)
+    progress: int = 0
+    frames: int = Field(default=0, ge=0)
+    wall_msec: int = Field(default=0, ge=0)
+    playable: bool = False
+    degraded: bool = False
+    degraded_reason: str = ""
+    failure_reasons: dict[str, int] = Field(default_factory=dict)
+    script_errors: list[str] = Field(default_factory=list)
+
+
+class PlaytestAggregate(StrictModel):
+    """Distribution across runs, never a single-run point estimate."""
+
+    runs: int = Field(default=0, ge=0)
+    playable_runs: int = Field(default=0, ge=0)
+    degraded_runs: int = Field(default=0, ge=0)
+    wins: int = Field(default=0, ge=0)
+    failures: int = Field(default=0, ge=0)
+    timeouts: int = Field(default=0, ge=0)
+    win_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    playable_rate: float = Field(default=0.0, ge=0.0, le=1.0)
+    session_seconds_p50: float = Field(default=0.0, ge=0.0)
+    session_seconds_p95: float = Field(default=0.0, ge=0.0)
+    failure_reasons: dict[str, int] = Field(default_factory=dict)
+    script_errors: list[str] = Field(default_factory=list)
+
+
+class PlaytestFinding(StrictModel):
+    """One measured gap, already translated into a rework target.
+
+    ``rework_target`` uses the same vocabulary as ``preflight`` so the console
+    can reuse one "resume from here" control instead of growing a second one.
+    """
+
+    code: str = Field(min_length=1)
+    severity: Literal["blocking", "warning"]
+    message: str = Field(min_length=1)
+    rework_target: Literal["prompt", "spec", "godot_plan", "flags"]
+    resume_stage: str = ""
+
+
+class PlaytestReport(StrictModel):
+    source: str = "fantasy-agent.godot-playtest"
+    schema_version: str = "0.1"
+    status: Literal["passed", "warning", "failed"] = "failed"
+    project_dir: str = ""
+    engine: str = "Godot 4"
+    engine_executable: str = ""
+    runs_requested: int = Field(default=0, ge=0)
+    samples: list[PlaytestSample] = Field(default_factory=list)
+    aggregate: PlaytestAggregate = Field(default_factory=PlaytestAggregate)
+    findings: list[PlaytestFinding] = Field(default_factory=list)
+    artifact_paths: list[str] = Field(default_factory=list)
+    goal_session_minutes: float = Field(default=0.0, ge=0.0)
+    goal_notes: list[str] = Field(default_factory=list)
+    generated_at: str = ""
