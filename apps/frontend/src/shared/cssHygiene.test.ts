@@ -258,6 +258,39 @@ describe("stylesheet hygiene", () => {
     expect(orphans).toEqual([]);
   });
 
+  it("keeps the focus ring in one place", () => {
+    // The ring is a `box-shadow` built from `--focus-ring`, and every view's
+    // stylesheet is imported into one document -- so a `:focus-visible` rule
+    // written in `console.css` is not console-scoped. It lands on every field in
+    // the app while sitting in a file whose name says otherwise, and the next
+    // person to change the ring changes it in the wrong file.
+    //
+    // Two rules in `console.css` did exactly that for the field's own surface
+    // (border + background). Moving them to `ui.css` next to the shared ring
+    // changed nothing about what renders -- they had never been local -- and
+    // this check is what keeps the next one from arriving.
+    //
+    // `:focus` is in the pattern for the same reason: a bare `:focus` outline
+    // is the older half of the same problem.
+    const shared = readFileSync(resolve(stylesDir, "ui.css"), "utf8");
+    expect(shared, "the one allowed home must still declare focus styles").toMatch(/:focus-visible/);
+
+    const strays: string[] = [];
+    for (const sheet of styleSheets()) {
+      // `styleSheets()` excludes only tokens.css, so ui.css -- the one place
+      // this is allowed -- comes back from it too.
+      if (sheet.name === "styles/ui.css") continue;
+      sheet.source.split("\n").forEach((line, index) => {
+        // Comments explain the rule in prose and are allowed to name it.
+        if (/^\s*\*/.test(line)) return;
+        if (/(^|[\s,{])(?:[a-z-]+)?:focus-visible/.test(line)) {
+          strays.push(`${sheet.name}:${index + 1}  ${line.trim()}`);
+        }
+      });
+    }
+    expect(strays, "focus styling outside ui.css will be applied app-wide").toEqual([]);
+  });
+
   it("keeps breakpoints on the documented four-step grid", () => {
     const offenders: string[] = [];
     for (const sheet of styleSheets()) {

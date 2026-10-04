@@ -32,10 +32,12 @@ ui.css   .ui-button/button/a/input/select/textarea/summary/iframe:focus-visible
          + @media (forced-colors: active) 兜底
 ```
 
-**其余 `styles/*.css` 一律不得再写 `:focus-visible` 或 `:focus`。**
+**其余 `styles/*.css` 一律不得再写 `:focus-visible` 或 `:focus`**——`cssHygiene.test.ts`的「keeps the focus ring in one place」钉着，变异用例 FE6-10。
+
+**这条规则的理由不只是「整洁」**：四张视图样式表都被导入**同一个 document**（`console.css` 从 `FlowConsole.tsx` 导入，`studio.css` 从 `StudioShell.tsx`，以此类推），所以写在 `console.css` 里的 `:focus-visible` **从来不是 console 私有的**——它落在全应用每个字段上，只是待在一个名字说不然的文件里。2026-10-04 的值层治理恰好新增了两条这样的规则（字段的边框与背景反馈），它们从来不是局部的；已搬进 `ui.css` 紧邻共享环的那条规则，视觉零变化。
 
 - 为什么是 box-shadow 而不是 outline：`var(--focus-ring)` 用 `var(--focus-soft)`，**明暗自动跟随**；outline 版本要各自硬写颜色。
-- **`forced-colors` 兜底是必须的**：Windows 高对比度模式下浏览器会丢弃 box-shadow，只留 outline。没有那块，键盘用户在高对比度模式下看不见焦点。
+- **`forced-colors` 兜底是必须的**：Windows 高对比度模式下浏览器会丢弃 box-shadow，只留outline。没有那块，键盘用户在高对比度模式下看不见焦点。
 - 例外：`.api-field textarea` 上的 `outline: none` 可以留（它去掉的是 UA 默认环，与 box-shadow 配对），**但必须紧邻 `:focus-visible` 规则**，否则单焦点时没有环。
 
 ## 4. 断点：4 档栅格

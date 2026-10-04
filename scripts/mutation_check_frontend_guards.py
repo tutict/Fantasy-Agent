@@ -335,6 +335,22 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/shared/ui/accessibility.test.ts",
         "gives every focusable element the ring, not just some of them",
     ),
+    (
+        # A focus rule creeping back into a view stylesheet. All four view
+        # sheets are imported into one document, so a `:focus-visible` rule in
+        # `console.css` is not console-scoped -- it lands on every field in the
+        # app while the file says otherwise, and the ring now has a second home.
+        #
+        # Two such rules were added in this very round while the ring was being
+        # consolidated, and the consolidation was documented as "one home" with
+        # nothing enforcing it. The mutation puts one back.
+        "FE6-10 a view stylesheet grows its own focus rule",
+        "apps/frontend/src/styles/console.css",
+        b".primary-action,\n.secondary-action {",
+        b"textarea:focus-visible,\n.primary-action,\n.secondary-action {",
+        "src/shared/cssHygiene.test.ts",
+        "keeps the focus ring in one place",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.

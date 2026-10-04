@@ -95,6 +95,23 @@ iframe:focus-visible {
 }
 
 /**
+ * A text field also says "you are here" with its own surface, not only with
+ * the ring: the border firms up and the background lifts to `--field`.
+ *
+ * It used to live in `console.css`, written twice over as `textarea` plus
+ * `input[type="text"]` -- which is the same thing `input:focus-visible` above
+ * already says. Every view's stylesheet is imported into one document, so those
+ * two rules were never console-scoped: they applied to every field in the app
+ * while the file they sat in said `console`. That is what "the focus ring has
+ * one home" is protecting against -- a rule that reads as local and is not.
+ */
+input[type="text"]:focus-visible,
+textarea:focus-visible {
+  border-color: var(--line-strong);
+  background: var(--field);
+}
+
+/**
  * Windows high-contrast mode drops box-shadow, so the ring above disappears
  * exactly where a keyboard user most needs it. `CanvasText` is a system color
  * keyword -- it resolves to whatever the OS theme uses for text, which is

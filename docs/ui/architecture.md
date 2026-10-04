@@ -47,7 +47,7 @@
 - **保留暖纸色 + 氧化铜方向**（`--bg: #f3efe6` 暖纸、`--brand: #1f5c52` 氧化铜）。这套的对比度已由 `visualSystem.test.ts` 逐条断言通过，**不重开色系讨论**。
 - 状态色不复用品牌色，7 个 status 色互不复用（`visualSystem.test.ts` 钉着）。
 - **暗色只换颜色，不换间距/字号/圆角**——间距与字号不随主题变，这是对的，但也意味着任何硬编码的间距在暗色下同样生效，不会被主题掩盖。
-- 焦点环唯一来源是 `styles/ui.css`（box-shadow + `forced-colors` 兜底），其余样式表不得再写 `:focus-visible`。
+- 焦点环唯一来源是 `styles/ui.css`（box-shadow + `forced-colors` 兜底），其余样式表不得再写 `:focus-visible`。**注意四张视图样式表都导入同一个 document**，所以「写在 `console.css` 里」不等于「只影响 console」——`cssHygiene.test.ts` 的 "keeps the focus ring in one place" 钉着，变异用例 FE6-10。
 - 字号只有 6 档（`--text-xs/s/m/l/xl/2xl`），间距只有 `--space-*` 阶梯上的值，圆角只有 6 档。细则见 `css-conventions.md`。
 
 ## 4. 命名约定

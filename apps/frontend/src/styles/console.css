@@ -490,21 +490,6 @@ input[type="text"] {
   padding: 0 12px;
 }
 
-/**
- * The field's own focus treatment: a border shift plus the ring. The ring value
- * is `var(--focus-ring)` rather than a spelled-out shadow so that changing the
- * ring in one place changes it here too -- it used to be `0 0 0 3px
- * var(--focus-soft)` written out, which is a second place to forget.
- *
- * `:focus-visible`, not `:focus`: a mouse click on a text field should not
- * leave a ring behind. Keyboard focus should.
- */
-textarea:focus-visible,
-input[type="text"]:focus-visible {
-  border-color: var(--line-strong);
-  background: var(--field);
-}
-
 .primary-action,
 .secondary-action {
   width: 100%;
