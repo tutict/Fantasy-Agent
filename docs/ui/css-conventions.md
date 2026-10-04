@@ -14,7 +14,7 @@
 
 | 类别 | 允许的值 | 来源 |
 |---|---|---|
-| 字号 | 5 档：`--text-xs` 11px / `--text-s` 13px / `--text-m` 14px / `--text-l` 16px / `--text-xl` 24px | `tokens.css` |
+| 字号 | 4 档：`--text-xs` 11px / `--text-s` 14px / `--text-l` 16px / `--text-xl` 24px | `tokens.css` |
 | 间距 | `--space-1` 4 / `-1_5` 6 / `-2` 8 / `-2_5` 10 / `-3` 12 / `-3_5` 14 / `-4` 16 / `-5` 24 / `-6` 32 / `-7` 48 | `tokens.css` |
 | 圆角 | 6 档：`--radius-xs` 2 / `--radius-s` 6 / `--radius-m` 10 / `--radius-m-lg` 12 / `--radius-l` 16 / `--radius-pill` 999px | `tokens.css` |
 
@@ -33,13 +33,16 @@
 
 **例外：单侧边框宽度 1px / 2px / 3px 保留**——状态条的语义宽度不是间距。
 
-**字号不就近**：只允许落在那 5 档上。`12px` 与 `13px` 曾经并存（40 + 36 次，占字号声明的 55%），两值视觉几乎不可区分却制造同屏两种渲染质量，已合并为 13px。（这一版曾列 6 档含 `--text-2xl`，而那个 token 在本轮值层治理里已经删掉了——表格比代码多了一档。）
+**字号不就近**：只允许落在那 4 档上。`12px` 与 `13px` 曾经并存（40 + 36 次，占字号声明的 55%），两值视觉几乎不可区分却制造同屏两种渲染质量。**这两个值都是退役的**：`visualSystem.test.ts` 的「keeps the type scale in steps big enough to tell apart」直接点名 12 与 13 不许再作为一档回来——只写「相邻档差 ≥ 2px」是拦不住的，删掉一档之后 11/14/16/24 的间距是 3/2/8，把 14 改回 13 变成 2/3/8，两种都全过。
+
+（这一版曾列 6 档含 `--text-2xl`，又列过 5 档含 `--text-m`。两个 token 都已经不在 `tokens.css` 里了，而表格比代码多活了两档——**表格里的 token 名必须能在 `tokens.css` 里 grep 到**，这条由 `docsTokenNames.test.ts` 钉着。）
 
 ## 3. 焦点环：唯一来源是 `ui.css`
 
 ```
 ui.css   .ui-button/button/a/input/select/textarea/summary/iframe:focus-visible
-         → outline: none; box-shadow: var(--focus-ring)
+         → outline: 2px solid var(--focus-ring-color); outline-offset: 1px
+         + box-shadow: 0 0 0 4px var(--focus-soft)（外层光晕）
          + @media (forced-colors: active) 兜底
 ```
 
@@ -47,9 +50,11 @@ ui.css   .ui-button/button/a/input/select/textarea/summary/iframe:focus-visible
 
 **这条规则的理由不只是「整洁」**：四张视图样式表都被导入**同一个 document**（`console.css` 从 `FlowConsole.tsx` 导入，`studio.css` 从 `StudioShell.tsx`，以此类推），所以写在 `console.css` 里的 `:focus-visible` **从来不是 console 私有的**——它落在全应用每个字段上，只是待在一个名字说不然的文件里。2026-10-04 的值层治理恰好新增了两条这样的规则（字段的边框与背景反馈），它们从来不是局部的；已搬进 `ui.css` 紧邻共享环的那条规则，视觉零变化。
 
-- 为什么是 box-shadow 而不是 outline：`var(--focus-ring)` 用 `var(--focus-soft)`，**明暗自动跟随**；outline 版本要各自硬写颜色。
-- **`forced-colors` 兜底是必须的**：Windows 高对比度模式下浏览器会丢弃 box-shadow，只留outline。没有那块，键盘用户在高对比度模式下看不见焦点。
-- 例外：`.api-field textarea` 上的 `outline: none` 可以留（它去掉的是 UA 默认环，与 box-shadow 配对），**但必须紧邻 `:focus-visible` 规则**，否则单焦点时没有环。
+- **环是 outline，不是 box-shadow。** 它曾经是 `box-shadow: 0 0 0 3px rgba(20, 63, 56, .28)`——半透明阴影叠在亮色暖纸上合成后只有 **1.64:1**，键盘用户基本看不见。**调 alpha 救不回来**：扫 0.28 / 0.55 / 0.70 / 0.80 得 1.64 / 2.01 / 2.71 / 3.46，要提到 0.80 才过 3:1，那时环是一块实心板。根因是暖纸底亮度 L≈0.93，半透明叠加只能小步移动亮度。**实色 outline 不受底色影响**：亮色 `#0d2b26` 最差 11.61:1，暗色 `#cf9a4a` 最差 5.31:1（`focusRing.test.ts` 逐个表面算，不是声称的）。
+- **暗色的环色不能用暖色系。** 聚焦时 `input` / `textarea` 的边框会提成 `--line-strong`（暗色 `#c4a48c`），环与它只差 1.08:1。实测六个候选：暖色系（`#cf9a4a` / `#e8863a`）都撞在这 1.08–1.14 上；能拉开的（青 `#8adcee` / 石灰 `#b6d94a`）改为撞**状态色**——距 `status-human` 1.00、距 `status-success` 1.03、距 `status-danger` 1.01。**「读作边框变粗」比「读作状态标签」轻**，所以留在暖色，并由守卫钉住这个取舍。
+- `--focus-soft` 保留为外层光晕，所以环仍然读作环而不是边框。环自己的对比度是硬要求（≥3:1，`focusRing.test.ts` 逐表面算）；光晕只需 ≥1.1。
+- **`forced-colors` 兜底是必须的**：Windows 高对比度模式下浏览器会丢弃 box-shadow，只留 outline。那块**原本就是兜底**（因为环是 shadow），现在 outline 本来就在，两者语义终于一致。
+- 例外：`.api-field textarea` 上的 `outline: none` 可以留（它去掉的是 UA 默认环，与共享 outline 配对），**但必须紧邻 `:focus-visible` 规则**，否则单焦点时没有环。
 
 ## 4. 断点：4 档栅格
 

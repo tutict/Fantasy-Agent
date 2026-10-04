@@ -31,7 +31,7 @@ PY
 | 间距 | `--space-1` `--space-1_5` `--space-2` `--space-2_5` `--space-3` `--space-3_5` `--space-4` … `--space-7` | 阶梯，见 `css-conventions.md` |
 | 控件 | `--size-control` | |
 | 圆角 | `--radius-xs/s/m/m-lg/l` `--radius-pill` | 阶梯；`pill` 是 999px 那一档 |
-| 字号 | `--text-xs/s/m/l/xl` | 阶梯，明暗同值 |
+| 字号 | `--text-xs/s/l/xl` | 阶梯，明暗同值；`--text-m` 已删 |
 | 时长 | `--duration-fast` `--duration-slow` | 动效 |
 | 层级 | `--layer-sticky/overlay/dialog` | `z-index` 阶梯 |
 | 阴影 | `--shadow-s` `--shadow-l` `--shadow` | `--shadow` 是 `--shadow-l` 的别名 |
@@ -41,12 +41,14 @@ PY
 | 输入 | `--field` `--code-bg` `--tab-bg` `--pill-bg` | |
 | 线 | `--line` `--line-strong` `--grid-line-a` `--grid-line-b` | |
 | 状态 | `--status-running/success/waiting/warning/danger/human/info` + 各自 `-soft` | 7 个互不复用，钉在 `visualSystem.test.ts` |
-| 焦点 | `--focus` `--focus-soft` `--focus-ring` | `--focus-ring` 是 box-shadow 表达式 |
+| 焦点 | `--focus` `--focus-soft` `--focus-ring-color` | `--focus-ring-color` 是 outline 的实色，不带 alpha；逐个表面算对比度由 `focusRing.test.ts` 钉着 |
 | 数据 | `--data-1` … `--data-6` | 图表/序列，非文本 ≥3:1 |
 
 阶梯的档位会随 token 治理增删，所以这里列的是**当前成员**而不是「共几档」。要确认某一档在不在，看 `tokens.css`；要确认它有没有人在用，看 `cssHygiene.test.ts` 的 "does not accumulate tokens nothing reads"。
 
-**正名与别名**：状态色是正名（`--status-success`），`--ok` / `--warn` / `--accent` / `--blue` / `--amber` / `--danger` 是兼容别名，都用 `var(--status-*)` 转指。**新代码写正名**。
+**正名与别名**：状态色是正名（`--status-success` 等），`--accent` / `--blue` / `--amber` / `--danger` 是**活着的**兼容别名（30 / 10 / 10 / 23 处 `var()` 引用），都用 `var(--status-*)` 转指。**新代码写正名。**
+
+这一句以前把 `--ok` 和 `--warn` 也列进去，说它们是兼容别名。**它不是**——这两个名字在 `tokens.css` 里没有定义，全仓 `var()` 引用 0 处。照着这句话写代码的人会得到一个无效变量，而失效的 `var()` 在 CSS 里不报错，元素只是悄悄没有那个颜色。已从这句话里删掉；`docsTokenNames.test.ts` 现在会挡住它回来。
 
 ## 2. 对比度由测试钉着
 
