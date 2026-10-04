@@ -51,7 +51,7 @@ ui.css   .ui-button/button/a/input/select/textarea/summary/iframe:focus-visible
 
 **断点不做成 token**：`@media` 不接受 `var()`，写成 `--bp-*` 就是零引用死 token，与「零引用 token 是债」自相矛盾。所以它们是文档约定 + 测试断言，不是 token。
 
-`orchestration.css`（编排板）曾长期 **0 个媒体查询**，2026-10-04 补了 900px 一档。编排板是桌面工具，**不加 560**。
+`orchestration.css`（编排板）**有意不加媒体查询**：它的每一行容器都是 `flex-wrap: wrap` 的单列流式布局，没有任何多列 grid 或固定宽度，所以窄屏下自然折行。它没有"窄屏塌成两栏"的问题要解决。**不要为了对齐而给它加一个空断点。**
 
 ## 5. 命名与归属
 
