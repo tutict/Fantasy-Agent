@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { MOBILE_NEEDLE, promptRequestFromPlan } from "./hooks";
+import { MOBILE_NEEDLE, promptRequestFromPlan, useExecutionJobPolling } from "./hooks";
 import type { DirectorBuildPlan } from "../shared/types";
 
 /**
@@ -116,5 +117,187 @@ describe("promptRequestFromPlan", () => {
     const request = promptRequestFromPlan(plan(["asset kiosk prop"]));
 
     expect(request?.platforms).toEqual(["Windows"]);
+  });
+});
+
+/**
+ * `useExecutionJobPolling` used to receive `jobId` / `setJobId` / `setResult`
+ * from outside, so every consumer declared three `useState` for a mechanism it
+ * did not own -- and `FlowConsole` ended up with 28 across three concurrent
+ * jobs. It now owns them and hands back `start(jobId)` and `reset()`.
+ *
+ * That change moved two behaviors across a boundary nobody tests, so they are
+ * pinned here. Both are things an operator sees immediately when broken: a stale
+ * result from the previous run, or a poll timer that outlives the panel.
+ */
+describe("useExecutionJobPolling's self-owned job lifecycle", () => {
+  const labels = {
+    setStatus: () => {},
+    addActivity: () => {},
+    doneLabel: "done",
+    failedLabel: "failed",
+    cancelledLabel: "cancelled"
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("start() drops the previous run's result before adopting the new job id", async () => {
+    // Without `setResult(null)` in `start`, submitting a second run leaves the
+    // first run's stage cards on screen next to the new ones -- and the console
+    // has no other place to clear them, because the state moved inside the hook.
+    //
+    // The first run has to actually *finish* here. A stub that keeps returning
+    // "running" never sets a result, so the assertion would pass with
+    // `setResult(null)` deleted -- which is exactly what happened when this test
+    // was first written.
+    let status = "running";
+    const fetchJob = vi.fn().mockImplementation(async () => ({
+      status,
+      result: { project_dir: "generated/first" }
+    }));
+    const api = renderHook(() => useExecutionJobPolling({ ...labels, fetchJob }));
+
+    act(() => api.result.current.start("job-1"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(api.result.current.result).toEqual({ project_dir: "generated/first" });
+
+    // Second run: the stale result must be gone the moment it starts, before
+    // the first poll of the new job has had a chance to produce anything.
+    status = "running";
+    act(() => api.result.current.start("job-2"));
+
+    expect(api.result.current.jobId).toBe("job-2");
+    expect(api.result.current.result).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(fetchJob).toHaveBeenLastCalledWith("job-2");
+  });
+
+  it("reset() clears the job id so the panel stops asking about a finished run", async () => {
+    const fetchJob = vi.fn().mockResolvedValue({ status: "running" });
+    const api = renderHook(() => useExecutionJobPolling({ ...labels, fetchJob }));
+
+    act(() => api.result.current.start("job-1"));
+    expect(api.result.current.jobId).toBe("job-1");
+
+    act(() => api.result.current.reset());
+
+    expect(api.result.current.jobId).toBeNull();
+    // The interval must not come back: nothing else in the hook can stop it.
+    const callsAfterReset = fetchJob.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4500);
+    });
+    expect(fetchJob).toHaveBeenCalledTimes(callsAfterReset);
+  });
+
+  it("keeps polling through 'cancelling' and settles only on 'done'", async () => {
+    // `cancelling` is transient -- the worker is still unwinding and its result
+    // is still worth collecting. Stopping there would drop the very outcome the
+    // operator cancelled for.
+    //
+    // The stub answers "running", then "cancelling", then "done", keyed on its
+    // own call count rather than on a queue the implementation could satisfy a
+    // different way. The assertion that matters is the call count: only an
+    // implementation that keeps the interval alive across `cancelling` reaches
+    // the third poll at all.
+    const seen: string[] = [];
+    const fetchJob = vi.fn().mockImplementation(async () => {
+      const status = ["running", "cancelling", "done"][seen.length] ?? "done";
+      seen.push(status);
+      return { status, result: { project_dir: "generated/x" } };
+    });
+    const setStatus = vi.fn();
+    const addActivity = vi.fn();
+    const api = renderHook(() =>
+      useExecutionJobPolling({
+        setStatus,
+        addActivity,
+        doneLabel: "done",
+        failedLabel: "failed",
+        cancelledLabel: "cancelled",
+        projectDirOnDone: true,
+        fetchJob
+      })
+    );
+
+    act(() => api.result.current.start("job-1"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500 * 3 + 10);
+    });
+
+    expect(seen).toEqual(["running", "cancelling", "done"]);
+    expect(setStatus).toHaveBeenCalledWith("ready");
+    expect(addActivity).toHaveBeenCalledWith("done", "generated/x");
+    expect(api.result.current.jobId).toBeNull();
+  });
+
+  it("settles on a status it does not recognise instead of polling forever", async () => {
+    // The mirror image, and the one that catches the real regression: narrowing
+    // the "keep polling" condition to `status !== "done"` looks like a tidy
+    // simplification and silently turns every `cancelled` run into an interval
+    // that never stops. A queue-driven stub cannot see this -- it hands out
+    // `done` after a fixed number of polls however the caller branched.
+    let answered = 0;
+    const fetchJob = vi.fn().mockImplementation(async () => {
+      answered += 1;
+      return answered === 1
+        ? { status: "cancelling" }
+        : { status: "cancelled", error: "operator stopped it" };
+    });
+    const setStatus = vi.fn();
+    const addActivity = vi.fn();
+    const api = renderHook(() =>
+      useExecutionJobPolling({
+        setStatus,
+        addActivity,
+        doneLabel: "done",
+        failedLabel: "failed",
+        cancelledLabel: "cancelled",
+        fetchJob
+      })
+    );
+
+    act(() => api.result.current.start("job-1"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500 * 4 + 10);
+    });
+
+    expect(fetchJob).toHaveBeenCalledTimes(2);
+    expect(setStatus).toHaveBeenCalledWith("idle");
+    expect(addActivity).toHaveBeenCalledWith("cancelled", "operator stopped it");
+    expect(api.result.current.jobId).toBeNull();
+  });
+
+  it("stops the timer when the panel unmounts", async () => {
+    // The console is never unmounted while a job runs (views stay mounted by
+    // design), but the hook must not depend on that: an interval left running
+    // after unmount keeps calling a fetch for a job nobody is watching.
+    const fetchJob = vi.fn().mockResolvedValue({ status: "running" });
+    const api = renderHook(() => useExecutionJobPolling({ ...labels, fetchJob }));
+
+    act(() => api.result.current.start("job-1"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    const callsBeforeUnmount = fetchJob.mock.calls.length;
+    expect(callsBeforeUnmount).toBeGreaterThan(0);
+
+    api.unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4500);
+    });
+
+    expect(fetchJob).toHaveBeenCalledTimes(callsBeforeUnmount);
   });
 });
