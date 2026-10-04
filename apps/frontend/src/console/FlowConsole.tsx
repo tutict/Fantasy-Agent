@@ -43,11 +43,13 @@ import {
   useActivityLog,
   useApprovalManifest,
   useAssetJobPolling,
+  useCorrections,
   useDemoJobPolling,
   useEnemyTuning,
   useManualTargets,
   usePlaytestJobPolling,
   usePlanningHandoff,
+  useSessionState,
   useSpecPreview,
   useSpecRegen
 } from "./hooks";
@@ -107,11 +109,6 @@ export function FlowConsole({ active = true, focus = "review", reviewStage = "" 
   // effects writing the same attribute is a race with no author.
   const { locale, theme, setLocale, setTheme } = useLocaleTheme();
   const [status, setStatus] = useState<StatusState>("idle");
-  const [selectedCorrectionMode, setSelectedCorrectionMode] = useState<CorrectionMode>("gameplay");
-  const [correctionEntries, setCorrectionEntries] = useState<Array<{ mode: CorrectionMode; notes: string; createdAt: string }>>([]);
-  const [correctionNotes, setCorrectionNotes] = useState("");
-  const [correctionScan, setCorrectionScan] = useState<CorrectionReport | null>(null);
-  const [scanningCorrections, setScanningCorrections] = useState(false);
   const [activeTab, setActiveTab] = useState<TabKey>(focus);
   const [pendingResume, setPendingResume] = useState<string | null>(null);
   const [pendingManualTarget, setPendingManualTarget] = useState<string | null>(null);
@@ -120,19 +117,12 @@ export function FlowConsole({ active = true, focus = "review", reviewStage = "" 
   const [withVisuals, setWithVisuals] = useState(false);
   const [withGameplay, setWithGameplay] = useState(false);
   const [generateEffects, setGenerateEffects] = useState<string[] | null>(null);
-  const [generateResult, setGenerateResult] = useState<ExecuteResult | null>(null);
-  const [pollJobId, setPollJobId] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [sessionState, setSessionState] = useState<SessionState | null>(null);
   const [assetWithAssets, setAssetWithAssets] = useState(true);
   const [assetWithVisuals, setAssetWithVisuals] = useState(true);
   const [assetEffects, setAssetEffects] = useState<string[] | null>(null);
-  const [assetResult, setAssetResult] = useState<ExecuteResult | null>(null);
-  const [pollAssetJobId, setPollAssetJobId] = useState<string | null>(null);
   const [playtestRuns, setPlaytestRuns] = useState(3);
   const [playtestEffects, setPlaytestEffects] = useState<string[] | null>(null);
-  const [playtestResult, setPlaytestResult] = useState<PlaytestResult | null>(null);
-  const [pollPlaytestJobId, setPollPlaytestJobId] = useState<string | null>(null);
 
   const t = useMemo(() => makeTranslator(locale, consoleI18n), [locale]);
 
@@ -166,6 +156,92 @@ export function FlowConsole({ active = true, focus = "review", reviewStage = "" 
   });
 
   const modeLabel = useCallback((mode: CorrectionMode) => t(correctionModeKeys[mode] || "modeGameplay"), [t]);
+
+  /**
+   * The three background jobs, each owning its own id and result. They sit at
+   * the top of the component because everything below them reads what they
+   * produce: the project a playtest measures, the session's node states, the
+   * correction queue's scan. The `visitedPanels` contract (a view is never
+   * unmounted, so an in-flight job keeps running) is why keeping this state
+   * inside the component's hooks is safe and hoisting it to a provider is not.
+   */
+  const {
+    jobId: pollJobId,
+    result: generateResult,
+    cancelling: demoCancelling,
+    cancel: cancelDemoJob,
+    start: startDemoJob,
+    reset: resetDemoJob
+  } = useDemoJobPolling({
+    setStatus,
+    addActivity,
+    doneLabel: t("generateDone"),
+    failedLabel: t("generateFailed"),
+    cancelledLabel: t("generateCancelled"),
+    projectDirOnDone: true
+  });
+
+  const {
+    jobId: pollAssetJobId,
+    result: assetResult,
+    cancelling: assetCancelling,
+    cancel: cancelAssetJob,
+    start: startAssetJob,
+    reset: resetAssetJob
+  } = useAssetJobPolling({
+    setStatus,
+    addActivity,
+    doneLabel: t("assetExecutionDone"),
+    failedLabel: t("assetExecutionFailed"),
+    cancelledLabel: t("assetExecutionCancelled")
+  });
+
+  const {
+    jobId: pollPlaytestJobId,
+    result: playtestResult,
+    cancelling: playtestCancelling,
+    cancel: cancelPlaytestRun,
+    start: startPlaytestJob,
+    reset: resetPlaytestJob
+  } = usePlaytestJobPolling({
+    setStatus,
+    addActivity,
+    doneLabel: t("playtestDone"),
+    failedLabel: t("playtestFailed"),
+    cancelledLabel: t("playtestCancelled")
+  });
+
+  // Once a run settles, read back which nodes finished so the operator can
+  // re-run one of them instead of the whole chain.
+  const { state: sessionState } = useSessionState({
+    sessionId,
+    engine: usesGodotEngine(currentPlan) ? "godot" : "unreal",
+    busy: Boolean(pollJobId)
+  });
+
+  // The project a playtest measures: whatever the last run produced, or the
+  // session it belongs to. Without a directory there is nothing to play.
+  const playtestProjectDir =
+    playtestResult?.project_dir || generateResult?.project_dir || sessionState?.project_dir || "";
+
+  const {
+    mode: selectedCorrectionMode,
+    setMode: setSelectedCorrectionMode,
+    entries: correctionEntries,
+    notes: correctionNotes,
+    setNotes: setCorrectionNotes,
+    scan: correctionScan,
+    scanning: scanningCorrections,
+    record: recordCorrection,
+    runScan: scanCorrections
+  } = useCorrections({
+    projectDir: playtestProjectDir,
+    hasPlan: Boolean(currentPlan),
+    modeLabel,
+    t,
+    setStatus,
+    addActivity
+  });
 
   const recommendedManualTargetId = useCallback(() => {
     const mapped = correctionModeManualTargets[selectedCorrectionMode] || "planning";
@@ -206,80 +282,6 @@ const demoPhase = operationPhase({
   const targets = manualTargetsPayload?.targets?.length ? manualTargetsPayload.targets : fallbackManualTargets();
   const recommendedTarget = targets.find((target) => target.id === recommendedManualTargetId()) || targets[0];
   const enemies = currentPlan?.gameplay_spec?.enemies || [];
-
-  const { cancelling: demoCancelling, cancel: cancelDemoJob } = useDemoJobPolling({
-    jobId: pollJobId,
-    setJobId: setPollJobId,
-    setResult: setGenerateResult,
-    setStatus,
-    addActivity,
-    doneLabel: t("generateDone"),
-    failedLabel: t("generateFailed"),
-    cancelledLabel: t("generateCancelled"),
-    projectDirOnDone: true
-  });
-
-  const { cancelling: assetCancelling, cancel: cancelAssetJob } = useAssetJobPolling({
-    jobId: pollAssetJobId,
-    setJobId: setPollAssetJobId,
-    setResult: setAssetResult,
-    setStatus,
-    addActivity,
-    doneLabel: t("assetExecutionDone"),
-    failedLabel: t("assetExecutionFailed"),
-    cancelledLabel: t("assetExecutionCancelled")
-  });
-
-  const { cancelling: playtestCancelling, cancel: cancelPlaytestRun } = usePlaytestJobPolling({
-    jobId: pollPlaytestJobId,
-    setJobId: setPollPlaytestJobId,
-    setResult: setPlaytestResult,
-    setStatus,
-    addActivity,
-    doneLabel: t("playtestDone"),
-    failedLabel: t("playtestFailed"),
-    cancelledLabel: t("playtestCancelled")
-  });
-
-  const recordCorrection = () => {
-    const notes = correctionNotes.trim();
-    if (!currentPlan) {
-      setStatus("error");
-      addActivity(t("correctionRequiresPlan"), t("openPlanningHint"));
-      return;
-    }
-    if (!notes) return;
-    setCorrectionEntries((entries) => [{ mode: selectedCorrectionMode, notes, createdAt: new Date().toISOString() }, ...entries].slice(0, 12));
-    setCorrectionNotes("");
-    setStatus("ready");
-    addActivity(t("correctionRecorded"), `${modeLabel(selectedCorrectionMode)}: ${notes}`);
-  };
-
-  /**
-   * Ask the backend what changed in the project since this pipeline wrote it.
-   *
-   * Read-only, so unlike the other actions here it needs no confirmation --
-   * the panel's job is to make a silent overwrite visible, and a gate in front
-   * of "read the files" would train the operator to click through gates.
-   */
-  const scanCorrections = async () => {
-    if (!playtestProjectDir) {
-      addActivity(t("correctionScanFailed"), t("playtestNeedsProject"));
-      return;
-    }
-    setScanningCorrections(true);
-    try {
-      const scan = await inspectCorrections(playtestProjectDir);
-      setCorrectionScan(scan.report || null);
-      addActivity(t("correctionScanned"), scan.summary || "");
-    } catch (error) {
-      setCorrectionScan(null);
-      setStatus("error");
-      addActivity(t("correctionScanFailed"), String(error));
-    } finally {
-      setScanningCorrections(false);
-    }
-  };
 
   const openManualTarget = async (targetId: string) => {    if (targetId === "planning") {
       // Opened as a document of its own, so it reads locale and theme from the
@@ -338,7 +340,7 @@ const demoPhase = operationPhase({
   const startGenerate = async (resumeFrom?: string) => {
     if (!currentPlan) return;
     setGenerateEffects(null);
-    setGenerateResult(null);
+    resetDemoJob();
     setStatus("running");
     addActivity(
       resumeFrom ? t("reworkRunning") : t("generateRunning"),
@@ -358,7 +360,7 @@ const demoPhase = operationPhase({
         resumeFrom ? { sessionId: sessionId || undefined, resumeFrom } : {}
       );
       if (started.job_id) {
-        setPollJobId(started.job_id);
+        startDemoJob(started.job_id);
         if (started.session_id) setSessionId(started.session_id);
       } else {
         setStatus("error");
@@ -369,28 +371,6 @@ const demoPhase = operationPhase({
       addActivity(t("generateFailed"), String(error));
     }
   };
-
-  // Once a run settles, read back which nodes finished so the operator can
-  // re-run one of them instead of the whole chain.
-  useEffect(() => {
-    if (!sessionId || pollJobId) return;
-    let cancelled = false;
-    void getSessionState(sessionId, usesGodotEngine(currentPlan) ? "godot" : "unreal")
-      .then((state) => {
-        if (!cancelled) setSessionState(state);
-      })
-      .catch(() => {
-        if (!cancelled) setSessionState(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentPlan, pollJobId, sessionId]);
-
-  // The project a playtest measures: whatever the last run produced, or the
-  // session it belongs to. Without a directory there is nothing to play.
-  const playtestProjectDir =
-    playtestResult?.project_dir || generateResult?.project_dir || sessionState?.project_dir || "";
 
   const onPlaytestClick = async () => {
     if (!playtestProjectDir) {
@@ -414,7 +394,7 @@ const demoPhase = operationPhase({
   const startPlaytestRun = async () => {
     if (!playtestProjectDir) return;
     setPlaytestEffects(null);
-    setPlaytestResult(null);
+    resetPlaytestJob();
     setStatus("running");
     addActivity(t("playtestRunning"), playtestProjectDir);
     try {
@@ -424,7 +404,7 @@ const demoPhase = operationPhase({
         goal_session_minutes: currentPlan?.gameplay_spec?.target_session_minutes
       });
       if (started.job_id) {
-        setPollPlaytestJobId(started.job_id);
+        startPlaytestJob(started.job_id);
       } else {
         setStatus("error");
         addActivity(t("playtestFailed"), started.status || "");
@@ -453,13 +433,13 @@ const demoPhase = operationPhase({
   const startAssetWorkers = async () => {
     if (!currentPlan) return;
     setAssetEffects(null);
-    setAssetResult(null);
+    resetAssetJob();
     setStatus("running");
     addActivity(t("assetExecutionRunning"), "");
     try {
       const started = await startAssetExecution(currentPlan, assetWithAssets, assetWithVisuals);
       if (started.job_id) {
-        setPollAssetJobId(started.job_id);
+        startAssetJob(started.job_id);
       } else {
         setStatus("error");
         addActivity(t("assetExecutionFailed"), started.status || "");

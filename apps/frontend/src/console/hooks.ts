@@ -7,6 +7,8 @@ import {
   getExecuteJob,
   getManualCorrectionTargets,
   getPlaytestJob,
+  getSessionState,
+  inspectCorrections,
   previewGameplaySpec,
   previewSpecBundle,
   writeApprovalManifest
@@ -14,6 +16,7 @@ import {
 import { HANDOFF_KEY, readPlanningHandoff, savePlanningHandoff } from "../shared/storage";
 import type {
   CorrectionMode,
+  CorrectionReport,
   DirectorBuildPlan,
   EnemyPressureTuning,
   ExecuteResult,
@@ -25,6 +28,7 @@ import type {
   PlaytestResult,
   ProductionSpecBundle,
   PromptRequest,
+  SessionState,
   SpecBundlePreviewResponse,
   StatusState
 } from "../shared/types";
@@ -421,10 +425,20 @@ export function usePlanningHandoff({
   };
 }
 
+/**
+ * One job, polled to completion.
+ *
+ * The `jobId` and the result live **here**, not in the caller. They used to be
+ * passed in as `jobId` / `setJobId` / `setResult`, which meant every consumer
+ * kept three `useState` declarations for a mechanism it did not own -- and
+ * `FlowConsole` ended up with 28 of them across three concurrent jobs.
+ *
+ * `start(jobId)` replaces the old "set the state from outside" arrangement, and
+ * `reset()` is what a self-owned hook owes its caller: without it there is no
+ * way to clear a finished run, and the previous run's stage cards stay on screen
+ * after you start a new one.
+ */
 export function useExecutionJobPolling<T extends { project_dir?: string }>({
-  jobId,
-  setJobId,
-  setResult,
   setStatus,
   addActivity,
   doneLabel,
@@ -434,9 +448,6 @@ export function useExecutionJobPolling<T extends { project_dir?: string }>({
   fetchJob,
   cancelJob
 }: {
-  jobId: string | null;
-  setJobId: (jobId: string | null) => void;
-  setResult: (result: T | null) => void;
   setStatus: (status: StatusState) => void;
   addActivity: (label: string, message: string) => void;
   doneLabel: string;
@@ -446,7 +457,21 @@ export function useExecutionJobPolling<T extends { project_dir?: string }>({
   fetchJob: (jobId: string) => Promise<{ status?: string; result?: T; error?: string }>;
   cancelJob?: (jobId: string) => Promise<unknown>;
 }) {
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [result, setResult] = useState<T | null>(null);
   const [cancelling, setCancelling] = useState(false);
+
+  const start = useCallback((nextJobId: string) => {
+    setResult(null);
+    setCancelling(false);
+    setJobId(nextJobId);
+  }, []);
+
+  const reset = useCallback(() => {
+    setResult(null);
+    setCancelling(false);
+    setJobId(null);
+  }, []);
 
   const cancel = useCallback(async () => {
     if (!jobId || !cancelJob) return;
@@ -502,7 +527,7 @@ export function useExecutionJobPolling<T extends { project_dir?: string }>({
     setStatus
   ]);
 
-  return { cancelling, cancel };
+  return { jobId, result, cancelling, cancel, start, reset };
 }
 
 export function useDemoJobPolling(args: Omit<Parameters<typeof useExecutionJobPolling>[0], "fetchJob" | "cancelJob">) {
@@ -513,16 +538,9 @@ export function useAssetJobPolling(args: Omit<Parameters<typeof useExecutionJobP
   return useExecutionJobPolling({ ...args, fetchJob: getAssetExecutionJob, cancelJob: cancelAssetExecutionJob });
 }
 
-export function usePlaytestJobPolling(args: {
-  jobId: string | null;
-  setJobId: (jobId: string | null) => void;
-  setResult: (result: PlaytestResult | null) => void;
-  setStatus: (status: StatusState) => void;
-  addActivity: (label: string, message: string) => void;
-  doneLabel: string;
-  failedLabel: string;
-  cancelledLabel: string;
-}) {
+export function usePlaytestJobPolling(
+  args: Omit<Parameters<typeof useExecutionJobPolling<PlaytestResult>>[0], "fetchJob" | "cancelJob">
+) {
   return useExecutionJobPolling<PlaytestResult>({
     ...args,
     fetchJob: getPlaytestJob,
@@ -570,4 +588,118 @@ export function useApprovalManifest({
   }, [addActivity, currentPlan, onBundleSynced, reviewDecisions, setStatus, t]);
 
   return { approvalManifestPath, setApprovalManifestPath, onWriteApprovalManifest };
+}
+
+/**
+ * The correction queue: what the operator typed as feedback, and what a scan of
+ * the generated project found changed.
+ *
+ * Both halves used to be five `useState` declarations in `FlowConsole`, sitting
+ * next to two dozen others. They are one concern -- "what did the operator say,
+ * and has the generated code caught up with it" -- and pulling them out is what
+ * left the main component holding only what it renders.
+ */
+export function useCorrections({
+  projectDir,
+  hasPlan,
+  modeLabel,
+  t,
+  setStatus,
+  addActivity
+}: {
+  projectDir: string;
+  hasPlan: boolean;
+  modeLabel: (mode: CorrectionMode) => string;
+  t: (key: string, args?: Record<string, unknown>) => string;
+  setStatus: (status: StatusState) => void;
+  addActivity: (label: string, message: string) => void;
+}) {
+  const [mode, setMode] = useState<CorrectionMode>("gameplay");
+  const [entries, setEntries] = useState<CorrectionEntry[]>([]);
+  const [notes, setNotes] = useState("");
+  const [scan, setScan] = useState<CorrectionReport | null>(null);
+  const [scanning, setScanning] = useState(false);
+
+  const record = useCallback(() => {
+    // A correction is feedback *on a plan*. Without one there is nothing to
+    // attach it to, and recording it anyway produces a note the operator will
+    // later try to act on.
+    if (!hasPlan) {
+      setStatus("error");
+      addActivity(t("correctionRequiresPlan"), t("openPlanningHint"));
+      return;
+    }
+    const trimmed = notes.trim();
+    if (!trimmed) return;
+    setEntries((previous) => [
+      { mode, notes: trimmed, createdAt: new Date().toISOString() },
+      ...previous
+    ].slice(0, 12));
+    setNotes("");
+    setStatus("ready");
+    addActivity(t("correctionRecorded"), `${modeLabel(mode)}: ${trimmed}`);
+  }, [addActivity, hasPlan, mode, modeLabel, notes, setStatus, t]);
+
+  /**
+   * Read-only, so unlike the execution actions here it takes no confirmation.
+   * A gate in front of "read the files" would only teach the operator to click
+   * through gates -- and the scan exists to make a silent overwrite visible,
+   * which is the last thing worth putting behind a click.
+   */
+  const runScan = useCallback(async () => {
+    if (!projectDir) {
+      addActivity(t("correctionScanFailed"), t("playtestNeedsProject"));
+      return;
+    }
+    setScanning(true);
+    try {
+      const result = await inspectCorrections(projectDir);
+      setScan(result.report || null);
+      addActivity(t("correctionScanned"), result.summary || "");
+    } catch (error) {
+      setScan(null);
+      setStatus("error");
+      addActivity(t("correctionScanFailed"), String(error));
+    } finally {
+      setScanning(false);
+    }
+  }, [addActivity, projectDir, setStatus, t]);
+
+  return { mode, setMode, entries, notes, setNotes, scan, scanning, record, runScan };
+}
+
+/**
+ * The session's node-by-node state, read back after a run settles.
+ *
+ * `busy` is why this is a hook and not a `useEffect` left in the component: the
+ * read must not fire while a job is in flight, and that condition is the one
+ * piece of state the component owns and this one does not.
+ */
+export function useSessionState({
+  sessionId,
+  engine,
+  busy
+}: {
+  sessionId: string | null;
+  engine: string;
+  busy: boolean;
+}) {
+  const [state, setState] = useState<SessionState | null>(null);
+
+  useEffect(() => {
+    if (!sessionId || busy) return;
+    let cancelled = false;
+    void getSessionState(sessionId, engine)
+      .then((next) => {
+        if (!cancelled) setState(next);
+      })
+      .catch(() => {
+        if (!cancelled) setState(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [busy, engine, sessionId]);
+
+  return { state };
 }
