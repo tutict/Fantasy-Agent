@@ -74,6 +74,7 @@
 - 对打包原型运行冒烟测试。
 - 打开包含生成 spec、manifest 和自动化日志的 GitHub PR。
 - 跟踪不同原型迭代的指标。
+- [x] Godot 无头试玩：headless 真跑生成的原型，采集单局结果、时长分布与失败原因，未达标项映射 `rework_target`；机器 QA 断言在有实测时改用真实采样。
 
 ## M7：Agent 可执行生产 Spec
 
