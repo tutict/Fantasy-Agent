@@ -58,7 +58,7 @@
   --grid-line-a: rgba(28, 25, 23, .045);
   --grid-line-b: rgba(28, 25, 23, .025);
   --line: #d8d0c3;
-  --text-placeholder: #6b666080;
+  --text-placeholder: #5f5a55;
   --surface-translucent: #ffffff6b;
   --brand-tint: #035f5214;
   --line-strong: #6f5648;
@@ -128,7 +128,7 @@
   --grid-line-a: rgba(236, 230, 220, .035);
   --grid-line-b: rgba(236, 230, 220, .02);
   --line: #3a433f;
-  --text-placeholder: #b6b0a680;
+  --text-placeholder: #a8a29a;
   --surface-translucent: #0000001f;
   --brand-tint: #8fd0c21f;
   --line-strong: #c4a48c;

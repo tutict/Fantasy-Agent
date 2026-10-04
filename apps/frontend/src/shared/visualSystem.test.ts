@@ -6,10 +6,51 @@ import { describe, expect, it } from "vitest";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const tokens = readFileSync(resolve(root, "styles/tokens.css"), "utf8");
 const [light, dark] = tokens.split(':root[data-theme="dark"]');
-const COLOR = /(--[a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6})/g;
+const COLOR = /(--[a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})/g;
+
+/**
+ * Tokens whose value carries an alpha channel, so what the operator sees is a
+ * composite and the number a contrast test computes from the literal is the
+ * wrong one.
+ *
+ * This list is why the matchers below accept both 8-digit hex and `rgba()`.
+ * `hexes()` used to accept 6-digit hex only, which made the translucent values
+ * invisible to it -- they were in the file and no assertion could see them. An
+ * invisible value is worse than a wrong one: `--text-placeholder` sat at
+ * `#6b666080` (50% alpha) through a whole round of colour work with nothing
+ * reporting that what it composites to is 1.70:1 on the light surfaces.
+ *
+ * Every entry must earn its place: the assertions below require each name to be
+ * declared in both themes and read by at least one `var()`.
+ */
+const ALPHA_TOKENS = [
+  // The focus ring and the grid lines are translucent *by design* -- a ring has
+  // to blend with whatever it lands on. Their visibility is asserted by
+  // computing the composite, not by reading the literal.
+  "--focus-soft",
+  "--grid-line-a",
+  "--grid-line-b",
+  "--brand-tint",
+  "--surface-translucent"
+];
 
 function hexes(block: string): Map<string, string> {
   return new Map([...block.matchAll(COLOR)].map((match) => [match[1], match[2].toLowerCase()]));
+}
+
+/**
+ * Every declared value that is not plain opaque hex: 8-digit literals and
+ * `rgba()` alike. Used to notice a translucent token that nobody put on
+ * `ALPHA_TOKENS`.
+ */
+function translucentValues(block: string): { name: string; value: string }[] {
+  const out: { name: string; value: string }[] = [];
+  for (const match of block.matchAll(/^\s*(--[a-z0-9-]+)\s*:\s*([^;]+)/gm)) {
+    const value = match[2].trim().toLowerCase();
+    if (/^#[0-9a-f]{8}$/.test(value) && !value.endsWith("ff")) out.push({ name: match[1], value });
+    else if (/^rgba?\(/.test(value)) out.push({ name: match[1], value });
+  }
+  return out;
 }
 
 function channel(hex: string): [number, number, number] {
@@ -82,6 +123,78 @@ describe("drafting-table tokens", () => {
       }
       for (const data of ["--data-1", "--data-2", "--data-3", "--data-4", "--data-5", "--data-6"]) {
         expect(contrast(block.get(data)!, block.get("--surface")!), data).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it("composite the translucent tokens instead of trusting their literals", () => {
+    // An 8-digit literal is a lie about what gets rendered: `#6b666080` is 50%
+    // alpha, and on a light surface the pixels that reach the eye are a blend of
+    // that colour and the surface underneath. Reading the literal as if it were
+    // opaque is how `--text-placeholder` held a 1.70:1 reading through a whole
+    // round of colour work.
+    //
+    // So: every value with an alpha channel has to be on the list, and every
+    // name on the list has to be declared in both themes and read somewhere. A
+    // list entry nothing uses is a comment pretending to be a guard.
+    //
+    // "Read somewhere" includes being read by *another token* rather than by a
+    // component: `--focus-soft` is only ever referenced from `--focus-ring`,
+    // which is what the components use. Requiring a component to name it
+    // directly would have failed on a token that is genuinely in use.
+    const stylesDir = resolve(root, "styles");
+    const consumers = [tokens, ...readdirSync(stylesDir)
+      .filter((name) => name.endsWith(".css") && name !== "tokens.css")
+      .map((name) => readFileSync(resolve(stylesDir, name), "utf8"))].join("\n");
+
+    expect(ALPHA_TOKENS.length).toBeGreaterThanOrEqual(5);
+    for (const name of ALPHA_TOKENS) {
+      for (const [theme, block] of [["light", light], ["dark", dark]] as const) {
+        const declared = [...block.matchAll(new RegExp(`^\\s*${name}\\s*:\\s*([^;]+)`, "gm"))];
+        expect(declared.length, `${name} is missing from the ${theme} block`).toBe(1);
+        expect(
+          declared[0][1].trim(),
+          `${name} (${theme}) is on the translucent list, so it must actually be translucent`
+        ).toMatch(/^(#[0-9a-f]{8}|rgba?\()/);
+      }
+      expect(consumers.includes(`var(${name})`), `${name} is declared but nothing reads it`).toBe(true);
+    }
+
+    // And the other direction: anything translucent in *either* block has to be
+    // on the list.
+    //
+    // `[light, dark]` -- an array of the two blocks. Spreading them instead
+    // (`[...light, ...dark]`) spreads a *string*, which yields an array of
+    // characters; `flatMap` over characters finds nothing and the assertion
+    // passes on an empty list forever. It did exactly that here: the check ran,
+    // the input was `[]`, and a token with an alpha channel could be added to
+    // either theme without anything reporting it.
+    const unlisted = [
+      ...new Set(
+        [light, dark]
+          .flatMap((block) => translucentValues(block).map((item) => item.name))
+          .filter((name) => !ALPHA_TOKENS.includes(name))
+      )
+    ];
+    expect(
+      unlisted,
+      "these carry an alpha channel but are not on ALPHA_TOKENS, so no assertion computes their composite"
+    ).toEqual([]);
+  });
+
+  it("keeps placeholder text readable on every surface it lands on", () => {
+    // This is the only clue the operator has about how to phrase a correction
+    // ("be specific about what is wrong and where"). It was 1.70:1 on the light
+    // surfaces and nothing reported it, because the declared value was 8-digit
+    // and the contrast helper read it as opaque.
+    const surfaces = ["--field", "--surface", "--surface-muted", "--tab-bg"];
+    for (const [block, theme] of [[light, "light"], [dark, "dark"]] as const) {
+      const map = hexes(block);
+      for (const surface of surfaces) {
+        expect(
+          contrast(map.get("--text-placeholder")!, map.get(surface)!),
+          `placeholder on ${surface} (${theme})`
+        ).toBeGreaterThanOrEqual(4.5);
       }
     }
   });

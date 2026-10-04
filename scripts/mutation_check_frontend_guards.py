@@ -379,6 +379,34 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/shared/visualSystem.test.ts",
         "does not define a text step that nothing references",
     ),
+    (
+        # The correction box's example prompt going back to 50% alpha. That text
+        # is the only clue the operator has about how to phrase a correction, and
+        # at `#6b666080` it composites to 1.70:1 on the light surfaces -- a
+        # reading no assertion reported, because the contrast helper read an
+        # 8-digit literal as if it were opaque.
+        "FE7-3 the correction prompt drops back to 50% alpha",
+        "apps/frontend/src/styles/tokens.css",
+        b"  --text-placeholder: #5f5a55;\n",
+        b"  --text-placeholder: #6b666080;\n",
+        "src/shared/visualSystem.test.ts",
+        "keeps placeholder text readable on every surface it lands on",
+    ),
+    (
+        # A new translucent token nobody registered. The reverse direction: the
+        # list is only worth something if a value with an alpha channel cannot
+        # join the file unobserved.
+        #
+        # This case exists because that assertion was silently vacuous for one
+        # round -- `[...light, ...dark]` spreads the two *strings* into
+        # characters, so the scan saw an empty list and passed on it.
+        "FE7-4 a translucent token joins the file unregistered",
+        "apps/frontend/src/styles/tokens.css",
+        b"  --text-placeholder: #5f5a55;\n",
+        b"  --text-placeholder: #5f5a55;\n  --mystery-wash: #12345680;\n",
+        "src/shared/visualSystem.test.ts",
+        "composite the translucent tokens instead of trusting their literals",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.
