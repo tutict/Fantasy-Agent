@@ -69,7 +69,7 @@ button:disabled {
   overflow: hidden;
   border-right: 1px solid var(--line);
   background: var(--chrome);
-  padding: var(--space-5) 14px;
+  padding: var(--space-5) var(--space-3_5);
 }
 
 .studio-sidebar-header {
@@ -328,7 +328,7 @@ button:disabled {
   border-radius: var(--radius-m);
   background: var(--accent);
   color: var(--on-brand);
-  padding: 0 14px;
+  padding: 0 var(--space-3_5);
   font-size: var(--text-s);
   font-weight: 850;
 }
@@ -447,7 +447,7 @@ button:disabled {
   border-radius: var(--radius-m);
   background: var(--surface);
   color: var(--text);
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   font: inherit;
 }
 
@@ -483,7 +483,7 @@ button:disabled {
 .api-state-card code {
   background: var(--code-bg);
   border-radius: var(--radius-s);
-  padding: var(--space-1) 6px;
+  padding: var(--space-1) var(--space-1_5);
   word-break: break-all;
 }
 
@@ -505,7 +505,7 @@ button:disabled {
   background: var(--field);
   color: inherit;
   font: inherit;
-  padding: var(--space-2) 10px;
+  padding: var(--space-2) var(--space-2_5);
   resize: vertical;
 }
 
@@ -525,7 +525,7 @@ button:disabled {
   border-left: 3px solid var(--brand);
   border-radius: var(--radius-m-lg);
   background: var(--chrome);
-  padding: var(--space-3_5) 16px;
+  padding: var(--space-3_5) var(--space-4);
 }
 
 .agent-answer p {
@@ -544,7 +544,7 @@ button:disabled {
   border-left: 3px solid var(--muted);
   border-radius: var(--radius-m-lg);
   background: var(--chrome);
-  padding: var(--space-3) 14px;
+  padding: var(--space-3) var(--space-3_5);
 }
 
 .agent-call[data-status="ok"] {
@@ -569,7 +569,7 @@ button:disabled {
 .agent-call-top code {
   background: var(--code-bg);
   border-radius: var(--radius-s);
-  padding: var(--space-1) 6px;
+  padding: var(--space-1) var(--space-1_5);
 }
 
 .agent-call-status {
@@ -622,7 +622,7 @@ button:disabled {
 }
 
 .tool-catalog-group h4 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   color: var(--muted);
   font-size: var(--text-s);
   text-transform: uppercase;
@@ -634,7 +634,7 @@ button:disabled {
   border-left: 3px solid var(--muted);
   border-radius: var(--radius-m);
   background: var(--chrome);
-  padding: var(--space-2_5) 12px;
+  padding: var(--space-2_5) var(--space-3);
   margin-bottom: var(--space-2);
 }
 
@@ -656,7 +656,7 @@ button:disabled {
 .tool-row-top code {
   background: var(--code-bg);
   border-radius: var(--radius-s);
-  padding: var(--space-1) 6px;
+  padding: var(--space-1) var(--space-1_5);
   word-break: break-all;
 }
 
@@ -721,7 +721,7 @@ button:disabled {
 .studio-nav button.active .nav-index { background: var(--brand); color: var(--on-brand); }
 .settings-nav { display: grid; gap: var(--space-1_5); margin-top: var(--space-5); }
 .settings-nav summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted-strong); }
-.settings-nav button { min-height: 44px; display: flex; align-items: center; padding: 0 12px; border: 0; border-radius: var(--radius-m); background: transparent; color: inherit; text-align: left; }
+.settings-nav button { min-height: 44px; display: flex; align-items: center; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-m); background: transparent; color: inherit; text-align: left; }
 .settings-nav button.active { background: var(--accent-soft); color: var(--accent-deep); }
 .studio-topbar { min-height: auto; align-items: stretch; }
 .studio-topbar .journey-header { width: 100%; margin: 0; }

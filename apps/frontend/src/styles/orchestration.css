@@ -32,7 +32,7 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2) 18px;
-  padding: var(--space-2_5) 14px;
+  padding: var(--space-2_5) var(--space-3_5);
   border: 1px solid var(--line);
   border-radius: var(--radius-m);
   background: var(--surface-muted);
@@ -60,7 +60,7 @@
 
 .or-pending {
   margin: 0;
-  padding: var(--space-2_5) 14px;
+  padding: var(--space-2_5) var(--space-3_5);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
   background: var(--amber-soft);
@@ -70,14 +70,14 @@
 }
 
 .or-gates {
-  padding: var(--space-3) 14px;
+  padding: var(--space-3) var(--space-3_5);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
   background: var(--blue-soft);
 }
 
 .or-gates h4 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
   color: var(--blue);
   font-size: var(--text-s);
   letter-spacing: 0.04em;
@@ -104,7 +104,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3_5) 16px;
+  padding: var(--space-3_5) var(--space-4);
   border: 1px solid var(--line);
   border-left: 3px solid var(--line);
   border-radius: var(--radius-m-lg);
@@ -205,7 +205,7 @@
 }
 
 .or-answer {
-  padding: var(--space-2) 10px;
+  padding: var(--space-2) var(--space-2_5);
   border-radius: var(--radius-s);
   background: var(--code-bg);
   color: var(--muted-strong);
@@ -244,7 +244,7 @@
 }
 
 .or-button {
-  padding: var(--space-1) 12px;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
   background: var(--tab-bg);

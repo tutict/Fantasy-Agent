@@ -134,11 +134,16 @@ const SCALE_PROPERTIES =
   /\b(font-size|line-height|gap|row-gap|column-gap|(?:padding|margin)(?:-[a-z]+)?|border-radius)\s*:([^;{}]*)/;
 
 /**
- * Three values that are deliberately not on the spacing ladder, each with the
- * reason it is not spacing.
+ * Values that are deliberately not on the spacing ladder, each with the reason
+ * it is not spacing.
  *
  * They are listed here rather than papered over with a looser pattern, because
  * the guard is only worth having if every hole in it is a decision on record.
+ *
+ * The ladder runs 4 / 6 / 8 / 10 / 12 / 14 / 16 / 24 / 32 / 48. Everything on it
+ * is a token. These are the values that sit deliberately *between* two rungs,
+ * and adding a rung for each would turn a ladder into a lookup table -- at which
+ * point the token buys nothing over the number.
  */
 const NOT_SPACING = [
   // `padding: 1px` on a scroll container: makes room for the focus ring so the
@@ -149,7 +154,22 @@ const NOT_SPACING = [
   /gap:\s*1px\s*;/,
   // Negative margin pulling a heading back under its section rule. There is no
   // negative step on the ladder, and inventing one would be worse.
-  /margin:\s*-\d/
+  /margin:\s*-\d/,
+  // 2px and 3px between a label and the value under it (`.eyebrow`,
+  // `.rail-title`, `.studio-topbar p`): the tightest spacing in the product, on
+  // purpose. At 4px the label visibly detaches from what it labels.
+  /\b(?:margin|padding)(?:-[a-z]+)?\s*:[^;{}]*\b[23]px\b/,
+  // 7px / 9px / 11px horizontal padding on chips, tabs and the composer
+  // (`.handoff-chip`, `.approval-assets > span`, `.wb-tab`,
+  // `.wb-composer textarea`). The ladder's 6 and 10 bracket them; these sit
+  // inside a control's own padding, where the neighbours decide the padding as
+  // much as the number does, and a shared rung would couple three unrelated
+  // controls to one another's measurements.
+  /padding\s*:[^;{}]*\b(?:7|9|11)px\b/,
+  // 18px between a control cluster and the next cluster (`.top-bar`,
+  // `.or-plan-meta`, `.studio-topbar`). Half a rung above 16 and half a rung
+  // below 24 -- it reads as "a gap, slightly more than the tight one".
+  /\b(?:gap|padding)(?:-[a-z]+)?\s*:[^;{}]*\b18px\b/
 ];
 
 describe("stylesheet hygiene", () => {
