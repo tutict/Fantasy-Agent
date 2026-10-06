@@ -60,3 +60,6 @@ legacy/traffic-management-platform/flutter_app/windows/flutter/ephemeral/
 # Node frontend artifacts
 node_modules/
 apps/frontend/dist/
+
+# Scratch output from brainstorming/design tooling run inside the repo
+.superpowers/
