@@ -31,6 +31,70 @@ def _ids() -> list[str]:
     return [bridge.__name__ for bridge, _, _ in BRIDGES]
 
 
+def test_bridges_keep_their_log_writes_off_the_atomic_helper(tmp_path: Path):
+    """The engine log writes must stay on a plain write, forever.
+
+    This is a guard against a well-meant "let's make them all atomic" sweep.
+    It is not a style preference: `_pump` holds engine log files open with
+    ``path.open("a")`` for the life of the subprocess, and the bridges then
+    write *the same two paths* through ``_write_text`` (see ``godot_mcp``'s
+    import branch). ``run_streaming`` returns after
+    ``pump.join(timeout=PUMP_JOIN_TIMEOUT)`` -- a join allowed to time out -- so
+    the handle can still be open when ``_write_text`` runs, and on Windows an
+    atomic replace then raises ``PermissionError (13)``. The sweep would turn a
+    slow engine log write into a failed tool call.
+
+    Asserted behaviourally rather than by grepping imports, so the guard keeps
+    working even if the helper is reached indirectly.
+    """
+
+    from fantasy_agent.atomic_write import write_atomic
+
+    target = tmp_path / "import.stderr.log"
+    # What _pump holds open for the life of the subprocess.
+    held_open = target.open("a", encoding="utf-8")
+    try:
+        bridge = GodotMCPBridge(tmp_path)
+        bridge._write_text(target, "engine output\n")  # must not raise
+    finally:
+        held_open.close()
+
+    # And the reason, asserted rather than assumed: the collision is real on
+    # this platform. If a future Python or filesystem made replace tolerate an
+    # open target, the sweep would merely become wasteful rather than broken,
+    # and this test would tell us the reason has gone away.
+    with target.open("a", encoding="utf-8"):
+        try:
+            write_atomic(target, "replacement")
+        except PermissionError as exc:
+            assert "拒绝访问" in str(exc) or "Permission denied" in str(exc)
+        else:
+            pytest.skip("this platform now allows replacing an open file")
+
+    assert target.read_text(encoding="utf-8") == "engine output\n"
+
+
+def test_no_bridge_module_reaches_for_the_atomic_helper():
+    """Belt to the behavioural test's braces: no bridge imports it at all.
+
+    Read from the source rather than trusted to the import graph, because the
+    failure being prevented is someone adding the import in the first place.
+    """
+
+    import fantasy_agent
+
+    package = Path(fantasy_agent.__file__).parent
+    offenders = [
+        module.name
+        for module in package.glob("*_mcp.py")
+        if "atomic_write" in module.read_text(encoding="utf-8")
+    ]
+
+    assert offenders == [], (
+        f"engine bridges must keep plain writes: {offenders}"
+    )
+
+
 @pytest.mark.parametrize(("bridge_cls", "error_cls", "good_path"), BRIDGES, ids=_ids())
 def test_bridges_share_one_resolver(bridge_cls, error_cls, good_path, tmp_path: Path):
     bridge = bridge_cls(tmp_path)

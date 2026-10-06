@@ -61,6 +61,16 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - 打包走 `scripts/package_desktop.py --target <platform>`，**只能构建当前平台**，跨平台明确报错。`dist/` 已 gitignore。三平台由 `.github/workflows/release.yml` 的矩阵各自在原生 runner 上构建，产物进草稿 release。
 - 产物**未签名、未公证**。README 和 release notes 都这么写。接入证书之前不得把任何发布描述为"已签名"——`tests/test_packaging.py` 会抓这类措辞。
 
+## 落盘耐久（fantasy_agent/atomic_write.py）
+
+- **会被回读做决策的文件必须走 `atomic_write.write_atomic`**：`_pipeline_state.json`、`llm-api.json`、审批清单、`production-spec-bundle.yaml`。判据是「读回来是为了决定」，不是「文件重要」。半截 JSON 的代价是静默的：这几个文件的加载器遇到解析失败一律降级（`load_state` 返 `None` = 全链重放，`load_settings` 返默认 = 界面显示"未配置"）。
+- **`mcp_bridge._write_text` / `executor.py` 的产物写 / `process_runner` 的流式日志刻意不收口**，这不是遗漏，理由是实测出来的。同一件事有三份落点、各管一段，改任一处前先看另外两处：**判据与后果**在 `atomic_write` 的模块 docstring，**就地提醒**在 `process_runner._truncate` 的注释（就在那个函数上方，改它的人先看到），**规则清单**就是本条。
+- **把 read 和 parse 拆成两个 try 之后，`read_text` 的失败模式必须重新接住。** `UnicodeDecodeError` 是 `ValueError` 而不是 `OSError`：只捕 `OSError` 会让一个非 UTF-8 的状态文件从 `executor.resume_stages`（那里没有任何 handler）抛出去，把「全链重放」变成崩溃。变异用例 K4 / K5。
+- **「文件不存在」不算降级**：`FileNotFoundError` 单独返回、不记 warning，否则每个首次运行都刷一行，真正的信号会被淹掉。`api_settings` 与 `pipeline_state` 各有一条守卫钉住（K3 / `test_a_missing_settings_file_is_not_reported_as_a_fault`）。
+- **含调用方可控 id 的路径日志一律用 `%r`**，不用 `%s`。换行在 `%s` 下会把一条日志劈成两条，凭空伪造出一条 `INFO` 记录。降级 warning 尤其要守这条，因为它们打的就是这个路径。
+- **没有校验和、没有备份轮转、`schema_version` 不做迁移**，这是决定不是遗漏。`os.replace` 已经消灭了唯一的现实损坏源；再加校验和会把「罕见半截文件」换成「罕见静默全量重放」，而用户分辨不出发生了哪个（两个加载器对两者返回同一个值）。迁移函数需要一个「从哪个版本」，而除 `"0.1"` 外从未写过别的版本；本仓对版本不匹配的既定口径是**拒绝**（见 `production_spec_runtime.py`），不是迁移。
+- 给 `StageState` / `PipelineState` 加字段**必须带默认值**：它们是 `extra="forbid"` 模型，旧文件配新模型要靠默认值才读得进来（新文件配旧模型才会被拒——方向与直觉相反，实测过）。理由写在该模块的 `record_stage` docstring 里。
+
 ## 语言规则
 
 - Canonical implementation identifiers 保持英文：class name、Blueprint name、folder path、MCP tool name 和 metric key。

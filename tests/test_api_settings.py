@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 from pathlib import Path
 from unittest import mock
 from urllib import error
@@ -94,6 +95,39 @@ def test_missing_file_degrades_to_defaults(config_dir):
     assert loaded.api_key == ""
 
 
+def test_a_missing_settings_file_is_not_reported_as_a_fault(config_dir, caplog):
+    """"Never configured" is the normal first-run state, not a degradation.
+
+    This file holds an API key, so its degradation warnings exist at all. But
+    the same warning on every cold start is a warning that stops being read --
+    and the Studio reads settings on every request. The line has to mean
+    "something was there and I could not use it".
+    """
+
+    with caplog.at_level(logging.WARNING, logger="fantasy_agent.api_settings"):
+        assert load_settings() == LLMApiSettings()
+
+    assert not caplog.records, (
+        f"a never-configured install produced {len(caplog.records)} warning(s): "
+        f"{[record.getMessage() for record in caplog.records]}"
+    )
+
+
+def test_a_settings_file_that_is_not_text_degrades_instead_of_raising(config_dir):
+    """The read is a separate step now, so its failures need their own handler.
+
+    `UnicodeDecodeError` is a `ValueError` and nothing else; while read and
+    parse shared one `except (OSError, ValueError)` it was caught for free.
+    Splitting them -- to tell "missing" from "unreadable" -- narrowed the
+    handler, and a credentials file written by something else would then have
+    taken the Studio down instead of quietly showing "not configured".
+    """
+
+    (config_dir / "llm-api.json").write_bytes(b"\xff\xfe\x00 not utf-8")
+
+    assert load_settings() == LLMApiSettings()
+
+
 def test_public_settings_masks_secret(config_dir):
     save_settings(LLMApiSettings(enabled=True, api_key="sk-test-1234567890"))
 
@@ -135,11 +169,71 @@ def test_clear_settings_wipes_secret_when_unlink_fails(config_dir, monkeypatch):
     assert "sk-test-1234567890" not in on_disk
 
 
+def test_an_interrupted_save_keeps_the_previous_credentials(
+    config_dir, monkeypatch
+):
+    """A refused publish must not cost the user the key they already saved.
+
+    This is the failure the whole helper exists for, in the form a user would
+    recognise: the loader answers a parse failure with *defaults*, so a
+    half-written file does not look like a failed save -- it looks like the
+    key was never configured.
+    """
+
+    save_settings(LLMApiSettings(enabled=True, api_key="sk-test-original"))
+
+    def _boom(src, dst):
+        raise OSError(13, "publish refused")
+
+    monkeypatch.setattr(api_settings.os, "replace", _boom)
+    with pytest.raises(OSError):
+        save_settings(LLMApiSettings(enabled=True, api_key="sk-test-replacement"))
+
+    loaded = load_settings()
+    assert loaded.api_key == "sk-test-original", (
+        "the interrupted save destroyed a working credential"
+    )
+    assert list(config_dir.glob("*.tmp")) == []
+
+
+def test_load_settings_says_so_when_it_degrades(config_dir, caplog):
+    """A silently reset credential is indistinguishable from an unset one."""
+
+    (config_dir / "llm-api.json").write_text("{not json", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="fantasy_agent.api_settings"):
+        assert load_settings() == LLMApiSettings()
+
+    assert caplog.records, "a degraded read left no trace to diagnose it with"
+    assert "llm-api.json" in caplog.text
+
+
+def test_load_settings_warns_when_the_payload_is_not_an_object(config_dir, caplog):
+    """The `not isinstance(raw, dict)` branch degrades too, so it must speak up."""
+
+    (config_dir / "llm-api.json").write_text('["unexpected"]', encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="fantasy_agent.api_settings"):
+        assert load_settings() == LLMApiSettings()
+
+    assert caplog.records, "a shape mismatch left no trace"
+
+
+def test_load_settings_warns_when_validation_fails(config_dir, caplog):
+    """Well-formed JSON of the wrong shape is a third, separate degradation."""
+
+    (config_dir / "llm-api.json").write_text('{"timeout_seconds": 99999}', encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="fantasy_agent.api_settings"):
+        assert load_settings() == LLMApiSettings()
+
+    assert caplog.records, "an out-of-range field left no trace"
+
+
 def test_mask_secret_handles_short_values():
     assert mask_secret("") == ""
     assert mask_secret("abc") == "***"
     assert mask_secret("sk-1234567890abcd").endswith("abcd")
-
 
 def test_normalize_provider():
     assert normalize_provider("anthropic") == ANTHROPIC

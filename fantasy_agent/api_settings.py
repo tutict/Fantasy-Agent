@@ -16,6 +16,7 @@ requires credentials.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -23,6 +24,10 @@ from typing import Any
 from urllib import error, request
 
 from pydantic import BaseModel, Field
+
+from fantasy_agent.atomic_write import write_atomic
+
+logger = logging.getLogger(__name__)
 
 ANTHROPIC = "anthropic"
 OPENAI_COMPATIBLE = "openai_compatible"
@@ -102,19 +107,40 @@ def load_settings() -> LLMApiSettings:
     """Load saved settings, falling back to defaults when missing or corrupt.
 
     A corrupt file must never break the Studio: it degrades to defaults so the
-    user can simply re-enter credentials in the UI.
+    user can simply re-enter credentials in the UI. It must also not degrade
+    *quietly* -- a silently reset credential is indistinguishable from one the
+    user never entered, and this file holds an API key, so the warning is the
+    difference between "re-enter it" and "find out why it vanished".
+
+    "Never configured" is not a degradation, so a missing file is silent. This
+    is the same rule ``pipeline_state.load_state`` follows and for the same
+    reason: a warning on every cold start is a warning nobody reads. ``OSError``
+    alone would not draw that distinction -- ``FileNotFoundError`` is a
+    subclass, and so is the ``UnicodeDecodeError`` that a file written by
+    something else (or truncated mid-multibyte-character) raises, which is a
+    real fault and does deserve the line.
     """
 
     path = settings_path()
     try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return LLMApiSettings()
+    except (OSError, ValueError) as exc:
+        logger.warning("could not read API settings at %r: %s", path, exc)
+        return LLMApiSettings()
+    try:
+        raw = json.loads(raw)
+    except ValueError as exc:
+        logger.warning("API settings at %r are not valid JSON: %s", path, exc)
         return LLMApiSettings()
     if not isinstance(raw, dict):
+        logger.warning("API settings at %r are not an object", path)
         return LLMApiSettings()
     try:
         return LLMApiSettings.model_validate(raw)
-    except Exception:  # noqa: BLE001 - corrupt config degrades to defaults
+    except Exception as exc:  # noqa: BLE001 - corrupt config degrades to defaults
+        logger.warning("could not validate API settings at %r: %s", path, exc)
         return LLMApiSettings()
 
 
@@ -122,9 +148,11 @@ def save_settings(settings: LLMApiSettings) -> LLMApiSettings:
     """Persist settings to disk and return the saved model."""
 
     path = settings_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(settings.model_dump(), indent=2, ensure_ascii=False)
-    path.write_text(payload, encoding="utf-8")
+    # Atomic, because a half-written file here is invisible: the loader above
+    # answers a parse failure with *defaults*, so an interrupted save would
+    # present to the user as a lost API key rather than as a failed save.
+    write_atomic(path, payload)
     # Best-effort owner-only permissions; a no-op on Windows.
     try:
         os.chmod(path, 0o600)

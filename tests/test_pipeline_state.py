@@ -9,12 +9,15 @@ are skipped (a failed stage is never silently treated as done).
 
 from __future__ import annotations
 
+import json
+import logging
 import subprocess
 from pathlib import Path
 from typing import get_args
 
 import pytest
 
+from fantasy_agent import atomic_write
 from fantasy_agent.contracts import ProductionPipelineStageId, PromptRequest
 from fantasy_agent.executor import execute_godot_demo
 from fantasy_agent.godot_mcp import GodotMCPBridge
@@ -108,6 +111,138 @@ def test_corrupt_state_file_is_ignored(tmp_path: Path):
     path.write_text("{not json", encoding="utf-8")
 
     assert load_state("corrupt", workspace_root=tmp_path) is None
+
+
+def test_a_state_file_that_is_not_text_degrades_instead_of_raising(tmp_path: Path):
+    """A file of bytes is not a JSON problem, it is a *read* problem.
+
+    `read_text` raises `UnicodeDecodeError`, which is a `ValueError` subclass
+    and nothing else. When the degradation was one `except (OSError, ValueError)`
+    around read-and-parse together that was caught for free; splitting the read
+    out to tell "missing" from "unreadable" narrowed the handler to `OSError`
+    and let it through. The consequence is the one this module exists to
+    prevent: `executor.resume_stages` calls `load_state` with no handler at all,
+    so a state file written by something other than this code would turn a
+    resume into a crash rather than a full replay.
+    """
+
+    path = tmp_path / "generated/godot/sessions/binary/_pipeline_state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\xff\xfe\x00 not utf-8 at all")
+
+    assert load_state("binary", workspace_root=tmp_path) is None
+
+
+def test_a_cold_session_does_not_claim_to_have_degraded(
+    tmp_path: Path, caplog
+):
+    """"Nothing has run yet" is not a fault, and must not log like one.
+
+    A warning on every first run is a warning nobody reads; the one that
+    matters is a file that exists and cannot be used.
+    """
+
+    with caplog.at_level(logging.WARNING, logger="fantasy_agent.pipeline_state"):
+        assert load_state("never-ran", workspace_root=tmp_path) is None
+
+    assert not caplog.records, (
+        f"a session that never ran produced {len(caplog.records)} warning(s)"
+    )
+
+
+def test_a_crash_midway_leaves_the_previous_state_readable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Losing a refused write must cost one stage, not every stage before it.
+
+    ``record_stage`` rewrites the whole file each time, so a torn write would
+    drop the ComfyUI / Blender / headless-import results that this module
+    exists to protect -- the run would restart from the top and pay for them
+    again.
+    """
+
+    _run(tmp_path, "torn-write", with_gameplay=True)
+    before = load_state("torn-write", workspace_root=tmp_path)
+    assert before is not None
+    recorded_before = before.done_stages()
+    assert "gameplay" in recorded_before
+
+    def _boom(src, dst):
+        raise OSError(13, "publish refused")
+
+    monkeypatch.setattr(atomic_write.os, "replace", _boom)
+    with pytest.raises(OSError):
+        record_stage(
+            "torn-write",
+            StageState(name="import", status="done"),
+            workspace_root=tmp_path,
+        )
+
+    after = load_state("torn-write", workspace_root=tmp_path)
+    assert after is not None
+    assert after.done_stages() == recorded_before, "a refused write lost earlier work"
+    assert list(tmp_path.rglob("*.tmp")) == []
+
+
+def test_load_state_says_so_when_it_degrades(tmp_path: Path, caplog):
+    """`None` from `load_state` means replay the minute-scale nodes.
+
+    That cost is invisible unless the degradation is logged, so the warning is
+    part of the contract -- and it must name the schema version, so a file
+    written by a future build is diagnosable instead of a guess.
+    """
+
+    path = tmp_path / "generated/godot/sessions/degraded/_pipeline_state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger="fantasy_agent.pipeline_state"):
+        assert load_state("degraded", workspace_root=tmp_path) is None
+
+    assert caplog.records, "a replay-inducing degradation left no trace"
+    assert "_pipeline_state.json" in caplog.text
+    assert "schema_version" in caplog.text
+
+
+def test_a_degradation_warning_names_the_version_it_found(tmp_path: Path, caplog):
+    """A file that fails validation must report the version it claims.
+
+    Worth pinning because ``schema_version`` is not itself validated -- a
+    payload carrying an unknown version still loads, since the field is a plain
+    string with no constraint. That is deliberate (there is no migration step;
+    see ``atomic_write``'s module docstring), but it means the version can only
+    ever be *reported*, never *enforced*, so the warning is the one place it
+    reaches a human.
+    """
+
+    path = tmp_path / "generated/godot/sessions/future/_pipeline_state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"schema_version": "9.9", "session_id": "future", "stages": 7}),
+        encoding="utf-8",
+    )
+
+    with caplog.at_level(logging.WARNING, logger="fantasy_agent.pipeline_state"):
+        assert load_state("future", workspace_root=tmp_path) is None
+
+    assert "9.9" in caplog.text, "the warning must name the version it rejected"
+    assert "schema_version" in caplog.text
+
+
+def test_a_missing_state_file_is_not_reported_as_corruption(
+    tmp_path: Path, caplog
+):
+    """A cold session has no file, and that is not a fault to report.
+
+    Without this the very first run of every session would log a warning, and
+    the signal that matters -- a file that *was* readable and stopped being so
+    -- would drown in it.
+    """
+
+    with caplog.at_level(logging.WARNING, logger="fantasy_agent.pipeline_state"):
+        assert load_state("never-ran", workspace_root=tmp_path) is None
+
+    assert not caplog.records, "a first run logged a degradation that did not happen"
 
 
 # ── resume ───────────────────────────────────────────────────────────────────

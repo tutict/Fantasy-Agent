@@ -14,13 +14,17 @@ node instead of starting over.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import Field
 
+from fantasy_agent.atomic_write import write_atomic
 from fantasy_agent.contracts import StrictModel
 from fantasy_agent.path_safety import resolve_workspace_path
+
+logger = logging.getLogger(__name__)
 
 STATE_FILENAME = "_pipeline_state.json"
 
@@ -293,19 +297,73 @@ def load_state(
     engine_key: str = "godot",
     workspace_root: Path | str,
 ) -> PipelineState | None:
-    """Read the session state, or None when there is nothing usable."""
+    """Read the session state, or None when there is nothing usable.
+
+    The degradation is loud on purpose. ``None`` here means "replay the whole
+    chain", and the chain includes the minute-scale nodes this module exists to
+    avoid re-running -- so a state file that silently became unreadable would
+    cost the user real time with nothing in the log to explain it. The
+    ``schema_version`` is quoted into the warning so a file written by a future
+    version is diagnosable rather than a guess.
+    """
 
     path = state_path(
         session_id, engine_key=engine_key, workspace_root=workspace_root
     )
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        raw = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        # A session that has not run yet, not a fault: reporting it would put
+        # a warning in the log of every first run and bury the one that matters.
+        return None
+    except (OSError, ValueError) as exc:
+        # ``ValueError`` here is not the JSON -- it is ``UnicodeDecodeError``
+        # from the read above (a subclass of it). Splitting the read out of the
+        # parse is what makes this reachable: the previous
+        # ``except (OSError, ValueError)`` caught it, and a file that is not
+        # text is exactly the case this function promises to degrade.
+        logger.warning("could not read pipeline state at %r: %s", path, exc)
+        return None
+    try:
+        payload = json.loads(raw)
+    except ValueError as exc:
+        logger.warning(
+            "pipeline state at %r is not valid JSON (schema_version %r): %s",
+            path,
+            _peek_schema_version(raw),
+            exc,
+        )
         return None
     try:
         return PipelineState.model_validate(payload)
-    except Exception:  # noqa: BLE001 - a corrupt state file must not break a run
+    except Exception as exc:  # noqa: BLE001 - a corrupt state file must not break a run
+        logger.warning(
+            "pipeline state at %r does not fit the model (schema_version %r): %s",
+            path,
+            _peek_schema_version(raw),
+            exc,
+        )
         return None
+
+
+def _peek_schema_version(raw: str) -> str:
+    """The version a state file claims, for a warning that has to name it.
+
+    Best-effort by construction: the file has already failed to parse, so this
+    must never raise. A non-object or an absent field reports ``"?"`` rather
+    than guessing, because a wrong version in a log is worse than an honest
+    unknown. Returns a ``str`` so the caller can format it with ``%r``.
+    """
+
+    try:
+        parsed = json.loads(raw)
+    except ValueError:
+        return "?"
+    if isinstance(parsed, dict):
+        version = parsed.get("schema_version")
+        if isinstance(version, str) and version:
+            return version
+    return "?"
 
 
 def record_stage(
@@ -319,7 +377,15 @@ def record_stage(
     """Upsert one stage and persist the whole state file.
 
     Called as each stage finishes, so a crash mid-run still leaves a usable
-    record of what had already succeeded.
+    record of what had already succeeded. The write is atomic because this file
+    is a read-modify-write of the whole model: a torn write would lose the
+    stages recorded before it, which are exactly the ones worth not repeating.
+
+    When adding a field to ``StageState`` or ``PipelineState``, give it a
+    default. These are ``extra="forbid"`` models, so a *new* file read by an
+    *old* build is what breaks -- but a state file written before the field
+    existed has to keep loading, and only a default gets it there. There is no
+    migration step on purpose (see the module docstring of ``atomic_write``).
     """
 
     state = load_state(
@@ -337,10 +403,9 @@ def record_stage(
     path = state_path(
         session_id, engine_key=engine_key, workspace_root=workspace_root
     )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    write_atomic(
+        path,
         json.dumps(state.model_dump(mode="json"), ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
     )
     return state
 

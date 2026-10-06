@@ -142,6 +142,13 @@ def _terminate_posix(process: subprocess.Popen[str], *, grace_seconds: float) ->
 
 
 def _truncate(path: Path | None) -> None:
+    # Deliberately not `atomic_write.write_atomic`. Why is one long argument
+    # split between here, that module's docstring and AGENTS.md: this comment
+    # only has to stop the change *here*, where the file is created, and point
+    # at the rest. The reasoning -- the open handle `_pump` holds, the inode
+    # swap that would break `run_streaming`'s `tail -f` -- is in
+    # `fantasy_agent/atomic_write.py`; the list of writes that ARE on the
+    # helper is in AGENTS.md's durability section.
     if path is None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)

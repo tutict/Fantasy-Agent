@@ -1100,6 +1100,138 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         ),
         "tests/test_corrections.py::test_a_value_with_no_dsl_home_is_reported_as_unrecoverable",
     ),
+    (
+        # A write that skips the rename and truncates in place. `load_state`
+        # answers an unreadable file with None, which means "replay the whole
+        # chain" -- ComfyUI, Blender, headless import. So this is the mutation
+        # that turns one interrupted write into a re-run of every minute-scale
+        # node that had already succeeded.
+        "A1 the state file is published by rename",
+        "fantasy_agent/atomic_write.py",
+        b"        os.replace(tmp, path)\n",
+        b"        path.write_text(text, encoding=encoding)\n",
+        "tests/test_atomic_write.py::test_a_failed_publish_leaves_the_previous_file_intact",
+    ),
+    (
+        # Flush-after-rename: the name would point at bytes still in the cache.
+        # This is the weakest guard in the file -- it pins a call, not an
+        # observable result, because the effect of fsync is not visible from
+        # inside a test without a crash. Kept anyway, and labelled, rather than
+        # dressed up as behavioural.
+        "A2 the temporary file is fsynced before the rename",
+        "fantasy_agent/atomic_write.py",
+        b"            os.fsync(stream.fileno())\n",
+        b"            pass  # mutation: not flushed\n",
+        "tests/test_atomic_write.py::test_the_publish_goes_through_a_rename",
+    ),
+    (
+        # A half-written temp file left beside the target: the one visible sign
+        # that a write failed, and the residue a reader sees in a listing.
+        "A3 a failed write cleans up its temporary file",
+        "fantasy_agent/atomic_write.py",
+        b"            tmp.unlink()\n",
+        b"            pass  # mutation: residue left behind\n",
+        "tests/test_atomic_write.py::test_a_failed_publish_leaves_the_previous_file_intact",
+    ),
+    (
+        # The stage ledger itself goes back to an in-place write. See A1 for
+        # what that costs. The mutant has to be a *working* plain write, not a
+        # broken call: a mutant that dies with a TypeError turns the guard red
+        # for the wrong reason, which is a false proof rather than evidence.
+        "A4 the pipeline state is written atomically",
+        "fantasy_agent/pipeline_state.py",
+        b"    write_atomic(\n        path,\n",
+        b"    path.write_text(\n",
+        "tests/test_pipeline_state.py::test_a_crash_midway_leaves_the_previous_state_readable",
+    ),
+    (
+        # The credentials file. `load_settings` answers a parse failure with
+        # *defaults*, so a torn write does not look like a failed save -- it
+        # looks like the user's API key was never configured.
+        "A5 the credentials file is written atomically",
+        "fantasy_agent/api_settings.py",
+        b"    write_atomic(path, payload)\n",
+        b"    path.write_text(payload, encoding='utf-8')\n",
+        "tests/test_api_settings.py::test_an_interrupted_save_keeps_the_previous_credentials",
+    ),
+    (
+        # The other half of durability: making the degradation audible again.
+        # `None` from `load_state` is not a neutral answer, it is an expensive
+        # one, and a silent version of it is indistinguishable from a first run.
+        # The mutant keeps the arguments matched -- dropping one makes the
+        # logging call itself raise, which is a broken mutant, not a quiet one.
+        "A6 a degraded state file is silent again",
+        "fantasy_agent/pipeline_state.py",
+        (
+            b"        logger.warning(\n"
+            b'            "pipeline state at %r is not valid JSON (schema_version %r): %s",\n'
+            b"            path,\n"
+            b"            _peek_schema_version(raw),\n"
+            b"            exc,\n"
+            b"        )\n"
+        ),
+        b"        _peek_schema_version(raw)  # mutation: degraded, but silently\n",
+        "tests/test_pipeline_state.py::test_load_state_says_so_when_it_degrades",
+    ),
+    (
+        # The sweep this repository has to survive: someone tidying "all the
+        # writes" onto the new helper. `_pump` holds engine logs open with
+        # `open("a")` for the life of the subprocess and the bridges write the
+        # same two paths afterwards, so on Windows this raises
+        # PermissionError [WinError 5] and a slow log write becomes a failed
+        # tool call. The mutant adds the mistake; the guard must refuse it.
+        "A7 the engine log writes are moved onto the atomic helper",
+        "fantasy_agent/mcp_bridge.py",
+        b'        path.write_text(text, encoding="utf-8")\n',
+        (
+            b"        from fantasy_agent.atomic_write import write_atomic\n"
+            b"        write_atomic(path, text)\n"
+        ),
+        "tests/test_mcp_bridge.py::test_bridges_keep_their_log_writes_off_the_atomic_helper",
+    ),
+    (
+        # A cold session starts logging again. The rule is the whole value of
+        # the degradation warnings: one line on every first run, and the real
+        # one -- a file that exists and cannot be used -- is the line nobody
+        # reads any more.
+        "K3 a session that never ran reports a fault again",
+        "fantasy_agent/pipeline_state.py",
+        (
+            b"    except FileNotFoundError:\n"
+            b"        # A session that has not run yet, not a fault: reporting it would put\n"
+            b"        # a warning in the log of every first run and bury the one that matters.\n"
+            b"        return None\n"
+        ),
+        (
+            b"    except FileNotFoundError as exc:\n"
+            b"        logger.warning("
+            b'"pipeline state at %r is missing: %s", path, exc)  # mutation: cold start warns\n'
+            b"        return None\n"
+        ),
+        "tests/test_pipeline_state.py::test_a_cold_session_does_not_claim_to_have_degraded",
+    ),
+    (
+        # The read handler narrows back to OSError, letting a non-UTF-8 file
+        # through as `UnicodeDecodeError`. That is the regression this handler
+        # split introduced: one `except (OSError, ValueError)` around
+        # read-and-parse caught it for free, and `executor.resume_stages` calls
+        # `load_state` with no handler at all.
+        "K4 a state file that is not text crashes the resume",
+        "fantasy_agent/pipeline_state.py",
+        b"    except (OSError, ValueError) as exc:\n",
+        b"    except OSError as exc:  # mutation: UnicodeDecodeError escapes\n",
+        "tests/test_pipeline_state.py::test_a_state_file_that_is_not_text_degrades_instead_of_raising",
+    ),
+    (
+        # Same narrowing in the credentials file, where the consequence is a
+        # Studio panel that says "not configured" instead of a failed read --
+        # and, before the split, a live decode error escaping to the caller.
+        "K5 a credentials file that is not text crashes the panel",
+        "fantasy_agent/api_settings.py",
+        b"    except (OSError, ValueError) as exc:\n",
+        b"    except OSError as exc:  # mutation: UnicodeDecodeError escapes\n",
+        "tests/test_api_settings.py::test_a_settings_file_that_is_not_text_degrades_instead_of_raising",
+    ),
 )
 
 

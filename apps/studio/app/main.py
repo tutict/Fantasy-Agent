@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from fantasy_agent import api_settings, local_tools
 from fantasy_agent.api_settings import llm_enabled, public_settings
+from fantasy_agent.atomic_write import write_atomic
 from fantasy_agent.blender_codegen import build_blender_script_artifact
 from fantasy_agent.contracts import (
     AssetApprovalManifest,
@@ -1004,10 +1005,12 @@ def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestRes
             detail=f"Reviewed artifact cannot be read: {exc}",
         ) from exc
     path = _approval_manifest_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    # Atomic, because this file is a gate: the approval stage reads it back to
+    # decide whether writing is allowed. A half-written manifest would parse as
+    # a missing gate rather than as a failed save.
+    write_atomic(
+        path,
         yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
     )
     rel = path.relative_to(REPO_ROOT).as_posix()
     synced_bundle = None
@@ -1019,14 +1022,14 @@ def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestRes
             manifest,
         )
         bundle_path = REPO_ROOT / "generated" / "specs" / "production-spec-bundle.yaml"
-        bundle_path.parent.mkdir(parents=True, exist_ok=True)
-        bundle_path.write_text(
+        # Same reason as the manifest, and free: the helper is already here.
+        write_atomic(
+            bundle_path,
             yaml.safe_dump(
                 synced_bundle.model_dump(mode="json"),
                 sort_keys=False,
                 allow_unicode=True,
             ),
-            encoding="utf-8",
         )
     return ApprovalManifestResponse(
         status="written",
