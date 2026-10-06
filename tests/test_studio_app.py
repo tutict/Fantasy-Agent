@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import socket
 import threading
 import time
@@ -1623,3 +1624,402 @@ def test_execute_resume_errors_stay_http_400():
         )
     assert bad.value.status_code == 400
     assert "未知的续跑节点" in bad.value.detail
+
+
+# ── restart: the board comes back from a snapshot ────────────────────────────
+#
+# The board writes its session id to localStorage so a reload can find its
+# session. Before the snapshot existed, a restarted Studio answered `found:
+# false` to that very id, so the board rendered ten empty cards over a run that
+# had already been paid for.
+
+
+def _restart(module, tmp_path: Path):
+    """A Studio with the same sandbox but an empty registry.
+
+    Dropping the in-memory sessions *is* the restart as far as these endpoints
+    can tell -- the snapshot is on disk either way.
+    """
+
+    module._ORCHESTRATION_SESSIONS.clear()
+    return module
+
+
+def test_a_restored_board_shows_the_five_fields_that_used_to_vanish(tmp_path: Path):
+    """The whole feature, in one assertion.
+
+    `record_stage` persisted four of the nine fields a card draws, so after a
+    restart the cards rendered with `tools: [] / tool_calls: 0 / answer: "" /
+    checks: []` -- a run that looked like it had done nothing. Those five are
+    the difference between a restored board and a plausible-looking lie, so
+    they are asserted by name rather than by "the payload is non-empty".
+    """
+
+    module = _studio(tmp_path)
+    started = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = started["session_id"]
+
+    _restart(module, tmp_path)
+    restored = module.orchestration_state(session_id)
+
+    assert restored["found"] is True, "a snapshot on disk was not adopted"
+    assert len(restored["stages"]) == len(started["stages"])
+    for before, after in zip(started["stages"], restored["stages"], strict=True):
+        assert after["stage_id"] == before["stage_id"]
+        for field in ("tools", "dispatched", "tool_calls", "checks", "answer"):
+            assert after[field] == before[field], (
+                f"{before['stage_id']}.{field} was {before[field]!r} before the "
+                f"restart and {after[field]!r} after it"
+            )
+
+
+def test_a_restored_board_keeps_the_plan_time_fields(tmp_path: Path):
+    """Ten of a card's fields live only in the plan, not in any outcome.
+
+    A snapshot that stored outcomes alone would restore a board whose cards had
+    no titles, no dependencies and no risks -- the degenerate board this work is
+    a fix for, mirrored.
+    """
+
+    module = _studio(tmp_path)
+    started = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    _restart(module, tmp_path)
+    restored = module.orchestration_state(started["session_id"])
+
+    assert restored["goal"] == started["goal"]
+    assert restored["project_name"] == started["project_name"]
+    for before, after in zip(started["stages"], restored["stages"], strict=True):
+        for field in ("title", "purpose", "kind", "plan_status", "requires_confirmation"):
+            assert after[field] == before[field], f"{field} did not survive the restart"
+
+
+def test_a_restored_board_still_asks_for_the_approvals_it_never_got(tmp_path: Path):
+    """A restore must not turn a `done` stage into an approved one.
+
+    This is the inference the whole design refuses: nothing about a stage
+    reaching `done` says a person approved it, so rebuilding approvals from
+    status would hand out a confirmation nobody gave.
+    """
+
+    module = _studio(tmp_path)
+    started = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = started["session_id"]
+    assert started["pending_confirmations"], "the fixture must have a gate to ask about"
+
+    _restart(module, tmp_path)
+    restored = module.orchestration_state(session_id)
+
+    assert restored["pending_confirmations"] == started["pending_confirmations"]
+    assert restored["confirmed"] == []
+
+
+def test_an_approval_the_operator_gave_survives_the_restart(tmp_path: Path):
+    """The other half: an approval that *was* given must not be taken back.
+
+    Restoring is redeeming a click. Dropping it would re-ask a question the
+    operator already answered and, on a real pipeline, send the expensive
+    stages round again.
+    """
+
+    module = _studio(tmp_path)
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = first["session_id"]
+    stage_id = first["pending_confirmations"][0]
+
+    approved = module.run_orchestration(
+        module.OrchestrationRunRequest(
+            plan=_plan(), session_id=session_id, confirm_stages=[stage_id]
+        )
+    )
+    assert stage_id in approved["confirmed"]
+
+    _restart(module, tmp_path)
+    restored = module.orchestration_state(session_id)
+
+    assert restored["confirmed"] == approved["confirmed"]
+    assert stage_id not in restored["pending_confirmations"]
+
+
+def test_a_cold_get_does_not_register_the_session(tmp_path: Path):
+    """A GET must not have side effects.
+
+    The board polls this endpoint. If reading a stale id created a live session,
+    the poll would quietly take ownership of that session and the next POST
+    would inherit this payload's outcome map instead of the snapshot's.
+    """
+
+    module = _studio(tmp_path)
+    started = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = started["session_id"]
+
+    _restart(module, tmp_path)
+    module.orchestration_state(session_id)
+
+    assert module._ORCHESTRATION_SESSIONS == {}, (
+        "reading the board registered the session it had just rebuilt"
+    )
+
+
+def test_a_session_that_never_ran_is_still_not_found(tmp_path: Path):
+    """The degradation is unchanged: no memory and no snapshot means not found.
+
+    `found` now means "neither live nor on disk" rather than "never ran", which
+    is a weaker claim but the only one left once a snapshot can exist. The
+    answer body must not drift: the drill-down table is route metadata and has
+    to be there even when there is nothing to show.
+    """
+
+    module = _studio(tmp_path)
+
+    missing = module.orchestration_state("never-ran")
+
+    assert missing["found"] is False
+    assert missing["stages"] == []
+    assert missing["status"] == "pending"
+    assert missing["stage_translation"]["blender_modeling"] == ["blender"]
+
+
+def test_a_corrupt_snapshot_degrades_to_not_found_instead_of_500(tmp_path: Path):
+    """A read that cannot be trusted answers "nothing here", never an exception.
+
+    A board asking what a session did must not get a 500 because a file on disk
+    is half-written or hand-edited -- and must not get a *partial* answer
+    either, which is why the plan is validated before anything is restored.
+    """
+
+    from fantasy_agent.orchestration_state import state_path as snapshot_path
+
+    module = _studio(tmp_path)
+    started = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = started["session_id"]
+    _restart(module, tmp_path)
+
+    path = snapshot_path(session_id, engine_key="godot", workspace_root=tmp_path)
+    assert path.exists(), "the run should have written a snapshot to corrupt"
+
+    path.write_text("{not json", encoding="utf-8")
+    assert module.orchestration_state(session_id)["found"] is False
+
+    path.write_text(json.dumps({"session_id": session_id, "plan": "not-a-plan"}), encoding="utf-8")
+    assert module.orchestration_state(session_id)["found"] is False
+
+    # An approval for a stage that does not exist must fail the whole restore
+    # rather than install it.
+    path.write_text(
+        json.dumps(
+            {
+                "session_id": session_id,
+                "plan": _plan().production_pipeline.model_dump(mode="json"),
+                "confirmed": ["not_a_stage"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert module.orchestration_state(session_id)["found"] is False
+
+
+def test_a_snapshot_from_another_engine_is_not_adopted(tmp_path: Path):
+    """The read endpoint takes an engine, and the wrong one must not answer.
+
+    The board records which engine produced the session and passes it back, so
+    reading a godot session as unreal has to say "not found" rather than adopt
+    another engine's approvals.
+    """
+
+    module = _studio(tmp_path)
+    started = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = started["session_id"]
+
+    _restart(module, tmp_path)
+
+    assert module.orchestration_state(session_id, engine="unreal")["found"] is False
+
+
+def test_the_engine_a_read_names_is_one_of_the_two_real_ones(tmp_path: Path):
+    """`engine` picks the directory being read, so it is an enum, not text.
+
+    A free string would let a caller aim the read at any subtree of
+    `generated/`. Asserted by *running the validator FastAPI runs*, not by
+    reading the annotation off the route: an annotation is only a claim, and a
+    test that checks the claim checks the author rather than the code. The
+    model is built the way the framework builds it, from the route's own
+    signature, so a route that went back to `str` fails here.
+    """
+
+    import pydantic
+
+    module = _studio(tmp_path)
+    wanted = {
+        "/api/orchestration/{session_id}",
+        "/api/sessions/{session_id}/state",
+    }
+    seen: set[str] = set()
+
+    for route in module.app.routes:
+        if getattr(route, "path", "") not in wanted:
+            continue
+        seen.add(route.path)
+        params = [
+            field
+            for field in route.dependant.query_params
+            if field.name == "engine"
+        ]
+        assert len(params) == 1, f"{route.path} lost its engine parameter"
+
+        # FastAPI validates a query parameter by running its annotation through
+        # a TypeAdapter, so ask that question directly rather than reading the
+        # annotation off the route -- the annotation is the author's claim, the
+        # adapter is the code that acts on it.
+        checked = pydantic.TypeAdapter(params[0].field_info.annotation)
+
+        assert checked.validate_python("unreal") == "unreal"
+        assert checked.validate_python("godot") == "godot"
+        for hostile in ("../../../etc", "godot/../../..", "GODOT", "not_an_engine", ""):
+            try:
+                checked.validate_python(hostile)
+            except pydantic.ValidationError:
+                continue
+            raise AssertionError(
+                f"{route.path} accepted engine={hostile!r}; it would read "
+                f"outside generated/{hostile!r}/"
+            )
+
+    assert seen == wanted, f"routes missing from the app: {wanted - seen}"
+
+
+def test_an_approval_survives_a_restart_all_the_way_into_the_next_pass(tmp_path: Path):
+    """The POST path, where the restore actually has to work.
+
+    The read path has its own guard for restored approvals
+    (`test_an_approval_the_operator_gave_survives_the_restart`), and it passes
+    whether or not the *run* endpoint restores -- because a fresh pass reads its
+    approvals off the request. So that guard cannot see a run endpoint that
+    stopped restoring: the pass would simply re-ask for the same approval, which
+    is the exact waste this whole feature exists to remove.
+
+    So assert on what only a restore can produce: an approval that was given
+    before the restart is still redeemed afterwards, without being re-sent. The
+    pass here posts `confirm_stages=[]` on purpose -- that is what the board
+    does once it has sent the approvals it holds.
+    """
+
+    module = _studio(tmp_path)
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = first["session_id"]
+    stage_id = first["pending_confirmations"][0]
+
+    approved = module.run_orchestration(
+        module.OrchestrationRunRequest(
+            plan=_plan(), session_id=session_id, confirm_stages=[stage_id]
+        )
+    )
+    assert stage_id in approved["confirmed"]
+
+    _restart(module, tmp_path)
+    after = module.run_orchestration(
+        module.OrchestrationRunRequest(plan=_plan(), session_id=session_id)
+    )
+
+    assert after["confirmed"] == [stage_id], (
+        "the run endpoint rebuilt the session from scratch instead of from the "
+        f"snapshot: {stage_id} was approved before the restart and is now "
+        f"confirmed={after['confirmed']}, pending={after['pending_confirmations']}"
+    )
+    assert stage_id not in after["pending_confirmations"], (
+        "the restored pass re-asked for an approval the operator already gave"
+    )
+
+
+def test_the_previous_pass_is_carried_into_the_next_one(tmp_path: Path):
+    """The other half of what restoring buys: finished stages are not redone.
+
+    Distinct from the approval guard above on purpose. Approvals are small and
+    come back off the request; the *outcome map* does not, so a run endpoint
+    that stopped restoring would still answer with plausible statuses -- a
+    re-run from empty produces the same list -- and no assertion comparing two
+    status lists can tell the two worlds apart. A stage that already ran and is
+    therefore absent from the second pass's work is observable from outside.
+    """
+
+    module = _studio(tmp_path)
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = first["session_id"]
+    ran_once = [stage["stage_id"] for stage in first["stages"] if stage["status"] != "blocked"]
+    assert ran_once, "the fixture must have run at least one stage to be worth restoring"
+
+    _restart(module, tmp_path)
+    module.run_orchestration(module.OrchestrationRunRequest(plan=_plan(), session_id=session_id))
+    restored = module._ORCHESTRATION_SESSIONS[session_id]["orchestrator"]
+
+    assert set(ran_once) <= set(restored.outcomes), (
+        f"these stages had already run and their outcomes are gone: "
+        f"{sorted(set(ran_once) - set(restored.outcomes))}"
+    )
+
+
+def test_a_session_id_that_cannot_be_a_directory_name_degrades_to_not_found(
+    tmp_path: Path,
+):
+    """A hostile id addresses no session, and must not become a 500.
+
+    The board supplies this id and asks about it on every poll, so the two
+    refusals have to be indistinguishable from the outside: "there is no such
+    session" -- not an error page. Before the name rule, a newline in the id
+    also reached the log verbatim and could forge a record.
+    """
+
+    module = _studio(tmp_path)
+
+    for hostile in ("victim.", "a\n2026-01-01 INFO root: forged", "../escape"):
+        answer = module.orchestration_state(hostile)
+
+        assert answer["found"] is False, f"{hostile!r} answered {answer}"
+        assert answer["stages"] == []
+        # The drill-down table is route metadata; it must survive every
+        # degradation, including this one.
+        assert answer["stage_translation"]["blender_modeling"] == ["blender"]
+
+
+def test_both_orchestration_endpoints_adopt_a_snapshot_the_same_way(tmp_path: Path):
+    """One reader, two callers.
+
+    Two implementations of the same lookup is a shape this repo has been bitten
+    by: a local endpoint existed in two versions, the later one added the
+    behaviour and the first kept serving. The assertion is on the shared
+    helper being the only path to a snapshot, which is what stops the second
+    endpoint from quietly growing its own copy.
+
+    The behavioural half of this one is deliberately weak -- see
+    `test_an_approval_survives_a_restart_all_the_way_into_the_next_pass`, which
+    is what pins the run endpoint's restore. Comparing status lists cannot:
+    a pass that starts from empty re-runs everything and, with no provider
+    configured, lands on the same statuses.
+    """
+
+    module = _studio(tmp_path)
+    started = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = started["session_id"]
+
+    source = Path(module.__file__).read_text(encoding="utf-8")
+
+    assert source.count("_restore_orchestration(session_id, engine)") == 2, (
+        "the run and the read endpoint must both go through _restore_orchestration"
+    )
+    assert source.count("def _restore_orchestration(") == 1, (
+        "there must be exactly one implementation of the snapshot lookup"
+    )
+
+    # And it has to work from both sides, not merely be called twice.
+    _restart(module, tmp_path)
+    read_back = module.orchestration_state(session_id)
+    assert read_back["found"] is True
+
+    posted = module.run_orchestration(
+        module.OrchestrationRunRequest(plan=_plan(), session_id=session_id)
+    )
+    assert module._ORCHESTRATION_SESSIONS.get(session_id) is not None, (
+        "the run endpoint did not register the session it restored"
+    )
+    assert [stage["status"] for stage in posted["stages"]] == [
+        stage["status"] for stage in read_back["stages"]
+    ]

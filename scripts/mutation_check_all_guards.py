@@ -1190,6 +1190,17 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "tests/test_mcp_bridge.py::test_bridges_keep_their_log_writes_off_the_atomic_helper",
     ),
     (
+        # The read endpoint stops rebuilding a session from its snapshot. The
+        # mutant leaves the syntax valid and the endpoint answering, so what
+        # goes red is the assertion that five fields came back -- not an
+        # exception.
+        "B1 the board read stops rebuilding the session",
+        "apps/studio/app/main.py",
+        b"\n        session = _restore_orchestration(session_id, engine)\n",
+        b"\n        session = None  # mutation: no snapshot on the read path\n",
+        "tests/test_studio_app.py::test_a_restored_board_shows_the_five_fields_that_used_to_vanish",
+    ),
+    (
         # Restore stops redeeming stored approvals through `confirm()`. This is
         # the AGENTS.md gate: the assignment installs whatever the file names.
         # `test_restore_rejects_a_confirmation_for_an_unknown_stage` is the
@@ -1199,6 +1210,24 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         b"        self.confirm(snapshot.confirmed)\n",
         b"        self._confirmed = set(snapshot.confirmed)  # mutation: no gate\n",
         "tests/test_orchestrator.py::test_restore_rejects_a_confirmation_for_an_unknown_stage",
+    ),
+    (
+        # The run endpoint stops restoring. Subtle on purpose: it still works,
+        # it just starts every pass from an empty outcome map, which is the
+        # "confirm stage 5 replays stages 1-4" waste.
+        #
+        # The guard is NOT the status comparison in
+        # `test_both_orchestration_endpoints_adopt_a_snapshot_the_same_way`.
+        # That one was measured surviving this mutant: with no provider
+        # configured a pass from empty lands on the same all-failed statuses as
+        # a restored one, so the two worlds are indistinguishable from outside.
+        # The guard here posts `confirm_stages=[]` after an approval and demands
+        # the approval still be redeemed -- something only a restore can do.
+        "B3 the run endpoint stops restoring the session",
+        "apps/studio/app/main.py",
+        b"            session = _restore_orchestration(session_id, engine)\n",
+        b"            session = None  # mutation: every pass starts empty\n",
+        "tests/test_studio_app.py::test_an_approval_survives_a_restart_all_the_way_into_the_next_pass",
     ),
     (
         # One field short of the dataclass it mirrors. The restored board shows

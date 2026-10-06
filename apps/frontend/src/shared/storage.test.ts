@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { HANDOFF_KEY, readHandoffPlan, readPlanningHandoff } from "./storage";
+import {
+  HANDOFF_KEY,
+  ORCHESTRATION_ENGINE_KEY,
+  readHandoffPlan,
+  readOrchestrationEngine,
+  readPlanningHandoff,
+  saveOrchestrationEngine
+} from "./storage";
 import type { DirectorBuildPlan, PlanningHandoff } from "./types";
 
 /**
@@ -84,5 +91,30 @@ describe("readPlanningHandoff", () => {
   it("reports the invalid state for a shape nobody wrote", () => {
     store({ schemaVersion: "0.1", plan: { title: "no gameplay_spec" } });
     expect(readPlanningHandoff(() => "t")).toEqual({ invalid: true });
+  });
+});
+
+describe("readOrchestrationEngine", () => {
+  /**
+   * The default is not "a sensible guess for a new board" -- it is what the
+   * server would have answered with anyway, so a session stored before this key
+   * existed resolves to the directory it was actually written to. Assert the
+   * enum shape too: this value goes into a URL that picks a snapshot directory,
+   * and a value read verbatim out of storage must not be able to widen that.
+   */
+  it("defaults to godot when nothing is stored", () => {
+    expect(readOrchestrationEngine()).toBe("godot");
+  });
+
+  it("round-trips the engine the server reported", () => {
+    saveOrchestrationEngine("unreal");
+    expect(readOrchestrationEngine()).toBe("unreal");
+  });
+
+  it("refuses anything outside the two real engines", () => {
+    for (const hostile of ["", "UE5", "godot ", "../godot", "GODOT"]) {
+      localStorage.setItem(ORCHESTRATION_ENGINE_KEY, hostile);
+      expect(readOrchestrationEngine()).toBe("godot");
+    }
   });
 });

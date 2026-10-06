@@ -32,7 +32,9 @@ import { getOrchestrationState, runOrchestration } from "../shared/api";
 import { localizedTitle } from "../shared/planModel";
 import {
   readHandoffPlan,
+  readOrchestrationEngine,
   readOrchestrationSessionId,
+  saveOrchestrationEngine,
   saveOrchestrationSessionId
 } from "../shared/storage";
 import type { DirectorBuildPlan, Locale, OrchestrationSession } from "../shared/types";
@@ -74,6 +76,12 @@ export function OrchestrationBoard({
   const [plan, setPlan] = useState<DirectorBuildPlan | null>(() => readHandoffPlan());
   const [session, setSession] = useState<OrchestrationSession | null>(null);
   const [sessionId] = useState(() => readOrchestrationSessionId() || newSessionId());
+  // Which engine's snapshot directory this session lives in. Read from storage
+  // rather than inferred from `plan`: a restart goes looking for the directory
+  // *that session* wrote, and an operator who edited the plan since the run --
+  // or a board opened before any handoff exists -- would send us to the wrong
+  // one and read `found: false` for a run that is on disk.
+  const [engine] = useState(() => readOrchestrationEngine());
   const [translation, setTranslation] = useState<Record<string, string[]>>({});
   const [approved, setApproved] = useState<string[]>([]);
   const [expanded, setExpanded] = useState<string[]>([]);
@@ -94,7 +102,7 @@ export function OrchestrationBoard({
   useEffect(() => {
     saveOrchestrationSessionId(sessionId);
     let cancelled = false;
-    getOrchestrationState(sessionId)
+    getOrchestrationState(sessionId, engine)
       .then((state) => {
         if (cancelled) return;
         setTranslation(state.stage_translation ?? {});
@@ -110,7 +118,7 @@ export function OrchestrationBoard({
     return () => {
       cancelled = true;
     };
-  }, [sessionId]);
+  }, [engine, sessionId]);
 
   const run = useCallback(
     async (rewindStage: string) => {
@@ -132,6 +140,11 @@ export function OrchestrationBoard({
         });
         setSession(payload);
         if (payload.stage_translation) setTranslation(payload.stage_translation);
+        // The server decided which engine it ran under, from the plan it was
+        // posted. Recording that is what keeps the next read pointed at the same
+        // directory: a board that re-derived it here could disagree with the
+        // inference that actually chose where to write.
+        if (payload.engine) saveOrchestrationEngine(payload.engine);
         // The server recorded these; keeping them ticked would re-send an
         // approval the operator already gave.
         setApproved([]);

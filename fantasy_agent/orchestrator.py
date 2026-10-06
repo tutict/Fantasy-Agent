@@ -56,6 +56,7 @@ from fantasy_agent.contracts import ProductionPipeline, ProductionPipelineStage
 from fantasy_agent.orchestration_state import (
     OrchestrationStageState,
     OrchestrationState,
+    save_state,
 )
 from fantasy_agent.pipeline_state import (
     StageState,
@@ -236,6 +237,12 @@ class Orchestrator:
         #: Stage ids an operator has approved this session. Kept here rather
         #: than passed once, so the pass after the approval does not ask again.
         self._confirmed: set[str] = set()
+        #: The plan of the pass in flight, kept only so ``_record`` can write a
+        #: snapshot. Ten of the fields a board card draws exist nowhere else, so
+        #: a snapshot without the plan renders the degenerate board this exists
+        #: to fix. Not part of any restore path -- the caller always has the
+        #: plan it is posting.
+        self._plan: ProductionPipeline | None = None
 
     @property
     def confirmed(self) -> frozenset[str]:
@@ -293,6 +300,7 @@ class Orchestrator:
         """
 
         self.confirm(confirm_stages)
+        self._plan = plan
         ceiling = _ceiling(allow_write=allow_write, allow_execute=allow_execute)
         outcomes: list[StageOutcome] = []
         for stage in sorted(plan.stages, key=lambda entry: entry.order):
@@ -720,6 +728,17 @@ class Orchestrator:
         A board that only saw finished stages could not tell "blocked" from
         "not reached yet", which is the whole difference the status field
         exists to carry.
+
+        Two files, on purpose. The stage ledger is the executor's vocabulary and
+        answers "which node may I skip"; the snapshot is the board's and answers
+        "what did that card do". They also have different concurrency: the
+        ledger is a read-modify-write of one model that the single-worker pool
+        and a request thread can both touch, while the snapshot is written whole.
+        Folding one into the other would mean one silently overwriting the other.
+
+        Each write is independent and neither failure discards the other: the
+        stage already ran, and throwing away an outcome that cost model turns to
+        produce, over a record of it, is the worse outcome.
         """
 
         try:
@@ -747,6 +766,16 @@ class Orchestrator:
             # The stage already ran; failing here would throw away an outcome
             # that cost model turns to produce, over a record of it.
             logger.exception("could not record stage %s", stage.id)
+
+        if self._plan is None:
+            # Only reachable if a caller drives `_record` outside a `run`, which
+            # nothing does. Writing a snapshot without the plan would render a
+            # board whose cards have no titles.
+            return
+        try:
+            save_state(self.snapshot(self._plan), workspace_root=self.workspace_root)
+        except Exception:
+            logger.exception("could not snapshot stage %s", stage.id)
 
 
 def _ceiling(*, allow_write: bool, allow_execute: bool) -> str:

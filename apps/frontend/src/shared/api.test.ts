@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   callWorkbenchTool,
   errorMessageFromPayload,
+  getOrchestrationState,
   getSessionState,
   openManualCorrectionTarget,
   previewExecute,
@@ -125,6 +126,35 @@ describe("session state lookups", () => {
 
     await getSessionState("session/../evil");
     expect(fetchMock.mock.calls[0][0]).toBe("/api/sessions/session%2F..%2Fevil/state?engine=godot");
+  });
+});
+
+describe("orchestration state lookups", () => {
+  /**
+   * The engine is what selects the snapshot directory, and the write side
+   * infers it from the posted plan. So this URL is the difference between
+   * finding a restarted session and answering `found: false` for a run that is
+   * on disk -- which is why the argument is required rather than defaulted, and
+   * why the value has to survive the round trip into the query string.
+   */
+  it("sends the engine that names the snapshot directory", async () => {
+    const fetchMock = jsonFetch({ found: false, stages: [] });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getOrchestrationState("orch-abc123", "unreal");
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/orchestration/orch-abc123?engine=unreal"
+    );
+  });
+
+  it("encodes the session id so it cannot break out of the path", async () => {
+    const fetchMock = jsonFetch({ found: false, stages: [] });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getOrchestrationState("orch/../evil", "godot");
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/orchestration/orch%2F..%2Fevil?engine=godot"
+    );
   });
 });
 

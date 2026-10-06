@@ -431,6 +431,47 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/shared/ui/focusRing.test.ts",
         "does not reuse the brand colour verbatim",
     ),
+    (
+        # The engine the snapshot directory is read from. The mutant drops it
+        # from the query string, which is exactly what the endpoint's default
+        # used to paper over: a godot board asking for a godot session still
+        # works, so the mutation looks fine until an Unreal route exists.
+        "FE8-1 the board read stops naming the engine",
+        "apps/frontend/src/shared/api.ts",
+        (
+            b"  const query = new URLSearchParams({ engine });\n"
+            b"  return jsonRequest<OrchestrationSession>(\n"
+            b"    `/api/orchestration/${encodeURIComponent(sessionId)}?${query.toString()}`\n"
+            b"  );\n"
+        ),
+        (
+            b"  return jsonRequest<OrchestrationSession>(\n"
+            b"    `/api/orchestration/${encodeURIComponent(sessionId)}`\n"
+            b"  );\n"
+        ),
+        "src/shared/api.test.ts",
+        "sends the engine that names the snapshot directory",
+    ),
+    (
+        # A stored engine read verbatim, with the enumeration "asserted" by a
+        # cast -- the classic way a runtime check becomes a compile-time claim.
+        # The value reaches a URL that picks a directory, so a cast is exactly
+        # the wrong thing to find here.
+        "FE8-2 a stored engine is trusted instead of checked",
+        "apps/frontend/src/shared/storage.ts",
+        (
+            b'    return localStorage.getItem(ORCHESTRATION_ENGINE_KEY) === "unreal"\n'
+            b'      ? "unreal"\n'
+            b'      : "godot";\n'
+        ),
+        (
+            b'    return (localStorage.getItem(ORCHESTRATION_ENGINE_KEY) ?? "godot") as\n'
+            b'      | "godot"\n'
+            b'      | "unreal";\n'
+        ),
+        "src/shared/storage.test.ts",
+        "refuses anything outside the two real engines",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.

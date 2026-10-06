@@ -72,16 +72,19 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - **没有校验和、没有备份轮转、`schema_version` 不做迁移**，这是决定不是遗漏。`os.replace` 已经消灭了唯一的现实损坏源；再加校验和会把「罕见半截文件」换成「罕见静默全量重放」，而用户分辨不出发生了哪个（两个加载器对两者返回同一个值）。迁移函数需要一个「从哪个版本」，而除 `"0.1"` 外从未写过别的版本；本仓对版本不匹配的既定口径是**拒绝**（见 `production_spec_runtime.py`），不是迁移。
 - 给 `StageState` / `PipelineState` 加字段**必须带默认值**：它们是 `extra="forbid"` 模型，旧文件配新模型要靠默认值才读得进来（新文件配旧模型才会被拒——方向与直觉相反，实测过）。理由写在该模块的 `record_stage` docstring 里。
 
-## 编排快照模型（fantasy_agent/orchestration_state.py）
+## 编排会话恢复（fantasy_agent/orchestration_state.py）
 
-重启后板子应当回到刚才那一版，而不是空白。`_ORCHESTRATION_SESSIONS` 是有意保持内存态的（`_outcomes` 是「不重放已完成 stage」的全部机制，`_confirmed` 是「不重复问同一批准」的全部机制），所以恢复靠落盘补。这一条提交只落地**模型与 `Orchestrator.restore()`**，端点还没接线。
+重启后板子应当回到刚才那一版，而不是空白。`_ORCHESTRATION_SESSIONS` 是有意保持内存态的（`_outcomes` 是「不重放已完成 stage」的全部机制，`_confirmed` 是「不重复问同一批准」的全部机制），所以恢复靠落盘补：每个 stage 跑完 `_record` 写一份 `_orchestration_state.json`，`GET/POST /api/orchestration/*` 在注册表里找不到时经**同一个** `_restore_orchestration` 读回来。
 
 - **`confirmed` 只有三种处置：restore / drop / infer，前两种允许、`infer` 禁止。** restore 是兑现用户点过的批准（丢掉反而会重放前面几个 stage）；drop 是把已经给过的东西收回去；**infer（从 status 或 `requires_confirmation` 重建）是 `AGENTS.md` 那条闸门说的「在调用点写死 `true`」**，禁止。落地机制是 restore 必须走 `Orchestrator.confirm()` 这扇门而不是直接赋 `_confirmed`：门会按翻译表校验，手改的快照因此整个恢复失败（降级为「无快照」）而不是注入任何东西。守卫 `tests/test_orchestrator.py::test_restore_never_invents_a_confirmation` + 变异用例 B2。
 - **恢复的顺序是「先校验、再收窄」，但真正承重的是 `confirm()` 本身，不是这个顺序。** 曾把「顺序反了会跳过整个校验」写在这里，实测不成立：`_confirmed` 起初是空集，`&= in_plan` 对它是 no-op，所以两条顺序等价。要守的是**必须走 `confirm()`**（B2钉的就是这个），顺序只是让两件事读起来各归各位。
 - **快照必须存 plan**，不只是 outcomes。卡片上 `title` / `purpose` / `depends_on` / `quality_gates` / `risks` / `exit_checks` 这十个字段只存在于 plan，存一半渲染出来就是一张每格都空的退化板子——正是要修的那个东西的镜像。`plan` 存 dict 不存 `ProductionPipeline`，把 schema 漂移留给读取侧降级成「无快照」，而不是让整个快照文件读不出来。
-- **`OrchestrationStageState` 是 `StageOutcome` 的镜像，不是摘要。** 后者加第十个字段而前者没加，重启后板子静默少显示一格，**而所有测试都绿**。`tests/test_orchestration_state.py::test_the_snapshot_carries_exactly_the_outcome_fields` 按 dataclass 字段集比对（不是数个数）。变异用例 B4。
+- **`OrchestrationStageState` 是 `StageOutcome` 的镜像，不是摘要。** 后者加第十个字段而前者没加，重启后板子静默少显示一格，**而所有测试都绿**。`tests/test_orchestration_state.py::test_the_snapshot_carries_exactly_the_outcome_fields` 按 dataclass 字段集比对（不是数个数），跨语言那一腿是 `test_every_snapshot_field_reaches_the_frontend_card`（`cardsFromSession` 是显式映射而非 spread，未映射字段会被静默丢弃）。变异用例 B4。
 - **不复用 `_pipeline_state.json`，这是决定**：① 那个文件是 read-modify-write 整个模型，executor 在单 worker 池、编排请求在 FastAPI 线程池，两者会交错，同文件就是一方静默覆盖另一方；② 两套词汇表（执行层 vs 板子层）分两个文件，与仓库既有的分层翻译纪律同构。**接受两份文件短暂不一致**（崩在两次写之间）——续跑与板子恢复是两个独立决策，不为它们加事务。
-- **`load_state` 的降级一律报「没有快照」，绝不部分采用。** 半恢复的板子会显示部分 stage `done`、把其余静默重跑,比一张老实承认自己什么都不知道的空板更糟。`session_id` / `engine` 与请求不一致也走这条路——快照里存着他人的批准，而批准是最不该迁移的东西。
+- **`GET` 重建出的 session 故意不注册**（`test_a_cold_get_does_not_register_the_session`）。GET 有副作用意味着轮询会凭空创建 session。取舍写在 endpoint docstring 里，别当 bug「修」掉。
+- `found` 的语义变了：从「这个 id 从未跑过」变成「既无内存会话也无快照」。这是快照存在之后唯一站得住的说法，`test_a_session_that_never_ran_is_still_not_found` 钉住降级时**响应体其余部分不漂移**（尤其 `stage_translation`，那是路由元数据）。
+- **引擎归属是「那次 session 的属性」，不是「当前 plan 的属性」，所以前端不重算而是存下来。** 板子把 engine 与 `sessionId` 一起落localStorage（`storage.ts` 的 `ORCHESTRATION_ENGINE_KEY`），POST 响应回来时用 `payload.engine` 覆盖——**那是服务端 `infer_demo_engine` 的结论，是权威**。曾打算在 GET 时用现成的 `usesGodotEngine(plan)` 重算，两种情况下会读错目录：运行后改 plan，以及板子在没有任何 handoff 时打开（`plan` 为 null）。后端两个读端点的 `engine` 都收成 `DemoEngine` 枚举，让 FastAPI 自己422，别让它当自由字符串进路径。
+- **端到端守卫必须断言「只有恢复才成立的东西」。** 比较两次的 stage status 列表**测不出** run 端点是否恢复：没配 provider 时从零重跑会落在同一组 `failed`/`blocked` 上，两个世界从外面看一模一样（B3 的变异体就是这样活下来的）。真正能分开的是**重启前给过的批准在重启后仍被兑现**——`test_an_approval_survives_a_restart_all_the_way_into_the_next_pass`，它故意 POST `confirm_stages=[]`。
 
 ## 语言规则
 

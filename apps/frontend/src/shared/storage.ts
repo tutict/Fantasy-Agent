@@ -21,6 +21,16 @@ export const STUDIO_SIDEBAR_COLLAPSED_KEY = "fantasy-agent-studio-sidebar-collap
  * under the old id.
  */
 export const ORCHESTRATION_SESSION_KEY = "fantasy-agent-orchestration-session";
+/**
+ * Which engine route the stored orchestration session belongs to.
+ *
+ * Stored beside the id rather than recomputed from the current plan, because the
+ * snapshot a restart goes looking for is the one *that session* wrote. Recomputing
+ * would read the wrong directory in two ordinary cases: the plan the board holds
+ * is the one re-read on activation, which an operator may have edited since the
+ * run, and a board opened before any handoff has no plan to read at all.
+ */
+export const ORCHESTRATION_ENGINE_KEY = "fantasy-agent-orchestration-engine";
 
 /** The stored session id, or null when there is none or storage is unavailable. */
 export function readOrchestrationSessionId(): string | null {
@@ -37,6 +47,32 @@ export function saveOrchestrationSessionId(sessionId: string): void {
   } catch {
     // A read-only storage costs the board its session across a reload, which is
     // a smaller loss than failing the pass.
+  }
+}
+
+/**
+ * The stored engine, defaulting to Godot when there is none.
+ *
+ * The default is not a guess about the future -- it is what the server would
+ * have answered with anyway, so a session stored before this key existed (every
+ * one of them, since `engine_choice` has never been on `GameplaySpec`) resolves
+ * to the directory it was actually written to.
+ */
+export function readOrchestrationEngine(): "godot" | "unreal" {
+  try {
+    return localStorage.getItem(ORCHESTRATION_ENGINE_KEY) === "unreal"
+      ? "unreal"
+      : "godot";
+  } catch {
+    return "godot";
+  }
+}
+
+export function saveOrchestrationEngine(engine: string): void {
+  try {
+    localStorage.setItem(ORCHESTRATION_ENGINE_KEY, engine);
+  } catch {
+    // Same trade as the id: a board that cannot remember still runs.
   }
 }
 

@@ -269,10 +269,20 @@ export function runOrchestration(
  * has never seen answers `found: false` with the stage translation still
  * present, which is what lets the board offer its drill-down before the first
  * run.
+ *
+ * `engine` is required rather than defaulted. It selects which engine's
+ * snapshot directory to read, and a silent default would be a guess: the write
+ * side infers the engine from the posted plan, so a read that guessed
+ * differently would look for the session in a directory it was never written
+ * to and answer `found: false` for a run that exists.
  */
-export function getOrchestrationState(sessionId: string): Promise<OrchestrationSession> {
+export function getOrchestrationState(
+  sessionId: string,
+  engine: "godot" | "unreal"
+): Promise<OrchestrationSession> {
+  const query = new URLSearchParams({ engine });
   return jsonRequest<OrchestrationSession>(
-    `/api/orchestration/${encodeURIComponent(sessionId)}`
+    `/api/orchestration/${encodeURIComponent(sessionId)}?${query.toString()}`
   );
 }
 

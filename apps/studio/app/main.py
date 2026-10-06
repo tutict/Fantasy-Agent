@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import shutil
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -33,6 +34,7 @@ from fantasy_agent.contracts import (
     IdeaDiscoveryRequest,
     IdeaSeed,
     PlaytestRequest,
+    ProductionPipeline,
     ProductionSpecBundle,
     PromptRequest,
     QAPlan,
@@ -43,6 +45,7 @@ from fantasy_agent.contracts import (
 )
 from fantasy_agent.corrections import inspect_corrections, summarize_corrections
 from fantasy_agent.demo_launch import (
+    DemoEngine,
     DemoLaunch,
     DemoLaunchError,
     infer_demo_engine,
@@ -75,6 +78,11 @@ APP_DIR = Path(__file__).resolve().parents[1]
 REPO_ROOT = APP_DIR.parents[1]
 FRONTEND_DIST_DIR = REPO_ROOT / "apps" / "frontend" / "dist"
 FRONTEND_INDEX_PATH = FRONTEND_DIST_DIR / "index.html"
+
+#: For the degradations that are correct behaviour but invisible otherwise --
+#: an orchestration snapshot that cannot be adopted reads as "no session" to the
+#: board, so without this the only trace would be an empty stage list.
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Fantasy Agent Studio",
@@ -1369,6 +1377,71 @@ def _orchestration_payload(session: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _restore_orchestration(
+    session_id: str, engine: str
+) -> dict[str, Any] | None:
+    """Rebuild a session from its on-disk snapshot, or None if there is none.
+
+    Shared by both orchestration endpoints on purpose: this repo has been bitten
+    by a local endpoint existing in two implementations, where the second was
+    written later and the first kept working. Two callers reading the same file
+    is exactly that shape, so there is one reader.
+
+    The plan is validated here rather than at the model layer, because this is
+    the only place that can report it: a snapshot whose plan no longer parses
+    degrades to "no snapshot" (the board shows nothing) instead of failing to
+    load. Same for a snapshot whose confirmations do not validate -- restore
+    refuses the whole thing rather than half-applying it, because a board with
+    some stages `done` and the rest silently re-run is the worst of the three
+    outcomes.
+    """
+
+    from fantasy_agent.orchestration_state import load_state as load_snapshot
+    from fantasy_agent.orchestrator import Orchestrator
+    from fantasy_agent.path_safety import WorkspacePathError
+
+    try:
+        snapshot = load_snapshot(
+            session_id, engine_key=engine, workspace_root=REPO_ROOT
+        )
+    except WorkspacePathError as exc:
+        # An id that cannot be a directory name addresses no session, and the
+        # board asking about it deserves the same answer as asking about one
+        # that never ran -- not a 500. The name is echoed through ``%r`` because
+        # it is caller-supplied: at ``%s`` a newline in it forges a log line.
+        logger.warning("orchestration snapshot id %r is not usable: %s", session_id, exc)
+        return None
+    if snapshot is None:
+        return None
+    try:
+        plan = ProductionPipeline.model_validate(snapshot.plan)
+    except Exception as exc:  # noqa: BLE001 - a stale plan must not break a read
+        logger.warning(
+            "orchestration snapshot for %r has an unusable plan (schema_version %r): %s",
+            session_id,
+            snapshot.schema_version,
+            exc,
+        )
+        return None
+    try:
+        orchestrator = Orchestrator.restore(
+            snapshot, plan=plan, workspace_root=REPO_ROOT
+        )
+    except ValueError as exc:
+        logger.warning(
+            "orchestration snapshot for %r has an unusable confirmation: %s",
+            session_id,
+            exc,
+        )
+        return None
+    return {
+        "session_id": session_id,
+        "orchestrator": orchestrator,
+        "plan": plan,
+        "engine": engine,
+    }
+
+
 @app.post("/api/orchestration/run")
 def run_orchestration(req: OrchestrationRunRequest) -> dict[str, Any]:
     """Advance a plan once, stage by stage, with the caller's approvals attached.
@@ -1395,6 +1468,11 @@ def run_orchestration(req: OrchestrationRunRequest) -> dict[str, Any]:
         session_id = req.session_id.strip() or f"orch-{uuid4().hex[:12]}"
         session = _ORCHESTRATION_SESSIONS.get(session_id)
         if session is None:
+            # A restarted Studio has an empty registry but a snapshot on disk.
+            # Restoring here is what makes the *next* pass cheap: without the
+            # outcomes, confirming the last stage replays every earlier one.
+            session = _restore_orchestration(session_id, engine)
+        if session is None:
             session = {
                 "session_id": session_id,
                 "orchestrator": Orchestrator(
@@ -1405,7 +1483,11 @@ def run_orchestration(req: OrchestrationRunRequest) -> dict[str, Any]:
                 "plan": plan,
                 "engine": engine,
             }
-            _ORCHESTRATION_SESSIONS[session_id] = session
+        # Registered in every case, *including* one just rebuilt from disk.
+        # The pass below adds outcomes and approvals to this instance; leaving a
+        # restored session unregistered would throw both away on the way out
+        # and make the next request restore from the file again.
+        _ORCHESTRATION_SESSIONS[session_id] = session
         # Re-point the session at this request's plan: the stage ids are fixed
         # per route, so the outcomes carry over while the board shows the plan
         # the operator is actually looking at.
@@ -1446,7 +1528,9 @@ def run_orchestration(req: OrchestrationRunRequest) -> dict[str, Any]:
 
 
 @app.get("/api/orchestration/{session_id}")
-def orchestration_state(session_id: str) -> dict[str, Any]:
+def orchestration_state(
+    session_id: str, engine: DemoEngine = "godot"
+) -> dict[str, Any]:
     """What a session has done so far, without advancing it.
 
     The board polls this after a run so a card's status is read from the same
@@ -1459,9 +1543,31 @@ def orchestration_state(session_id: str) -> dict[str, Any]:
     stages", which is a stronger and less true claim than "nothing has run yet"
     -- and it made the board's drill-down vanish exactly when the operator had
     nothing else to read.
+
+    When the registry is empty but a snapshot is on disk -- a restarted Studio,
+    which is exactly when the board reloads and asks -- the snapshot is rendered
+    as if the session were live. That is the whole point: the board kept this id
+    in localStorage precisely so it could find its session, and the old answer
+    (`found: false`) threw away a run that had already cost model turns.
+
+    The rebuilt session is deliberately **not** registered. A GET must not have
+    side effects: registering here would make a poll create state, so a board
+    that merely looked at a stale id would own a live orchestrator from then
+    on, and the next POST would inherit its outcome map rather than the
+    snapshot's. The cost is re-reading and re-validating a small JSON per poll,
+    which is not worth trading for a poll with side effects.
+
+    `engine` is a `DemoEngine`, not a free string, because it selects the
+    directory a snapshot is read from: accepting arbitrary text would let a
+    caller aim the read at any subtree of `generated/`, and a free string with a
+    default is worse still because it hides the choice from the frontend. The
+    board passes the engine it recorded when the run was posted rather than
+    re-deriving one here.
     """
 
     session = _ORCHESTRATION_SESSIONS.get(session_id)
+    if session is None:
+        session = _restore_orchestration(session_id, engine)
     if session is None:
         return {
             "session_id": session_id,
@@ -1479,8 +1585,13 @@ def orchestration_state(session_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/sessions/{session_id}/state")
-def session_state(session_id: str, engine: str = "godot") -> dict[str, Any]:
-    """Stage state of a previous run, so the UI can offer node-level re-runs."""
+def session_state(session_id: str, engine: DemoEngine = "godot") -> dict[str, Any]:
+    """Stage state of a previous run, so the UI can offer node-level re-runs.
+
+    `DemoEngine` for the same reason as `/api/orchestration/{session_id}`: the
+    value picks the `generated/<engine>/sessions/<id>/` directory being read, so
+    it is an enumeration of the two real ones rather than arbitrary text.
+    """
 
     from fantasy_agent.pipeline_state import GODOT_STAGE_ORDER, load_state
 
