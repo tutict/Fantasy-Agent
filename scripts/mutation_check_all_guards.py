@@ -1166,11 +1166,11 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
             b"        logger.warning(\n"
             b'            "pipeline state at %r is not valid JSON (schema_version %r): %s",\n'
             b"            path,\n"
-            b"            _peek_schema_version(raw),\n"
+            b"            peek_schema_version(raw),\n"
             b"            exc,\n"
             b"        )\n"
         ),
-        b"        _peek_schema_version(raw)  # mutation: degraded, but silently\n",
+        b"        peek_schema_version(raw)  # mutation: degraded, but silently\n",
         "tests/test_pipeline_state.py::test_load_state_says_so_when_it_degrades",
     ),
     (
@@ -1188,6 +1188,66 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
             b"        write_atomic(path, text)\n"
         ),
         "tests/test_mcp_bridge.py::test_bridges_keep_their_log_writes_off_the_atomic_helper",
+    ),
+    (
+        # Restore stops redeeming stored approvals through `confirm()`. This is
+        # the AGENTS.md gate: the assignment installs whatever the file names.
+        # `test_restore_rejects_a_confirmation_for_an_unknown_stage` is the
+        # guard that fails, because only the validating path raises.
+        "B2 a restored approval skips the confirmation gate",
+        "fantasy_agent/orchestrator.py",
+        b"        self.confirm(snapshot.confirmed)\n",
+        b"        self._confirmed = set(snapshot.confirmed)  # mutation: no gate\n",
+        "tests/test_orchestrator.py::test_restore_rejects_a_confirmation_for_an_unknown_stage",
+    ),
+    (
+        # One field short of the dataclass it mirrors. The restored board shows
+        # an empty answer and every test that checks "something came back"
+        # still passes -- which is why the field-set guard names the dataclass
+        # rather than counting fields.
+        "B4 the snapshot drops a field the outcome carries",
+        "fantasy_agent/orchestration_state.py",
+        b'    answer: str = ""\n',
+        b"    # mutation: answer dropped from the mirror\n",
+        "tests/test_orchestration_state.py::test_the_snapshot_carries_exactly_the_outcome_fields",
+    ),
+    (
+        # The plan narrowing is removed, so an approval for a stage this route
+        # does not contain survives into a session about a different plan.
+        "B5 a restored approval is kept for a stage the plan lacks",
+        "fantasy_agent/orchestrator.py",
+        b"        self._confirmed &= in_plan\n",
+        b"        # mutation: no narrowing to the restored plan\n",
+        "tests/test_orchestrator.py::test_restore_drops_a_confirmation_the_restored_plan_does_not_have",
+    ),
+    (
+        # The name rule loses its trailing-dot clause. `victim.` and `victim`
+        # are one directory on Windows, so a snapshot written under the aliased
+        # id lands on another session's directory -- overwriting the approvals
+        # stored there. Containment cannot see it: `resolve_workspace_path`
+        # resolves the path fine and reports success.
+        "K1 a session id may end with a dot again",
+        "fantasy_agent/path_safety.py",
+        (
+            b'_SAFE_SEGMENT = re.compile(r"\\A[A-Za-z0-9][A-Za-z0-9._-]{0,62}'
+            b'[A-Za-z0-9_-]\\Z|\\A[A-Za-z0-9]\\Z")'
+        ),
+        (
+            b'_SAFE_SEGMENT = re.compile(r"\\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\Z")'
+            b'  # mutation: trailing dot allowed again'
+        ),
+        "tests/test_orchestration_state.py::test_a_session_id_that_the_filesystem_would_rewrite_is_refused",
+    ),
+    (
+        # The engine key stops being checked as a name. It reaches the same path
+        # template and the GET endpoint takes it as a query parameter, so it is
+        # caller-controlled today -- and the prefix rule alone lets
+        # `engine=godot/../unreal` out of the sandbox.
+        "K2 the engine key is no longer checked as a name",
+        "fantasy_agent/orchestration_state.py",
+        b'    assert_safe_path_segment(engine_key, label="engine_key")\n',
+        b"    # mutation: engine_key unchecked\n",
+        "tests/test_orchestration_state.py::test_the_engine_key_is_checked_as_a_name_too",
     ),
     (
         # A cold session starts logging again. The rule is the whole value of

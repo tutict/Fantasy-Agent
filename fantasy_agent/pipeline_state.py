@@ -330,7 +330,7 @@ def load_state(
         logger.warning(
             "pipeline state at %r is not valid JSON (schema_version %r): %s",
             path,
-            _peek_schema_version(raw),
+            peek_schema_version(raw),
             exc,
         )
         return None
@@ -340,19 +340,27 @@ def load_state(
         logger.warning(
             "pipeline state at %r does not fit the model (schema_version %r): %s",
             path,
-            _peek_schema_version(raw),
+            peek_schema_version(raw),
             exc,
         )
         return None
 
 
-def _peek_schema_version(raw: str) -> str:
+def peek_schema_version(raw: str) -> str:
     """The version a state file claims, for a warning that has to name it.
 
     Best-effort by construction: the file has already failed to parse, so this
     must never raise. A non-object or an absent field reports ``"?"`` rather
     than guessing, because a wrong version in a log is worse than an honest
-    unknown. Returns a ``str`` so the caller can format it with ``%r``.
+    unknown.
+
+    Public because the orchestration snapshot is the same kind of file -- a
+    state file under ``generated/<engine>/sessions/<id>/`` that a loader has to
+    degrade on -- and it needs the same answer for the same reason. Keeping two
+    copies meant one of them would eventually stop reporting ``"?"`` for a
+    missing field while the other still did, and the divergence would only show
+    up in a log nobody reads. Returns a ``str`` so both callers can format it
+    with ``%r``.
     """
 
     try:

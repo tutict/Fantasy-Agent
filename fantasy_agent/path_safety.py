@@ -7,11 +7,54 @@ callers get the same traversal checks and error messages.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 
 class WorkspacePathError(ValueError):
     """Raised when a requested path escapes the configured workspace."""
+
+
+#: A path segment built from a caller-supplied identifier. Deliberately
+#: narrower than "anything without a separator": these end up as **directory
+#: names on disk**, and that is where the two rules below come from.
+#:
+#: 1. No trailing dot. On Windows the filesystem silently strips trailing dots
+#:    and spaces, so ``victim.`` and ``victim`` are *one* directory -- an id
+#:    that passed a traversal check could still land on top of another
+#:    session's files. A containment check cannot see this: it resolves the
+#:    path fine and reports success, because the aliasing happens inside the OS.
+#:    Spaces are excluded outright, so only the dot needs a rule of its own.
+#: 2. No control characters. ``resolve_workspace_path`` rejects ``..`` and
+#:    absolute roots, but a newline in an id reaches a log line verbatim, so an
+#:    id could forge a second log record that no reader would attribute to a
+#:    request.
+#:
+#: Reserved device names (``CON``, ``NUL``, ``COM1``) are *not* excluded: on
+#: Windows they cannot be created as directory names either, so they fail
+#: loudly at write time rather than aliasing onto something. The only ids that
+#: exist in this repository are ``orch-<hex>`` server-side and
+#: ``orch-<base36>-<base36>`` browser-side, so the ceiling is nowhere near the
+#: real format.
+_SAFE_SEGMENT = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,62}[A-Za-z0-9_-]\Z|\A[A-Za-z0-9]\Z")
+
+
+def assert_safe_path_segment(value: str, *, label: str) -> str:
+    """Return ``value`` if it is usable as one directory name, else raise.
+
+    Call this before interpolating an identifier into a path, and keep it
+    separate from :func:`resolve_workspace_path`: that function answers "is
+    this path inside the workspace", which is a different question from "is this
+    string a name the filesystem will give back to me unchanged".
+    """
+
+    if not _SAFE_SEGMENT.match(value):
+        raise WorkspacePathError(
+            f"{label} must be 1-64 characters of letters, digits, dot, dash or "
+            f"underscore, start with a letter or digit and not end with a dot: "
+            f"{value!r}"
+        )
+    return value
 
 
 def workspace_root_path(workspace_root: Path | str) -> Path:

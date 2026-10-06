@@ -1135,3 +1135,170 @@ def _checking_registry(records: dict[str, int], *, failing: tuple[str, ...] = ()
             )
         )
     return registry
+
+
+# ── restart: restore() from a snapshot ───────────────────────────────────────
+#
+# A restarted Studio used to answer an empty board to the very session id the
+# board had written to localStorage. These pin the three claims that fix makes,
+# in decreasing order of how much damage getting them wrong would do.
+
+
+def test_restore_does_not_replay_a_finished_stage(tmp_path: Path, fake_complete):
+    """The reason the outcome map is restored at all.
+
+    Without it, confirming the last stage of a plan re-dispatches every earlier
+    one -- the exact waste `Orchestrator` exists to remove, and minutes of model
+    turns on the real pipeline. `_FakeResponses` raises when its queue runs dry,
+    so a spurious dispatch fails here instead of silently shortening the run.
+    """
+
+    records: dict[str, int] = {}
+    plan = _plan(_stage("gameplay_orchestration", order=1))
+    first = _orchestrator(tmp_path, registry=_counting_registry(records))
+    fake_complete([_call(READ_ONLY_TOOL), llm.ModelReply(text="first pass done", raw={})])
+    first.run(plan)
+
+    restored = Orchestrator.restore(
+        first.snapshot(plan),
+        plan=plan,
+        workspace_root=tmp_path,
+        registry=_counting_registry(records),
+    )
+    after_restore = dict(records)
+
+    # No replies queued: any dispatch at all raises here.
+    result = restored.run(plan)
+
+    assert dict(records) == after_restore, "the restored pass re-dispatched a done stage"
+    assert result.outcome_for("gameplay_orchestration").status == DONE
+
+
+def test_restore_never_invents_a_confirmation(tmp_path: Path):
+    """A `done` stage is not evidence that anybody approved it.
+
+    This is the inference the restore path must never make. A stage can reach
+    `done` without any gate (nothing about `requires_confirmation` stops the
+    tools being offered), so rebuilding approvals from status would hand out
+    confirmations nobody gave -- which is what AGENTS.md means by writing the
+    flag at the call site.
+    """
+
+    gated = _stage("godot_quick_play", order=1, requires_confirmation=True)
+    plan = _plan(gated)
+    source = _orchestrator(tmp_path)
+    source._outcomes["godot_quick_play"] = source._outcomes.get(
+        "godot_quick_play"
+    ) or __import__("fantasy_agent.orchestrator", fromlist=["StageOutcome"]).StageOutcome(
+        stage_id="godot_quick_play", status=DONE
+    )
+
+    snapshot = source.snapshot(plan)
+    assert snapshot.confirmed == [], "the test must start with nothing approved"
+
+    restored = Orchestrator.restore(snapshot, plan=plan, workspace_root=tmp_path)
+
+    assert restored.confirmed == frozenset()
+    assert restored.pending_confirmations(plan) == ["godot_quick_play"], (
+        "a stage nobody approved must still be waiting after a restore"
+    )
+
+
+def test_restore_rejects_a_confirmation_for_an_unknown_stage(tmp_path: Path):
+    """A hand-edited approval must fail the whole restore, not part of it.
+
+    Restore routes through `confirm()`, which validates against the translation
+    table. If that check were bypassed, anyone who can write the file could
+    install an approval for a stage they were never offered -- so the test is
+    about the *whole* restore failing: a partial one would leave some stages
+    done and silently re-run others.
+    """
+
+    plan = _plan(_stage("gameplay_orchestration", order=1))
+    source = _orchestrator(tmp_path)
+    snapshot = source.snapshot(plan)
+    snapshot.confirmed = ["not_a_real_stage"]
+
+    try:
+        Orchestrator.restore(snapshot, plan=plan, workspace_root=tmp_path)
+    except ValueError:
+        return
+    raise AssertionError("a snapshot naming an unknown stage was restored anyway")
+
+
+def test_restore_drops_a_confirmation_the_restored_plan_does_not_have(tmp_path: Path):
+    """A valid stage id that this route does not contain is dropped, not kept.
+
+    The same session id can be re-run against a different route, so an approval
+    for a stage that is no longer in the plan has nothing to apply to. It is
+    dropped rather than refused because the id itself is legitimate -- refusing
+    would make an unrelated plan change look like a corrupt file.
+    """
+
+    snapshot_plan = _plan(_stage("blender_modeling", order=1))
+    restored_plan = _plan(_stage("gameplay_orchestration", order=1))
+    source = _orchestrator(tmp_path)
+    source.confirm(["blender_modeling"])
+    snapshot = source.snapshot(snapshot_plan)
+    assert snapshot.confirmed == ["blender_modeling"]
+
+    restored = Orchestrator.restore(
+        snapshot, plan=restored_plan, workspace_root=tmp_path
+    )
+
+    assert restored.confirmed == frozenset()
+
+
+def test_restore_redeems_a_confirmation_the_operator_actually_gave(tmp_path: Path):
+    """The positive case, so the guard above cannot be satisfied by dropping all.
+
+    An approval that was genuinely clicked must survive the restart: taking it
+    back would re-ask for something the operator already answered, and would
+    send the pass through the expensive stages a second time.
+    """
+
+    plan = _plan(_stage("godot_quick_play", order=1, requires_confirmation=True))
+    source = _orchestrator(tmp_path)
+    source.confirm(["godot_quick_play"])
+    snapshot = source.snapshot(plan)
+
+    restored = Orchestrator.restore(snapshot, plan=plan, workspace_root=tmp_path)
+
+    assert restored.confirmed == frozenset({"godot_quick_play"})
+    assert restored.pending_confirmations(plan) == []
+
+
+def test_the_snapshot_never_reaches_the_executor_resume_set(tmp_path: Path):
+    """Writing a board snapshot must not touch the executor's own ledger.
+
+    `done_stages()` is what decides which minute-scale node a resume may skip,
+    so this asserts the ledger is byte-identical across a snapshot write rather
+    than merely "there is no orchestration id in it" -- a weaker phrasing that a
+    stray field could satisfy.
+    """
+
+    from fantasy_agent.orchestration_state import state_path as snapshot_path
+    from fantasy_agent.pipeline_state import load_state, state_path
+
+    plan = _plan(_stage("gameplay_orchestration", order=1))
+    orchestrator = _orchestrator(tmp_path)
+    orchestrator.run(plan)
+
+    ledger_path = state_path("s1", engine_key="godot", workspace_root=tmp_path)
+    before = ledger_path.read_bytes()
+    assert before, "the run should have written a stage ledger to compare"
+
+    orchestrator.snapshot(plan)
+    orchestrator_confirmed = _orchestrator(tmp_path)
+    orchestrator_confirmed.confirm(["godot_quick_play"])
+    orchestrator_confirmed.snapshot(plan)
+
+    assert ledger_path.read_bytes() == before, (
+        "writing a board snapshot changed the executor's resume ledger"
+    )
+    assert load_state("s1", engine_key="godot", workspace_root=tmp_path) is not None
+    # The snapshot lives in its own file, so a board write cannot be mistaken
+    # for an executor stage by anything reading the ledger.
+    assert snapshot_path("s1", engine_key="godot", workspace_root=tmp_path).name == (
+        "_orchestration_state.json"
+    )

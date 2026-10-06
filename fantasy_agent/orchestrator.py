@@ -53,6 +53,10 @@ from pathlib import Path
 from fantasy_agent.agent_loop import DEFAULT_MAX_TURNS, AgentRunResult, run_agent
 from fantasy_agent.agent_skills import AGENT_SKILLS, skill_brief
 from fantasy_agent.contracts import ProductionPipeline, ProductionPipelineStage
+from fantasy_agent.orchestration_state import (
+    OrchestrationStageState,
+    OrchestrationState,
+)
 from fantasy_agent.pipeline_state import (
     StageState,
     executor_stages_for,
@@ -307,6 +311,111 @@ class Orchestrator:
             stages=outcomes,
             error=_first_failure(outcomes),
             pending_confirmations=self.pending_confirmations(plan),
+        )
+
+    @classmethod
+    def restore(
+        cls,
+        snapshot: OrchestrationState,
+        *,
+        plan: ProductionPipeline,
+        workspace_root: Path | str,
+        registry: ToolRegistry | None = None,
+    ) -> Orchestrator:
+        """Rebuild an orchestrator from a snapshot, so a restart resumes.
+
+        The in-memory outcome map is the thing that makes resumption cheap, and
+        a restart used to throw it away: the board still held the session id it
+        had written to `localStorage`, and the answer was an empty board. This
+        puts the two halves back.
+
+        `_registry` is not restored because it was never state -- it is derived
+        from ``workspace_root``, so a fresh instance recomputes it.
+
+        Confirmations come back through :meth:`confirm` rather than by assigning
+        ``_confirmed``. That is the whole safety property: ``confirm`` validates
+        every id against the translation table, so a hand-edited snapshot naming
+        a stage that does not exist fails the whole restore instead of quietly
+        installing an approval nobody gave. AGENTS.md forbids the *frontend*
+        manufacturing a confirmation; redeeming one the operator actually gave is
+        the opposite of that, and this is where the difference is kept.
+
+        Ids the restored plan does not contain are dropped rather than rejected:
+        the same session id can be re-run against a different route, and an
+        approval for a stage that is no longer there has nothing to apply to.
+
+        Raises:
+            ValueError: when the snapshot names a confirmation that is not a
+                known orchestration stage. Partial restore is never returned --
+                a half-restored board re-runs some stages and silently skips
+                others, which is worse than either extreme.
+        """
+
+        self = cls(
+            session_id=snapshot.session_id,
+            workspace_root=workspace_root,
+            engine_key=snapshot.engine,
+            registry=registry,
+        )
+        for entry in snapshot.stages:
+            self._outcomes[entry.stage_id] = StageOutcome(
+                stage_id=entry.stage_id,
+                status=entry.status,
+                detail=entry.detail,
+                tools=list(entry.tools),
+                dispatched=entry.dispatched,
+                tool_calls=entry.tool_calls,
+                refusals=list(entry.refusals),
+                answer=entry.answer,
+                checks=list(entry.checks),
+            )
+        in_plan = {stage.id for stage in plan.stages}
+        # Validate, then narrow. This comment used to claim the order was load
+        # bearing -- that dropping first "would skip the very check that makes
+        # this safe". Measured, it does not: `_confirmed` is still an empty set
+        # at this point, so `&= in_plan` is a no-op on it and the swapped order
+        # raises exactly the same `ValueError`. What actually carries the
+        # property is that the assignments below go through `confirm()` at all
+        # (mutation B2 pins that, not the order). Written this way so the two
+        # intents stay legible instead of one being credited with the other's
+        # guarantee.
+        self.confirm(snapshot.confirmed)
+        # Then narrow. A legitimate id that this route does not contain has
+        # nothing to apply to -- the same session id can be re-run against a
+        # different route -- and refusing it would make an unrelated plan change
+        # look like a corrupt file.
+        self._confirmed &= in_plan
+        return self
+
+    def snapshot(self, plan: ProductionPipeline) -> OrchestrationState:
+        """This instance's board state, as a persistable snapshot.
+
+        Written after ``confirm`` and after every stage, so the stored
+        confirmations are by construction the ones an operator clicked rather
+        than ones this method inferred from a status -- inferring them is what
+        AGENTS.md calls writing the confirmation at the call site, and it would
+        hand out an approval nobody gave.
+        """
+
+        return OrchestrationState(
+            session_id=self.session_id,
+            engine=self.engine_key,
+            plan=plan.model_dump(mode="json"),
+            stages=[
+                OrchestrationStageState(
+                    stage_id=outcome.stage_id,
+                    status=outcome.status,
+                    detail=outcome.detail,
+                    tools=list(outcome.tools),
+                    dispatched=outcome.dispatched,
+                    tool_calls=outcome.tool_calls,
+                    refusals=list(outcome.refusals),
+                    answer=outcome.answer,
+                    checks=list(outcome.checks),
+                )
+                for outcome in self._outcomes.values()
+            ],
+            confirmed=sorted(self._confirmed),
         )
 
     def confirm(self, stage_ids: Iterable[str]) -> None:

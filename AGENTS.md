@@ -61,15 +61,27 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - 打包走 `scripts/package_desktop.py --target <platform>`，**只能构建当前平台**，跨平台明确报错。`dist/` 已 gitignore。三平台由 `.github/workflows/release.yml` 的矩阵各自在原生 runner 上构建，产物进草稿 release。
 - 产物**未签名、未公证**。README 和 release notes 都这么写。接入证书之前不得把任何发布描述为"已签名"——`tests/test_packaging.py` 会抓这类措辞。
 
-## 落盘耐久（fantasy_agent/atomic_write.py）
+## 落盘耐久与路径名（fantasy_agent/atomic_write.py、path_safety.py）
 
-- **会被回读做决策的文件必须走 `atomic_write.write_atomic`**：`_pipeline_state.json`、`llm-api.json`、审批清单、`production-spec-bundle.yaml`。判据是「读回来是为了决定」，不是「文件重要」。半截 JSON 的代价是静默的：这几个文件的加载器遇到解析失败一律降级（`load_state` 返 `None` = 全链重放，`load_settings` 返默认 = 界面显示"未配置"）。
+- **会被回读做决策的文件必须走 `atomic_write.write_atomic`**：`_pipeline_state.json`、`_orchestration_state.json`、`llm-api.json`、审批清单、`production-spec-bundle.yaml`。判据是「读回来是为了决定」，不是「文件重要」。半截 JSON 的代价是静默的：这几个文件的加载器遇到解析失败一律降级（`load_state` 返 `None` = 全链重放，`load_settings` 返默认 = 界面显示"未配置"）。
 - **`mcp_bridge._write_text` / `executor.py` 的产物写 / `process_runner` 的流式日志刻意不收口**，这不是遗漏，理由是实测出来的。同一件事有三份落点、各管一段，改任一处前先看另外两处：**判据与后果**在 `atomic_write` 的模块 docstring，**就地提醒**在 `process_runner._truncate` 的注释（就在那个函数上方，改它的人先看到），**规则清单**就是本条。
 - **把 read 和 parse 拆成两个 try 之后，`read_text` 的失败模式必须重新接住。** `UnicodeDecodeError` 是 `ValueError` 而不是 `OSError`：只捕 `OSError` 会让一个非 UTF-8 的状态文件从 `executor.resume_stages`（那里没有任何 handler）抛出去，把「全链重放」变成崩溃。变异用例 K4 / K5。
 - **「文件不存在」不算降级**：`FileNotFoundError` 单独返回、不记 warning，否则每个首次运行都刷一行，真正的信号会被淹掉。`api_settings` 与 `pipeline_state` 各有一条守卫钉住（K3 / `test_a_missing_settings_file_is_not_reported_as_a_fault`）。
 - **含调用方可控 id 的路径日志一律用 `%r`**，不用 `%s`。换行在 `%s` 下会把一条日志劈成两条，凭空伪造出一条 `INFO` 记录。降级 warning 尤其要守这条，因为它们打的就是这个路径。
+- **`session_id` / `engine_key` 进路径前必须过 `path_safety.assert_safe_path_segment`**，它管的是**名字**而不是路径。`resolve_workspace_path` 已经挡住 `..` 与绝对根，但它挡不住 Windows 的**尾点/尾空格折叠**：`victim.` 和 `victim` 是同一个目录，而 `resolve_workspace_path("victim.")` 会正常返回并报成功——别名发生在文件系统内部，容错检查看不见。`orchestration_state.state_path` 因此对两者都调用；`tests/test_orchestration_state.py::test_the_two_ids_windows_would_collapse_really_do_collapse` 钉住这个前提**本身**（守卫一条为已消失的条件存在的规则，比没有守卫更坏，因为它读起来像覆盖）。
 - **没有校验和、没有备份轮转、`schema_version` 不做迁移**，这是决定不是遗漏。`os.replace` 已经消灭了唯一的现实损坏源；再加校验和会把「罕见半截文件」换成「罕见静默全量重放」，而用户分辨不出发生了哪个（两个加载器对两者返回同一个值）。迁移函数需要一个「从哪个版本」，而除 `"0.1"` 外从未写过别的版本；本仓对版本不匹配的既定口径是**拒绝**（见 `production_spec_runtime.py`），不是迁移。
 - 给 `StageState` / `PipelineState` 加字段**必须带默认值**：它们是 `extra="forbid"` 模型，旧文件配新模型要靠默认值才读得进来（新文件配旧模型才会被拒——方向与直觉相反，实测过）。理由写在该模块的 `record_stage` docstring 里。
+
+## 编排快照模型（fantasy_agent/orchestration_state.py）
+
+重启后板子应当回到刚才那一版，而不是空白。`_ORCHESTRATION_SESSIONS` 是有意保持内存态的（`_outcomes` 是「不重放已完成 stage」的全部机制，`_confirmed` 是「不重复问同一批准」的全部机制），所以恢复靠落盘补。这一条提交只落地**模型与 `Orchestrator.restore()`**，端点还没接线。
+
+- **`confirmed` 只有三种处置：restore / drop / infer，前两种允许、`infer` 禁止。** restore 是兑现用户点过的批准（丢掉反而会重放前面几个 stage）；drop 是把已经给过的东西收回去；**infer（从 status 或 `requires_confirmation` 重建）是 `AGENTS.md` 那条闸门说的「在调用点写死 `true`」**，禁止。落地机制是 restore 必须走 `Orchestrator.confirm()` 这扇门而不是直接赋 `_confirmed`：门会按翻译表校验，手改的快照因此整个恢复失败（降级为「无快照」）而不是注入任何东西。守卫 `tests/test_orchestrator.py::test_restore_never_invents_a_confirmation` + 变异用例 B2。
+- **恢复的顺序是「先校验、再收窄」，但真正承重的是 `confirm()` 本身，不是这个顺序。** 曾把「顺序反了会跳过整个校验」写在这里，实测不成立：`_confirmed` 起初是空集，`&= in_plan` 对它是 no-op，所以两条顺序等价。要守的是**必须走 `confirm()`**（B2钉的就是这个），顺序只是让两件事读起来各归各位。
+- **快照必须存 plan**，不只是 outcomes。卡片上 `title` / `purpose` / `depends_on` / `quality_gates` / `risks` / `exit_checks` 这十个字段只存在于 plan，存一半渲染出来就是一张每格都空的退化板子——正是要修的那个东西的镜像。`plan` 存 dict 不存 `ProductionPipeline`，把 schema 漂移留给读取侧降级成「无快照」，而不是让整个快照文件读不出来。
+- **`OrchestrationStageState` 是 `StageOutcome` 的镜像，不是摘要。** 后者加第十个字段而前者没加，重启后板子静默少显示一格，**而所有测试都绿**。`tests/test_orchestration_state.py::test_the_snapshot_carries_exactly_the_outcome_fields` 按 dataclass 字段集比对（不是数个数）。变异用例 B4。
+- **不复用 `_pipeline_state.json`，这是决定**：① 那个文件是 read-modify-write 整个模型，executor 在单 worker 池、编排请求在 FastAPI 线程池，两者会交错，同文件就是一方静默覆盖另一方；② 两套词汇表（执行层 vs 板子层）分两个文件，与仓库既有的分层翻译纪律同构。**接受两份文件短暂不一致**（崩在两次写之间）——续跑与板子恢复是两个独立决策，不为它们加事务。
+- **`load_state` 的降级一律报「没有快照」，绝不部分采用。** 半恢复的板子会显示部分 stage `done`、把其余静默重跑,比一张老实承认自己什么都不知道的空板更糟。`session_id` / `engine` 与请求不一致也走这条路——快照里存着他人的批准，而批准是最不该迁移的东西。
 
 ## 语言规则
 
