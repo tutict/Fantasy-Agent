@@ -6,8 +6,9 @@ cover the parts that are checkable without building anything --
 
   * the version comes from pyproject.toml, never a second copy;
   * a cross-target build is refused rather than half-attempted;
-  * the payload list matches what is actually on disk, so a rename cannot
-    silently ship a bundle missing a directory;
+  * the payload list matches what is actually on disk (except the one entry
+    the packager builds itself), so a rename cannot silently ship a bundle
+    missing a directory;
   * the unsigned claim stays honest.
 
 Actually building a bundle is left to the platform runners in
@@ -71,15 +72,34 @@ def test_every_payload_entry_exists():
 
     The failure is silent at build time and fatal at run time -- the Studio
     answers 503 on the UI routes when apps/frontend/dist is absent.
+
+    ``apps/frontend/dist`` is the one entry that is *supposed* to be absent
+    from a fresh checkout: the packager builds it (``ensure_frontend_built``)
+    and ``_copy_payload`` refuses to stage without it. Asserting its
+    existence here made this guard fail on every tree nobody had built in,
+    for a reason unrelated to the rename it claims to catch -- and the CI
+    backend job has no Node, so it could never go green there. The split is
+    declared in ``BUILD_OUTPUTS`` and asserted honest in both directions
+    below, so the exception cannot quietly grow.
     """
 
     module = _load_packager()
 
-    missing = [entry for entry in module.PAYLOAD if not (REPO_ROOT / entry).exists()]
+    produced = set(module.BUILD_OUTPUTS)
+    listed = set(module.PAYLOAD)
+    assert produced <= listed, (
+        f"BUILD_OUTPUTS names an entry PAYLOAD does not ship: {produced - listed}"
+    )
+    missing = [
+        entry
+        for entry in module.PAYLOAD
+        if entry not in produced and not (REPO_ROOT / entry).exists()
+    ]
     assert missing == [], f"payload entries missing from the tree: {missing}"
 
-    # The two that matter most, named explicitly so a careless edit to PAYLOAD
-    # cannot quietly drop them.
+    # The ones that matter most, named explicitly so a careless edit to
+    # PAYLOAD cannot quietly drop them -- including the build output, whose
+    # absence from the list no other assertion would notice.
     assert "apps/frontend/dist" in module.PAYLOAD
     assert "apps/studio" in module.PAYLOAD
     assert "fantasy_agent" in module.PAYLOAD

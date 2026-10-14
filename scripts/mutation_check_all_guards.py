@@ -1321,6 +1321,16 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         b"    except OSError as exc:  # mutation: UnicodeDecodeError escapes\n",
         "tests/test_api_settings.py::test_a_settings_file_that_is_not_text_degrades_instead_of_raising",
     ),
+    (
+        "PK1 the bundle loses the frontend it ships",
+        "scripts/package_desktop.py",
+        # The existence half of the guard skips build outputs, so this line is
+        # caught by the split-honesty assertion and the explicit name check --
+        # which is the pair that replaced "dist must exist on disk".
+        b'    "apps/frontend/dist",\n',
+        b"",
+        "tests/test_packaging.py::test_every_payload_entry_exists",
+    ),
 )
 
 

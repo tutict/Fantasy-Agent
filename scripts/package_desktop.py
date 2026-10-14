@@ -69,6 +69,17 @@ APP_ID = "com.fantasyagent.linggou"
 
 SUPPORTED_TARGETS = ("windows", "macos", "linux")
 
+#: Payload entries the packager produces itself. ``apps/frontend/dist`` is
+#: written by ``ensure_frontend_built`` (or by ``npm run frontend:build``) and
+#: is never committed, so its absence means "nobody built yet" -- a state
+#: ``ensure_frontend_built`` already answers, loudly, by building it or by
+#: naming the missing ``npm install``. Every other entry is source tree and
+#: must exist before a bundle is staged; ``_copy_payload`` refuses to stage
+#: otherwise. The pytest guard asserts the same split, which is why a fresh
+#: checkout with no build is green there instead of failing for a reason that
+#: has nothing to do with a rename.
+BUILD_OUTPUTS: tuple[str, ...] = ("apps/frontend/dist",)
+
 #: Files and directories the bundle needs at runtime. `apps/frontend/dist` is
 #: the built React bundle; without it the Studio answers 503 on the UI routes.
 PAYLOAD: tuple[str, ...] = (
