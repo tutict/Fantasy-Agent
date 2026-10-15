@@ -53,6 +53,7 @@ from pathlib import Path
 from fantasy_agent.agent_loop import DEFAULT_MAX_TURNS, AgentRunResult, run_agent
 from fantasy_agent.agent_skills import AGENT_SKILLS, skill_brief
 from fantasy_agent.contracts import ProductionPipeline, ProductionPipelineStage
+from fantasy_agent.human_decision import write_decision_record
 from fantasy_agent.orchestration_state import (
     OrchestrationStageState,
     OrchestrationState,
@@ -78,6 +79,12 @@ logger = logging.getLogger(__name__)
 #: Mirrors ``contracts.ProductionStageKind``. Spelled out here because a ``Literal``
 #: alias has no runtime value to compare against.
 HUMAN_STAGE_KIND = "human"
+
+#: What a person may decide about a human gate. ``approved`` lets the stage
+#: count as done and unblocks what depends on it; ``rejected`` fails it, which
+#: is the honest reading of "the operator sent this back" -- the dependents
+#: stay blocked rather than running past a gate somebody refused.
+HUMAN_DECISIONS: tuple[str, ...] = ("approved", "rejected")
 
 # ── runtime stage status ─────────────────────────────────────────────────────
 
@@ -194,6 +201,12 @@ class OrchestrationResult:
     #: the status alone would also cover "I am allowed to start but not to
     #: write", which approving does not fix. The board needs the first list.
     pending_confirmations: list[str] = field(default_factory=list)
+    #: Human gates in this plan nobody has decided yet, at the end of the pass.
+    #: A gate is not "approved", it is *decided*, so it has its own list: the
+    #: board's summary line has to offer a decision where it offers an approval,
+    #: and mixing the two would put an approve button on a card that approving
+    #: cannot move.
+    pending_human_gates: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -237,6 +250,13 @@ class Orchestrator:
         #: Stage ids an operator has approved this session. Kept here rather
         #: than passed once, so the pass after the approval does not ask again.
         self._confirmed: set[str] = set()
+        #: Decisions an operator gave for ``kind="human"`` gates, stage id to
+        #: decision. Separate from ``_confirmed`` and on purpose: approving a
+        #: stage answers "may this run", deciding a gate answers "what did the
+        #: person say", and the two have different vocabularies, different
+        #: failure modes (a refusal blocks, a decision resolves) and different
+        #: writers. Written only by :meth:`resolve_human_stage`.
+        self._human_decisions: dict[str, str] = {}
         #: The plan of the pass in flight, kept only so ``_record`` can write a
         #: snapshot. Ten of the fields a board card draws exist nowhere else, so
         #: a snapshot without the plan renders the degenerate board this exists
@@ -301,6 +321,13 @@ class Orchestrator:
 
         self.confirm(confirm_stages)
         self._plan = plan
+        # Re-stamped on every pass rather than only when a decision arrives: a
+        # decision given before the plan was in hand has no plan to land on, and
+        # each pass re-points the session at a freshly posted copy whose stages
+        # arrive without stamps. Without this the second pass would show a
+        # decided gate as waiting again -- the deadlock this whole change exists
+        # to remove, reintroduced one POST later.
+        self._stamp_plan()
         ceiling = _ceiling(allow_write=allow_write, allow_execute=allow_execute)
         outcomes: list[StageOutcome] = []
         for stage in sorted(plan.stages, key=lambda entry: entry.order):
@@ -319,6 +346,7 @@ class Orchestrator:
             stages=outcomes,
             error=_first_failure(outcomes),
             pending_confirmations=self.pending_confirmations(plan),
+            pending_human_gates=self.pending_human_gates(plan),
         )
 
     @classmethod
@@ -347,6 +375,11 @@ class Orchestrator:
         installing an approval nobody gave. AGENTS.md forbids the *frontend*
         manufacturing a confirmation; redeeming one the operator actually gave is
         the opposite of that, and this is where the difference is kept.
+
+        Gate decisions come back through :meth:`resolve_human_stage`, read off
+        the plan the snapshot carries. Same property, same reason: the plan dump
+        is backend-written state (``_stamp_plan`` wrote the decision onto it), so
+        restoring from it is redeeming a decision rather than trusting a browser.
 
         Ids the restored plan does not contain are dropped rather than rejected:
         the same session id can be re-run against a different route, and an
@@ -393,6 +426,18 @@ class Orchestrator:
         # different route -- and refusing it would make an unrelated plan change
         # look like a corrupt file.
         self._confirmed &= in_plan
+        # Decisions come back the same way and for the same reason: through
+        # ``resolve_human_stage``, which validates the value against
+        # ``HUMAN_DECISIONS`` and the id against the translation table. The
+        # stamps are read off the plan the snapshot carries rather than off the
+        # browser's copy, so this redeems a decision the operator actually gave
+        # -- the exact mirror of what ``confirmed`` restores, and the reason a
+        # plan merely arriving with the field filled does not open a gate:
+        # ``_advance`` reads this map, never the field.
+        for stage in plan.stages:
+            if stage.human_resolution is None:
+                continue
+            self.resolve_human_stage(stage.id, stage.human_resolution)
         return self
 
     def snapshot(self, plan: ProductionPipeline) -> OrchestrationState:
@@ -446,7 +491,8 @@ class Orchestrator:
         Ordered as the plan is, so the board can show them in the same sequence
         as the cards. A human gate is not included: approving it would not make
         it run, so offering the operator an approve button for one would be a
-        dead end that looks like a control.
+        dead end that looks like a control. What a gate needs is a *decision*,
+        which is what :meth:`pending_human_gates` lists.
         """
 
         return [
@@ -455,6 +501,77 @@ class Orchestrator:
             if stage.requires_confirmation
             and stage.kind != HUMAN_STAGE_KIND
             and stage.id not in self._confirmed
+        ]
+
+    @property
+    def human_decisions(self) -> dict[str, str]:
+        """Decisions given so far, keyed by stage id, so a board can show them."""
+
+        return dict(self._human_decisions)
+
+    def resolve_human_stage(self, stage_id: str, decision: str) -> None:
+        """Record a person's decision for a human gate.
+
+        The only writer of ``_human_decisions``, and deliberately shaped like
+        :meth:`confirm`: the id is validated against the translation table
+        rather than a plan, so the same gate can be decided before the plan
+        that contains it is in hand, and an unknown id raises rather than
+        storing -- a stored typo would look like a decision that never takes
+        effect, and the gate would wait forever with nothing to show for it.
+
+        The decision is also stamped onto the plan the instance is holding (if
+        it has one), because the plan dump is what the snapshot carries: that
+        is how a decision survives a restart, and it is the same discipline
+        ``confirmed`` uses -- the record rides in backend-written state, never
+        in something the browser authored. A plan that merely *arrives* with
+        ``human_resolution`` already filled does not open the gate, because
+        ``_advance`` reads this map and not the field.
+
+        Raises:
+            ValueError: for an unknown stage id, or a decision outside
+                ``HUMAN_DECISIONS``. Both would otherwise read as a decision
+                that silently did nothing.
+        """
+
+        executor_stages_for(stage_id)  # raises ValueError for an unknown id
+        if decision not in HUMAN_DECISIONS:
+            raise ValueError(
+                f"decision {decision!r} is not one of {list(HUMAN_DECISIONS)}"
+            )
+        self._human_decisions[stage_id] = decision
+        self._stamp_plan()
+
+    def _stamp_plan(self) -> None:
+        """Write the decisions onto the plan, so the snapshot's dump carries them.
+
+        The plan is the session's record, not the browser's: every pass
+        re-points the session at the plan that was posted, and a posted plan
+        arrives without the stamps (the frontend has no business writing
+        them). Stamping here is what keeps "what was decided" attached to the
+        session instead of to whichever copy of the plan happened to be posted.
+        """
+
+        if self._plan is None:
+            return
+        for stage in self._plan.stages:
+            decision = self._human_decisions.get(stage.id)
+            if decision is not None:
+                stage.human_resolution = decision
+
+    def pending_human_gates(self, plan: ProductionPipeline) -> list[str]:
+        """Gates in ``plan`` still waiting for a person's decision.
+
+        Separate from ``pending_confirmations`` because the two ask different
+        things of the operator -- approve a stage so it may run, decide a gate
+        so the plan may continue -- and the board's summary line says which.
+        Ordered as the plan is, like the other pending list.
+        """
+
+        return [
+            stage.id
+            for stage in sorted(plan.stages, key=lambda entry: entry.order)
+            if stage.kind == HUMAN_STAGE_KIND
+            and stage.id not in self._human_decisions
         ]
 
     def rewind_from(self, plan: ProductionPipeline, stage_id: str) -> list[str]:
@@ -568,10 +685,37 @@ class Orchestrator:
             )
 
         if stage.kind == HUMAN_STAGE_KIND:
+            # A gate is not "approved", it is *decided*, and the decision is
+            # looked up here rather than read off the plan: a plan that arrives
+            # with the field filled must not open a gate nobody decided, which
+            # is the same line AGENTS.md draws for ``confirmed``.
+            decision = self._human_decisions.get(stage.id)
+            if decision is None:
+                return StageOutcome(
+                    stage.id,
+                    AWAITING_HUMAN,
+                    detail="this stage is a person's decision; no tools are run for it",
+                )
+            # The decision is durable before the stage counts as done: the
+            # stage's ``artifacts`` name a record, and a board showing ``done``
+            # next to a file nobody wrote is the artifact-honesty bug G-03
+            # spent on the playtest report. A failure to write is logged, not
+            # raised -- the person did decide, and losing the stage over the
+            # record of it would be the worse trade.
+            self._record_decision(stage, decision)
+            if decision == "approved":
+                return StageOutcome(
+                    stage.id,
+                    DONE,
+                    detail=f"decision recorded: {decision}",
+                )
             return StageOutcome(
                 stage.id,
-                AWAITING_HUMAN,
-                detail="this stage is a person's decision; no tools are run for it",
+                FAILED,
+                detail=(
+                    f"decision recorded: {decision} -- the operator sent this "
+                    f"gate back, so what depends on it stays blocked"
+                ),
             )
 
         # Before the tool list is even resolved, on purpose. Until somebody has
@@ -776,6 +920,40 @@ class Orchestrator:
             save_state(self.snapshot(self._plan), workspace_root=self.workspace_root)
         except Exception:
             logger.exception("could not snapshot stage %s", stage.id)
+
+    def _record_decision(
+        self, stage: ProductionPipelineStage, decision: str
+    ) -> None:
+        """Write the decision to disk, where the rest of the session reads it.
+
+        The stage counts as done only after this file exists: a human stage's
+        ``artifacts`` name the record, and a board showing ``done`` next to a
+        file nobody wrote is the artifact-honesty problem G-03 spent on the
+        playtest report. The decision is therefore durable *before* the outcome
+        turns, which is why ``_advance`` calls this on the way out rather than
+        leaving it to the stage's own tool list -- a gate runs no tools.
+
+        A failure to write is logged, not raised. The person did decide, and
+        losing the stage over the record of it would be the worse trade; the
+        stage still advances, and the log line says the file is missing.
+        """
+
+        try:
+            path = write_decision_record(
+                self.session_id,
+                stage.id,
+                decision,
+                engine_key=self.engine_key,
+                workspace_root=self.workspace_root,
+            )
+        except Exception:
+            # Same shape and same reason as ``_record``: a blind handler that
+            # logs is exempt, so naming the directive would be flagged unused.
+            logger.exception("could not record the decision for stage %s", stage.id)
+            return
+        logger.info(
+            "decision %r for stage %s recorded at %s", decision, stage.id, path
+        )
 
 
 def _ceiling(*, allow_write: bool, allow_execute: bool) -> str:

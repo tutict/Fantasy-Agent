@@ -1003,6 +1003,28 @@ class AssetApprovalManifest(StrictModel):
     pending_asset_ids: list[str] = Field(default_factory=list)
 
 
+class HumanDecisionRecord(StrictModel):
+    """What one human gate decided, written where the stage said it would.
+
+    The stage's ``artifacts`` name this file, so a gate that reads ``done``
+    while nothing was written there is the artifact-honesty bug G-03 just
+    spent on the playtest report. The orchestrator writes it once per decision,
+    atomically, inside the session's own directory -- the same one the
+    orchestration snapshot lives in, because a decision and the board state it
+    changes are one session's facts.
+    """
+
+    source: str = "fantasy-agent.human-decision"
+    schema_version: str = "0.1"
+    session_id: str
+    stage_id: str
+    #: ``approved`` or ``rejected``. The vocabulary is the orchestrator's
+    #: (``HUMAN_DECISIONS``); this file is a record, not a second definition of
+    #: it, so the field stays a plain string and nothing gates on re-reading it.
+    decision: str
+    decided_at: str = ""
+
+
 class CreativeReviewRequest(StrictModel):
     gameplay_spec: GameplaySpec
     blender_plan: BlenderAssetPlan
@@ -1075,6 +1097,18 @@ class ProductionPipelineStage(StrictModel):
     kind: ProductionStageKind = "agent"
     status: ProductionTaskStatus = "pending"
     requires_confirmation: bool = False
+    #: The decision a person gave for a ``kind="human"`` gate, or ``None`` while
+    #: the gate is still waiting. Written by ``Orchestrator.resolve_human_stage``
+    #: and by nothing else, which is what keeps it honest: the orchestrator's
+    #: gate consults its own decision map, never this field, so a plan that
+    #: *arrives* with the field already filled does not open the gate. Only a
+    #: decision the backend recorded -- a click, or a snapshot the backend wrote
+    #: -- counts, the same line AGENTS.md draws for ``confirmed``.
+    #:
+    #: The field is the record rather than the input: it rides in the plan dump
+    #: the orchestration snapshot carries, so a restart comes back to a board
+    #: that still shows what was decided instead of re-asking.
+    human_resolution: str | None = None
     risks: list[str] = Field(default_factory=list)
 
 

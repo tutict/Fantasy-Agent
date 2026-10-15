@@ -808,6 +808,14 @@ def prepare_production_pipeline(
             artifacts=[
                 "generated/creative-review-report.yaml",
                 "generated/asset-approval-manifest.yaml",
+                # What the gate itself produces once a person decides it: the
+                # decision record, written next to the session's orchestration
+                # snapshot. Named here with the same `<...>` placeholders the
+                # Godot stage uses, because the plan cannot know a session id at
+                # authoring time -- but a stage whose artifact list omits what it
+                # writes is the artifact-honesty bug G-03 spent on the playtest
+                # report, one stage over.
+                "generated/<engine>/sessions/<session_id>/human-decision.yaml",
             ],
             # No tool approves an asset: the side effect below is asking the user
             # for a decision. Declaring it as an agent stage is what left it with
