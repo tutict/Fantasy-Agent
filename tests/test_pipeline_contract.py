@@ -210,12 +210,14 @@ def test_every_exit_check_is_a_tool_that_cannot_launch_or_write_anything():
     would turn an exit check into an unreviewed engine launch, i.e. exactly the
     side effect the permission gate exists to require confirmation for.
 
-    No stage declares one yet, on purpose: every exported ``quality_gates``
-    entry is a judgement a human makes, and the only read-only tool that takes
-    no arguments probes a network endpoint, which would turn "ComfyUI is not
+    The one read-only tool that takes no arguments probes a network endpoint,
+    and it is deliberately not used as a check: it would turn "ComfyUI is not
     installed" -- a degraded run, which AGENTS.md promises -- into a failed
-    stage. So the field is wired but unused, and the control below is what keeps
-    this scan from being an empty set that can only ever pass.
+    stage. The checks that are used are pure computations over the run's own
+    plans instead (the three ``verify_*`` tools in ``fantasy_agent.plan_checks``)
+    plus one read of the project the stage built (``validate_godot_project``,
+    which resolves its target from the run's own ``godot_plan`` so a
+    no-argument call can name one).
     """
 
     for route, pipeline in _pipelines().items():
@@ -252,10 +254,56 @@ def test_the_exit_check_guard_would_catch_a_write_or_an_execute_tool():
     )
 
 
-def test_a_stage_written_before_the_exit_checks_field_still_loads():
-    """Same addition rule as `kind`: absent means "no machine checks", not "error"."""
+def test_every_agent_stage_on_the_godot_route_declares_exit_checks():
+    """A stage with no machine check is a stage that reports itself verified.
 
-    payload = _stage(_pipelines()["Godot 4"], "godot_quick_play").model_dump(mode="json")
+    ``quality_gates`` is prose; ``exit_checks`` is the part a machine settles.
+    A stage that ran and declared none reaches ``done`` on the strength of its
+    agent not having errored, which is the vacuous gate this field exists to
+    close. Scoped to the Godot route because that is the route this project
+    runs -- see the test below for what the Unreal route is missing and why.
+    """
+
+    pipeline = _pipelines()["Godot 4"]
+    unchecked = [
+        stage.id
+        for stage in pipeline.stages
+        if stage.kind == "agent" and not stage.exit_checks
+    ]
+    assert unchecked == [], f"agent stages with no exit check: {unchecked}"
+
+
+def test_the_unreal_route_stages_without_a_check_are_the_named_ones():
+    """The Unreal hole is enumerated, not silent.
+
+    Both of its validators (``validate_asset_ingest``,
+    ``validate_level_assembly``) take a manifest path that only a run produces,
+    so they cannot be called with no arguments the way an exit check is -- and
+    ``optimization_testing`` on that route has no read-only tool at all. Until
+    those can self-locate, the honest state is a named list: a new Unreal stage
+    with no check fails here, and wiring one of these three up fails here too,
+    so the list cannot rot in either direction.
+    """
+
+    pipeline = _pipelines()["Unreal Engine 5"]
+    unchecked = sorted(
+        stage.id for stage in pipeline.stages if stage.kind == "agent" and not stage.exit_checks
+    )
+
+    assert unchecked == ["asset_integration", "optimization_testing", "unreal_production"], (
+        "the Unreal route's unchecked stages changed; update this list and the "
+        "reason in the docstring together"
+    )
+
+
+def test_a_stage_written_before_the_exit_checks_field_still_loads():
+    """Same addition rule as `kind`: absent means "no machine checks", not "error".
+
+    Read off the human gate, which is the one stage that legitimately declares
+    none: nothing runs for it, so there is nothing to check.
+    """
+
+    payload = _stage(_pipelines()["Godot 4"], "creative_review").model_dump(mode="json")
     assert payload["exit_checks"] == [], "the field must reach the frontend"
     payload.pop("exit_checks")
     assert ProductionPipelineStage.model_validate(payload).exit_checks == []

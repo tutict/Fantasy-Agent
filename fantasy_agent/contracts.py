@@ -530,9 +530,15 @@ class GodotMCPCreateProjectRequest(StrictModel):
 
 
 class GodotMCPValidateProjectRequest(StrictModel):
-    project_file: str
+    #: Empty means "derive it from ``plan``", which is what an exit check needs:
+    #: the orchestrator runs checks with no arguments at all, so a check that
+    #: could only be pointed at a path by a caller would be a check that never
+    #: runs. An explicit path still wins -- a caller validating one specific
+    #: project out of several is the normal direct call.
+    project_file: str = ""
     require_main_scene: bool = True
     require_scripts: bool = True
+    plan: GodotProjectPlan | None = None
 
 
 class GodotMCPRunImportRequest(StrictModel):
@@ -903,6 +909,33 @@ class ComfyUICapabilityProbeResult(StrictModel):
     selected_checkpoint: str | None = None
     blockers: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+
+
+# ── exit checks ─────────────────────────────────────────────────────────────
+#
+# A stage's ``quality_gates`` is prose a human reads. These three requests are
+# the machine-checkable half of the same sentence: each one is filled by the
+# registry from the run's own artifact store (``plan_key``), never by a caller,
+# and each handler answers one question about the plan a stage just produced.
+#
+# They are read-only *computations* -- no endpoint is probed, no engine is
+# launched, no file is written -- which is what makes them safe for the
+# orchestrator to run unattended after a stage's agent finishes. The
+# alternative that was available, ``probe_comfyui_capabilities``, would have
+# turned "ComfyUI is not installed" (a degraded run AGENTS.md promises) into a
+# failed stage, so it is deliberately not used as a check.
+
+
+class GameplaySpecCheckRequest(StrictModel):
+    plan: GameplaySpec | None = None
+
+
+class BlenderPlanCheckRequest(StrictModel):
+    plan: BlenderAssetPlan | None = None
+
+
+class ComfyUIPlanCheckRequest(StrictModel):
+    plan: ComfyUIVisualPlan | None = None
 
 
 class ArtDirectionBrief(StrictModel):

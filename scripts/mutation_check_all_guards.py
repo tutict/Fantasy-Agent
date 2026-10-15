@@ -619,15 +619,21 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "tests/test_pipeline_contract.py::test_the_pipeline_references_only_stages_a_route_actually_builds",
     ),
     (
-        # The default value, not a construction site: `_pipeline_stage()` never
-        # passes `exit_checks`, so a dangerous default arrives on *every* stage
-        # of both routes. Same shape as T4 -- a field whose default is the only
-        # thing standing between the table and an unreviewed engine launch.
+        # The default value, not a construction site. This case *moved guards*
+        # when G-02 landed: ``_pipeline_stage()`` now passes ``exit_checks``
+        # (as ``exit_checks or []``) to every stage it builds, so the default no
+        # longer reaches any stage of either route and the pipeline-wide scan
+        # cannot observe it -- the mutation was equivalent there, and the
+        # harness correctly reported MISSED. What still reads the default is a
+        # stage payload written before the field existed (an old plan JSON, a
+        # hand-built stage), so that is the guard that has to catch a dangerous
+        # one. Same shape as T4 -- a field whose default is the only thing
+        # standing between an undeclared stage and an unreviewed engine launch.
         "T9 the exit checks default to a tool that launches a process",
         "fantasy_agent/contracts.py",
         b"    exit_checks: list[str] = Field(default_factory=list)\n",
         b'    exit_checks: list[str] = Field(default_factory=lambda: ["run_godot_import"])\n',
-        "tests/test_pipeline_contract.py::test_every_exit_check_is_a_tool_that_cannot_launch_or_write_anything",
+        "tests/test_pipeline_contract.py::test_a_stage_written_before_the_exit_checks_field_still_loads",
     ),
     (
         "T10 a failing exit check stops failing the stage",
@@ -1400,6 +1406,72 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         b"    except (OSError, ValueError) as exc:\n",
         b"    except OSError as exc:  # mutation: UnicodeDecodeError escapes\n",
         "tests/test_api_settings.py::test_a_settings_file_that_is_not_text_degrades_instead_of_raising",
+    ),
+    # ── exit checks: the vacuous gate, closed from both ends ──────────────────
+    #
+    # X1/X2 are the same guard seen twice on purpose. A single "every stage
+    # declares checks" case would be satisfied by the one stage nobody edited;
+    # mutating two different stages' entries proves the guard walks the table
+    # rather than spot-checking a row it happens to know.
+    (
+        "X1 a stage is added with no exit check",
+        "fantasy_agent/workflows.py",
+        b'            exit_checks=["verify_gameplay_spec"],\n',
+        b"",
+        "tests/test_pipeline_contract.py::test_every_agent_stage_on_the_godot_route_declares_exit_checks",
+    ),
+    (
+        "X2 the Godot stage loses its project check",
+        "fantasy_agent/workflows.py",
+        b'            exit_checks=["validate_godot_project"],\n',
+        b"",
+        "tests/test_pipeline_contract.py::test_every_agent_stage_on_the_godot_route_declares_exit_checks",
+    ),
+    (
+        # The check reverts to needing a path from a caller, which is the state
+        # the code was in before: an exit check is called with no arguments, so
+        # this turns the Godot chain's only machine check into one that can
+        # never run.
+        "X3 the project check stops finding its own project",
+        "fantasy_agent/godot_mcp.py",
+        (
+            b'                f"{_default_project_dir(request.plan)}/project.godot"\n'
+            b"                if request.plan is not None\n"
+            b'                else ""\n'
+        ),
+        b'                ""\n',
+        "tests/test_exit_checks_wired.py::test_a_generated_project_passes_the_godot_check",
+    ),
+    (
+        # The realistic mistake, not a deleted guard: count the loop steps
+        # instead of the distinct decisions. ``GameplaySpec`` already enforces
+        # ``min_length=3``, so the mutated rule is satisfied by construction and
+        # the check passes a loop with one decision written three times.
+        "X4 the spec check counts steps instead of decisions",
+        "fantasy_agent/plan_checks.py",
+        b"    if len(distinct) < MIN_TESTABLE_DECISIONS:\n",
+        b"    if len(spec.core_loop) < MIN_TESTABLE_DECISIONS:\n",
+        "tests/test_exit_checks_wired.py::test_the_gameplay_spec_check_fails_a_spec_nobody_could_test",
+    ),
+    (
+        # A check that reports a problem without naming it sends the rework to
+        # the wrong node, and the stage detail is where the reason lands.
+        "X5 a failed validation stops saying what is wrong",
+        "fantasy_agent/godot_mcp.py",
+        b'            return f"Godot MCP found project validation issues: {issues}{suffix}"\n',
+        b'            return "Godot MCP found project validation issues."\n',
+        "tests/test_exit_checks_wired.py::test_a_broken_project_fails_the_godot_check_with_the_reason",
+    ),
+    (
+        # The Unreal hole is enumerated so it cannot grow silently. The realistic
+        # mistake is "fixing" the asymmetry by giving the Unreal route the same
+        # check -- which would validate a *Godot* project on a Unreal run, since
+        # the artifact store carries both sub-plans.
+        "X6 an Unreal stage gains a check nobody can run",
+        "fantasy_agent/workflows.py",
+        b'            exit_checks=(["validate_godot_project"] if primary_is_godot else []),\n',
+        b'            exit_checks=["validate_godot_project"],\n',
+        "tests/test_pipeline_contract.py::test_the_unreal_route_stages_without_a_check_are_the_named_ones",
     ),
     (
         "PK1 the bundle loses the frontend it ships",

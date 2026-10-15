@@ -439,6 +439,15 @@ def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
             handler=_bind("render_gdd"),
         )
     )
+
+    # The exit checks. Registered here rather than in a registry of their own
+    # because `_run_exit_checks` resolves names against the *full* registry: a
+    # check that lived anywhere else would be an unresolvable name, and an
+    # unresolvable name fails the stage -- which is the right outcome for a
+    # typo and the wrong one for a check nobody wired up.
+    from fantasy_agent.plan_checks import register_check_tools
+
+    register_check_tools(registry)
     return registry
 
 
@@ -464,6 +473,11 @@ _ENGINE_HIDDEN_ARGS: dict[str, tuple[str, ...]] = {
         "gameplay_scripts",
         "production_spec_bundle",
     ),
+    # ``plan`` is the validate tool's *optional* way to find the project, not a
+    # required input: a caller that names ``project_file`` needs no plan at all.
+    # It is hidden anyway because a model sending one would be sending a plan
+    # the run did not plan around.
+    "validate_godot_project": ("plan",),
 }
 
 # Which artifact fills each hidden argument. Hiding an argument only removes it
@@ -477,6 +491,14 @@ _HIDDEN_ARG_SOURCES: dict[str, dict[str, str]] = {
         "gameplay_spec": "gameplay_spec",
         "production_spec_bundle": "production_spec_bundle",
     },
+    # Through ``_HIDDEN_ARG_SOURCES`` rather than ``PLAN_KEYS`` on purpose. A
+    # ``plan_key`` is a *gate*: the registry refuses the call when the run never
+    # produced that plan, which would break the direct caller that names a
+    # project file and has no plan to give. Filling it only when it exists keeps
+    # that caller working and still lets an exit check -- called with no
+    # arguments at all -- land on the project this run produced rather than on
+    # one a caller picked.
+    "validate_godot_project": {"plan": "godot_plan"},
 }
 
 #: Hidden arguments that no source fills in, and why that is deliberate. Every

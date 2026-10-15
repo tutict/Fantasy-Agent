@@ -128,7 +128,7 @@ class GodotMCPBridge(BaseMCPBridge):
         self,
         request: GodotMCPCreateProjectRequest,
     ) -> GodotMCPResult:
-        project_dir = request.project_dir or f"generated/godot/{_slug(request.plan.project_name)}"
+        project_dir = request.project_dir or _default_project_dir(request.plan)
         artifact = self._artifact(request.plan, project_dir)
         risks = self._validate_artifact(artifact, request.plan)
         created_paths = [artifact.project_dir, *artifact.asset_dirs]
@@ -154,31 +154,55 @@ class GodotMCPBridge(BaseMCPBridge):
         self,
         request: GodotMCPValidateProjectRequest,
     ) -> GodotMCPResult:
-        project_file = self._assert_godot_project_file(request.project_file, require_exists=False)
         issues: list[str] = []
         warnings: list[str] = []
         main_scene_path = ""
         script_count = 0
 
-        if not project_file.exists():
-            issues.append(f"Godot project file does not exist: {request.project_file}")
-        else:
-            project_text = project_file.read_text(encoding="utf-8")
-            main_scene = _main_scene_from_project(project_text)
-            if not main_scene:
-                issues.append("project.godot is missing application/run/main_scene.")
+        # An explicit path wins. Without one the plan says where this run's
+        # project is, which is the only way a no-argument call -- the shape the
+        # orchestrator's exit checks use -- can name a project at all. With
+        # neither, there is nothing to read and saying so is the honest result:
+        # a stage that claims to have built a project, checked by a run that
+        # never planned one, is a failed check and not a passed one.
+        named = request.project_file
+        if not named:
+            named = (
+                f"{_default_project_dir(request.plan)}/project.godot"
+                if request.plan is not None
+                else ""
+            )
+            if not named:
+                issues.append(
+                    "no project file was named and this run has no godot_plan "
+                    "to derive one from"
+                )
+
+        if named:
+            project_file = self._assert_godot_project_file(named, require_exists=False)
+            if not project_file.exists():
+                issues.append(f"Godot project file does not exist: {named}")
             else:
-                main_scene_path = (project_file.parent / main_scene.removeprefix("res://")).as_posix()
-                main_scene_file = project_file.parent / main_scene.removeprefix("res://")
-                if request.require_main_scene and not main_scene_file.exists():
-                    issues.append(f"Main scene does not exist: {main_scene}")
-            script_dir = project_file.parent / "scripts"
-            scripts = sorted(script_dir.glob("*.gd")) if script_dir.exists() else []
-            script_count = len(scripts)
-            if request.require_scripts and script_count == 0:
-                issues.append("No generated Godot scripts found under scripts/.")
-            if "renderer/rendering_method=" not in project_text:
-                warnings.append("No renderer/rendering_method configured; Godot will use editor defaults.")
+                project_text = project_file.read_text(encoding="utf-8")
+                main_scene = _main_scene_from_project(project_text)
+                if not main_scene:
+                    issues.append("project.godot is missing application/run/main_scene.")
+                else:
+                    main_scene_path = (
+                        project_file.parent / main_scene.removeprefix("res://")
+                    ).as_posix()
+                    main_scene_file = project_file.parent / main_scene.removeprefix("res://")
+                    if request.require_main_scene and not main_scene_file.exists():
+                        issues.append(f"Main scene does not exist: {main_scene}")
+                script_dir = project_file.parent / "scripts"
+                scripts = sorted(script_dir.glob("*.gd")) if script_dir.exists() else []
+                script_count = len(scripts)
+                if request.require_scripts and script_count == 0:
+                    issues.append("No generated Godot scripts found under scripts/.")
+                if "renderer/rendering_method=" not in project_text:
+                    warnings.append(
+                        "No renderer/rendering_method configured; Godot will use editor defaults."
+                    )
 
         report = GodotProjectValidationReport(
             project_file=request.project_file,
@@ -547,7 +571,14 @@ def _content_summary(result: GodotMCPResult) -> str:
         return "Godot MCP blocked execution because the operation was not confirmed."
     if result.status == "failed":
         if result.validation_report is not None:
-            return "Godot MCP found project validation issues."
+            # The issues are in the text, not only in structuredContent: an exit
+            # check reads this line back into the stage's ``detail``, and a stage
+            # that failed without saying what is wrong sends the rework to the
+            # wrong node.
+            issues = "; ".join(result.validation_report.issues[:4])
+            more = len(result.validation_report.issues) - 4
+            suffix = f" (+{more} more)" if more > 0 else ""
+            return f"Godot MCP found project validation issues: {issues}{suffix}"
         return "Godot MCP failed. Check returned logs and stderr_tail."
     if result.status == "executed":
         if result.validation_report is not None:
@@ -1349,6 +1380,19 @@ def _slug(value: str) -> str:
     while "__" in slug:
         slug = slug.replace("__", "_")
     return slug or "godot_project"
+
+
+def _default_project_dir(plan: GodotProjectPlan) -> str:
+    """Where a plan's project lives, derived from the plan and nothing else.
+
+    One function because two callers need the same answer: the create tool
+    writes there, and ``validate_godot_project`` reads there when it is given
+    no path -- which is how an exit check is called. Two copies of this
+    expression would let a check pass on a directory the create tool never
+    wrote to.
+    """
+
+    return f"generated/godot/{_slug(plan.project_name)}"
 
 
 def _display_rel(root: Path, path: Path) -> str:

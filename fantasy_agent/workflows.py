@@ -553,6 +553,7 @@ def _pipeline_stage(
     outputs: list[str],
     artifacts: list[str] | None = None,
     mcp_tools: list[str] | None = None,
+    exit_checks: list[str] | None = None,
     quality_gates: list[str] | None = None,
     side_effects: list[str] | None = None,
     depends_on: list[str] | None = None,
@@ -573,6 +574,11 @@ def _pipeline_stage(
         outputs=outputs,
         artifacts=artifacts or [],
         mcp_tools=mcp_tools or [],
+        # ``quality_gates`` above is prose a human reads; this is the part a
+        # machine settles, and the orchestrator runs it once the stage's agent
+        # has finished. A stage that ran but does not pass its own check reads
+        # ``failed``, not ``done`` -- see ``Orchestrator._run_exit_checks``.
+        exit_checks=exit_checks or [],
         quality_gates=quality_gates or [],
         side_effects=side_effects or [],
         depends_on=depends_on or [],  # type: ignore[arg-type]
@@ -628,6 +634,11 @@ def prepare_production_pipeline(
                 "decompose_production_tasks",
                 "render_gdd",
             ],
+            # The machine form of the three gates below: the spec this stage
+            # produced either names three distinct player decisions, a first
+            # minute, and win/failure states -- or it does not, and the stage
+            # that produced it is where that belongs.
+            exit_checks=["verify_gameplay_spec"],
             quality_gates=[
                 "Core loop has at least three testable decisions.",
                 "First minute teaches the loop in greybox form.",
@@ -665,6 +676,11 @@ def prepare_production_pipeline(
                 "prepare_visual_reference_workflows",
                 "run_visual_reference_workflow",
             ],
+            # Checks the *plan*, not the endpoint. Probing ComfyUI here would
+            # turn "the reference worker is not installed" -- the degraded run
+            # AGENTS.md promises to support -- into a failed production stage,
+            # so the constraint and path gates are what a machine settles.
+            exit_checks=["verify_comfyui_plan"],
             quality_gates=[
                 "Every prompt includes a gameplay constraint.",
                 "References clarify objective, hazard, route, feedback, or brand readability.",
@@ -701,6 +717,11 @@ def prepare_production_pipeline(
                 "generated/import-manifest.yaml",
             ],
             mcp_tools=["generate_blender_script"],
+            # Scale, collision and path confinement are the three gates a
+            # machine can settle, and all three are properties of the *plan* --
+            # checked here so a bad export path is a planning failure rather
+            # than a Blender launch failure three stages later.
+            exit_checks=["verify_blender_plan"],
             quality_gates=[
                 "Assets use UE centimeter scale.",
                 "Each gameplay mesh has a UCX collision object.",
@@ -740,6 +761,15 @@ def prepare_production_pipeline(
                 "run_godot_import",
                 "playtest_godot_project",
             ],
+            # Static validation, not the measurement. ``playtest_godot_project``
+            # is an EXECUTE-tier tool -- it launches Godot and writes a report
+            # -- and an exit check is run with no grant, so listing it here
+            # would have every run fail on a refusal that has nothing to do with
+            # the project. Measuring the loop stays where G-03 put it: the
+            # executor's hard gate. This checks what a check *can* check without
+            # launching anything: the project the stage claims to have built
+            # exists, has a main scene, and has scripts.
+            exit_checks=["validate_godot_project"],
             quality_gates=[
                 f"Main scene targets {godot_plan.scenes[0] if godot_plan.scenes else 'scenes/main.tscn'}.",
                 "Godot is the selected engine for this plan.",
@@ -839,6 +869,12 @@ def prepare_production_pipeline(
                 if primary_is_godot
                 else ["prepare_asset_ingest", "run_asset_ingest"]
             ),
+            # Godot route only. The Unreal validators take a manifest path that
+            # only a run produces, so they cannot be called with no arguments
+            # the way an exit check is; until they can self-locate, that route
+            # has no check here and the contract guard names the hole rather
+            # than letting it pass silently.
+            exit_checks=(["validate_godot_project"] if primary_is_godot else []),
             quality_gates=[
                 "No ComfyUI image imports without review_required handling.",
                 "Source paths stay inside generated/assets or generated/comfyui.",
@@ -941,6 +977,12 @@ def prepare_production_pipeline(
                 # has with ``run_editor_commandlet``. That is the honest
                 # reading: measuring the loop launches an engine.
                 stage.mcp_tools = ["validate_godot_project", "playtest_godot_project"]
+                # The QA stage re-reads the project the production stage built,
+                # so it gets the same static check. Not the playtest: see the
+                # comment on ``godot_quick_play`` -- an exit check runs with no
+                # grant, and a granted tool there would fail every run on a
+                # refusal rather than on the project.
+                stage.exit_checks = ["validate_godot_project"]
                 stage.side_effects = [
                     "runs Godot validation",
                     "launches Godot headless to measure the loop and writes a playtest report",
