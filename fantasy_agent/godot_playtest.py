@@ -27,6 +27,7 @@ from __future__ import annotations
 import json
 import math
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,6 +45,7 @@ from fantasy_agent.pipeline_state import resume_stage_for
 from fantasy_agent.process_runner import run_streaming
 
 PROBE_FILENAME = "playtest_probe.gd"
+REPORT_FILENAME = "playtest-report.json"
 PLAYTEST_DIRNAME = Path("generated") / "playtest"
 RESULT_PREFIX = "PLAYTEST-RESULT "
 
@@ -52,6 +54,10 @@ MIN_PLAYER_MOVE_METERS = 1.0
 #: Below this a session ended before the loop could be felt. Warning only:
 #: a bot is a poor player, so a short run is evidence, not proof.
 SHORT_SESSION_SECONDS = 5.0
+#: The outcomes the probe can read. Anything else -- the "ended" a project
+#: generated before the structured outcome existed answers with -- is a run
+#: whose verdict the probe cannot see, which is not the same as a verdict.
+READABLE_OUTCOMES = frozenset({"win", "fail", "timeout"})
 _SCRIPT_ERROR_MARKERS = ("SCRIPT ERROR", "Parse Error")
 _MAX_REPORTED_SCRIPT_ERRORS = 10
 
@@ -262,8 +268,20 @@ def playtest_artifact_paths(workspace_root: Path | str, session_id: str) -> dict
         "payload": base / "playtest-payload.json",
         "stdout": base / "godot-stdout.log",
         "stderr": base / "godot-stderr.log",
-        "report": base / "playtest-report.json",
+        "report": base / REPORT_FILENAME,
     }
+
+
+def playtest_report_relpath(session_id: str) -> str:
+    """Workspace-relative path of one session's report.
+
+    ``PlaytestReport.artifact_paths`` carries absolute paths, which is right
+    for a human reading a log and wrong for a stage artifact: every other
+    stage in the executor records workspace-relative paths, and a report the
+    console cannot resolve back to the workspace is a report it cannot link.
+    """
+
+    return f"{PLAYTEST_DIRNAME.as_posix()}/{_session_dir_name(session_id)}/{REPORT_FILENAME}"
 
 
 def planned_playtest_side_effects(request: PlaytestRequest) -> list[str]:
@@ -397,15 +415,76 @@ def build_findings(
     cannot stand in for a player deciding to keep playing, so a short run is
     reported as an observation (``session_too_short``) and the target itself
     is only ever discussed in ``_goal_notes``.
+
+    ``no_win_path`` is **blocking**, and the distinction is worth writing down
+    because it was previously a warning: "a bot is a poor player" is a good
+    reason not to judge whether the slice is *fun*, and it is a bad reason not
+    to judge whether the objective is *reachable*. A bot that runs the real
+    main scene, drives the real input actions and still never reaches the
+    exit has measured a slice whose win condition does not fire -- that is a
+    broken level, not a matter of taste. Measured on this machine: five runs
+    against one generated prototype, five failures, every one
+    ``Route timer expires before the extraction gate``. That is the finding
+    this severity is for.
+
+    ``playtest_unmeasured`` is **blocking** for the same reason in reverse:
+    zero runs is not a measurement of zero quality, it is the absence of a
+    measurement, and an absent measurement must not read as a pass.
+
+    ``outcome_unreadable`` is **blocking** for the same reason sideways: a run
+    that ended without a readable outcome is a run whose verdict nobody saw,
+    and the aggregate counts it as neither a win nor a failure -- so without
+    this finding it is a run that passes by not being counted.
     """
 
     findings: list[PlaytestFinding] = []
+    if not aggregate.runs:
+        # The engine ran for its whole wall budget and the probe observed no
+        # completed run at all. Every other finding below is guarded by
+        # ``aggregate.runs``, so without this one a slice nobody could measure
+        # looks exactly like a slice that measured well -- and the executor's
+        # gate, which reads severities, answers "done" either way.
+        #
+        # Measured on this machine against the 2026-07-13 golden slice: its
+        # game_manager never joined the "game_manager" group, so the probe
+        # recorded zero runs across 60 scene restarts, spent the full 180s
+        # budget, and produced a report whose only finding was the timeout
+        # warning. That is not a slice that passed; it is a slice that could
+        # not be observed, and the difference has to be a verdict.
+        findings.append(
+            _finding(
+                "playtest_unmeasured",
+                "blocking",
+                "The playtest observed no completed run inside its wall budget: "
+                "the probe could not see the loop end",
+                "godot_plan",
+            )
+        )
     if aggregate.script_errors:
         findings.append(
             _finding(
                 "script_error",
                 "blocking",
                 f"Godot reported {len(aggregate.script_errors)} script error(s) while the prototype was running",
+                "godot_plan",
+            )
+        )
+    unreadable = [s for s in samples if s.outcome not in READABLE_OUTCOMES]
+    if unreadable:
+        # The run ended and the probe cannot tell a win from a failure. A
+        # project generated before the structured outcome existed answers null
+        # here, so the probe records "ended" -- countable, but verdict-less.
+        # Left unguarded this reads as a pass: measured on this machine against
+        # the 2026-07-13 golden slice, five runs all "ended", win_rate 0.0,
+        # no_win_path silent (no failures to count), executor "done". The slice
+        # in fact won every run on frame 2 -- its exit trigger overlapped the
+        # exit gate's own body -- so the gate was passing a false win.
+        findings.append(
+            _finding(
+                "outcome_unreadable",
+                "blocking",
+                f"{len(unreadable)} of {len(samples)} run(s) ended with an outcome the probe "
+                "cannot read: the project does not expose the structured win/fail outcome",
                 "godot_plan",
             )
         )
@@ -443,8 +522,9 @@ def build_findings(
         findings.append(
             _finding(
                 "no_win_path",
-                "warning",
-                "Every run ended in failure: the win path was never reached by the bot",
+                "blocking",
+                "No run reached a win: every run that ended did so in failure, so the "
+                "win path was never reached by the bot",
                 "spec",
             )
         )
@@ -487,13 +567,31 @@ def run_playtest(
     *,
     workspace_root: Path | str,
     session_id: str | None = None,
+    runner: Callable[..., subprocess.CompletedProcess[str]] | None = None,
 ) -> PlaytestReport:
-    """Run the headless playtest and return the measured report."""
+    """Run the headless playtest and return the measured report.
+
+    ``runner`` is injectable for the same reason every bridge takes one: the
+    engine is the slowest thing in the repo, and a caller that cannot
+    substitute it ends up launching a real engine from a unit test. The
+    executor reaches this through ``GodotMCPBridge.playtest_project``, which
+    passes the bridge's own runner.
+    """
 
     stamp = session_id or datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     paths = playtest_artifact_paths(workspace_root, stamp)
     executable = request.godot_executable or _find_godot() or ""
+    # Anchored to the workspace root, not to the process CWD. The artifacts
+    # above already resolve against ``workspace_root``; a relative project dir
+    # that resolved somewhere else meant a caller with a non-default root
+    # (the executor's tests, any embedded Studio) measured a directory that
+    # was never written and got "project_missing" for a project that exists.
+    # An absolute path is still honoured: a caller may legitimately point at a
+    # scratch project outside the workspace.
     project_dir = Path(request.project_dir)
+    if not project_dir.is_absolute():
+        project_dir = Path(workspace_root) / project_dir
+    launch = runner or run_streaming
 
     report = PlaytestReport(
         project_dir=str(project_dir),
@@ -552,7 +650,7 @@ def run_playtest(
     timeout = request.max_wall_seconds
     stderr_text = ""
     try:
-        completed = run_streaming(
+        completed = launch(
             command,
             stdout_path=paths["stdout"],
             stderr_path=paths["stderr"],

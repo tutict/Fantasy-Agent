@@ -106,8 +106,14 @@ def test_declared_mcp_contracts_still_resolve():
 
     from fantasy_agent.mcp import initial_mcp_contracts
 
-    # Guard against the check passing simply because it looked at nothing.
-    assert len(initial_mcp_contracts()) == 17
+    contracts = initial_mcp_contracts()
+    # Guard against the check passing simply because it looked at nothing: the
+    # declared set has to cover every tool the engine registry can actually
+    # run, so a contract going missing fails here rather than only in the
+    # catalog. (This replaced a hard-coded count, which also fought the
+    # documented plan to *delete* the one declared-but-unimplemented
+    # contract -- see G-12 in docs/architecture/gap-backlog-2026-10-13.md.)
+    assert {c.name for c in contracts} >= set(engine_registry().names())
     assert validate_contract_refs() == []
 
 
@@ -316,9 +322,21 @@ def test_result_exposes_what_happened_for_the_ui():
 def test_engine_registry_covers_every_implemented_contract():
     """Every MCP contract with a bridge behind it must be callable."""
 
-    names = engine_registry().names()
-    assert len(names) == 16
-    assert "run_godot_import" in names
+    names = set(engine_registry().names())
+    # Named rather than counted. A count is a number somebody has to edit every
+    # time a tool is added, and an edited count proves nothing on its own; the
+    # tools the pipeline actually calls are what has to be reachable.
+    assert {
+        "create_godot_project_structure",
+        "validate_godot_project",
+        "run_godot_import",
+        "playtest_godot_project",
+        "create_project_structure",
+        "run_editor_commandlet",
+        "generate_asset_batch",
+        "run_visual_reference_workflow",
+        "probe_comfyui_capabilities",
+    } <= names
     assert "publish_prototype_branch" not in names
 
 

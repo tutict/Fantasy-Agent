@@ -182,6 +182,22 @@ def initial_mcp_contracts() -> list[MCPToolContract]:
             ],
         ),
         MCPToolContract(
+            name="playtest_godot_project",
+            server="godot-mcp",
+            input_schema_ref="mcp/godot-mcp/tools.yaml#playtest_godot_project",
+            output_schema_ref="mcp/godot-mcp/tools.yaml#playtest_godot_project.output",
+            side_effects=[
+                "launches Godot headless to measure the loop",
+                "writes the probe and the report under generated/playtest",
+            ],
+            safety_checks=[
+                "execute tier: an engine launch is never read-only",
+                "project dir must be generated/godot",
+                "never writes into the project it measures",
+                "a win path the bot never reaches is a blocking finding",
+            ],
+        ),
+        MCPToolContract(
             name="probe_comfyui_capabilities",
             server="comfyui-mcp",
             input_schema_ref="mcp/comfyui-mcp/tools.yaml#probe_comfyui_capabilities",

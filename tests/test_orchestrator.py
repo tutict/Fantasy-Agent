@@ -228,9 +228,9 @@ def test_each_stage_is_only_offered_its_own_tools(fake_complete, tmp_path):
 
     assert first == [READ_ONLY_TOOL]
     assert second == sorted([ANOTHER_READ_ONLY_TOOL, "decompose_production_tasks"])
-    # Narrowing, not just renaming: the whole registry is 20 tools, and neither
-    # stage saw anything close to it. Compared against the live registry so this
-    # cannot rot into a hard-coded number that stops meaning anything.
+    # Narrowing, not just renaming: the whole registry is far more tools than
+    # either stage saw. Compared against the live registry so this cannot rot
+    # into a hard-coded number that stops meaning anything.
     everything = len(combined_registry().names())
     assert len(first) < everything
     assert len(second) < everything

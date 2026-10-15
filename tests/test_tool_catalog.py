@@ -147,6 +147,30 @@ def test_declared_without_implementation_is_computed_not_remembered() -> None:
     assert implemented, "no engine tools registered"
 
 
+def test_every_engine_tool_has_a_declared_contract() -> None:
+    """The other half of the gap, and the half nothing watched.
+
+    ``declared_without_implementation`` catches a contract with no bridge. This
+    catches the reverse: a tool the gate will run that no contract names, which
+    is a tool nobody wrote down what it does -- the thing
+    ``/api/tool-contracts`` predates the registry to prevent, and the reason
+    AGENTS.md says a local tool's real behaviour must be declared before it
+    runs. ``playtest_godot_project`` was implemented without one for exactly
+    one batch; this is what stops the next one.
+
+    Scoped to the engine registry on purpose: the four planning tools have
+    never had contracts and are not MCP surfaces.
+    """
+
+    from fantasy_agent.mcp import initial_mcp_contracts
+
+    declared = {contract.name for contract in initial_mcp_contracts()}
+    implemented = set(engine_registry().names())
+
+    undeclared = sorted(implemented - declared)
+    assert not undeclared, f"engine tools with no declared MCP contract: {undeclared}"
+
+
 def test_catalog_entries_carry_the_fields_the_panel_renders() -> None:
     """The panel reads these keys by name; a rename would render ``undefined``.
 

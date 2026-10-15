@@ -984,7 +984,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
             b"    wins = sum(s.wins for s in samples)\n"
             b"    failures = sum(s.failures for s in samples)\n"
         ),
-        "tests/test_playtest.py::test_failures_without_a_win_warn_about_the_win_path",
+        "tests/test_playtest.py::test_failures_without_a_win_block_the_verdict",
     ),
     (
         "PT2 a script error stops blocking",
@@ -1020,6 +1020,86 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
             b"        actuals.update(_playtest_actuals(playtest or PlaytestReport()))\n"
         ),
         "tests/test_playtest.py::test_static_qa_stays_silent_when_nobody_ran_the_prototype",
+    ),
+    (
+        "PT5 a blocking playtest finding stops failing the run",
+        "fantasy_agent/executor.py",
+        # The G-03 gate. Before it, a prototype whose win path was never
+        # reachable finished "done" with a warning nobody acted on -- five runs,
+        # five failures, win_rate 0.0, status "warning". The mutant keeps the
+        # stage row honest (it still says "failed") and flips only the run
+        # verdict, which is exactly the regression: a chain that reports success
+        # while its own stage says the loop is unreachable.
+        (
+            b"        if blocking:\n"
+            b'            return ExecutionResult("failed", session_id, project_dir, stages, planned)\n'
+        ),
+        (
+            b"        if blocking:\n"
+            b'            return ExecutionResult("done", session_id, project_dir, stages, planned)\n'
+        ),
+        "tests/test_executor.py::test_a_blocking_playtest_finding_fails_the_run",
+    ),
+    (
+        "PT6 an unmeasured playtest stops blocking",
+        "fantasy_agent/godot_playtest.py",
+        # Found by running the real engine against the 2026-07-13 golden slice:
+        # its game_manager never joined the group, so the probe recorded zero
+        # runs across 60 scene restarts and spent the whole wall budget. Every
+        # other finding is guarded by ``aggregate.runs``, so demoting this one
+        # puts the gate back to answering "done" for a slice it never saw.
+        (
+            b'                "playtest_unmeasured",\n'
+            b'                "blocking",\n'
+        ),
+        (
+            b'                "playtest_unmeasured",\n'
+            b'                "warning",\n'
+        ),
+        "tests/test_playtest.py::test_a_slice_nobody_could_measure_is_not_a_pass",
+    ),
+    (
+        "PT7 an unreadable outcome stops blocking",
+        "fantasy_agent/godot_playtest.py",
+        # Same shape as PT6, one layer down: the run ended and the probe cannot
+        # tell a win from a failure, so the aggregate counts it as neither and
+        # the slice passes by not being counted. Measured on this machine
+        # against the 2026-07-13 golden slice, which was winning every run on
+        # frame 2 through an exit trigger that overlapped its own gate body.
+        (
+            b'                "outcome_unreadable",\n'
+            b'                "blocking",\n'
+        ),
+        (
+            b'                "outcome_unreadable",\n'
+            b'                "warning",\n'
+        ),
+        "tests/test_playtest.py::test_an_unreadable_outcome_is_not_a_run_that_passed",
+    ),
+    (
+        # The G-03 chain's session-id threading. ``playtest_project`` passes the
+        # caller's session id down; drop it and ``run_playtest`` mints its own
+        # timestamp, so the executor records
+        # ``generated/playtest/<session>/playtest-report.json`` as the stage
+        # artifact while the report lands in a directory nobody named. That is
+        # not a hypothetical: it is what the end-to-end run did before
+        # ``playtest_project``'s docstring recorded it.
+        "PT8 the playtest mints its own session id",
+        "fantasy_agent/godot_mcp.py",
+        b"            session_id=session_id or None,\n",
+        b"            session_id=None,\n",
+        "tests/test_executor.py::test_the_playtest_stage_runs_the_real_bridge_chain",
+    ),
+    (
+        # The other half of that test: the executor always passes a *relative*
+        # project dir, so resolving it against anything but the workspace root
+        # measures a directory that was never written and answers
+        # ``project_missing`` for a project that exists.
+        "PT9 the playtest resolves a relative project against the CWD",
+        "fantasy_agent/godot_playtest.py",
+        b"        project_dir = Path(workspace_root) / project_dir\n",
+        b"        project_dir = project_dir\n",
+        "tests/test_executor.py::test_the_playtest_stage_runs_the_real_bridge_chain",
     ),
     (
         "CR1 drift detection trusts the file instead of the recorded hash",

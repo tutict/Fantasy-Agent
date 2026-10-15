@@ -8,15 +8,23 @@ old fixed greybox.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from pathlib import Path
 
 from fantasy_agent.artifact_identity import compute_artifact_identity
-from fantasy_agent.contracts import GodotMCPResult, PromptRequest
+from fantasy_agent.contracts import (
+    GodotMCPResult,
+    PlaytestFinding,
+    PlaytestReport,
+    PlaytestSample,
+    PromptRequest,
+)
 from fantasy_agent.executor import execute_godot_demo, format_execution_report
 from fantasy_agent.generation import design_from_prompt_deterministic
 from fantasy_agent.godot_mcp import GodotMCPBridge, _main_gd, _slug
+from fantasy_agent.godot_playtest import aggregate_samples
 from fantasy_agent.workflows import prepare_godot_project, run_director_workflow
 
 
@@ -63,8 +71,18 @@ def test_executes_create_validate_import_in_order(tmp_path: Path):
     )
 
     assert result.ok
-    assert [s.name for s in result.stages if s.name != "preflight"] == ["create", "validate", "import"]
-    assert all(s.status == "done" for s in result.stages)
+    # ``playtest`` trails as blocked because this run has no gameplay scripts
+    # and therefore no game_manager to observe. It is listed rather than
+    # omitted for the same reason ``import`` is listed as blocked when
+    # run_import=False: a chain that ran and did not measure should not look
+    # like a chain with nothing to measure.
+    assert [s.name for s in result.stages if s.name != "preflight"] == [
+        "create",
+        "validate",
+        "import",
+        "playtest",
+    ]
+    assert all(s.status == "done" for s in result.stages if s.name != "playtest")
     # Project actually written under the godot sandbox prefix.
     assert (tmp_path / result.project_dir / "project.godot").exists()
     assert result.project_dir.startswith("generated/godot/sessions/s2/")
@@ -95,6 +113,278 @@ def test_import_failure_is_reported(tmp_path: Path):
     assert result.status == "failed"
     assert result.stages[-1].name == "import"
     assert result.stages[-1].status == "failed"
+
+
+# ── playtest: the half of the chain that proves the slice plays ───────────────
+
+
+def _fake_report(status: str = "warning") -> PlaytestReport:
+    """A report shaped like a real one, without launching an engine."""
+
+    sample = PlaytestSample(
+        run_index=0,
+        outcome="win" if status == "passed" else "fail",
+        reason="",
+        session_seconds=12.0,
+        player_moved_distance=80.0,
+        playable=True,
+    )
+    aggregate = aggregate_samples([sample])
+    report = PlaytestReport(
+        status=status,  # type: ignore[arg-type]
+        samples=[sample],
+        aggregate=aggregate,
+    )
+    if status == "failed":
+        report.findings = [
+            PlaytestFinding(
+                code="no_win_path",
+                severity="blocking",
+                message="Every run ended in failure: the win path was never reached by the bot",
+                rework_target="spec",
+            )
+        ]
+    return report
+
+
+def _playtest_measured_a_win(monkeypatch) -> None:
+    """Make the playtest stage measure a win, for tests that are not about it.
+
+    Without this the executor reaches the real ``run_playtest`` with the
+    bridge's fake runner, which produces no payload, which is now a blocking
+    ``playtest_unmeasured``. That verdict is correct -- and it would fail four
+    codegen/import tests for a reason none of them is about, so each of them
+    says what it is testing by injecting the measurement it assumes.
+    """
+
+    monkeypatch.setattr(
+        GodotMCPBridge,
+        "playtest_project",
+        lambda self, request, session_id: _fake_report("passed"),
+    )
+
+
+def test_the_playtest_stage_runs_the_real_bridge_chain(tmp_path: Path):
+    """executor -> bridge -> run_playtest, with nothing stubbed but the engine.
+
+    Every other playtest test replaces ``playtest_project`` with a fake, which
+    proves the executor reads the report it is handed and nothing about the
+    wiring in between. Two things only this test can see:
+
+    - the session id reaches ``run_playtest``. A timestamp minted downstream
+      leaves the recorded artifact pointing at a directory nobody created --
+      the exact bug ``playtest_project``'s docstring records, and a stub cannot
+      catch it because the stub captures whatever it is given.
+    - a *relative* project dir is anchored to the workspace root rather than to
+      the the process CWD. The executor always passes a relative path, so a
+      CWD-relative resolution measures a directory that was never written and
+      answers ``project_missing`` for a project that exists.
+
+    A fake runner that answers with a real payload exercises both without
+    launching an engine, and the report it writes is the one the stage records.
+    """
+
+    payload = {
+        "runs": [
+            {
+                "run_index": 0,
+                "outcome": "win",
+                "session_seconds": 12.0,
+                "player_moved_distance": 30.0,
+                "playable": True,
+            },
+            {
+                "run_index": 1,
+                "outcome": "fail",
+                "reason": "Route timer expires before the extraction gate",
+                "session_seconds": 20.0,
+                "player_moved_distance": 45.0,
+                "playable": True,
+            },
+        ]
+    }
+    result_line = "PLAYTEST-RESULT " + json.dumps(payload)
+
+    def fake_runner(command, **kwargs):
+        # Declared a streaming runner so the bridge hands it the log paths the
+        # real ``run_streaming`` takes -- which also means creating them, the
+        # way ``run_streaming`` truncates them up front. Only the playtest
+        # invocation carries a payload (``--script`` is the probe); the import
+        # stage is answered the way the other tests' fake answers it.
+        text = result_line if "--script" in command else "import ok"
+        for key in ("stdout_path", "stderr_path"):
+            log = Path(kwargs[key])
+            log.parent.mkdir(parents=True, exist_ok=True)
+            log.write_text(
+                text + "\n" if key == "stdout_path" else "", encoding="utf-8"
+            )
+        return subprocess.CompletedProcess(command, 0, stdout=text, stderr="")
+
+    fake_runner.fa_streaming = True
+
+    bridge = GodotMCPBridge(tmp_path, runner=fake_runner)
+    result = execute_godot_demo(
+        _plan(),
+        session_id="chain1",
+        confirmed=True,
+        godot_exe="godot",
+        bridge=bridge,
+        with_gameplay=True,
+    )
+
+    assert result.ok
+    stage = next(s for s in result.stages if s.name == "playtest")
+    assert stage.status == "done"
+    # One win and one failure is a measurement, not a blocking finding: the
+    # gate has to discriminate rather than fail on any imperfection.
+    assert stage.metadata["aggregate"]["runs"] == 2
+    assert stage.metadata["aggregate"]["win_rate"] == 0.5
+    # The artifact the stage records is the file that exists, which is only
+    # true if the session id reached run_playtest.
+    assert stage.artifacts == ["generated/playtest/chain1/playtest-report.json"]
+    report_file = tmp_path / "generated" / "playtest" / "chain1" / "playtest-report.json"
+    assert report_file.is_file(), "the recorded artifact was never written"
+    # Logs are workspace-relative, like every other stage: the stage rows land
+    # in ``_pipeline_state.json``, which must not carry absolute paths.
+    assert stage.logs == [
+        "generated/playtest/chain1/playtest_probe.gd",
+        "generated/playtest/chain1/playtest-report.json",
+    ]
+    # A relative project dir measured against the workspace root: the report
+    # names the project this run actually built.
+    assert stage.metadata["project_dir"] == str(tmp_path / result.project_dir)
+
+
+def test_playtest_stage_records_the_report_path(tmp_path: Path, monkeypatch):
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    captured: dict[str, object] = {}
+
+    def fake_playtest_project(self, request, session_id: str = ""):
+        captured["project_dir"] = request.project_dir
+        captured["workspace_root"] = str(self.workspace_root)
+        captured["session_id"] = session_id
+        return _fake_report("warning")
+
+    monkeypatch.setattr(GodotMCPBridge, "playtest_project", fake_playtest_project)
+    result = execute_godot_demo(
+        _plan(),
+        session_id="pt1",
+        confirmed=True,
+        godot_exe="godot",
+        bridge=bridge,
+        with_gameplay=True,
+    )
+
+    assert result.ok
+    stage = [s for s in result.stages if s.name == "playtest"]
+    assert len(stage) == 1
+    # Workspace-relative, like every other stage artifact: an absolute path is
+    # a report the console cannot resolve back to the workspace.
+    assert stage[0].artifacts == ["generated/playtest/pt1/playtest-report.json"]
+    assert stage[0].status == "done"
+    assert captured["project_dir"] == result.project_dir
+    # The bridge owns the workspace root, so a playtest launched from a
+    # sandboxed run writes its report inside that sandbox.
+    assert captured["workspace_root"] == str(Path(tmp_path).resolve())
+    # ... and it is written under *this* run's session id. A playtest that
+    # minted its own timestamp would leave the artifact above pointing at a
+    # directory nobody created -- which is what it did before this was pinned.
+    assert captured["session_id"] == "pt1"
+
+
+def test_a_blocking_playtest_finding_fails_the_run(tmp_path: Path, monkeypatch):
+    """The gate this whole batch exists for.
+
+    Before this, a prototype whose win path was never reachable produced
+    ``status="warning"`` and the chain reported ``done``. Measured on this
+    machine: five runs, five failures, every one "Route timer expires before
+    the extraction gate".
+    """
+
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    monkeypatch.setattr(
+        GodotMCPBridge,
+        "playtest_project",
+        lambda self, request, session_id: _fake_report("failed"),
+    )
+    result = execute_godot_demo(
+        _plan(),
+        session_id="pt2",
+        confirmed=True,
+        godot_exe="godot",
+        bridge=bridge,
+        with_gameplay=True,
+    )
+
+    assert result.status == "failed"
+    stage = next(s for s in result.stages if s.name == "playtest")
+    assert stage.status == "failed"
+    assert "no_win_path" in stage.detail
+    # The measurement itself is still on the record: a playtest that measured a
+    # failure completed, and the console needs the report to explain why.
+    assert stage.artifacts == ["generated/playtest/pt2/playtest-report.json"]
+    assert stage.metadata["status"] == "failed"
+
+
+def test_playtest_stage_is_blocked_without_gameplay(tmp_path: Path):
+    """A greybox has no game_manager, so win and fail cannot be observed.
+
+    Recorded as ``blocked`` rather than omitted: the run happened and did not
+    measure, and a stage list that simply lacks the row reads as "nothing to
+    verify" instead of "not verified".
+    """
+
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    result = execute_godot_demo(
+        _plan(), session_id="pt3", confirmed=True, godot_exe="godot", bridge=bridge
+    )
+
+    assert result.ok
+    stage = next(s for s in result.stages if s.name == "playtest")
+    assert stage.status == "blocked"
+    assert "game_manager" in stage.detail
+
+
+def test_playtest_false_records_blocked_without_launching(tmp_path: Path, monkeypatch):
+    def exploding_playtest_project(self, request, session_id: str = ""):
+        raise AssertionError("playtest=False must not launch an engine")
+
+    monkeypatch.setattr(GodotMCPBridge, "playtest_project", exploding_playtest_project)
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    result = execute_godot_demo(
+        _plan(),
+        session_id="pt4",
+        confirmed=True,
+        godot_exe="godot",
+        bridge=bridge,
+        with_gameplay=True,
+        playtest=False,
+    )
+
+    assert result.ok
+    stage = next(s for s in result.stages if s.name == "playtest")
+    assert stage.status == "blocked"
+    assert stage.detail == "playtest=False"
+
+
+def test_confirmation_gate_lists_the_playtest_side_effect(tmp_path: Path):
+    """The two-step gate has to name the engine launch it is about to do."""
+
+    result = execute_godot_demo(
+        _plan(), session_id="pt5", confirmed=False, with_gameplay=True
+    )
+
+    assert result.status == "confirmation_required"
+    assert any("playtest" in effect for effect in result.planned_side_effects)
+    # ...and not when there is nothing to measure.
+    without = execute_godot_demo(_plan(), session_id="pt6", confirmed=False)
+    assert not any("playtest" in effect for effect in without.planned_side_effects)
+    # ...and not when the caller turned the measurement off. Listing it anyway
+    # would put an engine launch in front of a user who was told there is none.
+    disabled = execute_godot_demo(
+        _plan(), session_id="pt7", confirmed=False, with_gameplay=True, playtest=False
+    )
+    assert not any("playtest" in effect for effect in disabled.planned_side_effects)
 
 
 # ── spec-driven template ─────────────────────────────────────────────────────
@@ -222,7 +512,7 @@ def test_with_assets_defaults_to_approval_manifest_and_blocks_copy(tmp_path: Pat
 
     assert result.ok
     names = [s.name for s in result.stages if s.name != "preflight"]
-    assert names == ["blender", "approval_gate", "create", "validate", "import"]
+    assert names == ["blender", "approval_gate", "create", "validate", "import", "playtest"]
     gate = next(s for s in result.stages if s.name == "approval_gate")
     assert gate.status == "blocked"
     assert gate.metadata["manifest_path"] == "generated/asset-approval-manifest.yaml"
@@ -298,7 +588,9 @@ def test_with_assets_approval_manifest_copies_only_approved(tmp_path: Path):
 
     assert result.ok
     names = [s.name for s in result.stages if s.name != "preflight"]
-    assert names == ["blender", "approval_gate", "create", "copy_assets", "validate", "import"]
+    assert names == [
+        "blender", "approval_gate", "create", "copy_assets", "validate", "import", "playtest"
+    ]
     gate = next(s for s in result.stages if s.name == "approval_gate")
     assert gate.detail == "1 approved, 2 skipped"
     assert gate.metadata["approved_assets"] == ["generated/assets/start_marker.glb"]
@@ -594,7 +886,10 @@ def test_blender_failure_degrades_to_greybox(tmp_path: Path):
     assert "blender" in names
     assert next(s for s in result.stages if s.name == "blender").status == "failed"
     assert "copy_assets" not in names
-    assert names[-1] == "import"
+    # Trails as blocked: a greybox has no game_manager, so win and fail cannot
+    # be observed -- the chain ran but did not measure.
+    assert names[-1] == "playtest"
+    assert next(s for s in result.stages if s.name == "playtest").status == "blocked"
 
 
 def test_confirmation_gate_lists_blender_side_effects(tmp_path: Path):
@@ -665,7 +960,7 @@ def test_with_visuals_stage_order_and_copy(tmp_path: Path):
 
     assert result.ok
     names = [s.name for s in result.stages if s.name != "preflight"]
-    assert names == ["comfyui", "create", "copy_refs", "validate", "import"]
+    assert names == ["comfyui", "create", "copy_refs", "validate", "import", "playtest"]
     copied = list((tmp_path / result.project_dir / "references" / "comfyui").glob("*.png"))
     assert len(copied) == 2
 
@@ -689,7 +984,10 @@ def test_comfyui_failure_does_not_break_chain(tmp_path: Path):
     names = [s.name for s in result.stages if s.name != "preflight"]
     assert next(s for s in result.stages if s.name == "comfyui").status == "failed"
     assert "copy_refs" not in names
-    assert names[-1] == "import"
+    # Same as the greybox path: no gameplay scripts means the probe has nothing
+    # to observe, so playtest records blocked rather than a verdict.
+    assert names[-1] == "playtest"
+    assert next(s for s in result.stages if s.name == "playtest").status == "blocked"
 
 
 def test_confirmation_gate_lists_comfyui_side_effects(tmp_path: Path):
@@ -761,6 +1059,9 @@ def test_visuals_and_assets_compose(tmp_path: Path):
         "copy_refs",
         "validate",
         "import",
+        # Trails as blocked: this run generates no gameplay scripts, so there
+        # is no game_manager for the probe to observe.
+        "playtest",
     ]
 
 
@@ -822,6 +1123,38 @@ def test_unreal_executes_stage_order(tmp_path: Path):
     ]
     assert list((tmp_path / result.project_dir).glob("*.uproject"))
     assert result.project_dir.startswith("generated/unreal/sessions/u2/")
+
+
+def test_godot_stage_order_covers_every_stage_the_executor_emits(tmp_path: Path):
+    """The Godot counterpart to the Unreal guard above.
+
+    ``GODOT_STAGE_ORDER`` reads positionally in ``stages_before``, so a stage
+    the executor emits but the tuple does not list can never be resumed --
+    and the Godot list drifted exactly that way once, per the comment in
+    ``pipeline_state``. ``playtest`` is the newest stage and the one most
+    likely to be forgotten: it is emitted only on the gameplay path.
+    """
+
+    from fantasy_agent.pipeline_state import GODOT_STAGE_ORDER
+
+    bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
+    result = execute_godot_demo(
+        _plan(),
+        session_id="g-order",
+        confirmed=True,
+        godot_exe="godot",
+        bridge=bridge,
+        with_gameplay=True,
+        playtest=False,
+    )
+
+    assert result.ok
+    emitted = [stage.name for stage in result.stages]
+    assert "playtest" in emitted, "the executor no longer emits a playtest stage"
+    for name in emitted:
+        assert name in GODOT_STAGE_ORDER, f"{name} is not resumable"
+    positions = [GODOT_STAGE_ORDER.index(name) for name in emitted]
+    assert positions == sorted(positions), f"{emitted} is out of order in GODOT_STAGE_ORDER"
 
 
 def test_unreal_stage_order_covers_every_stage_the_executor_emits(tmp_path: Path):
@@ -922,9 +1255,10 @@ def test_unreal_validation_failure_keeps_generated_project(tmp_path: Path):
 # ── M6a: gameplay codegen stage ──────────────────────────────────────────────
 
 
-def test_with_gameplay_generates_scripts_and_imports(tmp_path: Path):
+def test_with_gameplay_generates_scripts_and_imports(tmp_path: Path, monkeypatch):
     from unittest import mock
 
+    _playtest_measured_a_win(monkeypatch)
     fake = {
         "scripts/player_controller.gd": "extends CharacterBody3D\nfunc _ready():\n\tpass\n",
         "scripts/game_manager.gd": "extends Node\nfunc reach_exit():\n\tpass\n",
@@ -939,7 +1273,7 @@ def test_with_gameplay_generates_scripts_and_imports(tmp_path: Path):
     assert result.ok
     names = [s.name for s in result.stages if s.name != "preflight"]
     assert names[0] == "gameplay"
-    assert names == ["gameplay", "create", "enemy_metrics", "validate", "import"]
+    assert names == ["gameplay", "create", "enemy_metrics", "validate", "import", "playtest"]
     enemy_metrics = next(s for s in result.stages if s.name == "enemy_metrics")
     assert "pressure_score=" in enemy_metrics.detail
     assert enemy_metrics.artifacts
@@ -958,11 +1292,14 @@ def test_with_gameplay_generates_scripts_and_imports(tmp_path: Path):
     assert '"enemy_tuning"' in main
 
 
-def test_with_gameplay_degrades_to_deterministic_when_llm_unavailable(tmp_path: Path):
+def test_with_gameplay_degrades_to_deterministic_when_llm_unavailable(
+    tmp_path: Path, monkeypatch
+):
     from unittest import mock
 
     from fantasy_agent import llm
 
+    _playtest_measured_a_win(monkeypatch)
     bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
     legacy_plan = _plan().model_copy(update={"production_spec_bundle": None})
     with mock.patch("fantasy_agent.llm.complete_json", side_effect=llm.LLMError("no key")):
@@ -993,9 +1330,10 @@ def test_with_gameplay_listed_in_confirmation_gate(tmp_path: Path):
     assert any("enemy pressure tuning" in e for e in result.planned_side_effects)
 
 
-def test_with_gameplay_accepts_enemy_pressure_tuning(tmp_path: Path):
+def test_with_gameplay_accepts_enemy_pressure_tuning(tmp_path: Path, monkeypatch):
     from fantasy_agent.contracts import EnemyPressureTuning
 
+    _playtest_measured_a_win(monkeypatch)
     bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
     result = execute_godot_demo(
         _plan(),
@@ -1079,9 +1417,12 @@ def test_main_gd_bundle_route_places_beat_assets():
     assert "MAT_HAZARD" in main.split("func _build_greybox_route")[1].split("func ")[0]
 
 
-def test_execute_uses_bundle_enemy_pressure_when_tuning_untouched(tmp_path: Path):
+def test_execute_uses_bundle_enemy_pressure_when_tuning_untouched(
+    tmp_path: Path, monkeypatch
+):
     from fantasy_agent.contracts import EnemyPressureTuning
 
+    _playtest_measured_a_win(monkeypatch)
     bridge = GodotMCPBridge(tmp_path, runner=_ok_runner)
     plan = _plan("a stealth courier escapes a guarded haunted station")
     assert plan.production_spec_bundle is not None

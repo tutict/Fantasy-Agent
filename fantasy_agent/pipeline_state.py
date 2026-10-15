@@ -47,6 +47,10 @@ GODOT_STAGE_ORDER: tuple[str, ...] = (
     "copy_refs",
     "validate",
     "import",
+    # Last on purpose: it measures the project the import produced, so it
+    # cannot be skipped by resuming from anything earlier, and nothing
+    # resumes from it yet.
+    "playtest",
 )
 
 

@@ -19,9 +19,12 @@ from fantasy_agent.contracts import (
     GodotProjectArtifact,
     GodotProjectPlan,
     GodotProjectValidationReport,
+    PlaytestReport,
+    PlaytestRequest,
     ProductionSpecBundle,
 )
 from fantasy_agent.corrections import ANCHOR_RE, file_sha256
+from fantasy_agent.godot_playtest import run_playtest, summarize_playtest
 from fantasy_agent.mcp_bridge import DEFAULT_WORKSPACE_ROOT, BaseMCPBridge
 from fantasy_agent.path_safety import WorkspacePathError, resolve_workspace_path
 from fantasy_agent.process_runner import (
@@ -74,6 +77,36 @@ def tool_descriptors() -> list[dict[str, Any]]:
                 "against a generated Fantasy Agent Godot project and capture logs."
             ),
             "inputSchema": GodotMCPRunImportRequest.model_json_schema(),
+            "annotations": {
+                "readOnlyHint": False,
+                "destructiveHint": False,
+                "idempotentHint": False,
+                "openWorldHint": False,
+            },
+        },
+        {
+            "name": "playtest_godot_project",
+            "title": "Playtest a Godot project headlessly",
+            "description": (
+                "Use this after a Godot project has been generated and imported, to measure "
+                "whether the loop is reachable: a scripted bot loads the real main scene, "
+                "drives the real input actions and reports win rate, session length, failure "
+                "reasons and script errors. Returns a report with blocking findings when the "
+                "win path is never reached. Read the generated project, never modifies it: "
+                "the probe and the report are written under generated/playtest/. The project "
+                "must live under generated/godot, like every other Godot tool here."
+            ),
+            "inputSchema": PlaytestRequest.model_json_schema(),
+            # Deliberately the EXECUTE tier, not read-only. The annotations are
+            # lossy on purpose (permission_from_annotations collapses three
+            # hints into one tier), and the tier is what stops a model from
+            # launching an engine: a read-only tier needs no grant at all, so
+            # marking this readOnlyHint=True to make it look cheap would let
+            # any call start Godot. It writes a probe and a report under
+            # generated/playtest/ and it launches Godot headless, so it is an
+            # execute-class tool and it needs the grant. idempotentHint must be
+            # False for the same reason -- True would derive WRITE and lose the
+            # process-launch signal.
             "annotations": {
                 "readOnlyHint": False,
                 "destructiveHint": False,
@@ -229,6 +262,40 @@ class GodotMCPBridge(BaseMCPBridge):
             stdout_tail=_tail(process.stdout),
             stderr_tail=_tail(process.stderr),
             risks=risks if process.returncode == 0 else [*risks, "Godot import returned a non-zero code."],
+        )
+
+    def playtest_project(self, request: PlaytestRequest, session_id: str = "") -> PlaytestReport:
+        """Measure a generated project with the headless bot playtest.
+
+        The only Godot tool that measures instead of builds. It lives on the
+        bridge for one concrete reason: the bridge owns the injected runner.
+        Called straight from ``godot_playtest`` the executor would launch a
+        real engine on every test that exercises the gameplay path, which is
+        both slow and dependent on what happens to be installed.
+
+        ``session_id`` is threaded through rather than minted here. Without it
+        ``run_playtest`` stamps its own timestamp, and the executor -- which
+        records ``generated/playtest/<session>/playtest-report.json`` as the
+        stage artifact -- writes down a path that was never created. Measured
+        on this machine: an end-to-end run reported ``playtest: done`` next to
+        an artifact pointing at ``.../g03-e2e/...`` while the report sat in
+        ``.../20261013_152545/...``.
+
+        The project is confined to ``generated/godot`` the same way the other
+        three Godot tools confine theirs, and for the same reason: this is the
+        MCP surface, where the caller is a model holding an execute grant, and
+        four tools that disagree about where a project may live is a gate with
+        a hole in it. ``run_playtest`` itself stays permissive -- an absolute
+        scratch project outside the workspace is a legitimate direct call, and
+        the Studio endpoint is a person choosing a path, not a model.
+        """
+
+        self._assert_relative_under(request.project_dir, "generated/godot")
+        return run_playtest(
+            request,
+            workspace_root=self.workspace_root,
+            runner=self.runner,
+            session_id=session_id or None,
         )
 
     def _artifact(self, plan: GodotProjectPlan, project_dir: str) -> GodotProjectArtifact:
@@ -457,6 +524,13 @@ def call_godot_mcp_tool(
         elif name == "run_godot_import":
             request = GodotMCPRunImportRequest.model_validate(arguments or {})
             result = bridge.run_godot_import(request)
+        elif name == "playtest_godot_project":
+            request = PlaytestRequest.model_validate(arguments or {})
+            report = bridge.playtest_project(request)
+            return {
+                "structuredContent": report.model_dump(mode="json"),
+                "content": [{"type": "text", "text": summarize_playtest(report)}],
+            }
         else:
             available = ", ".join(tool["name"] for tool in tool_descriptors())
             return _error(f"Unknown Godot MCP tool '{name}'. Available tools: {available}.")

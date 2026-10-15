@@ -34,6 +34,8 @@ from fantasy_agent.contracts import (
     GodotMCPCreateProjectRequest,
     GodotMCPRunImportRequest,
     GodotMCPValidateProjectRequest,
+    PlaytestReport,
+    PlaytestRequest,
     UnrealMCPCreateProjectRequest,
     UnrealMCPEditorCommandletRequest,
     UnrealMCPPrepareAssetIngestRequest,
@@ -44,7 +46,8 @@ from fantasy_agent.godot_mcp import (
     GodotMCPBridge,
     resolve_enemy_pressure_tuning,
 )
-from fantasy_agent.path_safety import resolve_workspace_path
+from fantasy_agent.godot_playtest import playtest_report_relpath
+from fantasy_agent.path_safety import display_workspace_path, resolve_workspace_path
 from fantasy_agent.pipeline_state import (
     RESUMABLE_STAGES,
     StageState,
@@ -166,6 +169,7 @@ def _planned_side_effects(
     blender_exe: str = "blender",
     with_visuals: bool = False,
     with_gameplay: bool = False,
+    playtest: bool = True,
     approval_manifest_path: str | None = None,
 ) -> list[str]:
     effects: list[str] = []
@@ -177,6 +181,16 @@ def _planned_side_effects(
         effects.append(
             "Apply enemy pressure tuning and write a deterministic enemy pressure report"
         )
+        # Only listed when gameplay scripts are generated *and* the caller left
+        # the measurement on: the probe observes win and fail through
+        # game_manager, and a greybox without one has nothing to measure.
+        # Promising a measurement that cannot run is how a two-step gate gets
+        # clicked through unread.
+        if with_gameplay and playtest:
+            effects.append(
+                "Launch Godot headless to measure the loop (bot playtest) and write "
+                "generated/playtest/<session>/playtest-report.json"
+            )
     if with_visuals:
         effects.append(
             "Run ComfyUI to generate visual reference images (writes generated/comfyui/*)"
@@ -857,6 +871,7 @@ def execute_godot_demo(
     blender_bridge: Any | None = None,
     comfyui_bridge: Any | None = None,
     resume_from: str | None = None,
+    playtest: bool = True,
 ) -> ExecutionResult:
     """Run the Godot chain, recording stage state so a later run can resume.
 
@@ -882,6 +897,7 @@ def execute_godot_demo(
         blender_bridge=blender_bridge,
         comfyui_bridge=comfyui_bridge,
         resume_from=resume_from,
+        playtest=playtest,
     )
     _persist_stages(
         result.stages,
@@ -911,8 +927,9 @@ def _execute_godot_demo_inner(
     blender_bridge: Any | None = None,
     comfyui_bridge: Any | None = None,
     resume_from: str | None = None,
+    playtest: bool = True,
 ) -> ExecutionResult:
-    """Orchestrate (optional ComfyUI/Blender) -> create -> validate -> import.
+    """Orchestrate (optional ComfyUI/Blender) -> create -> validate -> import -> playtest.
 
     Args:
         plan: The director build plan (provides godot_plan + gameplay_spec).
@@ -936,6 +953,8 @@ def _execute_godot_demo_inner(
         bridge: Optional pre-built GodotMCPBridge (for testing).
         blender_bridge: Optional pre-built BlenderMCPBridge (for testing).
         comfyui_bridge: Optional pre-built ComfyUIMCPBridge (for testing).
+        playtest: If True (default), measure the loop with a headless bot after
+            a successful import. A blocking finding fails the run.
 
     Returns:
         ExecutionResult with per-stage status, artifacts, and logs.
@@ -955,6 +974,7 @@ def _execute_godot_demo_inner(
         blender_exe=blender_exe,
         with_visuals=with_visuals,
         with_gameplay=with_gameplay,
+        playtest=playtest,
         approval_manifest_path=approval_manifest_path,
     )
 
@@ -1262,7 +1282,17 @@ def _execute_godot_demo_inner(
                         logs=reimport.log_paths,
                     )
                 )
-                return ExecutionResult("done", session_id, project_dir, stages, planned)
+                return _run_playtest_stage(
+                    plan,
+                    stages,
+                    bridge,
+                    project_dir=project_dir,
+                    session_id=session_id,
+                    godot_exe=godot_exe,
+                    with_gameplay=with_gameplay,
+                    enabled=playtest,
+                    planned=planned,
+                )
         stages.append(
             StageResult(
                 "import",
@@ -1275,6 +1305,104 @@ def _execute_godot_demo_inner(
     stages.append(
         StageResult("import", "done", detail="headless import ok", logs=imported.log_paths)
     )
+
+    return _run_playtest_stage(
+        plan,
+        stages,
+        bridge,
+        project_dir=project_dir,
+        session_id=session_id,
+        godot_exe=godot_exe,
+        with_gameplay=with_gameplay,
+        enabled=playtest,
+        planned=planned,
+    )
+
+
+def _run_playtest_stage(
+    plan: DirectorBuildPlan,
+    stages: list[StageResult],
+    bridge: GodotMCPBridge,
+    *,
+    project_dir: str,
+    session_id: str,
+    godot_exe: str,
+    with_gameplay: bool,
+    enabled: bool,
+    planned: list[str],
+) -> ExecutionResult:
+    """Measure the loop with a headless bot, then close the run.
+
+    Everything before this stage proves the prototype *compiles*. This is the
+    half that proves it *plays*, and it returns the whole ``ExecutionResult``
+    so the two import-success paths above cannot drift apart on what a
+    blocking finding means.
+
+    Three end states, and the difference between them is the point:
+
+    - ``done`` -- the bot reached a win at least once, or the report carries
+      only warnings. A warning is evidence a human reads, not a verdict.
+    - ``failed`` -- a blocking finding. The loop is not reachable as built, so
+      the slice is not a slice. ``godot_playtest._status_for`` returns
+      ``failed`` under exactly that rule; the verdict below reads the same rule
+      off the blocking list it already needs for the detail line, so the two
+      cannot drift without one of them changing shape.
+    - the stage itself records ``blocked`` when gameplay scripts were never
+      generated: the probe observes win and fail through ``game_manager``, so
+      a greybox has nothing to observe. That is a chain that ran and did not
+      measure -- recorded as ``blocked`` so it cannot be mistaken for either
+      of the two states above.
+    """
+
+    report_rel = playtest_report_relpath(session_id)
+    if not enabled:
+        stages.append(StageResult("playtest", "blocked", detail="playtest=False"))
+    elif not with_gameplay:
+        stages.append(
+            StageResult(
+                "playtest",
+                "blocked",
+                detail=(
+                    "with_gameplay=False: no game_manager, so win and fail "
+                    "cannot be observed"
+                ),
+            )
+        )
+    else:
+        report: PlaytestReport = bridge.playtest_project(
+            PlaytestRequest(
+                project_dir=project_dir,
+                goal_session_minutes=float(plan.qa_plan.target_session_minutes),
+                godot_executable=godot_exe,
+            ),
+            # The report is written under this run's session id, so the stage
+            # artifact below is the file that actually exists. Letting the
+            # playtest mint its own timestamp would record a path nobody wrote.
+            session_id=session_id,
+        )
+        blocking = [f for f in report.findings if f.severity == "blocking"]
+        stages.append(
+            StageResult(
+                "playtest",
+                "failed" if blocking else "done",
+                detail=(
+                    "; ".join(f"{f.code}: {f.message}" for f in blocking)
+                    or f"{report.aggregate.runs} runs, win_rate={report.aggregate.win_rate:.2f}"
+                ),
+                artifacts=[report_rel],
+                # Workspace-relative, like every other stage's logs: the stage
+                # rows land in ``_pipeline_state.json``, and an absolute path
+                # there is a path that stops resolving the moment the workspace
+                # moves. The report itself keeps its absolute self-description.
+                logs=[
+                    display_workspace_path(Path(p), workspace_root=bridge.workspace_root)
+                    for p in report.artifact_paths
+                ],
+                metadata=report.model_dump(mode="json"),
+            )
+        )
+        if blocking:
+            return ExecutionResult("failed", session_id, project_dir, stages, planned)
 
     return ExecutionResult("done", session_id, project_dir, stages, planned)
 

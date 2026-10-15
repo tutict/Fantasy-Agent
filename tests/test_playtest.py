@@ -22,6 +22,7 @@ from fantasy_agent.contracts import (
 )
 from fantasy_agent.godot_playtest import (
     MIN_PLAYER_MOVE_METERS,
+    _status_for,
     aggregate_samples,
     build_findings,
     planned_playtest_side_effects,
@@ -98,10 +99,118 @@ def test_every_timeout_warns_that_the_loop_never_resolved():
     )
 
 
-def test_failures_without_a_win_warn_about_the_win_path():
+def test_failures_without_a_win_block_the_verdict():
+    """A bot that never reaches the exit measured a broken level, not a taste gap.
+
+    This finding was a ``warning`` until 2026-10-13. The reason it had been
+    demoted -- "a bot is a poor player" -- holds for whether the slice is *fun*
+    and does not hold for whether the objective is *reachable*. Measured on
+    this machine: five runs against one generated prototype, five failures,
+    every one "Route timer expires before the extraction gate", and the chain
+    reported the run as done.
+    """
+
     report = _report([_sample(outcome="fail"), _sample(run_index=1, outcome="fail")])
 
-    assert any(f.code == "no_win_path" for f in report.findings)
+    finding = [f for f in report.findings if f.code == "no_win_path"]
+    assert finding, "every run failing has to name the win path"
+    assert finding[0].severity == "blocking"
+    assert _status_for(report.findings, report.aggregate) == "failed"
+
+
+def test_a_slice_nobody_could_measure_is_not_a_pass():
+    """Zero runs is the absence of a measurement, not a measurement of zero.
+
+    Measured on this machine against the 2026-07-13 golden slice: its
+    ``game_manager`` never joined the ``game_manager`` group, so the probe
+    recorded zero runs across 60 scene restarts and spent the whole 180s wall
+    budget doing it. The report carried one warning (the timeout) and the
+    executor's gate -- which reads severities -- answered "done".
+
+    Every other finding is guarded by ``aggregate.runs``, so this is the one
+    that keeps an unobservable slice from wearing a passing verdict.
+    """
+
+    report = _report([])
+
+    finding = [f for f in report.findings if f.code == "playtest_unmeasured"]
+    assert finding, "a playtest that observed no run has to say so"
+    assert finding[0].severity == "blocking"
+    assert finding[0].rework_target == "godot_plan"
+    assert _status_for(report.findings, report.aggregate) == "failed"
+
+
+def test_an_unreadable_outcome_is_not_a_run_that_passed():
+    """A run nobody can read the verdict of is not a run that passed.
+
+    Measured on this machine against the 2026-07-13 golden slice after its
+    game_manager joined the group: five runs, every one ``outcome="ended"``
+    because that project predates the structured outcome. ``no_win_path``
+    stayed silent -- there were no failures to count -- and the executor
+    answered "done".
+
+    The slice was in fact winning every run on frame 2: its exit trigger was a
+    child of the exit gate's StaticBody3D, so ``body_entered`` fired on the
+    gate's own body before the player could take a step. The gate was passing
+    a false win, and the only thing standing between that and a green report
+    is this finding.
+    """
+
+    report = _report([_sample(outcome="ended"), _sample(run_index=1, outcome="ended")])
+
+    finding = [f for f in report.findings if f.code == "outcome_unreadable"]
+    assert finding, "a run whose outcome cannot be read has to say so"
+    assert finding[0].severity == "blocking"
+    assert finding[0].rework_target == "godot_plan"
+    assert _status_for(report.findings, report.aggregate) == "failed"
+    # Countable, not vanished: the runs still show up in the aggregate.
+    assert report.aggregate.runs == 2
+
+
+def test_a_warning_only_report_is_not_a_failure():
+    """The gate has to discriminate, not just fail.
+
+    ``session_too_short`` stays a warning: a bot is a poor player, so a short
+    run is evidence a human reads rather than a verdict. If this ever becomes
+    blocking the gate above stops meaning anything.
+    """
+
+    report = _report([_sample(outcome="win", session_seconds=3.0)])
+
+    assert [f.code for f in report.findings] == ["session_too_short"]
+    assert report.findings[0].severity == "warning"
+    assert _status_for(report.findings, report.aggregate) == "warning"
+
+
+def test_the_codegen_outcome_vocabulary_stays_readable():
+    """A fifth outcome would silently block every run.
+
+    ``outcome_unreadable`` is blocking, and it fires for any outcome outside
+    ``READABLE_OUTCOMES``. The codegen is the only producer of those outcomes
+    -- ``last_outcome = "win"`` / ``"fail"`` in the generated ``game_manager``
+    -- so adding one there ("aborted", "quit") would turn every measured run
+    into a blocking finding with nothing else in the suite red. The regex is
+    asserted non-empty so it cannot rot into vacuity, and the probe's own
+    timeout literal is pinned behaviourally rather than by source scraping.
+    """
+
+    import inspect
+    import re
+
+    from fantasy_agent import gameplay_codegen
+    from fantasy_agent.godot_playtest import READABLE_OUTCOMES
+
+    emitted = set(
+        re.findall(r'last_outcome\s*=\s*"([a-z]+)"', inspect.getsource(gameplay_codegen))
+    )
+    assert emitted, "no last_outcome assignment found; the regex rotted"
+    unreadable = sorted(emitted - READABLE_OUTCOMES)
+    assert not unreadable, f"the codegen emits outcomes the probe cannot read: {unreadable}"
+
+    # A run the wall budget cut short is a warning (playtest_timeout), not an
+    # unreadable one -- so "timeout" has to stay inside the whitelist.
+    timeout_report = _report([_sample(outcome="timeout")])
+    assert all(f.code != "outcome_unreadable" for f in timeout_report.findings)
 
 
 def test_script_errors_block_the_verdict():

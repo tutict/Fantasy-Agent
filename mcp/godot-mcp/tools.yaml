@@ -151,6 +151,80 @@ tools:
       - "启动 Godot 前必须设置 confirmed_side_effects。"
       - "工程文件必须保持在 generated/godot，并命名为 project.godot。"
       - "日志必须保存到 generated/logs/godot。"
+  playtest_godot_project:
+    description: "对生成的 Godot 工程启动 headless bot playtest，测量循环是否可达：加载真实主场景、驱动真实输入动作，报告胜率、会话时长、失败原因与脚本错误。"
+    input:
+      type: object
+      required:
+        - project_dir
+      properties:
+        project_dir:
+          type: string
+          description: "要测量的 Godot 工程目录；相对路径锚定工作区根，并须位于 generated/godot 之下。"
+        runs:
+          type: integer
+          minimum: 1
+          maximum: 20
+          default: 5
+        max_frames:
+          type: integer
+          minimum: 60
+          maximum: 2000000
+          default: 36000
+        max_wall_seconds:
+          type: number
+          minimum: 5
+          maximum: 3600
+          default: 180
+        input_plan:
+          type: string
+          enum:
+            - forward
+            - forward_and_jump
+            - idle
+          default: forward_and_jump
+        godot_executable:
+          type: string
+          default: ""
+        goal_session_minutes:
+          type: number
+          minimum: 0
+          maximum: 60
+          default: 0
+    output:
+      type: object
+      required:
+        - status
+        - samples
+        - aggregate
+        - findings
+      properties:
+        status:
+          enum:
+            - passed
+            - warning
+            - failed
+        project_dir:
+          type: string
+        samples:
+          type: array
+          items:
+            type: object
+        aggregate:
+          type: object
+        findings:
+          type: array
+          items:
+            type: object
+        artifact_paths:
+          type: array
+          items:
+            type: string
+    safety:
+      - "本工具是 EXECUTE 档：启动 Godot 前必须授予 execute 权限，不能标只读。"
+      - "工程目录必须保持在 generated/godot；绝对路径在本 MCP  surface 上被拒绝。"
+      - "只测量被测量的工程，不写入它；probe 与报告写在 generated/playtest/<session>/。"
+      - "win 路径从未达成时返回 blocking finding，不是 warning。"
 safety:
       - "生成的 Godot 文件必须保持在 generated/godot。"
       - "Godot CLI 执行需要明确确认。"

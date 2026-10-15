@@ -53,6 +53,10 @@ def _ok_runner(*args, **kwargs):
 
 def _run(tmp_path: Path, session_id: str, **kwargs):
     bridge = kwargs.pop("bridge", None) or GodotMCPBridge(tmp_path, runner=_ok_runner)
+    # Nothing here is about the playtest verdict, and a playtest against this
+    # fake runner measures no runs at all -- which is now a blocking finding.
+    # Passing it through keeps these tests about stage order and resume.
+    kwargs.setdefault("playtest", False)
     return execute_godot_demo(
         _plan(),
         session_id=session_id,

@@ -11,8 +11,15 @@ from fantasy_agent.contracts import (
     GodotMCPRunImportRequest,
     GodotMCPValidateProjectRequest,
     GodotProjectPlan,
+    PlaytestRequest,
 )
-from fantasy_agent.godot_mcp import GodotMCPBridge, call_godot_mcp_tool, tool_descriptors
+from fantasy_agent.godot_mcp import (
+    GodotMCPBridge,
+    GodotMCPSafetyError,
+    call_godot_mcp_tool,
+    tool_descriptors,
+)
+from fantasy_agent.tool_registry import EXECUTE, permission_from_annotations
 
 
 def _plan() -> GodotProjectPlan:
@@ -41,6 +48,46 @@ def test_godot_mcp_descriptors_expose_project_validation_and_import_tools():
         "validate_godot_project",
         "run_godot_import",
     }.issubset(names)
+
+
+def test_playtest_tool_is_registered_as_an_execute_tier_tool():
+    """The playtest launches Godot, so it must not look free.
+
+    ``permission_from_annotations`` collapses three MCP hints into one tier,
+    and the tier is what stops a model from launching an engine. Marking this
+    read-only would let a write grant alone start Godot -- which is exactly the
+    kind of gate that looks cheap and then gets clicked through.
+    """
+
+    descriptor = next(
+        tool for tool in tool_descriptors() if tool["name"] == "playtest_godot_project"
+    )
+
+    assert permission_from_annotations(descriptor["annotations"]) == EXECUTE
+    # And the schema it advertises is the playtest request, so the model can
+    # name the project to measure but not the executable to measure it with.
+    assert "project_dir" in descriptor["inputSchema"]["properties"]
+    assert descriptor["inputSchema"]["properties"]["godot_executable"]["default"] == ""
+
+
+def test_the_playtest_tool_confines_the_project_like_its_siblings(tmp_path: Path):
+    """The MCP surface answers the same question as validate and import.
+
+    Every Godot tool takes a project under ``generated/godot``; a playtest that
+    accepted anything else would be the one hole in that wall, reachable by a
+    model holding an execute grant. ``run_playtest`` itself stays permissive --
+    an absolute scratch project outside the workspace is a legitimate direct
+    call, which is why the confinement lives on the bridge and not in the
+    measurement.
+    """
+
+    bridge = GodotMCPBridge(tmp_path)
+    with pytest.raises(GodotMCPSafetyError):
+        bridge.playtest_project(PlaytestRequest(project_dir="elsewhere/demo"))
+    # ...and an absolute path is refused here too, exactly as validate refuses
+    # one: this surface names projects by their place in the workspace.
+    with pytest.raises(GodotMCPSafetyError):
+        bridge.playtest_project(PlaytestRequest(project_dir=str(tmp_path / "demo")))
 
 
 def test_create_godot_project_structure_can_write_handoff_files(tmp_path: Path):

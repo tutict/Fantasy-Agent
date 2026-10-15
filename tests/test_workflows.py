@@ -29,6 +29,12 @@ def test_director_workflow_creates_playable_slice_plan():
     assert plan.creative_review.approval_gate == "blocks_unreal_ingest"
     assert {"comfyui", "blender"} <= {item.source for item in plan.creative_review.items}
     assert "average_session_minutes" in plan.qa_plan.metrics
+    # The QA plan has to name the measurement it expects, not only the prose
+    # about it. Before 2026-10-13 it promised "playability checks" as sentences
+    # and pointed at no artifact, while the tool that could actually measure
+    # playability was reachable only from a REST endpoint nothing called.
+    assert plan.qa_plan.playtest_checks == ["playtest_godot_project"]
+    assert plan.qa_plan.playtest_report_path.endswith("playtest-report.json")
     assert plan.task_breakdown is not None
     assert plan.task_breakdown.recommended_next_task == "gameplay_spec_review"
     assert any(task.requires_confirmation for task in plan.task_breakdown.tasks)

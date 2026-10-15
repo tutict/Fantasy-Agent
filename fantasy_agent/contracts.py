@@ -983,6 +983,22 @@ class QAPlan(StrictModel):
     failure_checks: list[str]
     packaging_checks: list[str]
     metrics: list[str]
+    #: Where a headless playtest writes its report, relative to the workspace.
+    #: A template until the session exists; the point is that the plan names the
+    #: artifact it expects, and the executor records the same path (filled in
+    #: with the session id) as the playtest stage's artifact -- so a run that
+    #: produced no report is a gap the stage list shows rather than a check
+    #: nobody knew was missing.
+    playtest_report_path: str = ""
+    #: The checks a playtest actually settles, as tool names -- the machine
+    #: counterpart to the prose in ``playability_checks``. A tool name for the
+    #: stage to *offer the model*, not an exit check: ``playtest_godot_project``
+    #: is EXECUTE-tier, and an exit check runs with no grant and only accepts
+    #: READ_ONLY tools, so handing this string to the orchestrator as one would
+    #: fail every run on a refusal. The QA stage offers it through ``mcp_tools``
+    #: instead -- the reason is written out on ``godot_quick_play`` in
+    #: ``workflows.prepare_production_pipeline``.
+    playtest_checks: list[str] = Field(default_factory=list)
 
 
 class ProductionTask(StrictModel):

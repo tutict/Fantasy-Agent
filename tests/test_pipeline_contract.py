@@ -105,6 +105,37 @@ def test_every_declared_tool_is_one_the_registry_can_resolve():
             assert not unknown, f"{route}: {stage.id} names tools that do not exist: {unknown}"
 
 
+def test_the_godot_route_offers_the_playtest_tool():
+    """The one measurement of playability has to be reachable from the plan.
+
+    Until 2026-10-13 the Godot route's QA stage offered only
+    ``validate_godot_project`` -- a static check that never launches the
+    engine -- while ``godot_playtest.run_playtest`` existed and had already
+    produced real reports, reachable only through a separate REST endpoint
+    nobody in the chain called. A capability the plan cannot reach is a
+    capability the plan does not have.
+    """
+
+    pipeline = _pipelines()["Godot 4"]
+    quick_play = _stage(pipeline, "godot_quick_play")
+    qa = _stage(pipeline, "optimization_testing")
+
+    assert "playtest_godot_project" in quick_play.mcp_tools, (
+        "the stage that builds the prototype has to be able to measure it"
+    )
+    assert "playtest_godot_project" in qa.mcp_tools, (
+        "the QA stage has to offer the measurement, not just the static check"
+    )
+    # Both stages declare an EXECUTE-tier tool now, which is what makes the
+    # orchestrator ask for an execute grant before dispatching either. That is
+    # the honest reading: measuring the loop launches an engine.
+    assert quick_play.requires_confirmation and qa.requires_confirmation
+    for stage in (quick_play, qa):
+        assert any("playtest" in effect for effect in stage.side_effects), (
+            f"{stage.id} offers the tool but never says it launches an engine"
+        )
+
+
 def test_a_stage_only_depends_on_stages_that_come_before_it():
     """Backwards-only edges are what let the orchestrator walk the list once."""
 

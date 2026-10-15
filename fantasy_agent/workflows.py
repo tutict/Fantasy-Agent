@@ -532,6 +532,11 @@ def prepare_qa_plan(spec: GameplaySpec) -> QAPlan:
             "failure_reason_distribution",
             "average_session_minutes",
         ],
+        # One session id is not known at planning time, so the path is a
+        # template. What is known now is that a playtest report is expected at
+        # all, and which tool settles it.
+        playtest_report_path="generated/playtest/<session>/playtest-report.json",
+        playtest_checks=["playtest_godot_project"],
     )
 
 
@@ -729,16 +734,23 @@ def prepare_production_pipeline(
                 "generated/godot/<project>/project.godot",
                 "generated/godot/<project>/fantasy-agent-godot-manifest.json",
             ],
-            mcp_tools=["create_godot_project_structure", "validate_godot_project", "run_godot_import"],
+            mcp_tools=[
+                "create_godot_project_structure",
+                "validate_godot_project",
+                "run_godot_import",
+                "playtest_godot_project",
+            ],
             quality_gates=[
                 f"Main scene targets {godot_plan.scenes[0] if godot_plan.scenes else 'scenes/main.tscn'}.",
                 "Godot is the selected engine for this plan.",
                 "Headless import runs only after explicit execution confirmation.",
+                "A headless playtest reaches a win at least once, or the slice is reported failed.",
             ],
             side_effects=[
                 "writes generated Godot project files",
                 "launches Godot headless import when execution is confirmed",
                 "writes generated/logs/godot import logs",
+                "launches Godot headless to measure the loop and writes a playtest report",
             ],
             depends_on=["asset_integration"],
             status="blocked",
@@ -917,9 +929,22 @@ def prepare_production_pipeline(
             if stage.id == "optimization_testing":
                 stage.participating_agents = ["godot-builder", "director-agent"]
                 stage.inputs = ["QAPlan", "assembled Godot scene", "Godot quick-play candidate"]
-                stage.artifacts = ["generated/qa-report.json", "generated/logs/qa/*.log", "generated/logs/godot/*.log"]
-                stage.mcp_tools = ["validate_godot_project"]
-                stage.side_effects = ["runs Godot validation or quick-play checks"]
+                stage.artifacts = [
+                    "generated/qa-report.json",
+                    "generated/logs/qa/*.log",
+                    "generated/logs/godot/*.log",
+                    "generated/playtest/<session>/playtest-report.json",
+                ]
+                # ``playtest_godot_project`` is an EXECUTE-tier tool, so offering
+                # it here means this stage waits for an execute grant before it
+                # dispatches anything -- the same shape the Unreal route already
+                # has with ``run_editor_commandlet``. That is the honest
+                # reading: measuring the loop launches an engine.
+                stage.mcp_tools = ["validate_godot_project", "playtest_godot_project"]
+                stage.side_effects = [
+                    "runs Godot validation",
+                    "launches Godot headless to measure the loop and writes a playtest report",
+                ]
                 stage.depends_on = ["godot_quick_play"]
     else:
         stages = [stage for stage in stages if stage.id != "godot_quick_play"]
