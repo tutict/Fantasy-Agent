@@ -69,6 +69,19 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * The gates' own waiting line, blue where the approvals line is amber.
+ *
+ * The two lines say different things -- "approve me and I run" against "decide
+ * me and the plan may continue" -- and the colour carries that before the
+ * sentence is read, the same way the gate section below is blue.
+ */
+.or-pending-gates {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+  color: var(--blue);
+}
+
 .or-gates {
   padding: var(--space-3) var(--space-3_5);
   border: 1px solid var(--line-strong);
@@ -237,6 +250,18 @@
   color: var(--accent);
 }
 
+/* A decided gate, in the colour of the decision that was given: the same
+ * distinction the two buttons made, read back after the fact. */
+.or-pill-decision[data-decision-state="approved"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.or-pill-decision[data-decision-state="rejected"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .or-actions {
   display: flex;
   flex-wrap: wrap;
@@ -267,6 +292,14 @@
 .or-button.is-on {
   border-color: var(--accent);
   background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* The gate's own decision. Accent for the one that moves the plan; the send
+ * back keeps the neutral button rather than a red one, because refusing a gate
+ * is a normal outcome and not an error. */
+.or-button[data-decision="approved"] {
+  border-color: var(--accent);
   color: var(--accent);
 }
 

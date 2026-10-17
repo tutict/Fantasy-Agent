@@ -12,7 +12,7 @@ import { OrchestrationBoard } from "./OrchestrationBoard";
  * actually uses (there is no server in jsdom, and a mocked `api.ts` would test
  * the mock).
  *
- * The assertions it exists for are the two that are easy to get wrong and
+ * The assertions it exists for are the ones that are easy to get wrong and
  * invisible when wrong:
  *
  *   - **the plan travels with the run request.** The board renders one plan;
@@ -20,7 +20,11 @@ import { OrchestrationBoard } from "./OrchestrationBoard";
  *     nothing on screen would say so.
  *   - **no approval is sent that a person did not give.** `confirm_stages` and
  *     `rewind_stage` are user actions; a defaulted value would take the backend
- *     gate off, which is the one thing AGENTS.md is explicit about.
+ *     gate off, which is the one thing AGENTS.md is explicit about. The
+ *     decision rides the same rule.
+ *   - **a gate is decided, not approved.** The two buttons on a gate card send
+ *     a decision; nothing on the card offers to approve it, because approving
+ *     one would not make it run.
  */
 
 const t = makeTranslator("en", studioI18n);
@@ -378,5 +382,180 @@ describe("the human gate's route out", () => {
     links.forEach((link) => fireEvent.click(link));
     expect(onOpenConsole).toHaveBeenCalledTimes(links.length);
     expect(links.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("deciding a human gate", () => {
+  /**
+   * The decision endpoint's answer: the decision recorded, the plan *not*
+   * advanced. The endpoint deliberately stops there -- `/api/orchestration/run`
+   * stays the single path that dispatches a stage -- so the board chains the
+   * pass itself.
+   *
+   * `status: "error"` with `error: ""` is the real shape on a session whose
+   * earlier pass failed: the status is the last pass's fold, and only a
+   * non-empty `error` means the decision was refused. A board that read the
+   * status instead would refuse to act on a decision that landed.
+   */
+  function decisionPayload(decision: string, overrides: Partial<OrchestrationSession> = {}): OrchestrationSession {
+    const base = sessionPayload();
+    return {
+      ...base,
+      error: "",
+      human_decisions: { creative_review: decision },
+      pending_human_gates: [],
+      stages: base.stages!.map((stage) =>
+        stage.stage_id === "creative_review" ? { ...stage, human_resolution: decision } : stage
+      ),
+      ...overrides
+    };
+  }
+
+  /** Clicks the gate's own decision button once the cards are on screen. */
+  async function decide(which: "approved" | "rejected"): Promise<void> {
+    await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
+    fireEvent.click(
+      document.querySelector(`[data-decision="${which}"]`) as HTMLButtonElement
+    );
+  }
+
+  it("offers a decision on the gate once a session exists, and not before", async () => {
+    stubFetch(() => sessionPayload());
+    render(board());
+
+    // Before the first pass there is no session to attach a decision to, and a
+    // button that could only answer "run the plan first" would be a dead end
+    // that looks like a control.
+    expect(document.querySelector('[data-decision="approved"]')).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
+
+    const gate = document.querySelector('[data-stage="creative_review"]')!;
+    expect(gate.querySelector('[data-decision="approved"]')).toBeTruthy();
+    expect(gate.querySelector('[data-decision="rejected"]')).toBeTruthy();
+    // Still not an approve button: approving a gate would not make it run.
+    expect(gate.querySelector('[data-approve]')).toBeNull();
+  });
+
+  it("posts the decision the operator clicked, then the pass that acts on it", async () => {
+    stubFetch((url) =>
+      url.includes("/decision") ? decisionPayload("approved") : sessionPayload({ status: "done", error: "" })
+    );
+    render(board());
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
+
+    await decide("approved");
+
+    await waitFor(() => expect(calls.some((call) => call.url.includes("/decision"))).toBe(true));
+    const decision = calls.find((call) => call.url.includes("/decision"))!;
+    // The decision goes to the session the board is running, not to an id of
+    // its own -- read off the run request rather than hardcoded, so the two
+    // cannot drift apart silently.
+    const run = calls.find((call) => call.url.includes("/api/orchestration/run"))!;
+    expect(decision.url).toContain(
+      `/api/orchestration/${String(run.body?.session_id)}/stages/creative_review/decision`
+    );
+    expect(decision.url).toContain("engine=godot");
+    // The decision is the only thing in the body, and it is the one that was
+    // clicked: no default, no second value riding along.
+    expect(decision.body).toEqual({ decision: "approved" });
+
+    // The endpoint records and persists; it does not advance. So the board
+    // chains the pass -- the same request the run button makes.
+    await waitFor(() =>
+      expect(calls.filter((call) => call.url.includes("/api/orchestration/run"))).toHaveLength(2)
+    );
+    const chained = calls.filter((call) => call.url.includes("/api/orchestration/run"))[1];
+    expect(chained.body?.session_id).toBe(run.body?.session_id);
+    expect(chained.body?.confirm_stages).toEqual([]);
+    expect(chained.body?.rewind_stage).toBe("");
+  });
+
+  it("shows the decision that was given instead of asking again", async () => {
+    // Once decided, every payload carries the stamp: the orchestrator writes it
+    // onto the plan and the payload reads it back off the plan, so the pass the
+    // board chains after the click still shows a decided gate. A handler that
+    // stamped only the decision's own answer would model a decision the next
+    // pass forgot -- which is the deadlock this whole change exists to remove.
+    let decided: string | null = null;
+    stubFetch((url, body) => {
+      if (typeof body?.decision === "string") decided = body.decision;
+      return decided === null
+        ? sessionPayload()
+        : decisionPayload(decided, { status: "done", error: "" });
+    });
+    render(board());
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
+
+    await decide("rejected");
+
+    await waitFor(() => expect(screen.getByText("Decided: sent back")).toBeTruthy());
+    const gate = document.querySelector('[data-stage="creative_review"]')!;
+    // A decided gate is not asked again: the buttons are gone, and what was
+    // decided is on the card.
+    expect(gate.querySelector('[data-decision="approved"]')).toBeNull();
+    expect(gate.querySelector('[data-decision="rejected"]')).toBeNull();
+    expect(gate.querySelector(".or-pill-decision")?.getAttribute("data-decision-state")).toBe(
+      "rejected"
+    );
+  });
+
+  it("lists the gates still waiting for a decision, apart from the approvals", async () => {
+    stubFetch(() => sessionPayload({ pending_human_gates: ["creative_review"] }));
+    render(board());
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/1 human gate\(s\) waiting for your decision/)).toBeTruthy()
+    );
+    // Two lines, because they ask two different things of the operator.
+    expect(screen.getByText(/1 stage\(s\) waiting for your approval/)).toBeTruthy();
+  });
+
+  it("reports a refused decision with the cards still attached", async () => {
+    // A value outside the vocabulary, or a card that is not a gate: the
+    // endpoint answers with the stage list, so the board keeps it rather than
+    // blanking over a mistake.
+    stubFetch((url) =>
+      url.includes("/decision")
+        ? sessionPayload({
+            status: "error",
+            error: "decision 'maybe' is not one of ['approved', 'rejected']"
+          })
+        : sessionPayload()
+    );
+    render(board());
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
+
+    await decide("approved");
+
+    await waitFor(() => expect(screen.getByText(/not one of/)).toBeTruthy());
+    expect(document.querySelectorAll(".or-card")).toHaveLength(2);
+    // No chained pass: the decision did not land, so there is nothing to act on.
+    expect(calls.filter((call) => call.url.includes("/api/orchestration/run"))).toHaveLength(1);
+  });
+
+  it("surfaces a transport failure on the decision instead of rendering nothing", async () => {
+    vi.stubGlobal("fetch", (url: string) =>
+      url.includes("/decision")
+        ? Promise.reject(new Error("offline"))
+        : Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve(sessionPayload())
+          })
+    );
+    render(board());
+    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
+
+    await decide("approved");
+
+    await waitFor(() => expect(screen.getByText(/offline/)).toBeTruthy());
+    expect(document.querySelectorAll(".or-card")).toHaveLength(2);
   });
 });

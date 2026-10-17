@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { studioI18n } from "../shared/i18n";
 import type { DirectorBuildPlan, OrchestrationSession } from "../shared/types";
 import {
+  DECISION_LABEL_KEYS,
+  HUMAN_DECISIONS,
   HUMAN_STAGE_KIND,
   PLAN_STATUSES,
   RUNTIME_STATUSES,
@@ -10,11 +12,14 @@ import {
   boardCards,
   cardsFromPlan,
   cardsFromSession,
+  decidableCards,
+  decisionLabelKey,
   drilldown,
   humanGates,
   newSessionId,
   reworkableCards,
-  statusLabelKey
+  statusLabelKey,
+  type HumanDecision
 } from "./orchestrationModel";
 
 /**
@@ -153,6 +158,18 @@ describe("cards from a run payload", () => {
     expect(card.status).toBe("awaiting_confirmation");
   });
 
+  it("reads the gate's decision off the payload, and null when there is none", () => {
+    const undecided = cardsFromSession(session)[0];
+    expect(undecided.human_resolution).toBeNull();
+
+    const [firstStage] = session.stages!;
+    const decided = cardsFromSession({
+      ...session,
+      stages: [{ ...firstStage, human_resolution: "approved" }]
+    })[0];
+    expect(decided.human_resolution).toBe("approved");
+  });
+
   it("prefers the session's cards once it has any", () => {
     const cards = boardCards(planWith(PIPELINE), session);
     expect(cards.map((card) => card.id)).toEqual(["blender_modeling"]);
@@ -199,6 +216,21 @@ describe("what gets a button", () => {
       card.id === "blender_modeling" ? { ...card, status: "failed" } : card
     );
     expect(reworkableCards(afterARun).map((card) => card.id)).toEqual(["blender_modeling"]);
+  });
+
+  it("offers a decision on the gate and on nothing else", () => {
+    // The mirror of the approve list, and the reason the two are separate: a
+    // gate is decided, not approved. `requires_confirmation` is deliberately
+    // not consulted -- the gate carries that flag too, and answering it is not
+    // what moves the gate.
+    expect(decidableCards(cards).map((card) => card.id)).toEqual(["creative_review"]);
+  });
+
+  it("drops a gate once it has been decided", () => {
+    const decided = cards.map((card) =>
+      card.id === "creative_review" ? { ...card, human_resolution: "rejected" } : card
+    );
+    expect(decidableCards(decided)).toEqual([]);
   });
 });
 
@@ -262,6 +294,30 @@ describe("status labels", () => {
   });
 });
 
+describe("decision labels", () => {
+  it("has a label for every decision the backend accepts", () => {
+    const missing = HUMAN_DECISIONS.filter((decision) => !decisionLabelKey(decision));
+    expect(missing, "decisions with no label key").toEqual([]);
+  });
+
+  it("defines every one of those labels in both locales", () => {
+    const keys = HUMAN_DECISIONS.map(decisionLabelKey);
+    for (const locale of ["en", "zh-CN"] as const) {
+      const dictionary = studioI18n[locale];
+      const missing = keys.filter((key) => !dictionary[key]);
+      expect(missing, `${locale} has no label for these decisions`).toEqual([]);
+    }
+  });
+
+  it("returns nothing for a decision it does not know", () => {
+    // The board falls back to the raw string, which says "this is what was
+    // recorded" -- a hand-edited snapshot could carry anything, and inventing
+    // a key would render a literal into the card.
+    expect(decisionLabelKey("maybe")).toBe("");
+    expect(decisionLabelKey("")).toBe("");
+  });
+});
+
 describe("session ids", () => {
   it("are distinct, so two boards do not share outcomes", () => {
     const ids = new Set(Array.from({ length: 50 }, () => newSessionId()));
@@ -276,5 +332,16 @@ describe("session ids", () => {
 describe("the human gate constant", () => {
   it("matches the backend's `ProductionStageKind`", () => {
     expect(HUMAN_STAGE_KIND).toBe("human");
+  });
+
+  it("carries the backend's decision vocabulary, both ways round", () => {
+    // Mirrors `orchestrator.HUMAN_DECISIONS`. The list is what the buttons
+    // send, so a rename here would be a decision the backend refuses -- and
+    // the label table has to cover every entry for the same reason.
+    expect([...HUMAN_DECISIONS]).toEqual(["approved", "rejected"]);
+    const unlabelled = HUMAN_DECISIONS.filter(
+      (decision) => !DECISION_LABEL_KEYS[decision as HumanDecision]
+    );
+    expect(unlabelled).toEqual([]);
   });
 });

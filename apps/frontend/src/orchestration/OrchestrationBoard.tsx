@@ -16,19 +16,21 @@
  *
  *   - **No approve button on a human gate.** `Orchestrator.pending_confirmations`
  *     leaves those out because approving one does not make it run; a button
- *     would be a control that does nothing. The gate card points at the
- *     approval screen in the flow console instead.
+ *     would be a control that does nothing. What a gate takes is a *decision*,
+ *     which is what the two buttons on its card send -- see
+ *     `decidableCards`.
  *   - **No approval state of its own.** `confirm_stages` and `rewind_stage` are
  *     built from clicks on this board and travel with the request. Writing
  *     either as a default would take the gate off the backend, which AGENTS.md
- *     is explicit about.
+ *     is explicit about. The decision rides the same way: it is built from the
+ *     click and nothing else.
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { useJourney } from "../shared/journeyContext";
 import { EmptyState } from "../shared/ui/primitives";
 
-import { getOrchestrationState, runOrchestration } from "../shared/api";
+import { decideHumanGate, getOrchestrationState, runOrchestration } from "../shared/api";
 import { localizedTitle } from "../shared/planModel";
 import {
   readHandoffPlan,
@@ -42,6 +44,8 @@ import {
   HUMAN_STAGE_KIND,
   approvableCards,
   boardCards,
+  decidableCards,
+  decisionLabelKey,
   drilldown,
   newSessionId,
   reworkableCards,
@@ -158,9 +162,53 @@ export function OrchestrationBoard({
     [allowExecute, allowWrite, approved, maxTurns, plan, sessionId, t]
   );
 
+  const decide = useCallback(
+    async (stageId: string, decision: string) => {
+      if (!plan?.production_pipeline?.stages?.length) {
+        setFailure(t("orchestrationNoPlan"));
+        return;
+      }
+      setBusy(true);
+      setFailure("");
+      try {
+        const payload = await decideHumanGate(sessionId, stageId, decision, engine);
+        setSession(payload);
+        if (payload.stage_translation) setTranslation(payload.stage_translation);
+        // The server recorded which engine it ran under; recording that keeps
+        // the next read pointed at the same directory.
+        if (payload.engine) saveOrchestrationEngine(payload.engine);
+        // `error` is the discriminator, not `status`: the endpoint answers with
+        // the last pass's fold, which reads "error" on a session whose earlier
+        // pass failed -- that is not the decision being refused. A non-empty
+        // `error` is the only refusal signal there is.
+        if (payload.error) {
+          // A bad decision value or a card that is not a gate: the endpoint
+          // answers with the cards still attached, so the board keeps them and
+          // says what was wrong instead of blanking.
+          setFailure(payload.error || t("orchestrationDecisionFailed"));
+          return;
+        }
+        // The endpoint records the decision and persists it; it deliberately
+        // does not advance the plan, because `/api/orchestration/run` is the
+        // single path that dispatches a stage. Chaining the pass here is what
+        // turns one click into one visible result -- and the run below is the
+        // same call the run button makes, with the operator's own grants.
+        await run("");
+      } catch (error) {
+        setFailure(`${t("orchestrationDecisionFailed")} ${error}`);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [engine, plan, run, sessionId, t]
+  );
+
   const cards = boardCards(plan, session);
   useEffect(() => update({ plan, session }), [plan, session, update]);
   const pending = session?.pending_confirmations ?? [];
+  // Gates nobody has decided yet. Its own list, its own line: a gate is
+  // decided, not approved, and the two summaries answer different questions.
+  const pendingGates = session?.pending_human_gates ?? [];
   const gates = cards.filter((card) => card.kind === HUMAN_STAGE_KIND);
 
   const toggle = (list: string[], id: string): string[] =>
@@ -270,6 +318,12 @@ export function OrchestrationBoard({
         </p>
       ) : null}
 
+      {pendingGates.length ? (
+        <p className="or-pending or-pending-gates" id="orchestration-pending-gates" data-count={pendingGates.length}>
+          {t("orchestrationGatesPending", { count: pendingGates.length })}: {pendingGates.join(", ")}
+        </p>
+      ) : null}
+
       {gates.length ? (
         <section className="or-gates" id="orchestration-gates">
           <h4>{t("orchestrationHumanGates")}</h4>
@@ -300,6 +354,12 @@ export function OrchestrationBoard({
               busy={busy}
               onRework={() => void run(card.id)}
               onOpenConsole={onOpenConsole}
+              // A decision attaches to a session: before the first pass there
+              // is nothing on the server to attach it to, and a button that
+              // could only answer "run the plan first" would be a dead end
+              // that looks like a control.
+              decidable={session !== null && decidableCards([card]).length > 0}
+              onDecide={(decision) => void decide(card.id, decision)}
             />
           ))}
         </div>
@@ -321,7 +381,9 @@ function StageCard({
   onToggleApproved,
   busy,
   onRework,
-  onOpenConsole
+  onOpenConsole,
+  decidable,
+  onDecide
 }: {
   card: BoardCard;
   locale: Locale;
@@ -334,6 +396,9 @@ function StageCard({
   busy: boolean;
   onRework: () => void;
   onOpenConsole: (stageId?: string) => void;
+  /** A human gate with a session behind it and nobody's decision on it yet. */
+  decidable: boolean;
+  onDecide: (decision: string) => void;
 }) {
   const isHuman = card.kind === HUMAN_STAGE_KIND;
   const canApprove = approvableCards([card]).length > 0;
@@ -362,6 +427,11 @@ function StageCard({
           </span>
         ) : null}
         {card.confirmed ? <span className="or-pill or-pill-ok">{t("orchestrationConfirmed")}</span> : null}
+        {isHuman && card.human_resolution ? (
+          <span className="or-pill or-pill-decision" data-decision-state={card.human_resolution}>
+            {t(decisionLabelKey(card.human_resolution) || card.human_resolution)}
+          </span>
+        ) : null}
         {card.depends_on.length ? (
           <span className="or-pill">
             {t("orchestrationDependsOn")}: {card.depends_on.join(", ")}
@@ -435,6 +505,34 @@ function StageCard({
       {card.answer ? <p className="or-answer">{card.answer}</p> : null}
 
       <div className="or-actions">
+        {decidable ? (
+          <>
+            {/*
+              The gate's own decision. Two buttons, not a toggle: approving and
+              sending back are different outcomes with different consequences
+              for what depends on the gate, and a single switch would have to
+              pick a default -- which is the one thing a decision may never do.
+            */}
+            <button
+              className="or-button"
+              type="button"
+              data-decision="approved"
+              disabled={busy}
+              onClick={() => onDecide("approved")}
+            >
+              {t("orchestrationDecisionApprove")}
+            </button>
+            <button
+              className="or-button"
+              type="button"
+              data-decision="rejected"
+              disabled={busy}
+              onClick={() => onDecide("rejected")}
+            >
+              {t("orchestrationDecisionReject")}
+            </button>
+          </>
+        ) : null}
         {canApprove ? (
           <button
             className={`or-button${approved ? " is-on" : ""}`}

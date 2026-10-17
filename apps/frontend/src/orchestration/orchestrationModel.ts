@@ -33,6 +33,30 @@ import type { DirectorBuildPlan } from "../shared/types";
 export const HUMAN_STAGE_KIND = "human";
 
 /**
+ * What a person may decide about a human gate, mirroring the backend's
+ * `HUMAN_DECISIONS`.
+ *
+ * `approved` lets the gate count as done and unblocks what depends on it;
+ * `rejected` fails it, so what depends on it stays blocked. Not "approve" and
+ * "not approve" -- sending a gate back is a real outcome with real
+ * consequences, which is why it has its own name and its own button.
+ */
+export const HUMAN_DECISIONS = ["approved", "rejected"] as const;
+
+export type HumanDecision = (typeof HUMAN_DECISIONS)[number];
+
+/**
+ * Decision -> translation key.
+ *
+ * A table rather than a template string, for the same reason
+ * `STATUS_LABEL_KEYS` is one: every label is then a literal in the source.
+ */
+export const DECISION_LABEL_KEYS: Record<HumanDecision, string> = {
+  approved: "orchestrationDecisionApproved",
+  rejected: "orchestrationDecisionRejected"
+};
+
+/**
  * The runtime vocabulary the board's status filter checks against.
  *
  * Superset of the backend's `STAGE_STATUSES` (`orchestrator.py`): the backend
@@ -111,6 +135,11 @@ export interface BoardCard {
   /** Exit checks that ran and passed. */
   checks: string[];
   answer: string;
+  /**
+   * The decision stamped onto a human gate by the orchestrator. `null` until
+   * somebody decides it, and never set on a card that is not a gate.
+   */
+  human_resolution: string | null;
 }
 
 const EMPTY_CARD = {
@@ -133,7 +162,8 @@ const EMPTY_CARD = {
   tool_calls: 0,
   refusals: [] as string[],
   checks: [] as string[],
-  answer: ""
+  answer: "",
+  human_resolution: null
 };
 
 /** Plan order, with a stable tiebreak so two cards at one `order` never swap. */
@@ -206,7 +236,8 @@ export function cardsFromSession(session: OrchestrationSession | null | undefine
       tool_calls: typeof stage.tool_calls === "number" ? stage.tool_calls : 0,
       refusals: strings(stage.refusals),
       checks: strings(stage.checks),
-      answer: text(stage.answer)
+      answer: text(stage.answer),
+      human_resolution: text(stage.human_resolution) || null
     }))
   );
 }
@@ -245,6 +276,25 @@ export function approvableCards(cards: BoardCard[]): BoardCard[] {
   );
 }
 
+/**
+ * Cards a decision button may be shown on: human gates nobody has decided.
+ *
+ * The mirror of `approvableCards`, and the reason the two are separate: a gate
+ * is *decided*, not approved. The backend keeps the same split --
+ * `pending_confirmations` leaves gates out, `pending_human_gates` lists them --
+ * so an approve button on one of these would be the dead-end control the
+ * orchestrator already refuses to offer.
+ *
+ * Unlike `approvableCards` this does not look at `requires_confirmation`: the
+ * gate carries that flag too (it is a stage a person must okay), but answering
+ * it is not what moves the gate. A decision may be given before the gate's
+ * inputs finish, exactly as an approval may -- the decision waits for them the
+ * same way.
+ */
+export function decidableCards(cards: BoardCard[]): BoardCard[] {
+  return cards.filter((card) => card.kind === HUMAN_STAGE_KIND && !card.human_resolution);
+}
+
 /** Cards a rework button may be shown on: the ones a pass has actually reached. */
 export function reworkableCards(cards: BoardCard[]): BoardCard[] {
   return cards.filter((card) => card.status !== "pending");
@@ -267,6 +317,20 @@ export function drilldown(card: BoardCard, translation: Record<string, string[]>
 export function statusLabelKey(status: string): string {
   return (RUNTIME_STATUSES as readonly string[]).includes(status)
     ? STATUS_LABEL_KEYS[status as RuntimeStatus]
+    : "";
+}
+
+/**
+ * The label key for a gate decision, falling back to the raw string.
+ *
+ * The fallback is load-bearing rather than defensive: the field comes off the
+ * wire, and a snapshot a hand edited could carry a decision outside the
+ * vocabulary. Rendering the raw value says "this is what was recorded"; the
+ * translator's `|| key` fallback would say nothing at all.
+ */
+export function decisionLabelKey(decision: string): string {
+  return (HUMAN_DECISIONS as readonly string[]).includes(decision)
+    ? DECISION_LABEL_KEYS[decision as HumanDecision]
     : "";
 }
 
