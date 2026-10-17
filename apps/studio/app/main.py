@@ -1286,6 +1286,20 @@ class OrchestrationRunRequest(StrictModel):
 OrchestrationRunRequest.model_rebuild()
 
 
+class HumanDecisionRequest(StrictModel):
+    """A person's decision for one human gate.
+
+    The decision is the only thing in the body, and it is read off the request
+    and nothing else -- the same rule ``confirm_stages`` follows, for the same
+    reason: a decision a person made has to come from a click, never from a
+    value written at a call site. The vocabulary (``approved`` / ``rejected``)
+    is the orchestrator's, enforced there rather than here, so the endpoint
+    reports a bad value instead of defining a second one.
+    """
+
+    decision: str
+
+
 #: Live orchestrators, one per session id.
 #:
 #: The object *is* the state, which is why it cannot be rebuilt per request:
@@ -1338,6 +1352,11 @@ def _orchestration_payload(session: dict[str, Any]) -> dict[str, Any]:
                 "plan_status": stage.status,
                 "requires_confirmation": stage.requires_confirmation,
                 "confirmed": stage.id in confirmed,
+                # The decision stamped onto the plan by the orchestrator, for a
+                # human gate. Read off the plan rather than off the browser's
+                # copy: the plan is the session's record, and a decision is
+                # durable state, not a rendering hint.
+                "human_resolution": stage.human_resolution,
                 # The plan-time fields the board draws a card from. They are
                 # sent rather than merged from the browser's copy of the plan
                 # for the same reason the request carries a plan: the card must
@@ -1371,6 +1390,14 @@ def _orchestration_payload(session: dict[str, Any]) -> dict[str, Any]:
         "goal": plan.goal,
         "project_name": plan.project_name,
         "pending_confirmations": orchestrator.pending_confirmations(plan),
+        # Human gates nobody has decided yet. Separate from
+        # `pending_confirmations` because the two ask different things of the
+        # operator -- approve a stage so it may run, decide a gate so the plan
+        # may continue -- and the board's summary line says which.
+        "pending_human_gates": orchestrator.pending_human_gates(plan),
+        # Every decision given so far, stage id to decision, so a card can show
+        # what was answered rather than asking again.
+        "human_decisions": orchestrator.human_decisions,
         "confirmed": sorted(confirmed),
         "stage_translation": _stage_translation(),
         "stages": entries,
@@ -1390,10 +1417,10 @@ def _restore_orchestration(
     The plan is validated here rather than at the model layer, because this is
     the only place that can report it: a snapshot whose plan no longer parses
     degrades to "no snapshot" (the board shows nothing) instead of failing to
-    load. Same for a snapshot whose confirmations do not validate -- restore
-    refuses the whole thing rather than half-applying it, because a board with
-    some stages `done` and the rest silently re-run is the worst of the three
-    outcomes.
+    load. Same for a snapshot whose confirmations or gate decisions do not
+    validate -- restore refuses the whole thing rather than half-applying it,
+    because a board with some stages `done` and the rest silently re-run is the
+    worst of the three outcomes.
     """
 
     from fantasy_agent.orchestration_state import load_state as load_snapshot
@@ -1429,7 +1456,7 @@ def _restore_orchestration(
         )
     except ValueError as exc:
         logger.warning(
-            "orchestration snapshot for %r has an unusable confirmation: %s",
+            "orchestration snapshot for %r has an unusable confirmation or decision: %s",
             session_id,
             exc,
         )
@@ -1527,6 +1554,130 @@ def run_orchestration(req: OrchestrationRunRequest) -> dict[str, Any]:
     return payload
 
 
+@app.post("/api/orchestration/{session_id}/stages/{stage_id}/decision")
+def decide_orchestration_stage(
+    session_id: str,
+    stage_id: str,
+    req: HumanDecisionRequest,
+    engine: DemoEngine = "godot",
+) -> dict[str, Any]:
+    """Record a person's decision for one human gate, and make it durable.
+
+    The deadlock this closes: a ``kind="human"`` stage could only ever answer
+    ``awaiting_human``, so a Godot route stopped at ``order=5`` forever with the
+    three stages behind it blocked, and nothing on the REST surface could write
+    the decision that unblocks them.
+
+    This endpoint deliberately does **not** advance the plan.
+    ``/api/orchestration/run`` stays the single path that dispatches a stage, so
+    there is one place where a pass happens and one set of grant semantics --
+    the repo has been bitten by a local endpoint existing in two
+    implementations, and a second advancing path would be exactly that shape.
+    The board chains a run after a successful decision, which is also why the
+    response carries the same payload the run does.
+
+    What it *does* persist immediately is the snapshot. A decision lives in the
+    orchestrator's map and on the plan it stamped -- both in memory. Without
+    the write here, a restart between the click and the next pass would lose a
+    decision the operator gave and ask for it again: an approval that never
+    takes effect, one verb over from the one AGENTS.md names.
+
+    Never raises, same contract as the other two endpoints: a failure is a
+    status the board can branch on, with the cards still attached rather than
+    an empty stage list.
+
+    `engine` is only consulted when the session is not live, to find the
+    snapshot a restarted Studio left on disk; a live session already knows
+    which directory it wrote to.
+    """
+
+    from fantasy_agent.orchestration_state import save_state
+    from fantasy_agent.orchestrator import HUMAN_STAGE_KIND
+
+    session = _ORCHESTRATION_SESSIONS.get(session_id)
+    if session is None:
+        # A restarted Studio has an empty registry but a snapshot on disk, and
+        # the operator is clicking on a board rendered from one.
+        session = _restore_orchestration(session_id, engine)
+    if session is None:
+        # A decision attaches to a session, and a board with no session has
+        # nothing to attach it to. Answering with the cards would imply the
+        # decision landed somewhere.
+        return {
+            "session_id": session_id,
+            "found": False,
+            "status": "error",
+            "error": (
+                "no orchestration session under this id; run the plan first, "
+                "because a decision attaches to the session that ran it"
+            ),
+            "stages": [],
+        }
+    # Registered in every case, *including* one just rebuilt from disk: the
+    # decision below lands on this instance, and leaving a restored session
+    # unregistered would throw it away on the way out and make the next run
+    # restore from a file that predates the click.
+    _ORCHESTRATION_SESSIONS[session_id] = session
+
+    plan = session["plan"]
+    stage = next((entry for entry in plan.stages if entry.id == stage_id), None)
+    if stage is None:
+        payload = _orchestration_payload(session)
+        payload["status"] = "error"
+        payload["error"] = f"{stage_id!r} is not a stage of this plan"
+        return payload
+    if stage.kind != HUMAN_STAGE_KIND:
+        # Only a gate takes a decision. Accepting one for an agent stage would
+        # read as "the operator settled this" on a card that a decision cannot
+        # move -- the dead-end control this endpoint exists to replace, wearing
+        # the opposite hat.
+        payload = _orchestration_payload(session)
+        payload["status"] = "error"
+        payload["error"] = (
+            f"stage {stage_id!r} is kind={stage.kind!r}, not {HUMAN_STAGE_KIND!r}; "
+            "only a human gate takes a decision"
+        )
+        return payload
+
+    try:
+        session["orchestrator"].resolve_human_stage(stage_id, req.decision)
+    except ValueError as exc:
+        # An unknown stage id or a decision outside the vocabulary. Both are
+        # reported with the cards still attached: a mistyped decision is a user
+        # mistake, and blanking the board over one would lose the run.
+        payload = _orchestration_payload(session)
+        payload["status"] = "error"
+        payload["error"] = str(exc)
+        return payload
+
+    try:
+        save_state(
+            session["orchestrator"].snapshot(plan), workspace_root=REPO_ROOT
+        )
+    # No `noqa: BLE001` here on purpose: a blind handler that only logs is
+    # exempt from the directive, so naming it would be flagged unused -- the
+    # same shape `Orchestrator._record` uses.
+    except Exception:
+        # Same trade ``Orchestrator._record`` makes: the person decided, and
+        # failing the request would ask them to decide again over a record of
+        # it. The log line is what says the file is missing.
+        logger.exception(
+            "could not snapshot the decision for session %s stage %s",
+            session_id,
+            stage_id,
+        )
+
+    # Not advanced, so the run-level fold is the last pass's -- honest, and the
+    # board's follow-up run is what moves it. ``error`` is spelled out as empty
+    # for the same reason the run endpoint always carries it: the fold can be
+    # "error" on a session whose *earlier* pass failed, and a caller that read
+    # the status as "your decision was refused" would refuse to act on a
+    # decision that landed. ``error`` non-empty is the only refusal signal.
+    payload = _orchestration_payload(session)
+    payload["error"] = ""
+    return payload
+
+
 @app.get("/api/orchestration/{session_id}")
 def orchestration_state(
     session_id: str, engine: DemoEngine = "godot"
@@ -1574,6 +1725,8 @@ def orchestration_state(
             "found": False,
             "status": "pending",
             "pending_confirmations": [],
+            "pending_human_gates": [],
+            "human_decisions": {},
             "confirmed": [],
             "stage_translation": _stage_translation(),
             "rewound": [],

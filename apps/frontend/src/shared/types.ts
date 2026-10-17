@@ -149,6 +149,13 @@ export interface OrchestrationStageCard {
   /** Exit checks that ran and passed. Empty covers "declares none" too. */
   checks?: string[];
   answer?: string;
+  /**
+   * The decision stamped onto this stage by the orchestrator, for a human
+   * gate. `null` covers both "not a gate" and "nobody has decided" -- the
+   * card's `kind` says which, and the board never renders a decision pill on
+   * a stage that is not one.
+   */
+  human_resolution?: string | null;
 }
 
 export interface OrchestrationSession {
@@ -164,6 +171,15 @@ export interface OrchestrationSession {
   rewound?: string[];
   /** Stages a person still has to approve. A human gate is never in here. */
   pending_confirmations?: string[];
+  /**
+   * Human gates nobody has decided yet. Separate from
+   * `pending_confirmations` because the two ask different things of the
+   * operator -- approve a stage so it may run, decide a gate so the plan may
+   * continue -- and the board's summary line says which.
+   */
+  pending_human_gates?: string[];
+  /** Every decision given so far, stage id to decision. */
+  human_decisions?: Record<string, string>;
   confirmed?: string[];
   /** Orchestration stage id -> the execution steps it owns; route metadata. */
   stage_translation?: Record<string, string[]>;
@@ -189,6 +205,19 @@ export interface OrchestrationRunRequest {
   allow_write?: boolean;
   allow_execute?: boolean;
   max_turns?: number;
+}
+
+/**
+ * A person's decision for one human gate.
+ *
+ * The decision is the only thing in the body, read off the click and nothing
+ * else -- the same rule `confirm_stages` follows, and for the same reason: a
+ * decision a person made has to come from a click, never from a value written
+ * at a call site. The vocabulary is the backend's; see `HUMAN_DECISIONS` in
+ * `orchestration/orchestrationModel`.
+ */
+export interface HumanDecisionRequest {
+  decision: string;
 }
 
 export interface TaskItem {

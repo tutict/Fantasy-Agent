@@ -1280,10 +1280,24 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # mutant leaves the syntax valid and the endpoint answering, so what
         # goes red is the assertion that five fields came back -- not an
         # exception.
+        #
+        # The needle carries the `if session is None:` guard above the call
+        # because the call alone is no longer unique: the decision endpoint
+        # answers a restarted Studio the same way, at the same indent, and a
+        # one-line needle there would match twice -- the harness would refuse
+        # to guess which one it mutated. The guard is what tells them apart:
+        # only the read endpoint calls restore with no comment between the
+        # check and the call.
         "B1 the board read stops rebuilding the session",
         "apps/studio/app/main.py",
-        b"\n        session = _restore_orchestration(session_id, engine)\n",
-        b"\n        session = None  # mutation: no snapshot on the read path\n",
+        (
+            b"\n    if session is None:\n"
+            b"        session = _restore_orchestration(session_id, engine)\n"
+        ),
+        (
+            b"\n    if session is None:\n"
+            b"        session = None  # mutation: no snapshot on the read path\n"
+        ),
         "tests/test_studio_app.py::test_a_restored_board_shows_the_five_fields_that_used_to_vanish",
     ),
     (

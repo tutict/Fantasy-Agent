@@ -13,6 +13,7 @@ import type {
   ExecutePreview,
   ExecuteStart,
   GameplaySpec,
+  HumanDecisionRequest,
   IdeaDiscoveryRequest,
   JobCancelResponse,
   LlmApiSettings,
@@ -260,6 +261,39 @@ export function runOrchestration(
     method: "POST",
     body: JSON.stringify(request)
   });
+}
+
+/**
+ * Record a person's decision for one human gate, and read the board back.
+ *
+ * The endpoint records the decision and persists it -- the snapshot, so a
+ * restart between the click and the next pass does not ask again -- but it
+ * deliberately does not advance the plan: `/api/orchestration/run` stays the
+ * single path that dispatches a stage. The board therefore chains a run after
+ * a successful decision, which is what turns one click into one visible
+ * result.
+ *
+ * `engine` is required rather than defaulted, for the same reason
+ * `getOrchestrationState` requires it: it selects which snapshot directory a
+ * restarted Studio reads the session from.
+ *
+ * Synchronous like the other two, and failures come back as `status: "error"`
+ * with the cards still attached -- never an HTTP 500.
+ */
+export function decideHumanGate(
+  sessionId: string,
+  stageId: string,
+  decision: string,
+  engine: "godot" | "unreal"
+): Promise<OrchestrationSession> {
+  const query = new URLSearchParams({ engine });
+  return jsonRequest<OrchestrationSession>(
+    `/api/orchestration/${encodeURIComponent(sessionId)}/stages/${encodeURIComponent(stageId)}/decision?${query.toString()}`,
+    {
+      method: "POST",
+      body: JSON.stringify({ decision } satisfies HumanDecisionRequest)
+    }
+  );
 }
 
 /**

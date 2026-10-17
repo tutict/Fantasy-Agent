@@ -1258,6 +1258,10 @@ def test_the_orchestration_endpoints_are_served():
 
     assert "/api/orchestration/run" in paths
     assert "/api/orchestration/{session_id}" in paths
+    # The decision endpoint. Without it a `kind="human"` stage could only ever
+    # answer `awaiting_human`, and nothing on the REST surface could write the
+    # decision that unblocks the stages behind it.
+    assert "/api/orchestration/{session_id}/stages/{stage_id}/decision" in paths
     # The board is a whole view, so it has a URL of its own rather than being
     # reachable only from the sidebar.
     assert "/pipeline" in paths
@@ -1506,6 +1510,168 @@ def test_orchestration_state_is_readable_without_advancing(tmp_path: Path):
     assert [stage["status"] for stage in state["stages"]] == [
         stage["status"] for stage in started["stages"]
     ]
+
+
+def _gate_only_plan():
+    """The measured plan sliced down to its human gate, with no dependencies.
+
+    ``depends_on`` is cleared rather than sliced in: a dependency that is not in
+    the plan reads as "not yet" -- the orchestrator checks a gate's inputs
+    before the gate itself, deliberately -- so a one-stage slice would leave the
+    gate ``blocked`` no matter what was decided. Clearing them is what makes the
+    gate reachable without a provider, and a human stage dispatches nothing, so
+    these tests need no model stub at all.
+    """
+
+    plan = _plan()
+    gate = next(
+        stage for stage in plan.production_pipeline.stages if stage.id == "creative_review"
+    )
+    gate.depends_on = []
+    plan.production_pipeline.stages = [gate]
+    return plan
+
+
+def test_the_decision_endpoint_resolves_a_gate_and_survives_a_restart(tmp_path: Path):
+    """The deadlock, closed at the endpoint that closes it.
+
+    A ``kind="human"`` stage used to answer ``awaiting_human`` unconditionally,
+    so a Godot route stopped at the gate forever. This drives the three calls
+    the board makes -- run, decide, run -- and then drops the in-memory
+    registry the way a Studio restart does, which is the state the endpoint's
+    explicit snapshot save exists for: without it the decision would live only
+    until the next pass, and a restart between the click and the pass would ask
+    the operator to decide again.
+    """
+
+    module = _studio(tmp_path)
+    plan = _gate_only_plan()
+
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=plan))
+    session_id = first["session_id"]
+    assert first["status"] == "awaiting_human"
+    assert first["pending_human_gates"] == ["creative_review"]
+    assert first["human_decisions"] == {}
+    assert first["stages"][0]["human_resolution"] is None
+
+    decided = module.decide_orchestration_stage(
+        session_id,
+        "creative_review",
+        module.HumanDecisionRequest(decision="approved"),
+    )
+    assert decided["human_decisions"] == {"creative_review": "approved"}
+    assert decided["pending_human_gates"] == []
+    assert decided["stages"][0]["human_resolution"] == "approved"
+    # Recorded, not advanced: the run endpoint stays the single path that
+    # dispatches a stage, so the gate still reads as waiting until a pass runs.
+    assert decided["stages"][0]["status"] == "awaiting_human"
+
+    # A restart between the click and the next pass. The endpoint saved the
+    # snapshot itself, so the decision is on disk to be redeemed.
+    module._ORCHESTRATION_SESSIONS.clear()
+    read_back = module.orchestration_state(session_id, "godot")
+    assert read_back["found"] is True
+    assert read_back["human_decisions"] == {"creative_review": "approved"}
+    assert read_back["pending_human_gates"] == []
+    assert read_back["stages"][0]["human_resolution"] == "approved"
+
+    finished = module.run_orchestration(
+        module.OrchestrationRunRequest(plan=plan, session_id=session_id)
+    )
+    assert finished["status"] == "done"
+    assert finished["stages"][0]["status"] == "done"
+    assert "approved" in finished["stages"][0]["detail"]
+
+
+def test_a_decision_for_a_stage_that_is_not_a_gate_is_reported(tmp_path: Path):
+    """Only a gate takes a decision.
+
+    Accepting one for an agent stage would read as "the operator settled this"
+    on a card that a decision cannot move -- the dead-end control the endpoint
+    exists to replace, wearing the opposite hat. The cards stay attached: a
+    mistake is a user mistake, and blanking the board over one would lose the
+    run.
+    """
+
+    module = _studio(tmp_path)
+
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
+    session_id = first["session_id"]
+
+    payload = module.decide_orchestration_stage(
+        session_id,
+        "gameplay_orchestration",
+        module.HumanDecisionRequest(decision="approved"),
+    )
+
+    assert payload["status"] == "error"
+    assert "only a human gate takes a decision" in payload["error"]
+    assert len(payload["stages"]) == 7
+
+
+def test_a_decision_outside_the_vocabulary_is_reported_with_the_cards(tmp_path: Path):
+    """The vocabulary is the orchestrator's, and a typo is reported, not stored.
+
+    Storing it would leave the gate waiting forever with nothing to show for
+    the click -- the same failure ``confirm`` raises for instead.
+    """
+
+    module = _studio(tmp_path)
+    plan = _gate_only_plan()
+
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=plan))
+
+    payload = module.decide_orchestration_stage(
+        first["session_id"],
+        "creative_review",
+        module.HumanDecisionRequest(decision="maybe"),
+    )
+
+    assert payload["status"] == "error"
+    assert "not one of" in payload["error"]
+    assert "approved" in payload["error"]
+    assert "rejected" in payload["error"]
+    assert len(payload["stages"]) == 1
+
+
+def test_a_decision_for_a_stage_the_plan_does_not_have_is_reported(tmp_path: Path):
+    module = _studio(tmp_path)
+
+    first = module.run_orchestration(
+        module.OrchestrationRunRequest(plan=_gate_only_plan())
+    )
+
+    payload = module.decide_orchestration_stage(
+        first["session_id"],
+        "godot_quick_play",
+        module.HumanDecisionRequest(decision="approved"),
+    )
+
+    assert payload["status"] == "error"
+    assert "godot_quick_play" in payload["error"]
+    assert len(payload["stages"]) == 1
+
+
+def test_a_decision_for_a_session_that_never_ran_is_reported(tmp_path: Path):
+    """A decision attaches to a session; a board with none has nothing to attach it to.
+
+    Answering with the stage cards would imply the decision landed somewhere,
+    and the operator would be told the gate was decided on a run that does not
+    exist.
+    """
+
+    module = _studio(tmp_path)
+
+    payload = module.decide_orchestration_stage(
+        "no-such-session",
+        "creative_review",
+        module.HumanDecisionRequest(decision="approved"),
+    )
+
+    assert payload["found"] is False
+    assert payload["status"] == "error"
+    assert "run the plan first" in payload["error"]
+    assert payload["stages"] == []
 
 
 def test_a_second_request_reuses_the_session_it_was_given(tmp_path: Path):
@@ -2002,11 +2168,22 @@ def test_both_orchestration_endpoints_adopt_a_snapshot_the_same_way(tmp_path: Pa
 
     source = Path(module.__file__).read_text(encoding="utf-8")
 
-    assert source.count("_restore_orchestration(session_id, engine)") == 2, (
-        "the run and the read endpoint must both go through _restore_orchestration"
+    # The count is the guard, in both directions: a new endpoint that looks a
+    # session up without going through the shared reader drops it, and one that
+    # grows its own copy of the reader is caught by the import count below.
+    # Three callers today -- run, read, and the decision endpoint -- and the
+    # number is asserted rather than left open so the next one has to be looked
+    # at on purpose.
+    assert source.count("_restore_orchestration(session_id, engine)") == 3, (
+        "the run, the read and the decision endpoint must all go through "
+        "_restore_orchestration"
     )
     assert source.count("def _restore_orchestration(") == 1, (
         "there must be exactly one implementation of the snapshot lookup"
+    )
+    assert source.count("import load_state as load_snapshot") == 1, (
+        "the snapshot reader must be imported in exactly one place -- an "
+        "endpoint reading a snapshot itself is a second implementation"
     )
 
     # And it has to work from both sides, not merely be called twice.
