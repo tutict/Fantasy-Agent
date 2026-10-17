@@ -9,7 +9,7 @@
 
 - 组件：`apps/frontend/src/console/FlowConsole.tsx`
 - 样式：`console.css`，与 `studio.css`（外壳）**在同一页共存** —— 所以两边都有 `button`、`.primary-action` 之类的同名选择器，靠各自的作用域分开，不是两套应用。
-- 路由：`StudioShell.tsx:44-48` 的 `PANEL_ROUTES` 把它映射到 `/web-console`；`panelFromPathname()` 解析。
+- 路由：`StudioShell.tsx` 里的 `PANEL_ROUTES` 把它映射到 `/web-console`，`panelFromPathname()` 解析。
 - 启动：随 Studio 一起，`scripts/start-fantasy-agent.ps1` 或 `apps/studio/desktop.py` 双击入口都包含它。**没有独立的启动命令**（本文旧版写的 `--app-dir apps/web-console` 目录不存在）。
 
 ## 两个 tab

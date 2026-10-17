@@ -18,29 +18,39 @@
 | `/web-console` | `console` | `console/FlowConsole.tsx` | 执行：执行前体检、确认、试玩、手改回扫 |
 | 其它任意路径 | `workbench`（兜底） | — | `panelFromPathname()` 的 default |
 
-- 路由表在 `studio/StudioShell.tsx:44-48`（`PANEL_ROUTES`），路径解析在 `:69-77`（`panelFromPathname`）。
+- 路由表是 `StudioShell.tsx` 里的 `PANEL_ROUTES`，路径解析是 `panelFromPathname()`。两者都在同一个文件里，**不写行号**——拆分会立刻让它漂，而名字不会。
 - **兜底是 `workbench`**：任何不认识的路径都渲染策划工作台，不报错也不 404。
 - 设置类三个面板（`mcp` / `api` / `agent`）**没有自己的路由**，是 `StudioShell` 内的二级导航（`SETTING_NAV`），共用 `/workbench` 那条路径。
 - `basePath()` 读 `import.meta.env.BASE_URL` 并剥掉尾斜杠。**它必须是显式参数而不是内联读取**：`import.meta.env` 编译期内联，测试里恒为真，生产分支否则没有任何测试够得着（它就是这么漏掉一次 404 的）。变异用例 FE4-6 钉住这条。
 
-### 1.1 四面板内联，切走不卸载
+### 1.1 六面板内联，切走不卸载
 
-四个面板全部**内联在同一个 document 里**。`StudioShell.tsx:127` 的 `visitedPanels` 记录访问过的面板，首次访问即挂载，之后只由 CSS 隐藏、永不卸载（`:308/318/333` 三处条件渲染）。
+六个面板全部**内联在同一个 document 里**。`visitedPanels` 记录访问过的面板，首次访问即挂载，之后只由 CSS 隐藏、永不卸载。按这条规则挂载的是三个整页视图加 `api`；`mcp` 与 `agent` 常驻，因为门控它们买不到东西——工具状态只在 mcp 成为活动面板时才拉（`StudioShell` 里那个 effect 自己看着 `activePanel`），而 Agent 面板一个 mount effect 都没有，它的工具目录是展开时才拉的。
 
-**为什么不能改成卸载**：console 有在飞的 job 轮询、策划有未保存的对话，都在组件 state 里，卸载就是丢进度。**这不是样式取舍。** 行为面由 `studio/StudioShell.test.tsx` 的 "keeps a visited view mounted once the user switches away" 与变异用例 FE4-5 钉住。
+**为什么不能改成卸载**：console 有在飞的 job 轮询、策划有未保存的对话，都在组件 state 里，卸载就是丢进度。**这不是样式取舍。** 行为面由 `studio/StudioShell.test.tsx` 的 "keeps a visited view mounted once the user switches away" 与变异用例 FE4-5 钉住；`api` 的首访挂载由同文件的 "does not read settings until the panel that needs them is opened" 与 FE10-1 钉住（那条用例同时钉着 mcp 的工具状态：自己的面板打开才拉）。
 
-**这条决策的代价**：访问过的视图永久挂载，DOM 与组件 state 只增不减。本仓库目前没有守卫覆盖这个增长，长期使用的内存表现是未验证的。
+**这条决策的代价**：访问过的视图永久挂载，DOM 与 component state 只增不减。本仓库目前没有守卫覆盖这个增长，长期使用的内存表现是未验证的。
 
 ## 2. 面板归属
 
 | 面板 key | 组件 | 样式表 | 状态 |
 |---|---|---|---|
-| `workbench` | `PlanningWorkbench.tsx`（468 行） | `workbench.css` + 共享 `wb-*` | — |
-| `pipeline` | `OrchestrationBoard.tsx`（470 行） | `orchestration.css`（`or-*`） | **无媒体查询**：它本来就是单列流式布局，加断点只会让它在某个宽度下突然变形 |
-| `console` | `FlowConsole.tsx`（已降到千行以内；`Metric` / `AssetList` / `Panel` / `SegmentedControl` 在 `FlowConsole.parts.tsx`，执行阶段/试玩/纠偏三张卡片各在自己目录） | `console.css` + `studio.css` 同页共存 | tab 只有 2 个：`review` / `specs` |
-| `mcp` / `api` / `agent` | `StudioShell.tsx` 内联 | `studio.css`（`mcp-*` / `api-*` / `agent-*`） | 设置类 |
+| `workbench` | `workbench/PlanningWorkbench.tsx` | `workbench.css` + 共享 `wb-*` | — |
+| `pipeline` | `orchestration/OrchestrationBoard.tsx` + `orchestration/StageCard.tsx` | `orchestration.css`（`or-*`） | **无媒体查询**：它本来就是单列流式布局，加断点只会让它在某个宽度下突然变形 |
+| `console` | `console/FlowConsole.tsx`（`Metric` / `AssetList` / `Panel` / `SegmentedControl` 在 `FlowConsole.parts.tsx`，执行阶段/试玩/纠偏三张卡片各在自己目录） | `console.css` + `studio.css` 同页共存 | tab 只有 2 个：`review` / `specs` |
+| `mcp` / `api` / `agent` | `studio/settings/`（`McpCard.tsx` 连 `McpServiceGrid`、`ApiSettingsPanel.tsx`、`AgentPanel.tsx`、`ToolCatalogPanel.tsx`） | `studio.css`（`mcp-*` / `api-*` / `agent-*`） | 设置类；`api` 首访才挂载，见 §1.1 |
 
 样式表的归属判据：**一个 class 只属于一张表**。`shared/panelStyles.test.ts` 钉着共享面板发出的每个 class 必须在 `workbench.css` 有定义、console 私有类必须留在 `console.css`。
+
+**行数不写在这里。** 它会漂：`OrchestrationBoard` 拆出 `StageCard` 之后从 470 行变成 367 行，而这张表写的还是 470。要算就跑：
+
+```bash
+wc -l apps/frontend/src/workbench/PlanningWorkbench.tsx \
+      apps/frontend/src/orchestration/OrchestrationBoard.tsx \
+      apps/frontend/src/orchestration/StageCard.tsx \
+      apps/frontend/src/console/FlowConsole.tsx \
+      apps/frontend/src/studio/settings/*.tsx
+```
 
 ## 3. 视觉规则
 
@@ -82,7 +92,7 @@
 
 判据的**动作**是「移出 `FlowConsole.tsx`」，**不是**「每个组件一个文件」。同一个文件里可以放多个组件，只要它们共用同一个理由被拆出来。当前 `FlowConsole.parts.tsx` 装的是四个无 state、无异步、无路由知识的小组件（`AssetList` / `Metric` / `Panel` / `SegmentedControl`），外加两个纯格式化函数。
 
-`cssHygiene.test.ts` 的 `pairs` 现在列了 7 个组件而不是 2 个——新拆出来的组件漏进去过一次，代价是FE6-1 长期由别的守卫代红。**新增组件要同步加进那个清单**，它不是可选的完备性检查。
+`cssHygiene.test.ts` 的 `pairs` 清单要覆盖每一个发静态 className 字面量的组件——它起步时只有 2 个，后来每一次拆分都往里补。漏过一次，代价是 FE6-1 长期由**别的**守卫代红，而那条用例看上去一直是绿的。**新增组件要同步加进那个清单**，它不是可选的完备性检查。清单当前有多少条不写在这里（会漂），要数就数 `pairs` 数组本身。
 
 ## 6. 状态的两个 owner
 
