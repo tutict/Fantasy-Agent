@@ -257,26 +257,57 @@ describe("stylesheet hygiene", () => {
     // `ExecutionStageCard.tsx` and this check did not cover it, so the case
     // passed on the strength of a *different* guard in this same file. Adding a
     // component here is what makes its own mutation bite this guard.
-    const pairs: [component: string, sheet: string][] = [
+    // A component may draw on more than one sheet, which is a fact about the
+    // product rather than a loophole: the board's run form borrows the settings
+    // panels' form chrome. See the note on that entry below.
+    const pairs: [component: string, sheets: string | string[]][] = [
       ["console/FlowConsole.tsx", "console.css"],
       ["console/FlowConsole.parts.tsx", "console.css"],
       ["console/executionStage/ExecutionStageCard.tsx", "console.css"],
       ["console/playtest/PlaytestReportCard.tsx", "console.css"],
       ["console/playtest/PlaytestConfirmBlock.tsx", "console.css"],
       ["console/correction/CorrectionReportCard.tsx", "console.css"],
-      ["studio/StudioShell.tsx", "studio.css"]
+      ["studio/StudioShell.tsx", "studio.css"],
+      ["studio/settings/ApiSettingsPanel.tsx", "studio.css"],
+      ["studio/settings/AgentPanel.tsx", "studio.css"],
+      ["studio/settings/ToolCatalogPanel.tsx", "studio.css"],
+      ["studio/settings/McpCard.tsx", "studio.css"],
+      ["orchestration/StageCard.tsx", "orchestration.css"],
+      // The board was missing from this list for as long as it has existed, so
+      // `or-*` had no "the class you render is the class that is styled" check
+      // behind it at all. Adding it with the StageCard split, since a split is
+      // exactly when a class and its stylesheet drift apart.
+      //
+      // It is checked against two sheets because it renders two vocabularies:
+      // its own `or-*`, and the `api-*` form chrome it borrows from the settings
+      // panels. That borrow is a real violation of `architecture.md` §4, which
+      // puts `api-*` in the settings-private column -- it was invisible only
+      // because this check never covered the file. It is recorded rather than
+      // fixed here: the honest fix is to give the shared form chrome a shared
+      // prefix, which renames three components, two stylesheets and the guards
+      // that read both, and duplicating ~120 lines of identical rules into
+      // `orchestration.css` would be the worse trade. What this entry buys is
+      // that the board's own classes are now verified, so a future split cannot
+      // quietly orphan one.
+      ["orchestration/OrchestrationBoard.tsx", ["orchestration.css", "studio.css"]]
     ];
     const problems: string[] = [];
-    for (const [component, sheetName] of pairs) {
+    for (const [component, sheets] of pairs) {
       const source = readFileSync(resolve(root, component), "utf8");
-      const sheet = readFileSync(resolve(stylesDir, sheetName), "utf8");
+      const names = Array.isArray(sheets) ? sheets : [sheets];
+      const allowed = new Set(
+        names.flatMap((sheetName) => {
+          const sheet = readFileSync(resolve(stylesDir, sheetName), "utf8");
+          return [...sheet.matchAll(/\.([a-zA-Z][a-zA-Z0-9_-]*)/g)].map((match) => match[1]);
+        })
+      );
       const bases = new Set(
         [...source.matchAll(/className="([^"{}]+)"/g)].map((match) => match[1].trim().split(/\s+/)[0])
       );
       for (const name of bases) {
         if (!name || name.includes("$")) continue;
-        if (!new RegExp(`\\.${name}(?![a-zA-Z0-9_-])`).test(sheet)) {
-          problems.push(`${component} renders class "${name}" but ${sheetName} does not define it`);
+        if (!allowed.has(name)) {
+          problems.push(`${component} renders class "${name}" but ${names.join(" / ")} does not define it`);
         }
       }
     }

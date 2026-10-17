@@ -7,7 +7,6 @@ import { consoleI18n, makeTranslator, studioI18n, workbenchI18n } from "./i18n";
 // silently -- and a guard that under-reports is worse than none.
 import consoleSource from "../console/rendering.tsx?raw";
 import flowConsoleSource from "../console/FlowConsole.tsx?raw";
-import studioSource from "../studio/StudioShell.tsx?raw";
 import sharedPanelSource from "./panels/PlanPanels.tsx?raw";
 import workbenchSource from "../workbench/PlanPanels.tsx?raw";
 
@@ -324,7 +323,21 @@ describe("entry-point dictionaries have no keys nothing calls", () => {
   });
 
   it("still finds the keys the studio shell calls", () => {
-    expect(panelKeys(studioSource).length, "direct t() calls in StudioShell.tsx").toBeGreaterThan(40);
+    // The studio entry point, not the shell file: the settings panels used to be
+    // inlined in `StudioShell.tsx` and now live in `studio/settings/`, so
+    // reading one file would floor on the shell's own 16 calls and quietly lose
+    // the extractor check for the other 59. Same rationale as the floor above --
+    // a rewrite that stops the extractor from matching must fail loudly instead
+    // of passing on an empty set.
+    const studioModules = import.meta.glob(["../studio/**/*.{ts,tsx}", "!../studio/**/*.test.{ts,tsx}"], {
+      query: "?raw",
+      import: "default",
+      eager: true
+    }) as Record<string, string>;
+    const studioKeys = new Set(
+      Object.values(studioModules).flatMap((source) => panelKeys(source))
+    );
+    expect(studioKeys.size, "direct t() calls across the studio entry point").toBeGreaterThan(40);
   });
 
   it("has no orphaned console keys", () => {

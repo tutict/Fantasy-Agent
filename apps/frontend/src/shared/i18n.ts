@@ -1270,7 +1270,19 @@ export const workbenchI18n: Record<Locale, Dictionary> = {
   }
 };
 
-export function makeTranslator(locale: Locale, dictionary: Record<Locale, Dictionary>) {
+/**
+ * What `makeTranslator` hands back, named so panels can take one as a prop.
+ *
+ * Five files each declared this locally before this line existed
+ * (`OrchestrationBoard`, `BlenderScriptPanel`, `ui/primitives`, `StudioShell`,
+ * `workbench/PlanPanels`); they are left alone because folding them in is a
+ * separate change with its own blast radius. New code imports it from here --
+ * the type sits next to the function whose return type it is, which is the only
+ * place it cannot drift from.
+ */
+export type Translator = (key: string, args?: Record<string, unknown>) => string;
+
+export function makeTranslator(locale: Locale, dictionary: Record<Locale, Dictionary>): Translator {
   return (key: string, args: Record<string, unknown> = {}) => {
     const template = dictionary[locale]?.[key] || dictionary.en[key] || key;
     return template.replace(/\{(\w+)\}/g, (match, name: string) => (name in args ? String(args[name]) : match));
