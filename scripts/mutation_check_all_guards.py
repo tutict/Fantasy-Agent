@@ -955,7 +955,11 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
     ),
     (
         "F3-b the card root drops the plan status",
-        "apps/frontend/src/orchestration/OrchestrationBoard.tsx",
+        # The card root moved into `StageCard.tsx` when the card was split out
+        # of the board (2026-10-17); the needle followed it. A needle left on
+        # the old file matches 0x and proves nothing -- which is exactly what
+        # `test_every_needle_still_matches_exactly_once` reported for this case.
+        "apps/frontend/src/orchestration/StageCard.tsx",
         # One vocabulary for both statuses is the plausible simplification, and it
         # is what makes a card claim "running" off a value the plan wrote once.
         b"data-stage={card.id} data-status={card.status} data-plan-status={card.plan_status}",

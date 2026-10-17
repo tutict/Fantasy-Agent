@@ -105,12 +105,19 @@ def test_orchestration_board_owns_the_stage_rows():
     `apps/frontend/src/orchestration/OrchestrationBoard.test.tsx`, where it can
     be clicked; duplicating it as text matching would produce two guards that
     can only disagree.
+
+    The card root itself left the board file when the card became its own
+    component (2026-10-17, the same `architecture.md` §5 criteria that split
+    `FlowConsole`), so that one anchor is read from `StageCard.tsx`. The
+    boundary being pinned did not move: the card still lives under
+    `orchestration/`, next to the board that owns the rows, and the console's
+    side of the same boundary is the absence asserted above.
     """
 
     module = _load_studio_app()
-    board_source = module.REPO_ROOT.joinpath(
-        "apps/frontend/src/orchestration/OrchestrationBoard.tsx"
-    ).read_text(encoding="utf-8")
+    orchestration = module.REPO_ROOT.joinpath("apps/frontend/src/orchestration")
+    board_source = orchestration.joinpath("OrchestrationBoard.tsx").read_text(encoding="utf-8")
+    card_source = orchestration.joinpath("StageCard.tsx").read_text(encoding="utf-8")
 
     assert 'data-testid="orchestration-board"' in board_source
     assert 'id="orchestration-cards"' in board_source
@@ -121,7 +128,7 @@ def test_orchestration_board_owns_the_stage_rows():
     assert (
         "data-stage={card.id} data-status={card.status} "
         "data-plan-status={card.plan_status}"
-    ) in board_source
+    ) in card_source
 
 
 def test_ui_routes_refuse_to_serve_a_stale_page_when_the_bundle_is_missing(monkeypatch, tmp_path):
