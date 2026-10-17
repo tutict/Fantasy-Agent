@@ -398,6 +398,17 @@ class Orchestrator:
             engine_key=snapshot.engine,
             registry=registry,
         )
+        # The plan the snapshot carries becomes this instance's plan. Without
+        # it, a decision given on a board that was itself rebuilt from disk has
+        # nowhere to land: ``resolve_human_stage`` stamps ``self._plan``, and a
+        # restored instance's was None, so the decision endpoint persisted a
+        # dump that predated the click. Measured -- a second restart read the
+        # gate back as waiting, with ``human_decisions`` empty and the operator
+        # having already approved it. ``run`` re-points this at the posted plan
+        # on every pass, so this only fills the window between a restore and
+        # the next run, which is exactly the window the endpoint's docstring
+        # claims to have closed.
+        self._plan = plan
         for entry in snapshot.stages:
             self._outcomes[entry.stage_id] = StageOutcome(
                 stage_id=entry.stage_id,
@@ -435,6 +446,13 @@ class Orchestrator:
         # plan merely arriving with the field filled does not open a gate:
         # ``_advance`` reads this map, never the field.
         for stage in plan.stages:
+            # Only a gate's stamp is a decision. An agent stage carrying one is
+            # a stage no live path will ever read it from, so installing it
+            # would be state that looks load-bearing and is not -- the third
+            # answer to "may this stage be decided", matching the endpoint's
+            # refusal and the pass's own kind check.
+            if stage.kind != HUMAN_STAGE_KIND:
+                continue
             if stage.human_resolution is None:
                 continue
             self.resolve_human_stage(stage.id, stage.human_resolution)
@@ -554,9 +572,19 @@ class Orchestrator:
         if self._plan is None:
             return
         for stage in self._plan.stages:
-            decision = self._human_decisions.get(stage.id)
-            if decision is not None:
-                stage.human_resolution = decision
+            # Reconciled to the map, *including* to None -- this is not an
+            # overlay. Overlaying (writing only when a decision exists) let a
+            # plan that arrived with the field already filled keep it: the dump
+            # then carried a decision nobody gave, and ``restore`` redeemed it
+            # into a real one. Measured -- a posted ``human_resolution:
+            # "approved"`` survived into the on-disk snapshot and the gate came
+            # back ``done`` on the next restart with no decision anywhere. The
+            # live pass was never fooled (``_advance`` reads the map), so this
+            # was purely a durability hole, which is the worst kind to find by
+            # reading. Writing the map's answer unconditionally makes the dump
+            # a pure function of the map, which is the property the restore
+            # docstring claims when it says the dump is backend-written state.
+            stage.human_resolution = self._human_decisions.get(stage.id)
 
     def pending_human_gates(self, plan: ProductionPipeline) -> list[str]:
         """Gates in ``plan`` still waiting for a person's decision.
@@ -587,7 +615,11 @@ class Orchestrator:
         stage will run is not what was approved before, so the gate has to ask
         again: leaving ``_confirmed`` intact would let the next pass dispatch
         straight through a stage the person only ever approved in its earlier
-        form.
+        form. A rewound *gate* loses its decision for the same reason, and the
+        omission was measured rather than assumed: the earlier refusal replayed
+        as ``failed`` on the very next pass with no question asked, and because
+        a decided gate is absent from ``pending_human_gates`` the board offered
+        no button either -- a decision the UI could neither re-ask nor reset.
 
         Stops at the plan rather than at the drill-down table: only stages the
         plan actually contains are dropped, which is what keeps a Godot rework
@@ -617,6 +649,13 @@ class Orchestrator:
         for name in dropped:
             del self._outcomes[name]
             self._confirmed.discard(name)
+            # The mirror of the line above, for the other vocabulary: a gate
+            # that was decided and then rewound has to ask again, and the
+            # decision goes with the outcome it produced. ``pop`` rather than
+            # ``discard`` because the value is the payload -- a stage id left
+            # in the map is invisible to ``pending_human_gates`` and so
+            # unaskable from the board.
+            self._human_decisions.pop(name, None)
         return dropped
 
     def rewind_for_rework(

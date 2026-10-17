@@ -33,6 +33,7 @@ from fantasy_agent import llm
 from fantasy_agent.contracts import ProductionPipeline, ProductionPipelineStage
 from fantasy_agent.human_decision import decision_record_path, load_decision_record
 from fantasy_agent.orchestration_state import load_state as load_snapshot
+from fantasy_agent.orchestration_state import save_state
 from fantasy_agent.orchestrator import (
     AWAITING_HUMAN,
     BLOCKED,
@@ -281,6 +282,50 @@ def test_a_plan_that_arrives_with_the_field_filled_does_not_open_the_gate(
     assert fake.payloads == []
 
 
+def test_a_forged_field_does_not_survive_the_snapshot_either(fake_complete, tmp_path):
+    """The half of that line a live pass cannot show.
+
+    ``_advance`` reading the map is enough for the pass in front of you, and
+    that is all the test above proves. The stamp is also what the snapshot's
+    plan dump carries, and ``restore`` redeems from that dump -- so a forged
+    field that survives into the file is a decision nobody gave, arriving one
+    restart later with the live check already behind it. Measured before the
+    fix: a posted ``human_resolution: "approved"`` rode into the dump, the
+    restore redeemed it into ``_human_decisions``, and the gate came back
+    ``done`` on the next restart with no decision anywhere.
+
+    The dump therefore has to be a pure function of the map. That is what makes
+    "restoring redeems rather than trusts" a property rather than an intention,
+    and it is the same reason ``snapshot`` writes ``confirmed`` from the set
+    instead of reading it off the plan.
+    """
+
+    fake = fake_complete([])
+    gate = _stage("creative_review", order=1, kind="human", tools=())
+    gate.human_resolution = "approved"
+    plan = _plan(gate)
+    source = _orchestrator(tmp_path)
+    source.run(plan)
+
+    snapshot = load_snapshot("s1", engine_key="godot", workspace_root=tmp_path)
+    assert snapshot is not None, "the pass wrote no snapshot"
+    dumped = {
+        entry["id"]: entry.get("human_resolution") for entry in snapshot.plan["stages"]
+    }
+    assert dumped == {"creative_review": None}, "the dump carried a forged stamp"
+
+    plan_from_disk = ProductionPipeline.model_validate(snapshot.plan)
+    restored = Orchestrator.restore(
+        snapshot, plan=plan_from_disk, workspace_root=tmp_path
+    )
+
+    assert restored.human_decisions == {}, "restore redeemed a forged stamp"
+    after = restored.run(plan_from_disk)
+    assert after.outcome_for("creative_review").status == AWAITING_HUMAN
+    assert after.pending_human_gates == ["creative_review"]
+    assert fake.payloads == []
+
+
 def test_restoring_redeems_a_decision_the_operator_actually_gave(fake_complete, tmp_path):
     """The mirror of the test above, and the reason the field exists at all.
 
@@ -318,6 +363,137 @@ def test_restoring_redeems_a_decision_the_operator_actually_gave(fake_complete, 
     assert after.outcome_for("creative_review").status == DONE
     assert after.outcome_for("asset_integration").status == DONE
     assert len(fake.payloads) == 1, "the restored pass re-dispatched a finished stage"
+
+
+def test_a_decision_given_on_a_restored_board_survives_the_next_restart(
+    fake_complete, tmp_path
+):
+    """The window the endpoint claims to have closed, closed.
+
+    A restarted Studio rebuilds the session from its snapshot and renders a
+    board from it, so the operator's next click lands on a *restored*
+    orchestrator. ``resolve_human_stage`` stamps the plan the instance holds,
+    and a restored instance held none -- so the endpoint's ``save_state``
+    persisted a dump that predated the click. Measured before the fix: a second
+    restart read the gate back as ``awaiting_human`` with ``human_decisions``
+    empty, after the person had already approved it, and the endpoint's own
+    docstring claimed that window was shut.
+
+    ``restore`` now adopts the snapshot's plan as the instance's, which is the
+    session's plan of record until the next ``run`` re-points it at the posted
+    copy. Nothing else changes: the map is still the only authority.
+    """
+
+    fake_complete([llm.ModelReply(text="integrated")])
+    plan = _plan(
+        _stage("creative_review", order=1, kind="human", tools=()),
+        _stage(
+            "asset_integration",
+            order=2,
+            kind="agent",
+            tools=(READ_ONLY_TOOL,),
+            depends_on=("creative_review",),
+        ),
+    )
+    source = _orchestrator(tmp_path)
+    source.run(plan)
+
+    # Restart #1: the board is rebuilt from what is on disk.
+    snapshot = load_snapshot("s1", engine_key="godot", workspace_root=tmp_path)
+    assert snapshot is not None
+    plan_one = ProductionPipeline.model_validate(snapshot.plan)
+    restored = Orchestrator.restore(snapshot, plan=plan_one, workspace_root=tmp_path)
+    assert restored.human_decisions == {}
+
+    # The operator decides on that board. Nothing has run yet, so no pass has
+    # re-pointed the instance at a posted plan -- this is the whole window.
+    restored.resolve_human_stage("creative_review", "approved")
+    save_state(restored.snapshot(plan_one), workspace_root=tmp_path)
+
+    # Restart #2: the decision has to still be there.
+    snapshot_two = load_snapshot("s1", engine_key="godot", workspace_root=tmp_path)
+    assert snapshot_two is not None
+    plan_two = ProductionPipeline.model_validate(snapshot_two.plan)
+    restored_two = Orchestrator.restore(
+        snapshot_two, plan=plan_two, workspace_root=tmp_path
+    )
+
+    assert restored_two.human_decisions == {"creative_review": "approved"}
+    after = restored_two.run(plan_two)
+    assert after.outcome_for("creative_review").status == DONE
+    assert after.pending_human_gates == []
+
+
+# ── the rework path ───────────────────────────────────────────────────────────
+
+
+def test_rewinding_a_decided_gate_asks_again(fake_complete, tmp_path):
+    """The rework path, for the other vocabulary.
+
+    ``rewind_from`` drops the outcome *and* the confirmation so a reworked stage
+    runs what was approved rather than what was. A decision is the same shape of
+    state and was left out: measured with it in place, the pass after a rewind
+    replayed the earlier refusal as ``failed`` with no question asked -- and
+    because a decided gate is absent from ``pending_human_gates``, the board had
+    no button to offer either. The decision was unreachable from the UI and
+    unresettable from the API.
+    """
+
+    fake = fake_complete([])
+    plan = _plan(
+        _stage("creative_review", order=1, kind="human", tools=()),
+        _stage(
+            "asset_integration",
+            order=2,
+            kind="agent",
+            tools=(READ_ONLY_TOOL,),
+            depends_on=("creative_review",),
+        ),
+    )
+    orchestrator = _orchestrator(tmp_path)
+    orchestrator.run(plan)
+    orchestrator.resolve_human_stage("creative_review", "rejected")
+    refused = orchestrator.run(plan)
+    assert refused.outcome_for("creative_review").status == FAILED
+
+    dropped = orchestrator.rewind_from(plan, "creative_review")
+
+    # Everything at or after the cutoff goes, which is the documented shape:
+    # a rework of the gate redoes what the gate gates.
+    assert dropped == ["creative_review", "asset_integration"]
+    assert orchestrator.human_decisions == {}
+    after = orchestrator.run(plan)
+    assert after.outcome_for("creative_review").status == AWAITING_HUMAN
+    assert after.pending_human_gates == ["creative_review"]
+    assert fake.payloads == []
+
+
+def test_restore_redeems_only_gate_stamps(tmp_path):
+    """A stamp on a stage that is not a gate is not a decision.
+
+    Three layers answer "may this stage be decided" and they have to agree: the
+    endpoint refuses an agent stage, the pass only looks at ``kind="human"``,
+    and restore took whatever the dump carried. A plan hand-edited to stamp an
+    agent stage therefore had a decision installed for it that no live path
+    could ever read -- inert today, and the shape that makes the next reader
+    wrong. The refusal and the pass already say no; restore says no too.
+    """
+
+    plan = _plan(
+        _stage("creative_review", order=1, kind="human", tools=()),
+        _stage(
+            "asset_integration",
+            order=2,
+            kind="agent",
+            tools=(READ_ONLY_TOOL,),
+        ),
+    )
+    plan.stages[1].human_resolution = "approved"
+    snapshot = _orchestrator(tmp_path).snapshot(plan)
+
+    restored = Orchestrator.restore(snapshot, plan=plan, workspace_root=tmp_path)
+
+    assert restored.human_decisions == {}, "an agent stage's stamp was redeemed"
 
 
 def test_a_restore_refuses_a_decision_outside_the_vocabulary(tmp_path):
@@ -402,6 +578,41 @@ def test_the_record_is_written_once_per_gate_not_once_per_pass(fake_complete, tm
     orchestrator.run(plan)
 
     assert calls == [("creative_review", "approved")]
+
+
+def test_a_decision_that_cannot_be_written_still_advances_the_gate(
+    fake_complete, tmp_path, monkeypatch, caplog
+):
+    """The documented trade, pinned where the two halves can silently disagree.
+
+    ``_record_decision`` logs and returns rather than raising, because the
+    person did decide and losing the stage over the record of it would be the
+    worse trade. That leaves one place where the gate's progress and its named
+    artifact can disagree, and a ``done`` card next to a file nobody wrote is
+    the artifact-honesty bug G-03 spent on the playtest report -- so the log
+    line that says so is load-bearing, not decoration.
+    """
+
+    fake_complete([])
+
+    def boom(session_id, stage_id, decision, *, engine_key, workspace_root):
+        raise OSError("disk is full")
+
+    monkeypatch.setattr("fantasy_agent.orchestrator.write_decision_record", boom)
+
+    plan = _plan(_stage("creative_review", order=1, kind="human", tools=()))
+    orchestrator = _orchestrator(tmp_path)
+    orchestrator.run(plan)
+    orchestrator.resolve_human_stage("creative_review", "approved")
+
+    with caplog.at_level("ERROR", logger="fantasy_agent.orchestrator"):
+        result = orchestrator.run(plan)
+
+    assert result.outcome_for("creative_review").status == DONE
+    assert not decision_record_path("s1", workspace_root=tmp_path).exists()
+    assert any(
+        "could not record the decision" in record.message for record in caplog.records
+    ), "a missing record has to say so"
 
 
 # ── what the board is told ───────────────────────────────────────────────────

@@ -1390,17 +1390,28 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # The mutant reads the field first, which is the plausible refactor --
         # "the decision is right there on the stage" -- and the guard is the
         # one that posts a plan with the field already filled.
-        "HG2 the plan field opens the gate",
+        # HG2 -- the decision is not stamped at the moment it is given. This
+        # slot used to guard "the live pass reads the map, not the field", and
+        # that mutation is now *unobservable*: HG10's reconcile makes the field
+        # a pure function of the map, so an `_advance` that read the field
+        # would behave identically to one that reads the map. Retired rather
+        # than left running green for a reason that no longer holds -- a guard
+        # that cannot go red is worse than no guard, because it reads as proof.
+        # What replaces it is the other half of the same property: the stamp
+        # has to exist at decide time, because the endpoint saves a snapshot
+        # immediately after the click, and a board rebuilt from disk is the
+        # path that most needs it.
+        "HG2 the decision is not stamped when it is given",
         "fantasy_agent/orchestrator.py",
         (
-            b"            decision = self._human_decisions.get(stage.id)\n"
-            b"            if decision is None:\n"
+            b"        self._human_decisions[stage_id] = decision\n"
+            b"        self._stamp_plan()\n"
         ),
         (
-            b"            decision = stage.human_resolution or self._human_decisions.get(stage.id)\n"
-            b"            if decision is None:\n"
+            b"        self._human_decisions[stage_id] = decision\n"
+            b"        pass  # mutation: the stamp waits for the next pass\n"
         ),
-        "tests/test_orchestrator_human_gate.py::test_a_plan_that_arrives_with_the_field_filled_does_not_open_the_gate",
+        "tests/test_orchestrator_human_gate.py::test_a_decision_given_on_a_restored_board_survives_the_next_restart",
     ),
     (
         # HG3 -- the two-way branch collapses into "a decision was given", so a
@@ -1499,6 +1510,84 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         ),
         b"        pass  # mutation: the decision lives only in memory\n",
         "tests/test_studio_app.py::test_the_decision_endpoint_resolves_a_gate_and_survives_a_restart",
+    ),
+    (
+        # HG10 -- a forged stamp laundered through the snapshot. This is the
+        # half of "a plan that arrives with the field filled does not open a
+        # gate" that a live pass cannot show: `_advance` reads the map, so the
+        # forgery is inert until a restart, and `restore` redeems whatever the
+        # plan dump carries. Measured on the first cut -- a posted
+        # `human_resolution: "approved"` rode into the dump and the gate came
+        # back `done` with no decision anywhere. The fix is reconciliation
+        # rather than overlay: the dump is a pure function of the map, which is
+        # what the restore docstring's "backend-written state" claim needs.
+        # Same reason `snapshot` writes `confirmed` from the set instead of
+        # reading it off the plan.
+        "HG10 a forged stamp is laundered through the snapshot",
+        "fantasy_agent/orchestrator.py",
+        (
+            b"            stage.human_resolution = self._human_decisions.get(stage.id)\n"
+        ),
+        (
+            b"            decision = self._human_decisions.get(stage.id)\n"
+            b"            if decision is not None:\n"
+            b"                stage.human_resolution = decision\n"
+        ),
+        "tests/test_orchestrator_human_gate.py::test_a_forged_field_does_not_survive_the_snapshot_either",
+    ),
+    (
+        # HG11 -- the restored board loses the next click. A restarted Studio
+        # rebuilds the session from the snapshot and renders a board from it,
+        # so the operator's click lands on an instance holding no plan, and
+        # `resolve_human_stage` has nothing to stamp. The endpoint's explicit
+        # save then persists a dump that predates the click. Measured: a second
+        # restart asked the operator to decide again, on the exact path the
+        # save exists to protect. Adopting the snapshot's plan fills the window
+        # without touching the map's authority.
+        "HG11 a decision on a restored board is lost",
+        "fantasy_agent/orchestrator.py",
+        (
+            b"        self._plan = plan\n"
+            b"        for entry in snapshot.stages:\n"
+        ),
+        (
+            b"        pass  # mutation: the plan is not adopted\n"
+            b"        for entry in snapshot.stages:\n"
+        ),
+        "tests/test_orchestrator_human_gate.py::test_a_decision_given_on_a_restored_board_survives_the_next_restart",
+    ),
+    (
+        # HG12 -- a rewound gate does not ask again. `rewind_from` drops the
+        # outcome and the confirmation so a reworked stage runs what was
+        # approved rather than what was; a decision is the same shape of state
+        # and was left out. Measured: the earlier refusal replayed as `failed`
+        # on the very next pass with no question asked, and because a decided
+        # gate is absent from `pending_human_gates` the board had no button
+        # either -- unreachable from the UI, unresettable from the API.
+        "HG12 a rewound gate does not ask again",
+        "fantasy_agent/orchestrator.py",
+        b"            self._human_decisions.pop(name, None)\n",
+        b"            pass  # mutation: the decision survives the rewind\n",
+        "tests/test_orchestrator_human_gate.py::test_rewinding_a_decided_gate_asks_again",
+    ),
+    (
+        # HG13 -- restore redeems a stamp on a stage that is not a gate. Three
+        # layers answer "may this stage be decided": the endpoint refuses, the
+        # pass only looks at human stages, and restore took whatever the dump
+        # carried. A plan hand-edited to stamp an agent stage therefore had a
+        # decision installed for it that no live path could ever read -- inert
+        # today, and the shape that makes the next reader wrong.
+        "HG13 restore redeems a stamp on a stage that is not a gate",
+        "fantasy_agent/orchestrator.py",
+        (
+            b"            if stage.kind != HUMAN_STAGE_KIND:\n"
+            b"                continue\n"
+        ),
+        (
+            b"            if False:  # mutation: any kind of stage is redeemed\n"
+            b"                continue\n"
+        ),
+        "tests/test_orchestrator_human_gate.py::test_restore_redeems_only_gate_stamps",
     ),
     (
         # The name rule loses its trailing-dot clause. `victim.` and `victim`
