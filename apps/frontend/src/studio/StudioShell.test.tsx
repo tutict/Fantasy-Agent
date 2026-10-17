@@ -122,7 +122,7 @@ describe("the shell hosts its views inline", () => {
     expect(container.querySelector('[data-frame="console"]')?.classList.contains("active")).toBe(true);
   });
 
-  it("does not read the stored LLM settings until the api panel is opened", async () => {
+  it("does not read settings until the panel that needs them is opened", async () => {
     // `ApiSettingsPanel` reads the stored settings in its own mount effect, so
     // while the panel mounted with the shell, every page load spent a request
     // on a section nobody opened -- the trade `ToolCatalogPanel` already refuses
@@ -131,16 +131,25 @@ describe("the shell hosts its views inline", () => {
     //
     // The other two settings panels stay mounted eagerly on purpose: the agent
     // panel has no mount effect of its own, and the tool status is fetched only
-    // once the mcp panel is the active one, so gating them would buy nothing.
+    // once the mcp panel is the active one. That last half is asserted here too,
+    // because it is the other half of the same rule and nothing else would
+    // notice if it regressed.
     const fetchMock = vi.mocked(fetch);
-    const settingsReads = () =>
-      fetchMock.mock.calls.filter((call) => String(call[0]).includes("settings/llm"));
+    const readsOf = (fragment: string) =>
+      fetchMock.mock.calls.filter((call) => String(call[0]).includes(fragment));
+    const settingsReads = () => readsOf("settings/llm");
+    const toolReads = () => readsOf("tool-status");
 
     renderShell();
     expect(settingsReads(), "a page load must not read settings nobody asked for").toHaveLength(0);
+    expect(toolReads(), "the tool status belongs to the panel that shows it").toHaveLength(0);
 
     fireEvent.click(navButton("api"));
     await waitFor(() => expect(settingsReads()).toHaveLength(1));
+    expect(toolReads(), "opening the api panel must not read the tool status").toHaveLength(0);
+
+    fireEvent.click(navButton("mcp"));
+    await waitFor(() => expect(toolReads()).toHaveLength(1));
 
     // Once, not once per visit: switching away and back must not re-read. The
     // panel stays mounted after its first visit, which is what makes that true

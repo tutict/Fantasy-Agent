@@ -579,7 +579,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
             b"          </section>"
         ),
         "src/studio/StudioShell.test.tsx",
-        "does not read the stored LLM settings until the api panel is opened",
+        "does not read settings until the panel that needs them is opened",
     ),
 )
 
