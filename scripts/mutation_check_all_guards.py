@@ -1350,6 +1350,157 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "tests/test_orchestrator.py::test_restore_drops_a_confirmation_the_restored_plan_does_not_have",
     ),
     (
+        # G-01, the human gate. Before it a ``kind="human"`` stage could only
+        # ever answer ``awaiting_human``: nothing assigned ``done`` to one and
+        # nothing on the REST surface could write the decision that would
+        # unblock the three stages behind ``creative_review``. The cases below
+        # pin the pieces that took the deadlock apart, in the order a revert
+        # would take them apart again.
+        #
+        # HG1/HG2 share a needle on purpose. The lookup line alone is not
+        # unique -- ``_stamp_plan`` has the same statement at the same indent --
+        # so both carry the ``if decision is None:`` that only ``_advance``
+        # has. Counting that as one anchor is what keeps a rename of either
+        # method from silently matching the other's mutation.
+        #
+        # HG1 -- the deadlock itself, as a revert rather than a deletion: the
+        # branch stops consulting the decision map, so a gate somebody decided
+        # answers ``awaiting_human`` again and everything behind it stays
+        # blocked. The guard is the acceptance test for the task, because a
+        # "the gate is still waiting" assertion somewhere else would also pass
+        # on a session where the dependent never ran at all.
+        "HG1 the gate asks again after a decision",
+        "fantasy_agent/orchestrator.py",
+        (
+            b"            decision = self._human_decisions.get(stage.id)\n"
+            b"            if decision is None:\n"
+        ),
+        (
+            b"            decision = None  # mutation: the map is never consulted\n"
+            b"            if decision is None:\n"
+        ),
+        "tests/test_orchestrator_human_gate.py::test_a_resolved_human_stage_reaches_done_and_unblocks_dependents",
+    ),
+    (
+        # HG2 -- the plan's ``human_resolution`` field opens the gate. This is
+        # the AGENTS.md line one field over from ``confirmed``: a plan is
+        # posted by the browser, and a browser that writes the decision into
+        # the plan it posts has manufactured an approval nobody gave. The
+        # stamp is what the snapshot carries; the runtime map is what decides.
+        # The mutant reads the field first, which is the plausible refactor --
+        # "the decision is right there on the stage" -- and the guard is the
+        # one that posts a plan with the field already filled.
+        "HG2 the plan field opens the gate",
+        "fantasy_agent/orchestrator.py",
+        (
+            b"            decision = self._human_decisions.get(stage.id)\n"
+            b"            if decision is None:\n"
+        ),
+        (
+            b"            decision = stage.human_resolution or self._human_decisions.get(stage.id)\n"
+            b"            if decision is None:\n"
+        ),
+        "tests/test_orchestrator_human_gate.py::test_a_plan_that_arrives_with_the_field_filled_does_not_open_the_gate",
+    ),
+    (
+        # HG3 -- the two-way branch collapses into "a decision was given", so a
+        # ``rejected`` gate opens like an approved one. Refusing a review has
+        # to have consequences: without them a rework hint is the only thing
+        # between a sent-back gate and production. ``if decision:`` is the
+        # shape this takes, because every vocabulary word is a non-empty
+        # string and the distinction lives only in the comparison.
+        "HG3 a refused gate opens like an approved one",
+        "fantasy_agent/orchestrator.py",
+        b'            if decision == "approved":\n',
+        b"            if decision:\n",
+        "tests/test_orchestrator_human_gate.py::test_a_rejected_gate_fails_and_what_depends_on_it_stays_blocked",
+    ),
+    (
+        # HG4 -- the decision record stops being written, and the stage still
+        # reads ``done``. That is the artifact-honesty shape G-03 spent on the
+        # playtest report, one field over: the stage's ``artifacts`` name this
+        # file, so a board showing ``done`` next to a file nobody wrote is
+        # lying about what exists. Deleting the call rather than moving it is
+        # the realistic edit -- the write lives in the orchestrator because a
+        # gate runs no tools, and "the stage's own tool list will handle it"
+        # is how it goes missing.
+        "HG4 the record stops being written",
+        "fantasy_agent/orchestrator.py",
+        b"            self._record_decision(stage, decision)\n",
+        b"",
+        "tests/test_orchestrator_human_gate.py::test_the_decision_record_is_written_before_the_stage_counts_as_done",
+    ),
+    (
+        # HG5 -- the vocabulary check is dropped, so ``"maybe"`` is stored as a
+        # decision. A stored typo leaves the gate waiting forever with nothing
+        # to show for the click, which is the same failure ``confirm`` raises
+        # for instead. ``if False:`` rather than deleting the block: the raise
+        # stays in the file where a reader can see it was meant to run.
+        "HG5 a decision outside the vocabulary is stored",
+        "fantasy_agent/orchestrator.py",
+        b"        if decision not in HUMAN_DECISIONS:\n",
+        b"        if False:  # mutation: any string is a decision\n",
+        "tests/test_orchestrator_human_gate.py::test_a_decision_outside_the_vocabulary_is_a_loud_error",
+    ),
+    (
+        # HG6 -- restore stops redeeming the decisions the snapshot carries, so
+        # a restart asks the operator to decide again. The stamps are read off
+        # the plan the snapshot carries rather than off the browser's copy,
+        # which is what makes redeeming them not the same thing as trusting a
+        # posted field (HG2). Same property as B2 for ``confirmed``, one map
+        # over, and the same reason the guard is the round-trip rather than a
+        # "the map is empty" assertion.
+        "HG6 a restart asks for the decision again",
+        "fantasy_agent/orchestrator.py",
+        b"            self.resolve_human_stage(stage.id, stage.human_resolution)\n",
+        b"",
+        "tests/test_orchestrator_human_gate.py::test_restoring_redeems_a_decision_the_operator_actually_gave",
+    ),
+    (
+        # HG9 -- the board's pending list stops shrinking. A gate somebody
+        # decided keeps its row in "waiting for you", which is the summary line
+        # that sends the operator back to a card that no longer needs them.
+        # Dropping the second condition is the edit: the kind filter alone
+        # still lists every human stage, decided or not.
+        "HG9 the pending list stops shrinking",
+        "fantasy_agent/orchestrator.py",
+        (
+            b"            if stage.kind == HUMAN_STAGE_KIND\n"
+            b"            and stage.id not in self._human_decisions\n"
+        ),
+        b"            if stage.kind == HUMAN_STAGE_KIND\n",
+        "tests/test_orchestrator_human_gate.py::test_pending_human_gates_lists_only_gates_nobody_has_decided",
+    ),
+    (
+        # HG7 -- the endpoint takes a decision for a stage that is not a gate.
+        # Accepting one for an agent stage reads as "the operator settled this"
+        # on a card a decision cannot move -- the dead-end control the endpoint
+        # exists to replace, wearing the opposite hat. The cards stay attached
+        # either way, so what goes red is the refusal, not the payload shape.
+        "HG7 a stage that is not a gate takes a decision",
+        "apps/studio/app/main.py",
+        b"    if stage.kind != HUMAN_STAGE_KIND:\n",
+        b"    if False:  # mutation: any stage takes a decision\n",
+        "tests/test_studio_app.py::test_a_decision_for_a_stage_that_is_not_a_gate_is_reported",
+    ),
+    (
+        # HG8 -- the endpoint stops persisting the decision, so it lives only
+        # until the process does. A restart between the click and the next pass
+        # would ask the operator to decide again -- an approval that never
+        # takes effect, one verb over from the one AGENTS.md names. The guard
+        # drops the registry the way a Studio restart does and reads the board
+        # back, which only the snapshot can answer.
+        "HG8 the endpoint stops persisting the decision",
+        "apps/studio/app/main.py",
+        (
+            b"        save_state(\n"
+            b'            session["orchestrator"].snapshot(plan), workspace_root=REPO_ROOT\n'
+            b"        )\n"
+        ),
+        b"        pass  # mutation: the decision lives only in memory\n",
+        "tests/test_studio_app.py::test_the_decision_endpoint_resolves_a_gate_and_survives_a_restart",
+    ),
+    (
         # The name rule loses its trailing-dot clause. `victim.` and `victim`
         # are one directory on Windows, so a snapshot written under the aliased
         # id lands on another session's directory -- overwriting the approvals
