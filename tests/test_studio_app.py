@@ -1562,6 +1562,12 @@ def test_the_decision_endpoint_resolves_a_gate_and_survives_a_restart(tmp_path: 
     assert decided["human_decisions"] == {"creative_review": "approved"}
     assert decided["pending_human_gates"] == []
     assert decided["stages"][0]["human_resolution"] == "approved"
+    # ``error`` empty is the only signal that the decision was *accepted*. The
+    # ``status`` fold is the previous pass's, so a session whose earlier pass
+    # failed still answers ``"error"`` here -- reading the status as "your
+    # decision was refused" would refuse to act on a decision that landed.
+    assert decided["status"] == "awaiting_human"
+    assert decided["error"] == ""
     # Recorded, not advanced: the run endpoint stays the single path that
     # dispatches a stage, so the gate still reads as waiting until a pass runs.
     assert decided["stages"][0]["status"] == "awaiting_human"
@@ -1579,6 +1585,55 @@ def test_the_decision_endpoint_resolves_a_gate_and_survives_a_restart(tmp_path: 
         module.OrchestrationRunRequest(plan=plan, session_id=session_id)
     )
     assert finished["status"] == "done"
+    assert finished["stages"][0]["status"] == "done"
+    assert "approved" in finished["stages"][0]["detail"]
+
+
+def test_a_decision_on_a_board_rebuilt_from_disk_survives_the_next_restart(
+    tmp_path: Path,
+):
+    """The other order: restart first, decide second, restart again.
+
+    The test above drops the registry *after* the click, so the decision landed
+    on a live instance holding its plan. A restarted Studio is the other shape:
+    the board is rebuilt from the snapshot, the operator clicks on *that*, and
+    the instance has no plan of its own to stamp. Measured before the fix, the
+    endpoint's own ``save_state`` then persisted a dump predating the click, so
+    the next restart asked the operator to decide again -- the exact window the
+    explicit save exists to close, open on the path that needs it most.
+    """
+
+    module = _studio(tmp_path)
+    plan = _gate_only_plan()
+
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=plan))
+    session_id = first["session_id"]
+
+    # Restart #1: the registry is empty and the snapshot is all there is.
+    module._ORCHESTRATION_SESSIONS.clear()
+    rebuilt = module.orchestration_state(session_id, "godot")
+    assert rebuilt["found"] is True
+    assert rebuilt["pending_human_gates"] == ["creative_review"]
+
+    # The operator decides on the rebuilt board. No pass has run since, so
+    # nothing has re-pointed the instance at a posted plan.
+    decided = module.decide_orchestration_stage(
+        session_id,
+        "creative_review",
+        module.HumanDecisionRequest(decision="approved"),
+    )
+    assert decided["error"] == ""
+    assert decided["human_decisions"] == {"creative_review": "approved"}
+
+    # Restart #2: the decision has to still be there.
+    module._ORCHESTRATION_SESSIONS.clear()
+    read_back = module.orchestration_state(session_id, "godot")
+    assert read_back["human_decisions"] == {"creative_review": "approved"}
+    assert read_back["pending_human_gates"] == []
+
+    finished = module.run_orchestration(
+        module.OrchestrationRunRequest(plan=plan, session_id=session_id)
+    )
     assert finished["stages"][0]["status"] == "done"
     assert "approved" in finished["stages"][0]["detail"]
 

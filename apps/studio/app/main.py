@@ -1662,7 +1662,7 @@ def decide_orchestration_stage(
         # failing the request would ask them to decide again over a record of
         # it. The log line is what says the file is missing.
         logger.exception(
-            "could not snapshot the decision for session %s stage %s",
+            "could not snapshot the decision for session %r stage %r",
             session_id,
             stage_id,
         )

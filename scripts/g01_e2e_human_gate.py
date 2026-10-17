@@ -41,7 +41,7 @@ os.environ["FANTASY_AGENT_USE_LLM"] = "0"
 # needed -- this repo's ruff set does not enable that rule.
 from fantasy_agent import llm
 from fantasy_agent.contracts import PromptRequest
-from fantasy_agent.human_decision import decision_record_path
+from fantasy_agent.human_decision import decision_record_path, load_decision_record
 from fantasy_agent.workflows import run_director_workflow
 
 PROMPT = "a stealth courier escapes a haunted train station in ten minutes"
@@ -194,10 +194,16 @@ def main() -> int:
     assert cards["optimization_testing"]["status"] == "done", cards["optimization_testing"]
 
     # The decision's own record, written by the pass that resolved the gate.
+    # Read back through the module's own reader rather than by grepping the
+    # YAML: the stage's `artifacts` name this file, so the reader *is* the
+    # contract, and one that only ever ran inside a test proved nothing about
+    # the artifact a board points at.
     assert record.exists(), "the gate reads done next to a file nobody wrote"
-    written = record.read_text(encoding="utf-8")
-    assert "decision: approved" in written, written
-    assert f"stage_id: {gate['stage_id']}" in written, written
+    written = load_decision_record(session_id, workspace_root=WORKSPACE)
+    assert written is not None, "the record the stage names cannot be read back"
+    assert written.stage_id == gate["stage_id"], written
+    assert written.decision == "approved", written
+    assert written.decided_at, "an undated record cannot be placed in the session's history"
 
     # ── a restart after the fact reads the same board ────────────────────────
     module._ORCHESTRATION_SESSIONS.clear()

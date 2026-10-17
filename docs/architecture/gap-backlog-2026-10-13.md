@@ -90,6 +90,27 @@
 - 前端：`npm run frontend:test` → **325 passed（31 文件）**，`npx tsc --noEmit` → 0 错；`OrchestrationBoard.test.tsx` 22 例中 6 例新的（有会话才给按钮 / post 决定+链接 run / 决定后不再问 / 两条等待线分开 / 被拒带卡 / 传输失败）
 - 变异 harness `scripts/mutation_check_all_guards.py`：全量 **140/140 caught，源码逐字节还原**。新增 HG1–HG9：HG1 就是验收③（HUMAN 分支改回不查决定 → 用例①当场红，红因是 `assert gate.status == DONE`），HG2 计划字段开门、HG3 打回被当成批准、HG4 record 不写、HG5 非法词被存、HG6/HG8 两层重启丢决定（orchestrator.restore / 端点 save_state）、HG7 非闸门被接受、HG9 pending 名单不缩
 
+**四轴 review 补丁（2026-10-17）：三条 P1 都在"持久化"这一侧，live-pass 测试看不见**
+
+四轴 review（正确性 / 安全性 / 可维护性 / 测试覆盖四路并发）在上面那套全绿的数字之上又找出 3 条 P1。共同点值得记：**三条都不在 `_advance` 的即时行为里**，而在"点击之后、重启之后"——所以 12 条 human_gate 用例全绿的同时它们全部成立。逐条实测复现后才修：
+
+1. **伪造的 `human_resolution` 被快照洗白（HG10）。** `_stamp_plan` 原来是"叠加"（有决定才写），于是一张**带着预填字段 POST 进来的计划**把字段原样带进快照的 plan dump，restore 的赎回循环读的就是这个 dump。实测：live pass 闸门照旧 `awaiting_human`（字典权威，守卫没失效），但落盘快照里 `human_resolution: "approved"` 原样在，重启后 `human_decisions == {'creative_review': 'approved'}`、闸门变 `done`——**没有任何人决定过**。这正是 AGENTS.md 禁"前端制造批准"的那条线，只是从"计划预填"改成了"计划预填 + 一次重启"。`confirmed` 之所以没有这个问题，是因为 `snapshot()` 写的是快照自己的 `confirmed=sorted(self._confirmed)` 字段、restore 从不从 plan 读。修法是把 `_stamp_plan` 从叠加改成**对账**（无条件写成字典的答案，包括 `None`），dump 于是成为字典的纯函数——restore docstring 里"backend-written state"那句从此是真的而不是意图。
+2. **恢复出来的看板上做决定，下一次重启就丢（HG11）。** `restore()` 从来不设 `_plan`，而 `resolve_human_stage` 只能往 `self._plan` 上盖戳；restored 会话上点"批准"，端点那句 `save_state(snapshot(plan))` 存的是一个**早于点击**的 dump。实测：二次重启后 `human_decisions == {}`、闸门回到 `awaiting_human`——端点 docstring 声称关上的那个窗口，在最需要它的那条路径上依然开着。修法是 `restore()` 认领快照自带的 plan（`run` 每遍仍会重指向 POST 来的副本，所以只填"restore 到下一次 run 之间"这段）。
+3. **`rewind_from` 不清决定字典（HG12）。** 它清 `_confirmed`（同名纪律）却不清 `_human_decisions`，全仓没有第二个清除点。实测：打回过的闸门被 rework 后，下一遍**立刻重新 `failed`、不再问人**，且因为"已决定的闸门"不在 `pending_human_gates` 里，看板连按钮都不给——UI 既不能再问、API 之外也无法重置。
+
+另修：restore 赎回不过滤 `kind`（HG13，与端点拒 agent stage、pass 只查 human 凑成三层一致）；decision 端点失败日志把 URL 可控的 `session_id` 从 `%s` 改 `%r`（同文件 1438 行注释自己要求这么做，`\n` 能在 `%s` 下伪造一条 `INFO` 记录）；`load_decision_record` 此前只有测试一个调用方，现由 `scripts/g01_e2e_human_gate.py` 经它读回记录（stage 的 `artifacts` 点名这个文件，读者就是契约）；`test_studio_app.py` 成功路径补 `error == ""` 断言（这行是文档明示的承重墙，此前删掉它没有任何 Python 用例会红）。
+
+**HG2 已退役**：它原本守"live pass 读字典不读字段"，而 HG10 的对账让字段成为字典的纯函数——那个变异体改成读字段后**行为完全等价**，即"无可观察行为"。留着它跑绿比没有它更坏（读起来像证明），所以换成同一属性的另一半天：决定必须在**给出的那一刻**就盖上戳（端点紧跟着就存快照）。同类纪律见 `AGENTS.md`「变异体写之前先问它改变了哪个可观察行为」。
+
+**验证数字（可复算）：**
+
+- `pytest tests/test_orchestrator_human_gate.py -q` → **17 passed**（新增：伪造字段不进快照 / 恢复看板上的决定跨重启 / rewind 后重新问 / record 写失败仍推进且出声 / restore 只赎 gate 的戳）
+- `pytest tests/test_studio_app.py -q -k "decision or orchestration or gate or rewind"` → **13 passed**（新增：先重启后决定再重启仍存活；原用例补 `error == ""`）
+- 全量 `scripts/run_tests.py` → **928 passed**（= 上一批 922 + 6 条新用例）
+- 变异 harness `--only HG` → **13/13 caught，源码逐字节还原**。三条 P1 各有用例（HG10/HG11/HG12），且**每条都单独回退验证过**：把修复改回原样，对应用例当场红、红因是指名的那条断言（不是 `TypeError`、不是 collection failure——HG13 第一版 mutant 少抄一行 `continue` 导致 `IndentationError`，那种红证明的是"文件坏了"）
+- 端到端 `python scripts/g01_e2e_human_gate.py` → 仍全绿（record 现经 `load_decision_record` 读回，不再靠 grep YAML 文本）
+- `ruff check .` → All checks passed
+
 ### G-04 黄金样例不在版本控制 → "可玩"没有回归基线
 
 | 项 | 内容 |
