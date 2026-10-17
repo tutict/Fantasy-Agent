@@ -20,7 +20,6 @@ import { PlanningWorkbench } from "../workbench/PlanningWorkbench";
 import { AgentPanel } from "./settings/AgentPanel";
 import { ApiSettingsPanel } from "./settings/ApiSettingsPanel";
 import { McpCard, McpServiceGrid } from "./settings/McpCard";
-import { ToolCatalogPanel } from "./settings/ToolCatalogPanel";
 import "../styles/studio.css";
 
 type PanelKey = "workbench" | "pipeline" | "console" | "mcp" | "api" | "agent";
@@ -385,11 +384,25 @@ export function StudioShell() {
               </div>
             </ErrorBoundary>
           </section>
-          <section className={`api-panel ${activePanel === "api" ? "active" : ""}`} data-panel="api">
-            <ErrorBoundary t={t}>
-              <ApiSettingsPanel t={t} />
-            </ErrorBoundary>
-          </section>
+          {/* The one settings panel that has to wait for a first visit.
+              `ApiSettingsPanel` reads the stored settings in its own mount
+              effect, so mounting it with the shell spent that request on every
+              page load for a panel nobody opened -- the trade
+              `ToolCatalogPanel` already refuses to make for its catalog. Same
+              rule as the three views above, and for the same reason: mount on
+              first visit, then stay mounted, so switching away and back does
+              not re-read.
+
+              The other two settings panels need no such gate. The agent panel
+              has no mount effect of its own, and the tool status is already
+              fetched only once the mcp panel is the active one. */}
+          {visitedPanels.includes("api") && (
+            <section className={`api-panel ${activePanel === "api" ? "active" : ""}`} data-panel="api">
+              <ErrorBoundary t={t}>
+                <ApiSettingsPanel t={t} />
+              </ErrorBoundary>
+            </section>
+          )}
           <section className={`agent-panel ${activePanel === "agent" ? "active" : ""}`} data-panel="agent">
             <ErrorBoundary t={t}>
               <AgentPanel t={t} />

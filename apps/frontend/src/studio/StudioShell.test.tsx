@@ -122,6 +122,34 @@ describe("the shell hosts its views inline", () => {
     expect(container.querySelector('[data-frame="console"]')?.classList.contains("active")).toBe(true);
   });
 
+  it("does not read the stored LLM settings until the api panel is opened", async () => {
+    // `ApiSettingsPanel` reads the stored settings in its own mount effect, so
+    // while the panel mounted with the shell, every page load spent a request
+    // on a section nobody opened -- the trade `ToolCatalogPanel` already refuses
+    // to make for its catalog. The three views above mount on first visit; this
+    // is the settings panel that needed the same rule.
+    //
+    // The other two settings panels stay mounted eagerly on purpose: the agent
+    // panel has no mount effect of its own, and the tool status is fetched only
+    // once the mcp panel is the active one, so gating them would buy nothing.
+    const fetchMock = vi.mocked(fetch);
+    const settingsReads = () =>
+      fetchMock.mock.calls.filter((call) => String(call[0]).includes("settings/llm"));
+
+    renderShell();
+    expect(settingsReads(), "a page load must not read settings nobody asked for").toHaveLength(0);
+
+    fireEvent.click(navButton("api"));
+    await waitFor(() => expect(settingsReads()).toHaveLength(1));
+
+    // Once, not once per visit: switching away and back must not re-read. The
+    // panel stays mounted after its first visit, which is what makes that true
+    // -- and it is the same reason the console keeps polling across a switch.
+    fireEvent.click(navButton("workbench"));
+    fireEvent.click(navButton("api"));
+    expect(settingsReads()).toHaveLength(1);
+  });
+
   it("keeps the shell standing when one panel's render throws", () => {
     // The whole reason `ErrorBoundary` is in the tree. These frames stay
     // mounted for the session (§1.1 -- unmounting would abandon an in-flight

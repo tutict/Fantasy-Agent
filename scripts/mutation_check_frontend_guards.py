@@ -549,6 +549,38 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/studio/StudioShell.test.tsx",
         "keeps the shell standing when the tool-status payload is malformed",
     ),
+    (
+        # The api panel's mount gate removed, so it mounts with the shell again.
+        # That is the shape the code had: `ApiSettingsPanel` reads the stored
+        # settings in its own mount effect, so an eagerly mounted panel spent
+        # that request on every page load for a section nobody opened -- the
+        # trade `ToolCatalogPanel` already refuses to make for its catalog.
+        #
+        # The red is the first assertion, the one about the page load, which is
+        # the only direction a reader could get wrong by being thorough: the
+        # other two ("it does load when opened", "it loads once, not once per
+        # visit") are the ones a lazy implementation gets right by accident.
+        "FE10-1 the api panel mounts with the shell again",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        (
+            b"          {visitedPanels.includes(\"api\") && (\n"
+            b"            <section className={`api-panel ${activePanel === \"api\" ? \"active\" : \"\"}`} data-panel=\"api\">\n"
+            b"              <ErrorBoundary t={t}>\n"
+            b"                <ApiSettingsPanel t={t} />\n"
+            b"              </ErrorBoundary>\n"
+            b"            </section>\n"
+            b"          )}"
+        ),
+        (
+            b"          <section className={`api-panel ${activePanel === \"api\" ? \"active\" : \"\"}`} data-panel=\"api\">\n"
+            b"            <ErrorBoundary t={t}>\n"
+            b"              <ApiSettingsPanel t={t} />\n"
+            b"            </ErrorBoundary>\n"
+            b"          </section>"
+        ),
+        "src/studio/StudioShell.test.tsx",
+        "does not read the stored LLM settings until the api panel is opened",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.
