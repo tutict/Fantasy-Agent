@@ -63,7 +63,7 @@
 - 变异 harness：全量 **131/131 caught**；其中 X1–X6 对应该段的六种静默回归，PT8/PT9 钉住 session id 穿线与相对路径锚定（G-03 的真实链路）
 - **`caught` 不等于证明了**：T9 的守卫在本批之后变成了等价变异（`_pipeline_stage` 现在显式传 `exit_checks=exit_checks or []`，默认值再也到不了任何 stage），已按 harness 的规矩把 guard 改钉到真正读默认值的那条路径上，注释写明了为什么换
 
-### G-01 编排死结：`creative_review` 永久 `AWAITING_HUMAN`
+### G-01 编排死结：`creative_review` 永久 `AWAITING_HUMAN` — **已完成（2026-10-15）**
 
 | 项 | 内容 |
 | --- | --- |
@@ -71,6 +71,24 @@
 | 为什么 P0 | 编排板上跑 Godot 路由**必然**永久停在 order=5，`asset_integration` / `godot_quick_play` / `optimization_testing` 全部永久 blocked。编排层对"可玩可验证"的贡献目前是 0 |
 | 方向 | ① `contracts.py` 给 `ProductionPipelineStage` 加 `human_resolution: str \| None`；② `orchestrator.py` 新增 `resolve_human_stage(stage_id, decision)`，独立于 `_confirmed` 存 `self._human_decisions`；③ `_advance` 的 HUMAN 分支改为**先查决定**：有 → `DONE` 并把决定写成 artifact（复用 `approval_manifest` 的写路径），无 → `AWAITING_HUMAN`；④ 新增 `POST /api/orchestration/{session_id}/stages/{stage_id}/decision`；⑤ 前端编排卡片加"批准/打回"控件；⑥ `pending_confirmations` 在未决定时也暴露 human stage（否则前端没有入口） |
 | 验收 | ① 新增 `tests/test_orchestrator_human_gate.py::test_a_resolved_human_stage_reaches_done_and_unblocks_dependents`；② 端到端跑编排（全 confirm + decision 端点），断言 `GET /api/orchestration/{id}` 的 outcomes 里出现 `godot_quick_play`；③ 变异：把 `_advance` 的 HUMAN 分支改回无条件 return → 用例①红；④ 新端点要么被前端调用、要么进 `KNOWN_WITHOUT_UI` |
+
+**完成情况与原计划的偏差（都是实测逼出来的，不是设计偏好）：**
+
+1. **方向⑥没有做：human stage 没有进 `pending_confirmations`。** 原计划让未决定的闸门也出现在批准名单里，否则前端没有入口。实测这是把两个不同的问题塞进一个列表——"批准一个 stage 让它能跑"和"决定一个闸门让计划能继续"——批准按钮会落到一张批准搬不动的卡片上（`test_pending_human_gates_lists_only_gates_nobody_has_decided` 钉住两者分开）。入口改由卡片上的"批准/打回"控件 + 独立的 `pending_human_gates` 名单提供。
+2. **门禁权威是运行时字典 `_human_decisions`，不是 plan 上的 `human_resolution` 字段。** 字段照样加（contracts ①），但 `_advance` 只读字典：一张**带着预填字段到达**的计划不开门（`test_a_plan_that_arrives_with_the_field_filled_does_not_open_the_gate`），与 AGENTS.md 给 `confirmed` 画的线逐字同款。字段只承载快照——`_stamp_plan` 把决定写到实例持有的 plan 上，restore 时经 `resolve_human_stage` 验证后读回，所以重启赎回的是"那次真的给过的点击"，不是"浏览器写进计划里的字"。
+3. **decision 端点只记录 + 持久化，不 advance。** `/api/orchestration/run` 保持唯一的 dispatch 路径（仓库"一个关注点一个实现"的纪律：第二条推进路径就是 B 系列刚钉过的那个形状）。前端一次点击串起两次调用，响应因此携带与 run 相同的 payload。
+4. **拒绝信号是 `error` 非空，不是 `status`。** decision 响应里的 `status` 是上一遍的 fold——一个早前失败过的会话也返回 `"error"`。前端最初按 `status` 判别，把成功落地的决定当成被拒（真 bug，被自己的测试逼出来）；现在后端在成功路径显式写 `payload["error"] = ""`，前端只读 `error`，fixture 用 `status: "error"` + `error: ""` 把这个语义钉住。
+5. **record 先于 done。** `_record_decision` 在 `_advance` 把 outcome 转 Done **之前**写 `human-decision.yaml`（stage 的 `artifacts` 点名这个文件）——G-03 在 playtest 报告上付过的 artifact-honesty 学费，这里不再付一次。写失败只记日志不抛：人已经决定了，为"决定的记录"丢一个 stage 是更差的交易。
+6. **`rejected` 是 FAILED 且依赖保持 blocked，不是"没批准"。** 打回是有后果的真实结果（`test_a_rejected_gate_fails_and_what_depends_on_it_stays_blocked`）；词汇表只有 `approved` / `rejected` 两个词，非法词大声报错而不是存下来——存下来的 typo 会让闸门永远等待且无从显示。
+
+**验证数字（可复算）：**
+
+- `pytest tests/test_orchestrator_human_gate.py -q` → **12 passed**（验收① + 打回保持 blocked + 决定先于 plan 到达仍落地 + 第二遍不再问 + 带字段送达的计划不开门 + restore 赎回真决定 + restore 拒非法词汇 + record 先于 done + record 每闸门只写一次 + pending 名单语义 + 非法决定/未知 stage 大声报错）
+- `pytest tests/test_studio_app.py -q -k decision` → **5 passed**（决定+重启存活 / 非闸门被拒 / 非法词汇带卡 / plan 没有的 stage / 从未跑过的会话）
+- 全量 `scripts/run_tests.py` → **922 passed**（含 `test_every_needle_still_matches_exactly_once`：新端点让 B1 的变异针脚从 1x 变 2x，已把 guard 行纳入针脚——decision 端点因中间有注释不会撞针）
+- 端到端 `python scripts/g01_e2e_human_gate.py`（`FANTASY_AGENT_USE_LLM=0`，直接驱动 Studio 端点函数）→ pass1 `awaiting_human` + gate blocked → decision（记录但不 advance、record 文件尚未写）→ pass2 七个 stage 全 `done`、`godot_quick_play` 的 `checks == ["validate_godot_project"]` → record 文件含 `decision: approved` → 清 registry 后 GET 仍 `done` 且 stamp 在
+- 前端：`npm run frontend:test` → **325 passed（31 文件）**，`npx tsc --noEmit` → 0 错；`OrchestrationBoard.test.tsx` 22 例中 6 例新的（有会话才给按钮 / post 决定+链接 run / 决定后不再问 / 两条等待线分开 / 被拒带卡 / 传输失败）
+- 变异 harness `scripts/mutation_check_all_guards.py`：全量 **140/140 caught，源码逐字节还原**。新增 HG1–HG9：HG1 就是验收③（HUMAN 分支改回不查决定 → 用例①当场红，红因是 `assert gate.status == DONE`），HG2 计划字段开门、HG3 打回被当成批准、HG4 record 不写、HG5 非法词被存、HG6/HG8 两层重启丢决定（orchestrator.restore / 端点 save_state）、HG7 非闸门被接受、HG9 pending 名单不缩
 
 ### G-04 黄金样例不在版本控制 → "可玩"没有回归基线
 
@@ -127,7 +145,7 @@ graph TD
 | 批次 | 内容 | 做完这批能证明什么 |
 | --- | --- | --- |
 | **第 1 批** | **G-03** ✅ 已完成（2026-10-13） | 产出的切片有可玩性数字，且这个数字会**阻断**流水线（今天 `win_rate=0` 只报 warning） |
-| **第 2 批** | **G-01 + G-02** | 编排板能真正跑到底，且每个 agent stage 至少有一条机器可判定的出口检查被记录（快照 `checks` 非空） |
+| **第 2 批** | **G-01 + G-02** ✅ 已完成（G-02 于 2026-10-13，G-01 于 2026-10-15） | 编排板能真正跑到底，且每个 agent stage 至少有一条机器可判定的出口检查被记录（快照 `checks` 非空） |
 | **第 3 批** | **G-04** | "可玩"变成 CI 上可复算、会变红的事实，不再是本机口头结论 |
 | **第 4 批** | **G-07 + G-06** | DSL 加字段不再漂移；切片有可听的失败/胜利反馈且被 playtest 观测到（`audio_events_triggered > 0`） |
 | **第 5 批** | **G-05 + G-08**（可并行，代码路径不重叠） | 性能有数字和门禁；第二条引擎路线不再是纯 mock |
