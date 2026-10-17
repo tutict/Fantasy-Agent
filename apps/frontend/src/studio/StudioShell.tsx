@@ -11,6 +11,7 @@ import { selectedEngineVersion } from "../shared/planModel";
 import { useJourney } from "../shared/journeyContext";
 import { JOURNEY_PANELS, JOURNEY_STATE_KEYS, JOURNEY_STEP_KEYS, type JourneyStepId } from "../shared/productionJourney";
 import { Disclosure, JourneyHeader } from "../shared/ui/primitives";
+import { ErrorBoundary } from "../shared/ui/ErrorBoundary";
 import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, readHandoffPlan } from "../shared/storage";
 import type {
   McpStatus
@@ -18,7 +19,7 @@ import type {
 import { PlanningWorkbench } from "../workbench/PlanningWorkbench";
 import { AgentPanel } from "./settings/AgentPanel";
 import { ApiSettingsPanel } from "./settings/ApiSettingsPanel";
-import { McpCard } from "./settings/McpCard";
+import { McpCard, McpServiceGrid } from "./settings/McpCard";
 import { ToolCatalogPanel } from "./settings/ToolCatalogPanel";
 import "../styles/studio.css";
 
@@ -298,6 +299,11 @@ export function StudioShell() {
         </header>
 
         <section className="studio-panel-frame">
+          {/* One boundary per frame: a panel that throws during render used to
+              take the whole tree with it, and these frames stay mounted for the
+              session, so the crash would have been permanent. The section stays
+              outside the boundary -- it owns the data-panel attribute and the
+              `active` class the visibility rules read. */}
           {visitedPanels.includes("workbench") && (
             <section
               className={`studio-frame ${activePanel === "workbench" ? "active" : ""}`}
@@ -305,7 +311,9 @@ export function StudioShell() {
               data-panel="workbench"
               aria-hidden={activePanel !== "workbench"}
             >
-              <PlanningWorkbench />
+              <ErrorBoundary t={t}>
+                <PlanningWorkbench />
+              </ErrorBoundary>
             </section>
           )}
           {visitedPanels.includes("pipeline") && (
@@ -315,12 +323,14 @@ export function StudioShell() {
               data-panel="pipeline"
               aria-hidden={activePanel !== "pipeline"}
             >
-              <OrchestrationBoard
-                active={activePanel === "pipeline"}
-                locale={locale}
-                t={t}
-                onOpenConsole={(stageId) => { setReviewStage(stageId || ""); selectPanel("console", "review"); }}
-              />
+              <ErrorBoundary t={t}>
+                <OrchestrationBoard
+                  active={activePanel === "pipeline"}
+                  locale={locale}
+                  t={t}
+                  onOpenConsole={(stageId) => { setReviewStage(stageId || ""); selectPanel("console", "review"); }}
+                />
+              </ErrorBoundary>
             </section>
           )}
           {visitedPanels.includes("console") && (
@@ -330,7 +340,9 @@ export function StudioShell() {
               data-panel="console"
               aria-hidden={activePanel !== "console"}
             >
-              <FlowConsole active={activePanel === "console"} focus={consoleFocus} reviewStage={reviewStage} />
+              <ErrorBoundary t={t}>
+                <FlowConsole active={activePanel === "console"} focus={consoleFocus} reviewStage={reviewStage} />
+              </ErrorBoundary>
             </section>
           )}
           <section className={`mcp-panel ${activePanel === "mcp" ? "active" : ""}`} data-panel="mcp">
@@ -350,21 +362,38 @@ export function StudioShell() {
                   ? `${t("mcpSelectedEngine")}: ${mcpStatus.engine || handedOffEngineVersion()} - ${mcpStatus.required_ready ?? 0}/${mcpStatus.required_total ?? 0} ${t("mcpStatusSummary")}`
                   : t("mcpChecking")}
             </p>
-            <div className="mcp-status-grid" id="mcp-status-grid">
-              {mcpError ? (
-                <article className="mcp-status-card mcp-status-error" data-state="unavailable">
-                  <p>{t("mcpCheckFailed")}: {mcpError}</p>
-                </article>
-              ) : (
-                (mcpStatus?.services || []).map((service) => <McpCard key={service.id} service={service} t={t} />)
-              )}
-            </div>
+            {/* The grid, not the section: the header and the summary above are
+                the shell's own chrome and cannot throw, and the refresh button
+                is the panel's recovery, so it stays outside the boundary. The
+                fallback lands full-width where the grid was, which is also
+                where this panel already puts its fetch error.
+
+                The list is a component rather than a `.map()` here on purpose:
+                an error boundary catches its descendants' renders, never the
+                render of the component that mounts it, so a map written in this
+                function body would put the panel's crash surface above every
+                boundary in the tree. See `McpServiceGrid`. */}
+            <ErrorBoundary t={t}>
+              <div className="mcp-status-grid" id="mcp-status-grid">
+                {mcpError ? (
+                  <article className="mcp-status-card mcp-status-error" data-state="unavailable">
+                    <p>{t("mcpCheckFailed")}: {mcpError}</p>
+                  </article>
+                ) : (
+                  <McpServiceGrid services={mcpStatus?.services} t={t} />
+                )}
+              </div>
+            </ErrorBoundary>
           </section>
           <section className={`api-panel ${activePanel === "api" ? "active" : ""}`} data-panel="api">
-            <ApiSettingsPanel t={t} />
+            <ErrorBoundary t={t}>
+              <ApiSettingsPanel t={t} />
+            </ErrorBoundary>
           </section>
           <section className={`agent-panel ${activePanel === "agent" ? "active" : ""}`} data-panel="agent">
-            <AgentPanel t={t} />
+            <ErrorBoundary t={t}>
+              <AgentPanel t={t} />
+            </ErrorBoundary>
           </section>
         </section>
       </section>

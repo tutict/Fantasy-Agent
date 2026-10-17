@@ -6,6 +6,30 @@ import { LocaleThemeProvider } from "../shared/localeTheme";
 import { StudioShell, panelHref } from "./StudioShell";
 
 /**
+ * The workbench throws on demand.
+ *
+ * `ErrorBoundary` exists for exactly one situation -- a panel that throws
+ * during render -- and no test could produce it before: the real panels are
+ * built to degrade rather than crash, so there was nothing to point the guard
+ * at. This wraps the real component and turns the throw on for one test, so
+ * every other test in this file still gets the genuine workbench.
+ *
+ * `vi.hoisted` because a `vi.mock` factory runs while the module graph is
+ * still loading, before any test body has had the chance to set a flag.
+ */
+const crash = vi.hoisted(() => ({ workbench: false }));
+
+vi.mock("../workbench/PlanningWorkbench", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../workbench/PlanningWorkbench")>();
+  return {
+    PlanningWorkbench: function PlanningWorkbench() {
+      if (crash.workbench) throw new Error("probe: the workbench panel throws on purpose");
+      return <actual.PlanningWorkbench />;
+    }
+  };
+});
+
+/**
  * F4: the shell hosts its views inline, in one document, under one locale.
  *
  * The console and the workbench used to be separate documents inside iframes.
@@ -35,6 +59,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  crash.workbench = false;
   vi.unstubAllGlobals();
 });
 
@@ -95,6 +120,70 @@ describe("the shell hosts its views inline", () => {
     const { container } = renderShell();
 
     expect(container.querySelector('[data-frame="console"]')?.classList.contains("active")).toBe(true);
+  });
+
+  it("keeps the shell standing when one panel's render throws", () => {
+    // The whole reason `ErrorBoundary` is in the tree. These frames stay
+    // mounted for the session (§1.1 -- unmounting would abandon an in-flight
+    // job's polling), so a panel that throws during render used to be a white
+    // window for the rest of it, sidebar and nav included. What has to survive
+    // is the shell, and what has to be replaced is only the panel.
+    localStorage.setItem("fantasy-agent-studio-locale", "zh-CN");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    crash.workbench = true;
+
+    const { container } = renderShell();
+
+    // The frame itself stays: it owns the `data-panel` attribute and the class
+    // the visibility rules read, so a boundary that replaced the section
+    // instead of its contents would break panel switching as a side effect.
+    const frame = container.querySelector('[data-panel="workbench"]');
+    expect(frame, "the crashed panel's frame must stay in the tree").not.toBeNull();
+    expect(frame?.textContent).toContain("这个面板出错了");
+
+    // And the shell around it is still alive. Switching panels is the part a
+    // white window takes away, so it is what proves the rest survived.
+    expect(container.querySelector('[data-frame="console"]')).toBeNull();
+    fireEvent.click(navButton("console"));
+    expect(container.querySelector('[data-frame="console"]')).not.toBeNull();
+
+    logged.mockRestore();
+  });
+
+  it("keeps the shell standing when the tool-status payload is malformed", async () => {
+    // The boundary's second shape, and the more realistic one: the crash is not
+    // a bug in the panel but a contract violation -- a `null` where the backend
+    // promised a service object. Every field on `McpService` is optional, so
+    // nothing in the type system forbids it, `jsonRequest` casts the payload
+    // straight through, and `McpCard` reads `service.status` on its first line.
+    // Before the boundary that was a white window.
+    localStorage.setItem("fantasy-agent-studio-locale", "zh-CN");
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ services: [null] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          })
+        )
+      )
+    );
+
+    renderShell();
+    fireEvent.click(navButton("mcp"));
+
+    // The fallback lands where the grid was...
+    await waitFor(() => {
+      expect(screen.getByText("这个面板出错了")).toBeTruthy();
+    });
+    // ...and the panel's own chrome survives it, which is why the boundary wraps
+    // the grid rather than the whole section: the refresh button is the panel's
+    // recovery and has to outlive a crash in the cards.
+    expect(document.getElementById("mcp-refresh")).not.toBeNull();
+
+    logged.mockRestore();
   });
 });
 

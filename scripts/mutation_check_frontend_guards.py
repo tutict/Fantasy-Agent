@@ -472,6 +472,83 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/shared/storage.test.ts",
         "refuses anything outside the two real engines",
     ),
+    (
+        # The boundary wrapper itself, removed from one frame. It is the only
+        # thing between a panel that throws during render and a white window:
+        # these frames stay mounted for the session (§1.1 -- unmounting would
+        # abandon an in-flight job's polling), so a crash used to be permanent
+        # and total, sidebar included.
+        #
+        # The red reason is the throw reaching the test rather than an
+        # assertion, which is the point: with no boundary there is nothing to
+        # catch it, so the test dies on the way to its own `expect`.
+        "FE9-1 the workbench frame loses its boundary",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        (
+            b"              <ErrorBoundary t={t}>\n"
+            b"                <PlanningWorkbench />\n"
+            b"              </ErrorBoundary>"
+        ),
+        b"              <PlanningWorkbench />",
+        "src/studio/StudioShell.test.tsx",
+        "keeps the shell standing when one panel's render throws",
+    ),
+    (
+        # The crash notice's class. `wb-empty` is the shared panels' empty state
+        # and §4 puts `wb-*` in the shared namespace, so the boundary borrows it
+        # from `workbench.css` -- a file it has no other relationship to. The
+        # `pairs` entry added with the boundary is what keeps the two sides of
+        # that borrow honest; renaming either one renders the notice as an
+        # unboxed paragraph and, before the entry existed, nothing said so.
+        #
+        # FE6-1 and FE6-2 prove the mechanism on a different component. This one
+        # proves the *entry*: the lesson that produced those two cases is that a
+        # component missing from the list is covered by no case at all, however
+        # well the list itself is tested.
+        "FE9-2 the fallback's class is renamed",
+        "apps/frontend/src/shared/ui/ErrorBoundary.tsx",
+        b'className="wb-empty"',
+        b'className="wb-empty-x"',
+        "src/shared/cssHygiene.test.ts",
+        "styles the base class a component hangs its modifiers on",
+    ),
+    (
+        # Deleting the log line. React prints its own "the above error occurred
+        # in..." report in development only, so `componentDidCatch` is what makes
+        # a caught crash audible in production -- without it the fallback appears
+        # and nothing anywhere records that the panel threw. The backend's rule
+        # that a degraded load must be audible, applied to the frontend.
+        #
+        # The assertion pins a substring of the message rather than merely that
+        # `console.error` was called, because React calls it too: "was called"
+        # would stay green with this line deleted, which is the whole reason the
+        # case exists.
+        "FE9-3 the catch stops being logged",
+        "apps/frontend/src/shared/ui/ErrorBoundary.tsx",
+        b'    console.error("a panel subtree threw and was replaced by its fallback", error, info.componentStack);\n',
+        b"",
+        "src/shared/ui/ErrorBoundary.test.tsx",
+        "reports the catch, because production React does not",
+    ),
+    (
+        # The card list moved back into the shell as an inline `.map()`. This is
+        # not a hypothetical: it is the shape the code had first, and it fails
+        # for a reason that is easy to miss -- an error boundary replaces the
+        # render of its *descendants* and has no reach into the component that
+        # mounts it, so `key={service.id}` against a payload that sent `null`
+        # where it promised an object is evaluated in the shell's own render,
+        # above every boundary in the tree. The boundary around the grid is then
+        # decorative and the crash takes the shell down.
+        #
+        # The mutation restores exactly that shape, and the red is the shell
+        # white-screening instead of showing the fallback.
+        "FE9-4 the card list goes back into the shell's own render",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        b"                  <McpServiceGrid services={mcpStatus?.services} t={t} />",
+        b"                  (mcpStatus?.services || []).map((service) => <McpCard key={service.id} service={service} t={t} />)",
+        "src/studio/StudioShell.test.tsx",
+        "keeps the shell standing when the tool-status payload is malformed",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.

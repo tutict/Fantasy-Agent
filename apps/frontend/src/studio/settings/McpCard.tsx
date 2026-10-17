@@ -40,3 +40,30 @@ export function McpCard({ service, t }: { service: McpService; t: Translator }) 
     </article>
   );
 }
+
+/**
+ * The card list, as a component rather than an inline `.map()` in the shell.
+ *
+ * This exists because of what an error boundary can and cannot catch. A
+ * boundary replaces the render of its *descendants*; it has no reach into the
+ * component that renders it. Written as `services.map(...)` inside
+ * `StudioShell`, the list's one crash surface -- `key={service.id}` against a
+ * payload that promised an object and sent `null`, which every field being
+ * optional does not forbid -- is evaluated in the shell's own render, above
+ * every boundary in the tree, so the boundary around the grid is decorative:
+ * the crash escapes and takes the shell with it.
+ *
+ * Moving the map one level down puts that expression inside the boundary, which
+ * is the only place a boundary can help. Verified by mutation: with the map
+ * back in the shell, the malformed-payload test white-screens instead of
+ * showing the fallback.
+ */
+export function McpServiceGrid({ services, t }: { services?: McpService[]; t: Translator }) {
+  return (
+    <>
+      {(services || []).map((service) => (
+        <McpCard key={service.id} service={service} t={t} />
+      ))}
+    </>
+  );
+}

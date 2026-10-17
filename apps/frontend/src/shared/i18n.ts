@@ -849,7 +849,12 @@ export const studioI18n: Record<Locale, Dictionary> = {
     operationSucceeded: "Completed.",
     operationDegraded: "Completed with a reduced result.",
     operationFailed: "Failed. Open the logs before retrying.",
-    operationResumable: "Failed. Resume this stage after changing the input."
+    operationResumable: "Failed. Resume this stage after changing the input.",
+    // What `ErrorBoundary` shows in place of a panel whose render threw. The
+    // message is about the shell surviving, not about the panel, so it does not
+    // name which one broke -- the sidebar already shows that.
+    panelCrashedTitle: "This panel hit an error",
+    panelCrashedBody: "The rest of the studio still works. Reload the page to bring this panel back."
   },
   "zh-CN": {
     documentTitle: "灵构工坊",
@@ -1057,7 +1062,9 @@ export const studioI18n: Record<Locale, Dictionary> = {
     operationSucceeded: "已完成。",
     operationDegraded: "已完成，但结果有所降级。",
     operationFailed: "失败了。重试前先查看日志。",
-    operationResumable: "失败了。修改输入后可从此阶段续跑。"
+    operationResumable: "失败了。修改输入后可从此阶段续跑。",
+    panelCrashedTitle: "这个面板出错了",
+    panelCrashedBody: "工作室的其他部分仍可正常使用。刷新页面可以恢复这个面板。"
   }
 };
 

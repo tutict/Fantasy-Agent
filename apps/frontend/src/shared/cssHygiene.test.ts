@@ -272,6 +272,15 @@ describe("stylesheet hygiene", () => {
       ["studio/settings/AgentPanel.tsx", "studio.css"],
       ["studio/settings/ToolCatalogPanel.tsx", "studio.css"],
       ["studio/settings/McpCard.tsx", "studio.css"],
+      // The boundary's fallback is the shared panels' empty state wearing a
+      // different hat -- a panel with nothing to show -- so its one class is
+      // `wb-empty`, and §4 puts `wb-*` in the shared namespace whose rules live
+      // in `workbench.css`. It is in this list because it emits a static class
+      // literal, which is the inclusion rule; the pairing looks odd only
+      // because the file has no other relationship to the workbench. Without
+      // the entry, renaming either side would render the crash notice as an
+      // unboxed paragraph and nothing here would say so.
+      ["shared/ui/ErrorBoundary.tsx", "workbench.css"],
       ["orchestration/StageCard.tsx", "orchestration.css"],
       // The board was missing from this list for as long as it has existed, so
       // `or-*` had no "the class you render is the class that is styled" check
