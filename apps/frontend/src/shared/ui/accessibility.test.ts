@@ -5,6 +5,8 @@ import { describe, expect, it } from "vitest";
 
 const uiPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../styles/ui.css");
 const ui = readFileSync(uiPath, "utf8");
+const studioPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../styles/studio.css");
+const studio = readFileSync(studioPath, "utf8");
 
 /**
  * Two things a stylesheet can look correct and still fail a keyboard user.
@@ -45,5 +47,17 @@ describe("interaction accessibility", () => {
     for (const selector of ["button", "a", "input", "select", "textarea", "summary", "iframe"]) {
       expect(rule![0], `${selector}:focus-visible must be in the shared rule`).toContain(`${selector}:focus-visible`);
     }
+  });
+
+  it("keeps the checkbox rows at the shared control size", () => {
+    // `.api-toggle` is a label wrapping its input, so the row *is* the touch
+    // target. The box inside it is 18px, and every other control in the product
+    // reaches `--size-control` through ui.css's global button rule -- this was
+    // the one class that escaped it, which matters on a touch screen and is
+    // invisible on a desktop mouse. Same reasoning as the ring assertions
+    // above: the failure that ships is a deletion, not a misreading.
+    const rule = studio.match(/\.api-toggle\s*\{[^}]*\}/);
+    expect(rule, "studio.css must define .api-toggle").toBeTruthy();
+    expect(rule![0]).toContain("min-height: var(--size-control)");
   });
 });

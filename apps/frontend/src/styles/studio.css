@@ -421,6 +421,11 @@ button:disabled {
   align-items: center;
   gap: var(--space-2_5);
   font-weight: 700;
+  /* The row is the touch target, not the 18px box inside it: the label wraps
+     the input, so the whole row toggles natively. Every other control in the
+     product is already at --size-control through ui.css's global button rule;
+     this was the one that escaped it. */
+  min-height: var(--size-control);
 }
 
 .api-toggle input {
