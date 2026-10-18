@@ -25,16 +25,30 @@ guard needs a local engine declare it in ``ENGINE_REQUIREMENTS``; where that
 engine is absent they are ``N/A`` instead, which is what lets this run on a
 machine -- or a CI runner -- with no engines installed.
 
-One hazard is the harness's own: the only moment a mutated file is on disk is
-the guard run, which is the long, interruptible part of a case. A run killed
-there leaves the mutation behind (``finally`` does not run on a kill), and the
-next run reports it as some *other* case whose needle "appears 0x". That is a
-stale-needle report for a file nobody edited, so both places say so.
+Two hazards are the harness's own. The first: the only moment a mutated file
+is on disk is the guard run, which is the long, interruptible part of a case.
+A run killed there leaves the mutation behind (``finally`` does not run on a
+kill), and the next run reports it as some *other* case whose needle "appears
+0x". That is a stale-needle report for a file nobody edited, so both places
+say so.
+
+The second is quieter, and it shipped: a guard run imports the mutated module,
+which makes CPython write a ``.pyc`` validated against the source's
+*integer-second* mtime and its size. Restore, then the next case's mutant
+inside that same second and with the same byte count, and the ``.pyc`` still
+validates -- so the run imports the *previous* case's bytecode and the
+mutation under test never executes. Measured on CI (run 39098914248,
+2026-10-18): T16 and PT7 both came back ``GREEN (MISSED!)`` that way, the
+second because PT6's guard run and PT7's started in the same wall-clock
+second. Every guard run therefore starts with ``PYTHONDONTWRITEBYTECODE=1``
+(see ``_guard_env``), and ``tests/test_mutation_harness.py`` replays the
+collision deterministically to keep that ban from being dropped.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -1280,6 +1294,23 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "tests/test_mcp_bridge.py::test_bridges_keep_their_log_writes_off_the_atomic_helper",
     ),
     (
+        # Same mutation, second guard -- the G1/G2 shape. The behavioural
+        # guard above proves the sweep breaks a tool call, but its premise is
+        # a Windows file-locking fact and it skips itself on POSIX; this one
+        # reads the source, so it catches the sweep everywhere. It sees this
+        # mutation at all only because the scan's glob was `*_mcp.py`, which
+        # skipped the base class both bridges inherit `_write_text` from --
+        # the exact file the mutation edits.
+        "A8 the same sweep, caught on every platform",
+        "fantasy_agent/mcp_bridge.py",
+        b'        path.write_text(text, encoding="utf-8")\n',
+        (
+            b"        from fantasy_agent.atomic_write import write_atomic\n"
+            b"        write_atomic(path, text)\n"
+        ),
+        "tests/test_mcp_bridge.py::test_no_bridge_module_reaches_for_the_atomic_helper",
+    ),
+    (
         # The read endpoint stops rebuilding a session from its snapshot. The
         # mutant leaves the syntax valid and the endpoint answering, so what
         # goes red is the assertion that five fields came back -- not an
@@ -1771,6 +1802,29 @@ ENGINE_REQUIREMENTS: dict[str, str] = {
     "D15 two enemies share a spawn point again": "godot",
 }
 
+#: Cases whose guard's premise is a fact of one operating system, mapped to the
+#: ``os.name`` that has it.
+#:
+#: Same shape and same honesty rule as ``ENGINE_REQUIREMENTS``: where the
+#: premise is absent the guard skips itself -- with the reason in the skip
+#: message -- and a skip proves nothing either way, so the case is reported as
+#: *not applicable* rather than as a failure. It still has to go red on every
+#: platform that does have the premise.
+#:
+#: ``A7`` is the whole population so far, and its premise is Windows file
+#: locking: replacing an open file raises ``PermissionError`` there and
+#: succeeds on POSIX, so the "tidy every write onto the atomic helper" sweep
+#: it describes is a Windows-only regression -- on POSIX the sweep is merely
+#: wasteful. ``A8`` pins the same mutation against a guard that works
+#: everywhere, which is what keeps the sweep caught on a POSIX runner.
+PLATFORM_REQUIREMENTS: dict[str, str] = {
+    "A7 the engine log writes are moved onto the atomic helper": "nt",
+}
+
+#: How each ``os.name`` reads in a log line. These are the only two that exist
+#: here (``java`` is Jython), and a line saying "a nt fact" helps nobody.
+_PLATFORM_NAMES = {"nt": "Windows", "posix": "POSIX"}
+
 #: counts line of scripts/run_tests.py: `tests=1 passed=0 failed=1 errors=0 skipped=0`
 _SUMMARY = re.compile(r"tests=(\d+) passed=(\d+) failed=(\d+) errors=(\d+) skipped=(\d+)")
 
@@ -1851,6 +1905,40 @@ def _as_eol(needle: bytes, eol: bytes) -> bytes:
     return needle.replace(b"\r\n", b"\n").replace(b"\n", eol)
 
 
+def _guard_env() -> dict[str, str]:
+    """The environment every guard run starts with.
+
+    ``PYTHONDONTWRITEBYTECODE`` is load-bearing, not tidiness, and it has to
+    be on *every* guard run rather than only the suspicious ones.
+
+    A guard run imports the mutated module, and importing writes a ``.pyc``
+    whose validity CPython checks against the source's integer-second mtime
+    and its size (``importlib._bootstrap_external._validate_timestamp_pyc``).
+    One case is: write mutant, run the guard, restore -- all of which a fast
+    runner finishes inside a single wall-clock second. The next case's mutant
+    is then written in that same second, and if it happens to have the same
+    byte count, the previous case's ``.pyc`` still validates and the run
+    imports the previous case's bytecode. The mutation under test is never
+    executed, the guard stays green, and the harness reports ``GREEN
+    (MISSED!)`` -- a false accusation against a guard that is fine. That is
+    exactly what CI measured on 2026-10-18: PT6's guard run and PT7's started
+    in the same second (basetemps ``pytest-20261018-050020-2777`` and
+    ``-2779``), and T16's ran one second after T15's while the stale
+    ``.pyc`` was T14's mutant of a *different* file, whose ``in`` -> ``==``
+    made ``orchestration_stages_for("create")`` empty -- which is what let
+    the mutated ``rewind_for_rework`` return None anyway.
+
+    The ban stops *writing*, not reading, so it works by leaving nothing new
+    to be stale: the only ``.pyc`` files on disk are the ones the suite run
+    wrote before any mutation, and those store the pristine mtime, which no
+    later-written mutant can share. ``tests/test_mutation_harness.py``
+    replays the collision with ``os.utime`` forcing it, so a future edit
+    cannot quietly drop the ban and have CI discover it a run later.
+    """
+
+    return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+
+
 def run(test: str) -> tuple[int, str]:
     """Run one guard through the real runner and report (exit code, its output).
 
@@ -1867,6 +1955,7 @@ def run(test: str) -> tuple[int, str]:
         capture_output=True,
         text=True,
         check=False,
+        env=_guard_env(),
     )
     return completed.returncode, completed.stdout + completed.stderr
 
@@ -1928,10 +2017,27 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ENGINE_REQUIREMENTS names engines this harness cannot probe: {unprobeable}")
         failures.extend(unprobeable)
 
+    wrong_platform = sorted(set(PLATFORM_REQUIREMENTS) - known)
+    if wrong_platform:
+        # Same reason as the engine keys: this mapping is how a case gets
+        # excused, so an orphan means a renamed label silently stopped running.
+        print(f"PLATFORM_REQUIREMENTS names cases that no longer exist: {wrong_platform}")
+        failures.extend(wrong_platform)
+
     for label, relative, needle, mutant, test in selected:
         engine = ENGINE_REQUIREMENTS.get(label)
         if engine and not _engine_installed(engine):
             print(f"{label:44} {'N/A':14} needs {engine}, which is not installed here")
+            not_applicable.append(label)
+            continue
+
+        platform = PLATFORM_REQUIREMENTS.get(label)
+        if platform and os.name != platform:
+            print(
+                f"{label:44} {'N/A':14} the guard's premise is a "
+                f"{_PLATFORM_NAMES.get(platform, platform)} fact, which this "
+                "platform cannot show"
+            )
             not_applicable.append(label)
             continue
 
@@ -1971,7 +2077,10 @@ def main(argv: list[str] | None = None) -> int:
     proven = f"{caught}/{len(selected)} mutations caught"
     if len(selected) != len(CASES):
         proven += f" (--only: {len(CASES) - len(selected)} of {len(CASES)} cases not run)"
-    excused = f"; not applicable here (no engine): {not_applicable}" if not_applicable else ""
+    # Both exemption lists are printed as labels rather than folded into a
+    # count: an excused case is a hole in what this run proved, and a hole
+    # needs a name.
+    excused = f"; not applicable here: {', '.join(not_applicable)}" if not_applicable else ""
     print(f"{proven}{excused}; every source restored byte-identically")
     return 0
 

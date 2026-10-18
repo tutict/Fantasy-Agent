@@ -16,7 +16,10 @@ The heavy half, proving each guard really goes red, stays a deliberate run:
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -258,3 +261,106 @@ def test_engine_requirements_name_engines_the_harness_can_probe():
     known = set(harness._engine_probes())
     unknown = sorted(set(harness.ENGINE_REQUIREMENTS.values()) - known)
     assert unknown == [], f"no probe for {unknown}; known engines are {sorted(known)}"
+
+
+def test_platform_requirements_name_cases_that_still_exist():
+    """The mapping excuses a case, so an orphaned key hides a guard.
+
+    Same failure mode as the engine mapping one level over: a renamed label
+    would leave a key pointing at nothing, the case would stop being excused,
+    and on a platform without the premise it would fail as ``GREEN (MISSED!)``
+    -- an accusation against a guard whose premise this platform cannot show.
+    """
+
+    labels = {case[0] for case in _cases()}
+    orphaned = sorted(set(harness.PLATFORM_REQUIREMENTS) - labels)
+    assert orphaned == [], (
+        f"PLATFORM_REQUIREMENTS no longer matches a case label: {orphaned}. "
+        "A renamed label would excuse no case -- the guard would simply run "
+        "again and fail on a platform without the premise."
+    )
+
+
+def test_platform_requirements_name_platforms_that_exist():
+    """A typo'd ``os.name`` matches nothing, so nothing is ever excused."""
+
+    known = {"nt", "posix"}
+    unknown = sorted(set(harness.PLATFORM_REQUIREMENTS.values()) - known)
+    assert unknown == [], f"no such os.name {unknown}; known platforms are {sorted(known)}"
+
+
+def test_a_guard_run_cannot_be_answered_by_stale_bytecode(tmp_path):
+    """The harness's own loop once answered for the mutation it was running.
+
+    A guard run imports the mutated module, and importing writes a ``.pyc``
+    whose validity CPython checks against the source's integer-second mtime
+    and its size. One case is: write the mutant, run the guard, restore --
+    which a fast runner finishes inside a single wall-clock second -- so the
+    next case's mutant can be written in that same second with the same byte
+    count, and the previous case's ``.pyc`` still validates. The run then
+    imports the *previous* case's bytecode, the mutation under test never
+    executes, and the harness reports ``GREEN (MISSED!)`` against a guard
+    that is fine. CI measured exactly that on 2026-10-18: PT6's guard run and
+    PT7's started in the same second, and T16's was answered by T14's mutant
+    of a different file.
+
+    Replayed here with ``os.utime`` forcing the collision, so it does not
+    depend on machine speed. Both halves matter: the first proves the hazard
+    is real rather than a story about timing, the second that
+    ``_guard_env()`` is what closes it -- drop the ban and the second replay
+    goes back to answering with the first mutant.
+    """
+
+    original = 'ANSWER = "original"\n'
+    first = 'ANSWER = "mutant-A"\n'
+    second = 'ANSWER = "mutant-B"\n'
+    assert len(original) == len(first) == len(second), "the size check has to pass"
+
+    def replay(folder: Path, env: dict[str, str]) -> str:
+        """Three cases against one module; return what the last run saw."""
+
+        folder.mkdir(parents=True, exist_ok=True)
+        module = folder / "probe_mod.py"
+
+        def write(text: str, stamp: int) -> None:
+            module.write_text(text, encoding="utf-8")
+            os.utime(module, (stamp, stamp))
+
+        def answer() -> str:
+            completed = subprocess.run(
+                [sys.executable, "-c", "import probe_mod; print(probe_mod.ANSWER)"],
+                cwd=str(folder),
+                capture_output=True,
+                text=True,
+                check=True,
+                env=env,
+            )
+            return completed.stdout.strip()
+
+        # Case 0: the pristine file, as the suite run last left it compiled.
+        write(original, 1_700_000_000)
+        assert answer() == "original"
+        # Case N: its mutant, compiled by its guard run.
+        write(first, 1_700_000_100)
+        assert answer() == "mutant-A"
+        # Case N restored, case N+1 written in the same second, same size.
+        write(original, 1_700_000_101)
+        write(second, 1_700_000_100)
+        return answer()
+
+    without_the_ban = replay(
+        tmp_path / "as_it_was",
+        {k: v for k, v in os.environ.items() if k != "PYTHONDONTWRITEBYTECODE"},
+    )
+    with_the_ban = replay(tmp_path / "fixed", harness._guard_env())
+
+    assert without_the_ban == "mutant-A", (
+        "the stale-bytecode hazard did not reproduce: expected the last run to "
+        f"answer with case N's mutant, got {without_the_ban!r}. If the pyc rules "
+        "changed, this test no longer describes the failure it was written for."
+    )
+    assert with_the_ban == "mutant-B", (
+        "a guard run still answered from bytecode written before it: expected "
+        f"the mutant on disk, got {with_the_ban!r}. _guard_env() has to ban "
+        "PYTHONDONTWRITEBYTECODE on every guard run, not only the last one."
+    )

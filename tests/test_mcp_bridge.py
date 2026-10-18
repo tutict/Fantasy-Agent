@@ -79,6 +79,13 @@ def test_no_bridge_module_reaches_for_the_atomic_helper():
 
     Read from the source rather than trusted to the import graph, because the
     failure being prevented is someone adding the import in the first place.
+
+    The glob is every module with ``mcp`` in its name, not ``*_mcp.py``: the
+    base class all four bridges inherit ``_write_text`` from is
+    ``mcp_bridge.py``, which the narrower glob silently skipped -- so a sweep
+    landing in the one file every bridge shares was invisible to this scan.
+    The behavioural test above covers what a scan cannot (a replace that
+    avoids the helper by name), which is why both exist.
     """
 
     import fantasy_agent
@@ -86,7 +93,7 @@ def test_no_bridge_module_reaches_for_the_atomic_helper():
     package = Path(fantasy_agent.__file__).parent
     offenders = [
         module.name
-        for module in package.glob("*_mcp.py")
+        for module in package.glob("*mcp*.py")
         if "atomic_write" in module.read_text(encoding="utf-8")
     ]
 
