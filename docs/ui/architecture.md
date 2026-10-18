@@ -29,7 +29,7 @@
 
 **为什么不能改成卸载**：console 有在飞的 job 轮询、策划有未保存的对话，都在组件 state 里，卸载就是丢进度。**这不是样式取舍。** 行为面由 `studio/StudioShell.test.tsx` 的 "keeps a visited view mounted once the user switches away" 与变异用例 FE4-5 钉住；`api` 的首访挂载由同文件的 "does not read settings until the panel that needs them is opened" 与 FE10-1 钉住（那条用例同时钉着 mcp 的工具状态：自己的面板打开才拉）。
 
-**这条决策的代价**：访问过的视图永久挂载，DOM 与 component state 只增不减。本仓库目前没有守卫覆盖这个增长，长期使用的内存表现是未验证的。
+**这条决策的代价**：访问过的视图永久挂载，DOM 与 component state 只增不减。本仓库目前没有守卫覆盖这个增长，长期使用的内存表现是未验证的。共担一棵树还有更尖的一根刺：一个面板 render 抛错曾经带走整窗（sidebar 和 nav 一起）。六个面板现在各自由 `shared/ui/ErrorBoundary.tsx` 包着——boundary 只替换**后代**的 render，所以崩溃表达式必须落在子组件里（`McpServiceGrid` 就是为此从外壳 render 里抽出来的），外壳 chrome 不包进 boundary。
 
 ## 2. 面板归属
 
@@ -69,6 +69,8 @@ wc -l apps/frontend/src/workbench/PlanningWorkbench.tsx \
 | `mcp-*` `api-*` `agent-*` | 设置面板私有 | `mcp-status-card`、`api-field` |
 | `playtest-*` `rework-*` `correction-*` `manual-*` | console 私有，四种都表示「带状态列表的侧面板」 | `playtest-panel`、`rework-panel` |
 | **无前缀** | console 私有 | `rail-card`、`gate-item`、`pane-section-header` |
+
+`api-*` 有一处**既存借用**：`orchestration/OrchestrationBoard.tsx` 的审批条用的是 `api-header` / `api-summary` / `api-form` / `api-field` / `api-toggle` / `api-actions`。`cssHygiene.test.ts` 的 pairs 把「组件 ↔ 双样式表」的联合检查钉住（该条目的注释里有完整记录）。**新借用要先在这里登记**——不登记，读 §4 的人就会以为 `api-*` 没有例外。
 
 历史上有过三套并行前缀（`wb-` / 无前缀 / `or-`），**`/workbench` 前缀是 0 个**——CSS class 不带视图名。判断一个新 class 该用哪套时看它属于哪个面板，不看它在哪个文件里。
 

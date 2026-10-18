@@ -19,7 +19,7 @@ import type {
 import { PlanningWorkbench } from "../workbench/PlanningWorkbench";
 import { AgentPanel } from "./settings/AgentPanel";
 import { ApiSettingsPanel } from "./settings/ApiSettingsPanel";
-import { McpCard, McpServiceGrid } from "./settings/McpCard";
+import { McpServiceGrid } from "./settings/McpCard";
 import "../styles/studio.css";
 
 type PanelKey = "workbench" | "pipeline" | "console" | "mcp" | "api" | "agent";

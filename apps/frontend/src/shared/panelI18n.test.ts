@@ -325,10 +325,12 @@ describe("entry-point dictionaries have no keys nothing calls", () => {
   it("still finds the keys the studio shell calls", () => {
     // The studio entry point, not the shell file: the settings panels used to be
     // inlined in `StudioShell.tsx` and now live in `studio/settings/`, so
-    // reading one file would floor on the shell's own 16 calls and quietly lose
-    // the extractor check for the other 59. Same rationale as the floor above --
-    // a rewrite that stops the extractor from matching must fail loudly instead
-    // of passing on an empty set.
+    // reading one file would floor on the shell's own calls and quietly lose
+    // the extractor check for every settings panel's keys. Same rationale as
+    // the floor above -- a rewrite that stops the extractor from matching must
+    // fail loudly instead of passing on an empty set. (The counts are not
+    // written here on purpose: they drift every time a panel gains a key, and
+    // the extractor is the ruler, not a number in a comment.)
     const studioModules = import.meta.glob(["../studio/**/*.{ts,tsx}", "!../studio/**/*.test.{ts,tsx}"], {
       query: "?raw",
       import: "default",

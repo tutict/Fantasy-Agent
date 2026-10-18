@@ -157,6 +157,15 @@ describe("the shell hosts its views inline", () => {
     fireEvent.click(navButton("workbench"));
     fireEvent.click(navButton("api"));
     expect(settingsReads()).toHaveLength(1);
+
+    // The mcp half of the same rule, and the half that had no proof: the
+    // effect guards on `!mcpStatus`, so the second visit finds the status
+    // already loaded. Revisiting is the only thing that separates "loads once
+    // per session" from "loads on every visit", and until now nothing in the
+    // repo revisited mcp -- dropping that guard would have passed every test.
+    fireEvent.click(navButton("workbench"));
+    fireEvent.click(navButton("mcp"));
+    expect(toolReads()).toHaveLength(1);
   });
 
   it("keeps the shell standing when one panel's render throws", () => {

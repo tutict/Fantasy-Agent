@@ -9,7 +9,7 @@ import { ToolCatalogPanel } from "./ToolCatalogPanel";
  * One agent run: a goal, the grants it may use, and what it did with them.
  *
  * Moved out of `StudioShell.tsx` under the `docs/ui/architecture.md` §5
- * criteria -- over 50 lines, its own `agent-*` class prefix, and 18 dedicated
+ * criteria -- over 50 lines, its own `agent-*` class prefix, and dedicated
  * i18n keys. Behaviour is unchanged; it still mounts the tool catalog below the
  * form rather than behind a tab, because "what the run was allowed to do" is
  * part of the same answer as "what it did".

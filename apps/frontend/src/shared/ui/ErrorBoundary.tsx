@@ -27,7 +27,7 @@ import type { Translator } from "../i18n";
  * need the identical stand-in, and a `fallback` prop would be the same JSX
  * written six times -- with the one thing that must not differ between panels
  * left to each caller to get right. The boundary is in `shared/ui/` next to
- * `primitives.tsx`, whose components take the translator the same way.
+ * `primitives.tsx`, where `JourneyHeader` takes a translator the same way.
  *
  * **`componentDidCatch` is the reason this is a class component, and it is not
  * decoration.** React prints the "the above error occurred in..." report in

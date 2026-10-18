@@ -1280,10 +1280,11 @@ export const workbenchI18n: Record<Locale, Dictionary> = {
 /**
  * What `makeTranslator` hands back, named so panels can take one as a prop.
  *
- * Five files each declared this locally before this line existed
- * (`OrchestrationBoard`, `BlenderScriptPanel`, `ui/primitives`, `StudioShell`,
+ * Four files each declared this locally before this line existed
+ * (`OrchestrationBoard`, `BlenderScriptPanel`, `ui/primitives`,
  * `workbench/PlanPanels`); they are left alone because folding them in is a
- * separate change with its own blast radius. New code imports it from here --
+ * separate change with its own blast radius. `StudioShell` was the fifth until
+ * the settings-panel split took its copy away. New code imports it from here --
  * the type sits next to the function whose return type it is, which is the only
  * place it cannot drift from.
  */

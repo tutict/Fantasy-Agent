@@ -50,7 +50,7 @@ tab 只有 2 个。2026-09-18 之前这里有 10 个（overview / tasks / build 
 
 ## 状态外置
 
-四个面板内联在同一 document，切走**不卸载**（`visitedPanels`）。因为 console 有在飞的 job 轮询，卸载就是丢进度。代价是访问过的视图永久挂载、DOM 只增不减 —— 详见 `architecture.md` §1.1。
+六个面板内联在同一 document，切走**不卸载**（`visitedPanels`；三个整页视图与 `api` 首访才挂载，`mcp` / `agent` 常驻）。因为 console 有在飞的 job 轮询，卸载就是丢进度。代价是访问过的视图永久挂载、DOM 只增不减 —— 详见 `architecture.md` §1.1。
 
 ## 相关测试
 

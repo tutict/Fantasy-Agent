@@ -8,8 +8,9 @@ import type { Translator } from "../../shared/i18n";
  * Moved out of `StudioShell.tsx` under the `docs/ui/architecture.md` §5
  * criteria -- it carries the `mcp-*` class prefix, which is the criterion that
  * fires regardless of length. It is under 50 lines and has no test of its own,
- * so it is the weakest of the four splits; it moved because the shell renders
- * it in a loop and the prefix is what ties its styles to `studio.css`.
+ * so it is the weakest of the four splits; it moved because the shell used to
+ * render it in a loop -- that loop is `McpServiceGrid` below now -- and the
+ * prefix is what ties its styles to `studio.css`.
  *
  * The `detail`/`next_action` fallbacks compare the translated string against
  * the key: when the dictionary has no entry, `makeTranslator` returns the key

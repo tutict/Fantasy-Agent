@@ -15,7 +15,7 @@ import type { Translator } from "../../shared/i18n";
  *
  * Moved out of `StudioShell.tsx` because it meets the split criteria in
  * `docs/ui/architecture.md` §5 on three counts -- over 50 lines, its own
- * `api-*` class prefix, and 27 dedicated i18n keys. Behaviour is unchanged,
+ * `api-*` class prefix, and dedicated i18n keys. Behaviour is unchanged,
  * including that it loads its settings on mount rather than when the panel is
  * first shown.
  */

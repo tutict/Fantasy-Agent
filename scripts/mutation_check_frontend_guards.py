@@ -581,6 +581,19 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/studio/StudioShell.test.tsx",
         "does not read settings until the panel that needs them is opened",
     ),
+    (
+        # The mcp half of the once-per-session rule. The effect guards on
+        # `!mcpStatus`, so a second visit finds the status already loaded;
+        # dropping the guard re-fetches on every visit -- the kind of
+        # regression nothing else would notice, because the api half has its
+        # own case above and this is the same rule's other half.
+        "FE10-2 the tool status is re-fetched on every mcp visit",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        b"    if (activePanel === \"mcp\" && !mcpStatus && !checkingMcp) {",
+        b"    if (activePanel === \"mcp\" && !checkingMcp) {",
+        "src/studio/StudioShell.test.tsx",
+        "does not read settings until the panel that needs them is opened",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.
