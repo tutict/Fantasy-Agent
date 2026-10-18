@@ -77,9 +77,18 @@ def is_absolute_path(path: str) -> bool:
     dangerous: joining it onto the workspace silently discards the workspace
     prefix and lands at the drive root. Treating any rooted path as absolute
     keeps the check honest on both platforms.
+
+    The leading backslash is the mirror image on POSIX. ``Path`` reads
+    ``\\etc\\passwd`` as an ordinary relative filename there — a backslash is
+    a legal name character — but :func:`resolve_workspace_path` normalises
+    separators before joining, and ``root / Path("/etc/passwd")`` discards the
+    workspace prefix exactly the way the Windows case does. Without this
+    clause the input was still refused, but only by the containment backstop
+    and with a vaguer message. A leading separator of either kind is a root
+    for the purpose of this function.
     """
     candidate = Path(path)
-    return candidate.is_absolute() or bool(candidate.root)
+    return candidate.is_absolute() or bool(candidate.root) or path.startswith("\\")
 
 
 def resolve_workspace_path(

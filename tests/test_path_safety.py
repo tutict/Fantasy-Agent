@@ -38,6 +38,13 @@ def test_rejects_drive_less_absolute_paths(tmp_path: Path):
     Without the root check this fell through to the containment guard, so the
     same input produced a different error on each platform. Both now report it
     as an absolute path.
+
+    The backslash case is the mirror image on POSIX: ``Path`` reads
+    ``\\etc\\passwd`` as a relative filename there, but the backslash is
+    normalised to a slash before joining, and ``root / "/etc/passwd"``
+    discards the workspace prefix. It used to be refused only by the
+    containment backstop, with the vaguer "escapes workspace" message -- the
+    absolute check has to claim it on every platform.
     """
     from fantasy_agent.path_safety import is_absolute_path
 
@@ -47,6 +54,11 @@ def test_rejects_drive_less_absolute_paths(tmp_path: Path):
 
     with pytest.raises(WorkspacePathError, match="Absolute paths are not allowed"):
         resolve_workspace_path("/etc/passwd", workspace_root=tmp_path)
+
+    # The early branch, not the containment backstop: the message is the
+    # absolute-path one, and it says so on Linux too.
+    with pytest.raises(WorkspacePathError, match="Absolute paths are not allowed"):
+        resolve_workspace_path(r"\etc\passwd", workspace_root=tmp_path)
 
 
 def test_rejects_absolute_paths_that_point_inside_the_workspace(tmp_path: Path):

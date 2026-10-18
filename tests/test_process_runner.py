@@ -167,10 +167,13 @@ def test_cancel_scope_restores_the_previous_binding():
 
 
 def test_terminate_process_tree_kills_children():
+    # The same session production gives the child, so the group kill below
+    # targets the child's own group rather than this process's.
     process = subprocess.Popen(
         [sys.executable, "-c", _spawn_children_script()],
         stdout=subprocess.PIPE,
         text=True,
+        start_new_session=True,
     )
     assert process.stdout is not None
     child_pid = int(process.stdout.readline().strip())
@@ -181,6 +184,62 @@ def test_terminate_process_tree_kills_children():
 
     time.sleep(0.5)
     assert not _pid_alive(child_pid), "child process must die with its parent"
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="process groups are POSIX; Windows kills by walking the tree with taskkill /T",
+)
+def test_a_streaming_child_gets_its_own_process_group(tmp_path: Path):
+    """Otherwise the terminate path signals the caller's group.
+
+    terminate_process_tree's POSIX branch does os.killpg(os.getpgid(child.pid)),
+    which is only safe because run_streaming spawns with start_new_session: the
+    child's pgid is then its own pid, not this process's. A Popen that inherits
+    the group makes that killpg land on pytest -- and on any server running it.
+    The CI backend job of 2026-10-18 died exactly there, mid-suite, reported by
+    the runner as "The operation was canceled" because the runner's shell was
+    in the group too.
+    """
+
+    result = process_runner.run_streaming(
+        [sys.executable, "-c", "import os; print(os.getpgid(0))"],
+        stdout_path=tmp_path / "out.log",
+        timeout=30,
+    )
+
+    child_pgid = int(result.stdout.strip())
+    assert child_pgid != os.getpgid(0), (
+        "the streaming child shares this process's group, so terminate_process_tree "
+        "would killpg the caller"
+    )
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="process groups are POSIX; Windows kills by walking the tree with taskkill /T",
+)
+def test_terminating_a_same_group_process_does_not_signal_the_caller():
+    """The backstop, proved by the fact that this test can still assert.
+
+    A caller that spawns without a session and hands the process to
+    terminate_process_tree gets terminate(), not killpg(): signalling the group
+    would take pytest -- and anything else in it -- down with the child. The
+    proof is structural. Remove the guard and this process receives the SIGTERM
+    meant for the child, so the assertion below is never reached; the premise
+    check first pins the condition the guard is about.
+    """
+
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(120)"],
+        stdout=subprocess.DEVNULL,
+    )
+    assert os.getpgid(process.pid) == os.getpgid(0), "premise: the child shares our group"
+
+    process_runner.terminate_process_tree(process)
+
+    process.wait(timeout=10)
+    assert process.poll() is not None, "the target itself must still be killed"
 
 
 def test_is_streaming_runner_detects_the_streaming_flag():

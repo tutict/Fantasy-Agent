@@ -5,9 +5,11 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import os
 import re
 from pathlib import Path
 
+import pytest
 from pydantic import ValidationError
 
 from fantasy_agent import orchestration_state
@@ -265,6 +267,11 @@ def test_a_session_id_that_the_filesystem_would_rewrite_is_refused(tmp_path: Pat
             raise AssertionError(f"{hostile!r} resolved instead of being refused ({because})")
 
 
+@pytest.mark.skipif(
+    os.name != "nt",
+    reason="the premise is an NTFS fact: ext4/APFS keep 'victim.' and 'victim' "
+    "as two directories, so there is nothing to prove there",
+)
 def test_the_two_ids_windows_would_collapse_really_do_collapse(tmp_path: Path):
     """Without this, the guard above is guarding against nothing.
 
@@ -277,6 +284,12 @@ def test_the_two_ids_windows_would_collapse_really_do_collapse(tmp_path: Path):
 
     Creating ``victim.`` and then finding ``victim`` already there **is** the
     proof: the first call made the second one fail with ``FileExistsError``.
+
+    The skip is the honest shape of that promise: the guard exists for the
+    filesystem that does the collapsing, so the proof runs where the
+    collapsing happens. On Linux the premise is not merely unproven, it is
+    false, and an assertion written as if it were true there is a lie that
+    only ever ran green because nobody ran the suite on Linux.
     """
 
     sessions = tmp_path / "sessions"

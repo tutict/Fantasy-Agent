@@ -121,7 +121,14 @@ def _terminate_posix(process: subprocess.Popen[str], *, grace_seconds: float) ->
     except OSError:
         pgid = None
 
-    if pgid is None:
+    # A child that shares the caller's group would make killpg signal the
+    # caller too -- pytest, and whatever server runs it. run_streaming spawns
+    # with start_new_session so the group below is the child's own; this check
+    # is the backstop for any other caller, and it falls back to terminating
+    # just the one process, because without a group of its own there is no
+    # portable way to walk its children.
+    own_group = pgid is not None and pgid == os.getpgid(0)
+    if pgid is None or own_group:
         with contextlib.suppress(OSError):
             process.terminate()
     else:
@@ -133,7 +140,7 @@ def _terminate_posix(process: subprocess.Popen[str], *, grace_seconds: float) ->
         time.sleep(min(DEFAULT_POLL_INTERVAL, grace_seconds))
 
     if process.poll() is None:
-        if pgid is None:
+        if pgid is None or own_group:
             with contextlib.suppress(OSError):
                 process.kill()
         else:
@@ -245,6 +252,12 @@ def run_streaming(
     _truncate(stdout_path)
     _truncate(stderr_path)
 
+    # The child leads its own process group, which is what makes the tree kill
+    # in terminate_process_tree safe: os.killpg targets the child's group, not
+    # this one. Without it a timeout or a cancel on POSIX signals the caller's
+    # whole group -- the suite died exactly that way on CI, reported as "The
+    # operation was canceled" because the runner's shell was in the group too.
+    # A no-op on Windows, which kills by walking the tree with taskkill /T.
     process = subprocess.Popen(
         list(command),
         cwd=str(cwd) if cwd is not None else None,
@@ -255,6 +268,7 @@ def run_streaming(
         encoding=encoding,
         errors=errors,
         bufsize=1,
+        start_new_session=True,
     )
 
     lock = threading.Lock()
