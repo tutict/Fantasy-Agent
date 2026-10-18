@@ -16,6 +16,7 @@ from typing import Literal
 from fantasy_agent.contracts import DirectorBuildPlan, EnemyPressureTuning
 from fantasy_agent.executor import ExecutionResult
 from fantasy_agent.godot_mcp import DEFAULT_WORKSPACE_ROOT
+from fantasy_agent.path_safety import WorkspacePathError, assert_safe_path_segment
 from fantasy_agent.pipeline_state import normalize_resume_from
 
 DemoEngine = Literal["godot", "unreal"]
@@ -138,6 +139,29 @@ def resolve_demo_executables(
     )
 
 
+def validate_session_id(session_id: str) -> None:
+    """Reject a session id that cannot be one directory name.
+
+    ``session_id`` becomes a directory under ``generated/<engine>/sessions/``,
+    and on Windows ``victim.`` and ``victim`` are the same directory -- so an
+    id that passes a containment check can still land on another session's
+    files. This is the same rule ``pipeline_state.state_path`` and
+    ``orchestration_state.state_path`` apply; raising here turns a hostile id
+    into one clear error at the boundary instead of a path that resolves.
+
+    An empty id is not an error: it means "mint one", which ``launch_demo``
+    does. Raises ``DemoLaunchError`` so both the CLI and Studio report it the
+    way they already report a bad resume point.
+    """
+
+    if not session_id:
+        return
+    try:
+        assert_safe_path_segment(session_id, label="session_id")
+    except WorkspacePathError as exc:
+        raise DemoLaunchError("bad_session_id", str(exc)) from exc
+
+
 def normalize_demo_resume(
     plan: DirectorBuildPlan,
     override: str = "",
@@ -183,6 +207,7 @@ def launch_demo(request: DemoLaunch) -> ExecutionResult:
         session_id=request.session_id,
         resume_from=request.resume_from,
     )
+    validate_session_id(request.session_id)
     session_id = request.session_id or new_session_id()
     tools = request.resolved or resolve_demo_executables(
         godot_exe=request.godot_exe,

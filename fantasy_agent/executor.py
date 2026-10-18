@@ -47,7 +47,11 @@ from fantasy_agent.godot_mcp import (
     resolve_enemy_pressure_tuning,
 )
 from fantasy_agent.godot_playtest import playtest_report_relpath
-from fantasy_agent.path_safety import display_workspace_path, resolve_workspace_path
+from fantasy_agent.path_safety import (
+    assert_safe_path_segment,
+    display_workspace_path,
+    resolve_workspace_path,
+)
 from fantasy_agent.pipeline_state import (
     RESUMABLE_STAGES,
     StageState,
@@ -154,6 +158,10 @@ def _persist_stages(
 def _session_project_dir(session_id: str, project_name: str) -> str:
     from fantasy_agent.godot_mcp import _slug
 
+    # ``session_id`` becomes a directory name here; on Windows ``victim.`` and
+    # ``victim`` are one directory, so containment alone would let a run write
+    # over another session's project. See ``pipeline_state.state_path``.
+    assert_safe_path_segment(session_id, label="session_id")
     safe = _slug(project_name) or "demo"
     # Stay under the godot_mcp sandbox prefix (generated/godot) while still
     # isolating each run in its own session subfolder.
@@ -1431,6 +1439,9 @@ def format_execution_report(result: ExecutionResult) -> str:
 def _unreal_session_project_dir(session_id: str, project_name: str) -> str:
     from fantasy_agent.godot_mcp import _slug
 
+    # Same name rule as the Godot helper: the id is a directory name, not just
+    # a path component.
+    assert_safe_path_segment(session_id, label="session_id")
     safe = _slug(project_name) or "demo"
     return f"generated/unreal/sessions/{session_id}/{safe}"
 

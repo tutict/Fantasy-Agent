@@ -52,6 +52,7 @@ from fantasy_agent.demo_launch import (
     launch_demo,
     new_session_id,
     normalize_demo_resume,
+    validate_session_id,
 )
 from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.godot_playtest import PlaytestResult
@@ -1185,6 +1186,10 @@ def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
             session_id=req.session_id,
             resume_from=req.resume_from or None,
         )
+        # The id becomes a directory name under generated/<engine>/sessions/.
+        # Rejecting it here keeps a hostile id a 400 instead of a path that
+        # resolves onto another session (see ``validate_session_id``).
+        validate_session_id(req.session_id)
     except DemoLaunchError as exc:
         raise HTTPException(status_code=400, detail=_resume_http_detail(exc)) from exc
     session_id = req.session_id or new_session_id()

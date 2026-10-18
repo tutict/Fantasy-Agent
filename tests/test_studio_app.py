@@ -1847,6 +1847,34 @@ def test_execute_resume_errors_stay_http_400():
     assert "未知的续跑节点" in bad.value.detail
 
 
+def test_execute_rejects_a_session_id_the_filesystem_would_rewrite():
+    """A hostile id is a 400, not a path that resolves onto another session.
+
+    ``session_id`` becomes a directory name under ``generated/<engine>/sessions/``,
+    and on Windows ``victim.`` and ``victim`` are one directory -- so an id that
+    passes a containment check can still make a resume read another session's
+    ledger and skip stages this run never completed. The refusal has to happen at
+    the boundary (here), before the id is minted into a job, so the caller gets
+    one clear error instead of a run that silently reuses someone else's state.
+    """
+
+    from fastapi import HTTPException
+
+    from fantasy_agent.workflows import run_director_workflow
+
+    module = _load_studio_app()
+    plan = run_director_workflow(
+        PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
+    )
+    for hostile in ("victim.", "a\nb", "../escape"):
+        with pytest.raises(HTTPException) as rejected:
+            module.execute_demo(
+                module.ExecuteDemoRequest(plan=plan, engine="Godot 4", session_id=hostile)
+            )
+        assert rejected.value.status_code == 400, hostile
+        assert "session_id" in rejected.value.detail, hostile
+
+
 # ── restart: the board comes back from a snapshot ────────────────────────────
 #
 # The board writes its session id to localStorage so a reload can find its

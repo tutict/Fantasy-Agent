@@ -16,6 +16,7 @@ import importlib.util
 import socket
 import subprocess
 import sys
+import threading
 import time
 import types
 from contextlib import contextmanager
@@ -549,16 +550,52 @@ def _stub_create_window(title: str, **kwargs: object) -> _StubWindow:
     return window
 
 
+@pytest.fixture(autouse=True)
+def _no_leaked_tray_thread():
+    """Fail a test that leaves a non-daemon thread running.
+
+    The launcher's tray path can start a pystray message-loop thread, and that
+    thread is non-daemon: it outlives the test, keeps the interpreter alive at
+    shutdown, and hangs the whole suite *after* every test has passed. It only
+    happens where the desktop extra is installed, so CI (which installs the
+    `dev` extra) never sees it -- which is exactly why it needs a guard here
+    rather than a green CI run. Every test in this module must either stub
+    `TrayController.setup` or pass `with_tray=False`.
+    """
+
+    before = {thread.ident for thread in threading.enumerate()}
+    yield
+    leaked = [
+        thread
+        for thread in threading.enumerate()
+        if thread.ident not in before
+        and thread is not threading.main_thread()
+        and not thread.daemon
+    ]
+    assert not leaked, (
+        "a test left non-daemon thread(s) running; the suite will hang at "
+        f"interpreter shutdown: {[t.name for t in leaked]}"
+    )
+
+
 def test_the_tray_is_handed_to_webview_start_as_the_startup_hook():
     """The tray must be built inside the GUI thread, i.e. via start(startup).
 
     Creating a window only registers it -- `webview.start()` is what binds the
     GUI and fires the `shown` event. Setting the tray up before that call would
     leave any window operation waiting on an event that cannot fire yet.
+
+    `TrayController.setup` is stubbed, like the failing-tray test below: driving
+    the real one builds a real pystray icon, whose message-loop thread is
+    non-daemon and outlives the test -- the whole suite then hangs at
+    interpreter shutdown on any machine with the desktop extra installed. The
+    hook is what this test is about, so recording the call it makes proves the
+    same thing without starting a thread.
     """
 
     module = _load_launcher()
     recorded: dict[str, object] = {}
+    setup_calls: list[object] = []
 
     stub = types.ModuleType("webview")
     stub.create_window = _stub_create_window  # type: ignore[attr-defined]
@@ -570,14 +607,25 @@ def test_the_tray_is_handed_to_webview_start_as_the_startup_hook():
             startup()
 
     stub.start = start  # type: ignore[attr-defined]
+
+    original_setup = module.TrayController.setup
+
+    def _record_setup(self, window: object, *, icon_dir: object = None) -> None:
+        setup_calls.append(window)
+
+    module.TrayController.setup = _record_setup
     sys.modules["webview"] = stub
     try:
         module.open_window(_stub_plan(module))
     finally:
+        module.TrayController.setup = original_setup
         del sys.modules["webview"]
 
     assert callable(recorded["startup"]), (
         "open_window must pass a startup hook to webview.start, otherwise the tray is never created"
+    )
+    assert setup_calls == [_stub_create_window.recorded["window"]], (
+        "the startup hook must build the tray from the window it was handed"
     )
 
 

@@ -22,7 +22,10 @@ from pydantic import Field
 
 from fantasy_agent.atomic_write import write_atomic
 from fantasy_agent.contracts import StrictModel
-from fantasy_agent.path_safety import resolve_workspace_path
+from fantasy_agent.path_safety import (
+    assert_safe_path_segment,
+    resolve_workspace_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -285,8 +288,19 @@ def state_path(
     engine_key: str = "godot",
     workspace_root: Path | str,
 ) -> Path:
-    """Path of the session state file, kept inside the generated sandbox."""
+    """Path of the session state file, kept inside the generated sandbox.
 
+    ``session_id`` and ``engine_key`` are checked as *names*, not just as
+    paths: they become directory names, and on Windows ``victim.`` and
+    ``victim`` are one directory. Containment alone cannot catch that, because
+    the aliasing happens inside the filesystem -- the same reason
+    ``orchestration_state.state_path`` checks both. A resume that read another
+    session's ledger would skip stages this run never completed, which is
+    exactly what ``_resume_skip`` promises cannot happen.
+    """
+
+    assert_safe_path_segment(session_id, label="session_id")
+    assert_safe_path_segment(engine_key, label="engine_key")
     relative = f"generated/{engine_key}/sessions/{session_id}/{STATE_FILENAME}"
     return resolve_workspace_path(
         relative,

@@ -688,13 +688,20 @@ def _complete_anthropic(
         raise LLMError("No API key configured for the Anthropic provider.")
 
     url = endpoint_url(ANTHROPIC, str(resolved["base_url"]))
-    payload = {
-        "model": model or model_name(),
+    effective_model = model or model_name()
+    payload: dict[str, Any] = {
+        "model": effective_model,
         "max_tokens": max_tokens,
-        "temperature": temperature,
         "system": system,
         "messages": [{"role": "user", "content": user}],
     }
+    # GPT-6 / o-series reject temperature outright (a hard error, not an
+    # ignored field), so it is omitted for them -- the same rule the tool-call
+    # path applies. Without this, generation failed where the connection probe
+    # succeeded, and the caller fell back to the deterministic generator with
+    # nothing on screen to say why.
+    if supports_sampling_params(effective_model):
+        payload["temperature"] = temperature
     decoded = _post_json(
         url,
         payload=payload,
@@ -727,15 +734,18 @@ def _complete_openai_compatible(
         raise LLMError("No API key configured for the OpenAI-compatible provider.")
 
     url = endpoint_url(OPENAI_COMPATIBLE, base_url)
-    payload = {
+    payload: dict[str, Any] = {
         "model": model,
         "max_tokens": max_tokens,
-        "temperature": temperature,
         "messages": [
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
     }
+    # Same rule as the Anthropic branch and the tool-call path: a model that
+    # rejects sampling params must not receive one.
+    if supports_sampling_params(model):
+        payload["temperature"] = temperature
     decoded = _post_json(
         url,
         payload=payload,

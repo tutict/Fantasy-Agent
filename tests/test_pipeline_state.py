@@ -502,3 +502,23 @@ def test_state_model_defaults_to_empty():
     assert state.done_stages() == set()
     assert state.failed_stages() == set()
     assert state.get("nope") is None
+
+
+def test_a_session_id_the_filesystem_would_rewrite_is_refused(tmp_path: Path):
+    """The ledger path is a directory *name*, not just a contained path.
+
+    ``state_path`` builds ``generated/<engine>/sessions/<id>/`` and
+    ``resolve_workspace_path`` only rejects ``..`` and absolute roots -- it
+    cannot see that Windows folds ``victim.`` onto ``victim``. Without the name
+    rule a resume under an aliased id reads another session's ledger and skips
+    stages this run never completed, which is exactly what ``_resume_skip``
+    promises cannot happen. Mirrors the orchestration snapshot's guard, which
+    was written for the same reason.
+    """
+
+    from fantasy_agent.path_safety import WorkspacePathError
+    from fantasy_agent.pipeline_state import state_path
+
+    for hostile in ("victim.", "victim ", "a\nb", "a/b", "", "a" * 65, ".hidden"):
+        with pytest.raises(WorkspacePathError):
+            state_path(hostile, engine_key="godot", workspace_root=tmp_path)

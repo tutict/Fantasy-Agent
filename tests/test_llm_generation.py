@@ -205,6 +205,8 @@ def test_complete_json_posts_to_anthropic_messages_api(anthropic_credentials):
     body = json.loads(sent.data.decode("utf-8"))
     assert body["system"] == "sys"
     assert body["messages"] == [{"role": "user", "content": "usr"}]
+    # A sampled model keeps temperature; only the rejecting ones drop it.
+    assert body["temperature"] == 0.7
 
 
 def test_complete_json_requires_key_for_anthropic(tmp_path, monkeypatch):
@@ -230,3 +232,63 @@ def test_complete_json_normalizes_http_error(anthropic_credentials):
         pytest.raises(llm.LLMError, match="HTTP 429"),
     ):
         llm.complete_json(system="s", user="u")
+
+
+def _openai_chat_response(text: str):
+    """A context-manager stand-in for urlopen() returning a chat-completions body."""
+    body = json.dumps({"model": "gpt-4o-mini", "choices": [{"message": {"content": text}}]})
+    handle = mock.MagicMock()
+    handle.read.return_value = body.encode("utf-8")
+    handle.__enter__.return_value = handle
+    handle.__exit__.return_value = False
+    return handle
+
+
+@pytest.fixture
+def openai_compatible_credentials(tmp_path, monkeypatch):
+    """Point settings at a throwaway dir and enable an OpenAI-compatible provider."""
+    monkeypatch.setenv("FANTASY_AGENT_CONFIG_DIR", str(tmp_path))
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("FANTASY_AGENT_MODEL", raising=False)
+    monkeypatch.delenv("FANTASY_AGENT_BASE_URL", raising=False)
+    from fantasy_agent.api_settings import OPENAI_COMPATIBLE, LLMApiSettings, save_settings
+
+    save_settings(
+        LLMApiSettings(
+            enabled=True, provider=OPENAI_COMPATIBLE, api_key="sk-test-1234567890"
+        )
+    )
+    return tmp_path
+
+
+def test_complete_json_omits_temperature_for_a_model_that_rejects_it(
+    openai_compatible_credentials,
+):
+    """GPT-6 / o-series reject temperature outright -- a hard error, not ignored.
+
+    The connection probe never sends it, so before this the probe could report
+    success while every real generation failed and silently fell back to the
+    deterministic path: a misconfiguration the user could not see. The rule is
+    the same one the tool-call path already applies.
+    """
+    with mock.patch(
+        "urllib.request.urlopen", return_value=_openai_chat_response('{"a": 1}')
+    ) as mocked:
+        result = llm.complete_json(system="s", user="u", model="o3-mini")
+
+    assert result == {"a": 1}
+    body = json.loads(mocked.call_args[0][0].data.decode("utf-8"))
+    assert "temperature" not in body
+
+
+def test_complete_json_keeps_temperature_for_a_sampled_model(
+    openai_compatible_credentials,
+):
+    with mock.patch(
+        "urllib.request.urlopen", return_value=_openai_chat_response('{"a": 1}')
+    ) as mocked:
+        llm.complete_json(system="s", user="u", model="gpt-4o-mini", temperature=0.3)
+
+    body = json.loads(mocked.call_args[0][0].data.decode("utf-8"))
+    assert body["temperature"] == 0.3

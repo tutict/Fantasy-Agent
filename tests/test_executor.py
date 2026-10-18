@@ -13,6 +13,8 @@ import re
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from fantasy_agent.artifact_identity import compute_artifact_identity
 from fantasy_agent.contracts import (
     GodotMCPResult,
@@ -1530,3 +1532,19 @@ def test_godot_execution_uses_config_compiler_and_writes_trace(tmp_path: Path):
     trace = project / "data" / "spec-trace.json"
     assert trace.exists()
     assert "config_tables.tables.enemies" in trace.read_text(encoding="utf-8")
+
+
+def test_a_hostile_session_id_is_refused_before_a_directory_is_built(tmp_path: Path):
+    """``session_id`` becomes a directory name, and Windows folds ``victim.``
+    onto ``victim`` -- so an aliased id would write over another session's
+    project. The id is refused up front, on both engine routes, rather than
+    being resolved into a path that looks fine.
+    """
+
+    from fantasy_agent.executor import execute_unreal_demo
+    from fantasy_agent.path_safety import WorkspacePathError
+
+    with pytest.raises(WorkspacePathError):
+        execute_godot_demo(_plan(), session_id="victim.", confirmed=False)
+    with pytest.raises(WorkspacePathError):
+        execute_unreal_demo(_unreal_plan(), session_id="victim.", confirmed=False)

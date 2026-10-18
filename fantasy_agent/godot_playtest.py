@@ -40,7 +40,12 @@ from fantasy_agent.contracts import (
     PlaytestSample,
 )
 from fantasy_agent.local_tools import _find_godot
-from fantasy_agent.path_safety import WorkspacePathError, is_absolute_path, resolve_workspace_path
+from fantasy_agent.path_safety import (
+    WorkspacePathError,
+    assert_safe_path_segment,
+    is_absolute_path,
+    resolve_workspace_path,
+)
 from fantasy_agent.pipeline_state import resume_stage_for
 from fantasy_agent.process_runner import run_streaming
 
@@ -236,7 +241,15 @@ def render_probe_script(
 
 
 def _session_dir_name(session_id: str) -> str:
-    """Reject a session id that is anything but one plain path segment."""
+    """Reject a session id that is anything but one plain path segment.
+
+    The path checks above reject a *path*; ``assert_safe_path_segment`` rejects
+    a *name* the filesystem would alias. On Windows ``victim.`` and ``victim``
+    are one directory, so a containment check passes while the report lands on
+    another session's files -- the same gap ``pipeline_state.state_path``
+    closes. Kept after the specific messages so ``..`` and ``a/b`` still read
+    the way the tests and the console expect.
+    """
 
     if not session_id:
         raise WorkspacePathError("session_id must not be empty")
@@ -244,6 +257,7 @@ def _session_dir_name(session_id: str) -> str:
         raise WorkspacePathError(f"session_id must be one path segment, not a path: {session_id}")
     if "/" in session_id or "\\" in session_id:
         raise WorkspacePathError(f"session_id must not contain a path separator: {session_id}")
+    assert_safe_path_segment(session_id, label="session_id")
     return session_id
 
 
