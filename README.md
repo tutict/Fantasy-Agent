@@ -2,6 +2,8 @@
 
 **灵构工坊（Fantasy Agent）是一个 AI 原生的单进程本地游戏生产工作台。**
 
+[![CI](https://github.com/tutict/Fantasy-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/tutict/Fantasy-Agent/actions/workflows/ci.yml)
+
 灵构工坊不是一键生成游戏的包装器，也不是无代码工具或 vibe coding 演示。它的目标是把玩法想法推进成可以检查、可以执行、可以测试的游戏原型生产工作流，重点服务 game jam 规模的 5 到 15 分钟垂直切片。
 
 `Fantasy Agent` 保留为仓库名、包名、类名、工具名和实现标识；`灵构工坊` 作为面向人的中文项目名。
@@ -231,7 +233,7 @@ Fantasy-Agent/
 |-- generated/                  # 生成计划、资产、manifest 和日志
 |-- examples/                   # 示例 prompt 与产物
 |-- docs/                       # 架构、流程、DSL 和界面文档
-|-- scripts/                    # 启动脚本
+|-- scripts/                    # 启动脚本、测试入口与校验脚本
 `-- gameplay-schema.yaml        # Gameplay DSL schema
 ```
 
@@ -301,13 +303,14 @@ python -m venv .venv
 pip install -e .[dev]
 ```
 
-需要桌面窗口时额外装一次 `.[desktop]`（见上方「Windows 快速启动」）。
+需要桌面窗口时额外装一次 `.[desktop]`（见上方「Windows 快速启动」）。测试套件里的托盘用例
+同样需要它（图标由 Pillow 画）；没装时这些用例自行跳过，不计失败。
 
 运行测试：
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/run_tests.py
-.\.venv\Scripts\python.exe -m ruff check fantasy_agent tests apps
+.\.venv\Scripts\python.exe -m ruff check fantasy_agent tests apps scripts
 ```
 
 测试必须走 `scripts/run_tests.py`，**不要**直接 `python -m pytest`。原因见 `AGENTS.md`
@@ -316,6 +319,37 @@ pip install -e .[dev]
 `scripts/run_tests.py -k desktop -v`。
 
 Studio 是唯一入口，没有需要单独启动的 Agent 服务。
+
+### 质量保障
+
+四层校验，由 `.github/workflows/ci.yml` 的 Backend 与 Frontend 两个 job 全量执行——
+每次推送到 main、每个 PR 都跑，两个 job 都跑在 ubuntu-latest 上：
+
+| 层 | 本地命令 | 证明什么 |
+| --- | --- | --- |
+| pytest | `scripts/run_tests.py` | 当前行为符合预期 |
+| ruff | `python -m ruff check fantasy_agent tests apps scripts` | 静态检查；跟随默认规则集，不设 `select` 白名单 |
+| 后端变异守卫 | `python scripts/mutation_check_all_guards.py` | 守卫在行为被拿掉时**真的会红** |
+| 前端变异守卫 | `python scripts/mutation_check_frontend_guards.py` | 同上，前端守卫那一侧 |
+
+变异守卫是「测试通过」和「测试有用」之间的那一层：每条用例把一个真实回归形状的变异写进
+源码，跑一条点名的守卫，要求它红，再逐字节还原。绿的套件只说明现在没坏；变异 harness
+说明坏的那一刻有人会喊。`--list` 看当前用例清单，`--only <标签子串>` 只跑关心的用例——
+过滤跑证明不了被跳过的那些，所以汇总行会写明跳了多少。
+
+三条诚实规则：
+
+- **没跑就是没证明**：守卫节点不存在、收集到 0 条、守卫自己跳过——一律报未证明，
+  不算通过也不算失败。
+- **N/A 要点名**：守卫需要本机引擎（Godot 等），或前提只在某个操作系统上成立（例如
+  Windows 文件锁）时报 N/A，用例名进汇总行，不折进计数——计数会烂，名单不会。
+- **守卫跑禁写字节码**：每个守卫子进程带 `PYTHONDONTWRITEBYTECODE=1`。CPython 按
+  「整数秒 mtime + size」校验 `.pyc`，快的机器上相邻两个用例会落进同一秒；不禁写就会
+  导入上一例的字节码，本次变异根本没执行——2026-10-18 的 CI 就这么误报过两条 MISSED，
+  现在有确定性重放钉着这条禁令（`tests/test_mutation_harness.py`）。
+
+前端那套另加两条：先跑未变异基线要求全绿（否则一个本来就红的文件会「抓住」每条变异）；
+红住的必须是点名的那个测试，别的测试红了算未证明。细节见 `AGENTS.md` 的「测试与校验」。
 
 ## 打包
 
@@ -384,6 +418,7 @@ python -m fantasy_agent --prompt "a rooftop parkour demo with wall-runs and chec
 - M6f approval gate QA 与预览闭环已接入：执行阶段会写出 `approval-gate-report.yaml`，Studio 会显示 approved / skipped / revision / rejected / pending 摘要。
 - Creative Review 决策已经可以写入 `generated/asset-approval-manifest.yaml`。
 - M7.1-M7.5 已完成第一轮：Bundle 加载/阻断、Godot Spec 驱动、配置编译、Studio 追踪和 Unreal adapter/QA 已贯通。
+- 四层质量保障（pytest / ruff / 后端与前端变异守卫）接入 CI，本地命令与三条诚实规则见「开发 - 质量保障」。
 
 下一步优先级：
 
