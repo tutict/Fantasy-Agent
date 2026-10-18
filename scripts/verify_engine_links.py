@@ -38,6 +38,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from fantasy_agent import local_tools
+from fantasy_agent.path_safety import is_absolute_path
 from fantasy_agent.tool_registry import ToolOutcome, combined_registry
 
 #: Tool names this probe addresses. Declared so a rename in a bridge shows up
@@ -117,10 +118,17 @@ def _resolve(workspace: Path, path: str) -> Path:
     ``exists=True`` for .fbx files four months old, while the run's own output
     sat untouched under the workspace. A false green is the worst thing a probe
     can print.
+
+    Absolute is decided by :func:`fantasy_agent.path_safety.is_absolute_path`
+    rather than ``Path.is_absolute()``: the engines report their paths in
+    Windows form (``D:/elsewhere/a.fbx``), and on POSIX ``Path`` reads that as
+    a relative name, which would join the report onto the workspace and check
+    a file that was never written.
     """
 
-    candidate = Path(path)
-    return candidate if candidate.is_absolute() else workspace / candidate
+    if is_absolute_path(path):
+        return Path(path)
+    return workspace / path
 
 
 def _engine_paths() -> dict[str, str | None]:

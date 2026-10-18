@@ -140,8 +140,13 @@ def test_run_editor_commandlet_uses_fake_runner_and_captures_logs(tmp_path: Path
     assert result.status == "executed"
     assert result.return_code == 0
     assert result.stdout_tail == "data ok"
+    # The log name is the _slug() form, which lowercases: "DataValidation" is
+    # the one CamelCase commandlet, and a mixed-case expectation here only ever
+    # matched because NTFS is case-insensitive. The sibling assertions below
+    # (import, level_assembly, asset_ingest) are already lowercase for the same
+    # reason.
     assert (
-        tmp_path / "generated/logs/unreal/mcpprototype_DataValidation.stdout.log"
+        tmp_path / "generated/logs/unreal/mcpprototype_datavalidation.stdout.log"
     ).exists()
 
 

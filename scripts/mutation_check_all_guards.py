@@ -93,8 +93,8 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
     (
         "P3 reported paths resolved against the cwd",
         "scripts/verify_engine_links.py",
-        b"    return candidate if candidate.is_absolute() else workspace / candidate",
-        b"    return candidate",
+        b"    return workspace / path",
+        b"    return Path(path)",
         "tests/test_workbench_tool_coverage.py::test_the_probe_resolves_reported_paths_against_its_own_workspace",
     ),
     (

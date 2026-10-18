@@ -38,6 +38,9 @@ class WorkspacePathError(ValueError):
 #: real format.
 _SAFE_SEGMENT = re.compile(r"\A[A-Za-z0-9][A-Za-z0-9._-]{0,62}[A-Za-z0-9_-]\Z|\A[A-Za-z0-9]\Z")
 
+#: A leading drive letter, either separator after it. See is_absolute_path.
+_DRIVE_LETTER = re.compile(r"[A-Za-z]:")
+
 
 def assert_safe_path_segment(value: str, *, label: str) -> str:
     """Return ``value`` if it is usable as one directory name, else raise.
@@ -86,9 +89,20 @@ def is_absolute_path(path: str) -> bool:
     clause the input was still refused, but only by the containment backstop
     and with a vaguer message. A leading separator of either kind is a root
     for the purpose of this function.
+
+    A drive letter counts as a root for the mirror reason: ``D:/x`` is
+    absolute on Windows, and on POSIX it is not a workspace-relative path
+    either -- joining it would produce ``workspace/D:/x``. The engines report
+    their paths in exactly that form, so anything resolving a reported path
+    must not join it onto the workspace.
     """
     candidate = Path(path)
-    return candidate.is_absolute() or bool(candidate.root) or path.startswith("\\")
+    return (
+        candidate.is_absolute()
+        or bool(candidate.root)
+        or path.startswith("\\")
+        or bool(_DRIVE_LETTER.match(path))
+    )
 
 
 def resolve_workspace_path(

@@ -7,7 +7,10 @@ quitting when the user meant to minimise, or refusing to quit at all.
 
 Everything here runs without a display and without pystray installed. The tray
 icon is a stub, so what is asserted is "which window operation did we ask for,
-and what did the closing handler return".
+and what did the closing handler return". The icon *image* is the one thing
+that is not stubbed: it is drawn with Pillow, so the three tests that call
+``setup()`` skip on a machine without the desktop extra (CI installs it and
+runs the real generation path there).
 
 The closing handler's return value is the mechanism in full: pywebview's
 `Event.set()` collects handler return values and the platform cancels the close
@@ -268,6 +271,7 @@ def test_window_operations_do_not_run_on_the_gui_thread():
 
 
 def test_setup_starts_the_icon_detached_with_a_quit_item():
+    pytest.importorskip("PIL", reason="Pillow draws the tray icon: pip install -e .[desktop]")
     tray = _load_tray()
     records: list[_FakeIcon] = []
     sys.modules["pystray"] = _install_pystray_stub(records)
@@ -294,6 +298,7 @@ def test_the_quit_menu_item_stops_the_icon_and_destroys_the_window():
     interpreter never reaches the end of main().
     """
 
+    pytest.importorskip("PIL", reason="Pillow draws the tray icon: pip install -e .[desktop]")
     tray = _load_tray()
     records: list[_FakeIcon] = []
     sys.modules["pystray"] = _install_pystray_stub(records)
@@ -331,6 +336,7 @@ def test_a_failed_icon_leaves_no_close_hook_behind():
     The failure has to undo the subscription it already made.
     """
 
+    pytest.importorskip("PIL", reason="Pillow draws the tray icon: pip install -e .[desktop]")
     tray = _load_tray()
     boom = types.ModuleType("pystray")
 

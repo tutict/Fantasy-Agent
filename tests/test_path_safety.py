@@ -50,6 +50,7 @@ def test_rejects_drive_less_absolute_paths(tmp_path: Path):
 
     assert is_absolute_path("/etc/passwd") is True
     assert is_absolute_path(r"\etc\passwd") is True
+    assert is_absolute_path("D:/elsewhere/a.fbx") is True
     assert is_absolute_path("generated/godot/project.godot") is False
 
     with pytest.raises(WorkspacePathError, match="Absolute paths are not allowed"):
@@ -59,6 +60,12 @@ def test_rejects_drive_less_absolute_paths(tmp_path: Path):
     # absolute-path one, and it says so on Linux too.
     with pytest.raises(WorkspacePathError, match="Absolute paths are not allowed"):
         resolve_workspace_path(r"\etc\passwd", workspace_root=tmp_path)
+
+    # The drive-letter form the engines report their paths in. On POSIX,
+    # ``Path("D:/x").is_absolute()`` is False, so without the drive clause this
+    # would be joined onto the workspace instead of refused.
+    with pytest.raises(WorkspacePathError, match="Absolute paths are not allowed"):
+        resolve_workspace_path("D:/elsewhere/a.fbx", workspace_root=tmp_path)
 
 
 def test_rejects_absolute_paths_that_point_inside_the_workspace(tmp_path: Path):
