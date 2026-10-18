@@ -14,6 +14,7 @@ rarely obvious from the assertion alone.
 from __future__ import annotations
 
 import json
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -136,4 +137,53 @@ def test_ruff_is_not_narrowed_away_from_its_default_rule_set() -> None:
         f"({sorted(RUFF_DEFAULT_SELECT)}). If a rule genuinely does not apply, ignore it "
         "at the site with a reason (`# noqa: CODE - why`) instead of dropping the whole "
         "rule category for every file."
+    )
+
+
+# The directories CI's Ruff step covers (`python -m ruff check fantasy_agent
+# tests apps scripts`). A shebang outside them is invisible to ruff, so it is
+# none of this guard's business.
+RUFF_CHECKED_DIRS = ("fantasy_agent", "tests", "apps", "scripts")
+
+
+def test_every_shebang_script_is_executable_in_the_git_index() -> None:
+    """A shebang is a promise of executability that only Linux ever calls in.
+
+    ruff's EXE001 (shebang present, file not executable) reads the filesystem
+    mode, so on Windows -- where every file answers `os.access(path, os.X_OK)`
+    with True -- it never fires and the tree stays green locally. It fired on
+    CI the day ruff 0.16.10 put it in the default set (2026-10-04), and the
+    backend job died at the Ruff step before pytest ran even once.
+
+    The bit lives in the git index, which reports the same thing on every
+    platform, so that is what this reads. Two honest ways to satisfy the rule:
+    set the bit (`git update-index --chmod=+x <file>`) or drop the shebang.
+    Executable-without-a-shebang is not a default rule and is not guarded.
+    """
+
+    listed = subprocess.run(
+        ["git", "ls-files", "--stage", "-z", "--", "*.py"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        check=True,
+    )
+
+    offenders: list[str] = []
+    for record in listed.stdout.split(b"\0"):
+        if not record:
+            continue
+        metadata, _, path = record.partition(b"\t")
+        if path.decode().split("/", 1)[0] not in RUFF_CHECKED_DIRS:
+            continue
+        mode = metadata.split(b" ")[0].decode()
+        head = (REPO_ROOT / path.decode()).read_bytes().split(b"\n", 1)[0]
+        if head.startswith(b"#!") and mode != "100755":
+            offenders.append(f"{path.decode()} has mode {mode}")
+
+    assert not offenders, (
+        "these tracked scripts declare a shebang but are not executable in the git "
+        "index, so ruff's EXE001 fails the Ruff step on Linux while every local run "
+        f"stays green: {offenders}. Set the bit with "
+        "`git update-index --chmod=+x <file>`, or delete the shebang if the script "
+        "is only ever run as `python <file>`."
     )
