@@ -198,8 +198,7 @@ textarea:focus-visible {
 .status-badge[data-status="pending_user_review"]::before { border-radius: 50%; }
 .empty-state,
 .log-block,
-.confirm-dialog,
-.ui-disclosure {
+.confirm-dialog {
   border: 1px solid var(--line);
   border-radius: var(--radius-m);
   background: var(--surface);
@@ -216,7 +215,6 @@ textarea:focus-visible {
   box-shadow: var(--shadow-l);
 }
 .confirm-dialog p { white-space: pre-line; }
-.ui-disclosure summary { min-height: var(--size-control); display: flex; align-items: center; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

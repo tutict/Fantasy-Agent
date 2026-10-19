@@ -46,10 +46,6 @@ export function LogBlock({ title, lines }: { title: string; lines: string[] }) {
   return <section className="log-block"><p className="empty-title">{title}</p><pre>{lines.join("\n") || "-"}</pre></section>;
 }
 
-export function Disclosure({ title, children, className = "" }: { title: string; children: ReactNode; className?: string }) {
-  return <details className={`ui-disclosure ${className}`.trim()}><summary>{title}</summary><div>{children}</div></details>;
-}
-
 export function ConfirmDialog({ open, title, body, confirmLabel, cancelLabel, onConfirm, onCancel }: { open: boolean; title: string; body: string; confirmLabel: string; cancelLabel: string; onConfirm: () => void; onCancel: () => void }) {
   const confirmRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
