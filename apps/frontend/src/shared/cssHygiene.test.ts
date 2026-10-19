@@ -282,6 +282,18 @@ describe("stylesheet hygiene", () => {
       // unboxed paragraph and nothing here would say so.
       ["shared/ui/ErrorBoundary.tsx", "workbench.css"],
       ["orchestration/StageCard.tsx", "orchestration.css"],
+      // The planning workbench's own surface. It was missing from this list for
+      // as long as the view has existed -- `wb-card`, `wb-topbar`, `wb-bubble`
+      // and the rest were renamed and restyled with nothing comparing the
+      // emitted class against the sheet -- so the 2026-10-19 redesign added all
+      // four files at once rather than one at a time. `PlanPanels.tsx` is here
+      // for `ToolActions` and the two workbench-only panels (GddPanel/DslPanel);
+      // the five shared panels it re-exports are covered by
+      // `panelStyles.test.ts` against the same sheet.
+      ["workbench/PlanningWorkbench.tsx", "workbench.css"],
+      ["workbench/DiscoveryThread.tsx", "workbench.css"],
+      ["workbench/SeedInspector.tsx", "workbench.css"],
+      ["workbench/PlanPanels.tsx", "workbench.css"],
       // The asset library panel. Its own `as-*` layout lives in `assets.css`;
       // buttons, badges and empty states come from the shared primitives, so
       // the base classes it emits literally are all its own.

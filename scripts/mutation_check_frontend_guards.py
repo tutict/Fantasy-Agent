@@ -665,6 +665,50 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/assets/AssetLibrary.test.tsx",
         "surfaces a failed load as an error instead of an empty library",
     ),
+    # ── the idea page redesign (2026-10-19) ─────────────────────────────────
+    (
+        # The class is renamed in the component and not in the sheet, which is
+        # the half-done rename `pairs` exists to catch. The workbench's four
+        # files were absent from that list until this change, so `wb-seed-body`
+        # (and every other workbench class) had no such check behind it at all.
+        "FE12-1 a seed-editor class is renamed but not its rule",
+        "apps/frontend/src/workbench/SeedInspector.tsx",
+        b'      <div className="wb-seed-body">\n',
+        b'      <div className="wb-seed-panel">\n',
+        "src/shared/cssHygiene.test.ts",
+        "styles the base class a component hangs its modifiers on",
+    ),
+    (
+        # The auto-open, removed. The seed editor is a disclosure now -- it
+        # starts collapsed so the conversation is what you see first -- and the
+        # line that opens it when a seed arrives is the only thing connecting
+        # "extraction worked" to "here are the fields it filled". Without it the
+        # user extracts a seed, sees nothing change, and has no reason to look
+        # for a collapsed row under the thread.
+        "FE12-2 the seed editor stops opening itself",
+        "apps/frontend/src/workbench/PlanningWorkbench.tsx",
+        (
+            b"        // The fields just became interesting, so the disclosure that holds them\n"
+            b"        // opens itself. Before this the user had to know to look for it.\n"
+            b"        setSeedOpen(true);\n"
+        ),
+        b"",
+        "src/workbench/PlanningWorkbench.test.tsx",
+        "opens the seed editor and stays in the conversation when a seed arrives",
+    ),
+    (
+        # The composer's send button stops going through the dictionary. The
+        # label still renders -- as the English word, in both locales -- and
+        # the key it replaced becomes an orphan, which is the only thing that
+        # can see the difference: a rendered string looks identical to a
+        # translated one in every rendering test.
+        "FE12-3 the send button is hardcoded and its key is orphaned",
+        "apps/frontend/src/workbench/PlanningWorkbench.tsx",
+        b"              {t(\"send\")}\n",
+        b"              Send\n",
+        "src/shared/panelI18n.test.ts",
+        "has no orphaned workbench keys",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.
