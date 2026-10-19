@@ -93,6 +93,10 @@ flowchart LR
 - **工具环境检测**：检测 Blender、ComfyUI、Unreal、Godot 和 GitHub CLI 在本机是否可用，并给出下一步动作。
 - **API 接入**：配置可选的大模型 API，让玩法与 GDD 生成从确定性模板升级为模型生成。
 
+外壳本身是一条侧边栏导航，不是盒子墙：品牌行、六步旅程（每步一枚状态点）、资产入口、设置分组，底部常驻界面语言与主题切换。侧边栏可折叠到 82px 只留图标列；视口 ≤900px 时侧边栏变成顶部横带，旅程步骤收进「旅程」折叠器。层级与命名规则见 `docs/ui/architecture.md` §1.2。
+
+策划工作台按同一条原则重画过：左侧是导航与动作（点子 / 方案 / 发送），主区在同一位置二选一——对话态持续挖掘点子，计划态查看整理出的方案，不再四个盒子同屏。设计记录见 `docs/superpowers/plans/2026-10-19-idea-page-redesign.md` 与 `docs/superpowers/plans/2026-10-19-shell-sidebar-redesign.md`。
+
 Windows 快速启动（推荐，桌面窗口）：
 
 ```bat
@@ -275,6 +279,8 @@ Fantasy-Agent/
 
 策划工作台页面由 Studio 直接提供，打开 `http://127.0.0.1:7860/workbench` 即可使用，不需要任何外部客户端。
 
+页面布局：左侧边栏放导航与动作（点子 / 方案 / 发送），主区二选一——对话态持续挖掘点子，计划态查看整理出的方案。点子和方案在同一处交替，不并排堆多个盒子。
+
 生成完整方案后，策划工作台会写入本地策划交接，流程控制台可以载入它，在执行 ComfyUI、Blender、Unreal 或 Godot 实际操作前进行审阅和纠偏。
 
 当前只读工具（通过 `POST /api/tools/{tool_name}` 调用）包括：
@@ -420,6 +426,8 @@ python -m fantasy_agent --prompt "a rooftop parkour demo with wall-runs and chec
 - M7.1-M7.5 已完成第一轮：Bundle 加载/阻断、Godot Spec 驱动、配置编译、Studio 追踪和 Unreal adapter/QA 已贯通。
 - 游戏资产管理界面（`/assets`）已接入 Studio：可从本机录入开源资产（复制进 `generated/asset-library/`，记录 license / author / 来源 / sha256），并与 Creative Review 的审阅决策同屏呈现。
 - 四层质量保障（pytest / ruff / 后端与前端变异守卫）接入 CI，本地命令与三条诚实规则见「开发 - 质量保障」。
+- 2026-10-19：点子页重设计——策划工作台改为「侧边栏（导航 + 动作）+ 主区二选一（对话态 / 计划态）」，不再四个盒子同屏。
+- 2026-10-19：Studio 外壳侧边栏重设计——从盒子墙改为一条导航（品牌 / 六步旅程 / 资产 / 设置 / 页脚语言主题），可折叠至 82px，≤900px 转顶部横带；新增三条 CSS 守卫与 FE13 变异用例。
 
 下一步优先级：
 
