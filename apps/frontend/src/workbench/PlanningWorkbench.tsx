@@ -7,6 +7,14 @@
  * files or spawns processes -- that stays in the flow console, so unlike the
  * console there is no approval gate to thread through, only the "confirm the
  * idea before generating" rule the old page enforced.
+ *
+ * Layout: the product's own conversation surface, side by side. A sidebar
+ * carries the navigation and every action (the idea chat, the seven plan
+ * panels, the ten plan tools); the main area shows one thing at a time -- the
+ * conversation with the seed editor under it and the composer pinned to the
+ * bottom, or the selected plan panel. The previous cut stacked four boxed
+ * cards in two columns and showed both halves at once, which read as two
+ * information architectures competing for one screen.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -76,6 +84,9 @@ function mergePlanPatch(
   return next as unknown as DirectorBuildPlan;
 }
 
+/** Which of the two things the main area shows: the conversation, or a plan panel. */
+type MainView = "chat" | "plan";
+
 export function PlanningWorkbench() {
   const { update } = useJourney();
   // Locale and theme belong to the provider. This view used to own them and write
@@ -91,10 +102,12 @@ export function PlanningWorkbench() {
   const [answers, setAnswers] = useState<InterviewAnswer[]>([]);
   const [seed, setSeed] = useState<IdeaSeed | null>(null);
   const [seedConfirmed, setSeedConfirmed] = useState(false);
+  const [seedOpen, setSeedOpen] = useState(false);
   const [plan, setPlan] = useState<DirectorBuildPlan | null>(null);
   useEffect(() => update({ plan }), [plan, update]);
   const [fields, setFields] = useState<SeedEditorFields>(EMPTY_SEED_FIELDS);
   const [config, setConfig] = useState<WorkbenchConfig>(() => defaultConfig());
+  const [mainView, setMainView] = useState<MainView>("chat");
   const [activePanel, setActivePanel] = useState<WorkbenchPanelKey>("overview");
   const [running, setRunning] = useState<string | null>(null);
 
@@ -148,6 +161,9 @@ export function PlanningWorkbench() {
       if (nextSeed) {
         setSeed(nextSeed);
         setSeedConfirmed(false);
+        // The fields just became interesting, so the disclosure that holds them
+        // opens itself. Before this the user had to know to look for it.
+        setSeedOpen(true);
         syncFieldsFromSeed(nextSeed);
         applyPromptRequest(structured.prompt_request ?? meta.promptRequest);
       }
@@ -197,6 +213,10 @@ export function PlanningWorkbench() {
       // separate view now. It used to be cast in unchecked, which landed on the
       // default tab with nothing to say why.
       setActivePanel(resultPanel(meta.toolName ?? "", meta));
+      // Extraction is the one tool whose answer belongs to the conversation:
+      // it fills the seed editor, which lives under the thread. Every other
+      // tool produces something to read, so the main area follows it there.
+      if ((meta.toolName ?? "") !== EXTRACT_TOOL) setMainView("plan");
     },
     [applyPromptRequest, locale, syncFieldsFromSeed]
   );
@@ -268,32 +288,31 @@ export function PlanningWorkbench() {
   );
 
   const entries: ThreadEntry[] = useMemo(() => {
-    const thread: ThreadEntry[] = [{ kind: "ai", title: t("aiName"), body: t("welcome") }];
+    const thread: ThreadEntry[] = [{ kind: "ai", body: t("welcome") }];
     if (rawIdea) {
-      thread.push({ kind: "user", title: t("userName"), body: rawIdea });
+      thread.push({ kind: "user", body: rawIdea });
     }
     for (const answer of answers) {
-      thread.push({ kind: "ai", title: t("aiName"), body: answer.question });
-      thread.push({ kind: "user", title: t("userName"), body: answer.answer });
+      thread.push({ kind: "ai", body: answer.question });
+      thread.push({ kind: "user", body: answer.answer });
     }
     if (question) {
       thread.push({
         kind: "ai",
-        title: t("aiName"),
         body: t("interviewProgress", {
           current: answers.length + 1,
           total: interviewQuestions(locale).length
         })
       });
-      thread.push({ kind: "ai", title: t("aiName"), body: question.text });
+      thread.push({ kind: "ai", body: question.text });
     } else if (rawIdea) {
-      thread.push({ kind: "ai", title: t("aiName"), body: t("readyToExtract") });
+      thread.push({ kind: "ai", body: t("readyToExtract") });
     }
     if (seed) {
-      thread.push({ kind: "ai", title: t("aiName"), body: t("seedReadyTitle") });
+      thread.push({ kind: "ai", body: t("seedReadyTitle") });
     }
     if (plan) {
-      thread.push({ kind: "ai", title: t("ready"), body: planDisplayTitle(plan, locale) });
+      thread.push({ kind: "ai", body: `${t("ready")}: ${planDisplayTitle(plan, locale)}` });
     }
     return thread;
   }, [answers, locale, plan, question, rawIdea, seed, t]);
@@ -317,152 +336,201 @@ export function PlanningWorkbench() {
     }
   };
 
+  const selectPanel = (key: WorkbenchPanelKey) => {
+    setActivePanel(key);
+    setMainView("plan");
+  };
+
   return (
     <div className="wb-shell" data-testid="planning-workbench">
-      <header className="wb-topbar">
-        <div className="wb-brand">
-          <span className="wb-eyebrow">{t("appEyebrow")}</span>
-          <strong>{t("navPlanning")}</strong>
+      <aside className="wb-side">
+        <header className="wb-side-brand">
+          <span className="wb-side-mark" aria-hidden="true">PL</span>
+          <div>
+            <p>{t("appEyebrow")}</p>
+            <strong>{t("navPlanning")}</strong>
+          </div>
+        </header>
+
+        {/* Locale and theme sit directly under the brand rather than at the
+            bottom of the sidebar: the ten plan tools push a footer past the
+            fold on a short viewport, and these two are the only labelled
+            switches in the product once the shell's own sidebar is collapsed
+            to icons (where its switches are display:none). */}
+        <div className="wb-side-foot">
+          <div className="wb-seg" aria-label="Interface language">
+            <button
+              type="button"
+              className={`wb-seg-option${locale === "en" ? " active" : ""}`}
+              data-locale="en"
+              onClick={() => setLocale("en")}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              className={`wb-seg-option${locale === "zh-CN" ? " active" : ""}`}
+              data-locale="zh-CN"
+              onClick={() => setLocale("zh-CN")}
+            >
+              中文
+            </button>
+          </div>
+          <div className="wb-seg" aria-label="Theme">
+            <button
+              type="button"
+              className={`wb-seg-option${theme === "dark" ? " active" : ""}`}
+              onClick={() => setTheme("dark")}
+            >
+              {t("themeDark")}
+            </button>
+            <button
+              type="button"
+              className={`wb-seg-option${theme === "light" ? " active" : ""}`}
+              onClick={() => setTheme("light")}
+            >
+              {t("themeLight")}
+            </button>
+          </div>
         </div>
-        <div className="wb-topbar-actions">
+
+        <div className="wb-side-status">
           <span className="wb-chip" data-testid="service-chip">
             {t("localService")}: {t("serviceOnline")}
           </span>
           <span className={`wb-chip ${status}`} data-testid="status-chip">
             {t(status)}
           </span>
-          <button
-            type="button"
-            className={`wb-button ghost${locale === "en" ? " active" : ""}`}
-            data-locale="en"
-            onClick={() => setLocale("en")}
-          >
-            EN
-          </button>
-          <button
-            type="button"
-            className={`wb-button ghost${locale === "zh-CN" ? " active" : ""}`}
-            data-locale="zh-CN"
-            onClick={() => setLocale("zh-CN")}
-          >
-            中文
-          </button>
-          <button
-            type="button"
-            className={`wb-button ghost${theme === "dark" ? " active" : ""}`}
-            onClick={() => setTheme("dark")}
-          >
-            {t("themeDark")}
-          </button>
-          <button
-            type="button"
-            className={`wb-button ghost${theme === "light" ? " active" : ""}`}
-            onClick={() => setTheme("light")}
-          >
-            {t("themeLight")}
-          </button>
         </div>
-      </header>
 
-      <div className="wb-grid">
-        <div className="wb-column">
-          <section className="wb-card" aria-label={t("sessionTitle")}>
-            <header className="wb-card-head">
-              <div>
-                <h2>{t("sessionTitle")}</h2>
-                <p>{t("sessionSubtitle")}</p>
-              </div>
-            </header>
-            <DiscoveryThread entries={entries} />
-            <div className="wb-composer">
-              <textarea
-                aria-label={t("chatPlaceholder")}
-                placeholder={t("chatPlaceholder")}
-                maxLength={MAX_CHAT_LENGTH}
-                value={chatInput}
-                onChange={(event) => setChatInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    submitChatInput();
-                  }
-                }}
-              />
-              <button type="button" className="wb-button primary" onClick={submitChatInput}>
-                {t("promptLabel")}
-              </button>
-            </div>
-            <div className="wb-card-body">
-              <span className="wb-composer-meta">
-                <span>{t("enterHint")}</span>
-                <span>
-                  {chatInput.length} / {MAX_CHAT_LENGTH}
-                </span>
+        <nav className="wb-side-nav" aria-label={t("navPlanning")}>
+          <button
+            type="button"
+            className={`wb-nav-item${mainView === "chat" ? " active" : ""}`}
+            aria-current={mainView === "chat" ? "page" : undefined}
+            onClick={() => setMainView("chat")}
+          >
+            <span className="wb-nav-label">{t("navIdea")}</span>
+            {seed ? (
+              <span className="wb-nav-state">
+                {seedConfirmed ? t("seedConfirmed") : t("seedDraft")}
               </span>
+            ) : null}
+          </button>
+
+          <p className="wb-side-label">{t("navPlan")}</p>
+          {PANEL_KEYS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              className={`wb-nav-item${mainView === "plan" && activePanel === key ? " active" : ""}`}
+              data-panel-button={key}
+              aria-current={mainView === "plan" && activePanel === key ? "page" : undefined}
+              onClick={() => selectPanel(key)}
+            >
+              <span className="wb-nav-label">{t(key)}</span>
+            </button>
+          ))}
+        </nav>
+
+        <ToolActions
+          t={t}
+          enabled={canGenerate(seed, seedConfirmed)}
+          busy={busy}
+          running={running}
+          onRun={onRunPlanTool}
+        />
+      </aside>
+
+      <main className="wb-main">
+        {mainView === "chat" ? (
+          <header className="wb-main-head">
+            <div className="wb-head-copy">
+              <h2>{t("sessionTitle")}</h2>
+              <p>{t("sessionSubtitle")}</p>
             </div>
-          </section>
+          </header>
+        ) : (
+          <header className="wb-main-head">
+            <div className="wb-head-copy">
+              <h2 data-testid="plan-title">
+                {plan ? planDisplayTitle(plan, locale) : t("emptyTitle")}
+              </h2>
+              <p>
+                {t("recommended")}: {plan?.next_actions?.[0] ?? t("noPlan")}
+              </p>
+            </div>
+          </header>
+        )}
 
-          <SeedInspector
-            t={t}
-            locale={locale}
-            fields={fields}
-            config={config}
-            seedConfirmed={seedConfirmed}
-            busy={busy}
-            canConfirm={canConfirmSeed(fields)}
-            canExtract={Boolean(chatInput.trim() || rawIdea)}
-            openQuestions={seed?.open_questions ?? []}
-            onFieldChange={(patch) => {
-              setFields((previous) => ({ ...previous, ...patch }));
-              setSeedConfirmed(false);
-            }}
-            onConfigChange={(patch) => {
-              setConfig((previous) => ({ ...previous, ...patch }));
-              setSeedConfirmed(false);
-            }}
-            onConfirm={confirmSeed}
-            onExtract={extractSeed}
-          />
-        </div>
+        <div className="wb-main-body">
+          {error ? (
+            <p className="wb-notice" role="alert">
+              {error}
+            </p>
+          ) : null}
 
-        <div className="wb-column">
-          <ToolActions
-            t={t}
-            enabled={canGenerate(seed, seedConfirmed)}
-            busy={busy}
-            running={running}
-            onRun={onRunPlanTool}
-          />
-
-          <section className="wb-card" aria-label={t("overview")}>
-            <header className="wb-card-head">
-              <div>
-                <h2 data-testid="plan-title">{plan ? planDisplayTitle(plan, locale) : t("emptyTitle")}</h2>
-                <p>
-                  {t("recommended")}: {plan?.next_actions?.[0] ?? t("noPlan")}
-                </p>
-              </div>
-            </header>
-            <nav className="wb-tabs" aria-label={t("overview")}>
-              {PANEL_KEYS.map((key) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={`wb-tab${activePanel === key ? " active" : ""}`}
-                  data-panel-button={key}
-                  onClick={() => setActivePanel(key)}
-                >
-                  {t(key)}
-                </button>
-              ))}
-            </nav>
+          {mainView === "chat" ? (
+            <>
+              <DiscoveryThread entries={entries} />
+              <SeedInspector
+                t={t}
+                locale={locale}
+                fields={fields}
+                config={config}
+                seedConfirmed={seedConfirmed}
+                seedOpen={seedOpen}
+                busy={busy}
+                canConfirm={canConfirmSeed(fields)}
+                canExtract={Boolean(chatInput.trim() || rawIdea)}
+                openQuestions={seed?.open_questions ?? []}
+                onFieldChange={(patch) => {
+                  setFields((previous) => ({ ...previous, ...patch }));
+                  setSeedConfirmed(false);
+                }}
+                onConfigChange={(patch) => {
+                  setConfig((previous) => ({ ...previous, ...patch }));
+                  setSeedConfirmed(false);
+                }}
+                onSeedOpenChange={setSeedOpen}
+                onConfirm={confirmSeed}
+                onExtract={extractSeed}
+              />
+            </>
+          ) : (
             <div className="wb-panel" data-panel={activePanel}>
-              {error ? <p className="wb-empty">{error}</p> : null}
               {panelBody()}
             </div>
-          </section>
+          )}
         </div>
-      </div>
+
+        {mainView === "chat" ? (
+          <div className="wb-composer">
+            <textarea
+              aria-label={t("chatPlaceholder")}
+              placeholder={t("chatPlaceholder")}
+              maxLength={MAX_CHAT_LENGTH}
+              value={chatInput}
+              onChange={(event) => setChatInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  submitChatInput();
+                }
+              }}
+            />
+            <button type="button" className="wb-button primary" onClick={submitChatInput}>
+              {t("send")}
+            </button>
+            <div className="wb-composer-meta">
+              <span>{t("enterHint")}</span>
+              <span>
+                {chatInput.length} / {MAX_CHAT_LENGTH}
+              </span>
+            </div>
+          </div>
+        ) : null}
+      </main>
     </div>
   );
 }

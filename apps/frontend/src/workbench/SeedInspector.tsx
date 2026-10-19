@@ -6,6 +6,12 @@
  * `playable_loop` in hidden textareas, so they could only ever come from the
  * backend. They are real `IdeaSeed` fields and they change the generated plan,
  * so they are editable here.
+ *
+ * It used to be a boxed card in the right column, one of four competing boxes
+ * on screen. It is a disclosure inside the conversation column now: collapsed
+ * until a seed exists, opened by `ingest` when one arrives, and collapsible
+ * again by the user. The fields stay in the DOM either way -- a closed
+ * `<details>` hides them from the eye, not from the editor.
  */
 
 import type { Locale, WorkbenchConfig } from "../shared/types";
@@ -17,12 +23,14 @@ export interface SeedInspectorProps {
   fields: SeedEditorFields;
   config: WorkbenchConfig;
   seedConfirmed: boolean;
+  seedOpen: boolean;
   busy: boolean;
   canConfirm: boolean;
   canExtract: boolean;
   openQuestions: string[];
   onFieldChange: (patch: Partial<SeedEditorFields>) => void;
   onConfigChange: (patch: Partial<WorkbenchConfig>) => void;
+  onSeedOpenChange: (open: boolean) => void;
   onConfirm: () => void;
   onExtract: () => void;
 }
@@ -36,51 +44,55 @@ export function SeedInspector({
   fields,
   config,
   seedConfirmed,
+  seedOpen,
   busy,
   canConfirm,
   canExtract,
   openQuestions,
   onFieldChange,
   onConfigChange,
+  onSeedOpenChange,
   onConfirm,
   onExtract
 }: SeedInspectorProps) {
   return (
-    <section className="wb-card" aria-label={t("seedPreviewTitle")}>
-      <header className="wb-card-head">
-        <div>
-          <h2>{t("seedPreviewTitle")}</h2>
-          <p>{t("seedPreviewSubtitle")}</p>
-        </div>
+    <details
+      className="wb-seed"
+      open={seedOpen}
+      onToggle={(event) => onSeedOpenChange(event.currentTarget.open)}
+    >
+      <summary className="wb-seed-summary">
+        <span className="wb-seed-title">{t("seedPreviewTitle")}</span>
+        <span className="wb-seed-sub">{t("seedPreviewSubtitle")}</span>
         <span className={`wb-chip ${seedConfirmed ? "ready" : ""}`}>
           {seedConfirmed ? t("seedConfirmed") : t("seedDraft")}
         </span>
-      </header>
+      </summary>
 
-      <div className="wb-card-body">
-        <h3 className="wb-block-title">{t("extractedFields")}</h3>
+      <div className="wb-seed-body">
+        <h3 className="wb-seed-heading">{t("extractedFields")}</h3>
 
-        <div className="wb-field">
-          <label htmlFor="wb-player-fantasy">{t("playerFantasy")}</label>
-          <textarea
-            id="wb-player-fantasy"
-            rows={2}
-            value={fields.playerFantasy}
-            onChange={(event) => onFieldChange({ playerFantasy: event.target.value })}
-          />
-        </div>
+        <div className="wb-field-grid">
+          <div className="wb-field">
+            <label htmlFor="wb-player-fantasy">{t("playerFantasy")}</label>
+            <textarea
+              id="wb-player-fantasy"
+              rows={2}
+              value={fields.playerFantasy}
+              onChange={(event) => onFieldChange({ playerFantasy: event.target.value })}
+            />
+          </div>
 
-        <div className="wb-field">
-          <label htmlFor="wb-core-action">{t("coreAction")}</label>
-          <textarea
-            id="wb-core-action"
-            rows={2}
-            value={fields.coreAction}
-            onChange={(event) => onFieldChange({ coreAction: event.target.value })}
-          />
-        </div>
+          <div className="wb-field">
+            <label htmlFor="wb-core-action">{t("coreAction")}</label>
+            <textarea
+              id="wb-core-action"
+              rows={2}
+              value={fields.coreAction}
+              onChange={(event) => onFieldChange({ coreAction: event.target.value })}
+            />
+          </div>
 
-        <div className="wb-field-row">
           <div className="wb-field">
             <label htmlFor="wb-emotional-target">{t("emotionalTarget")}</label>
             <textarea
@@ -90,6 +102,7 @@ export function SeedInspector({
               onChange={(event) => onFieldChange({ emotionalTarget: event.target.value })}
             />
           </div>
+
           <div className="wb-field">
             <label htmlFor="wb-tension-source">{t("tensionSource")}</label>
             <textarea
@@ -99,46 +112,46 @@ export function SeedInspector({
               onChange={(event) => onFieldChange({ tensionSource: event.target.value })}
             />
           </div>
-        </div>
 
-        <div className="wb-field">
-          <label htmlFor="wb-must-keep">{t("mustKeep")}</label>
-          <textarea
-            id="wb-must-keep"
-            rows={2}
-            value={fields.mustKeep}
-            onChange={(event) => onFieldChange({ mustKeep: event.target.value })}
-          />
-        </div>
+          <div className="wb-field">
+            <label htmlFor="wb-must-keep">{t("mustKeep")}</label>
+            <textarea
+              id="wb-must-keep"
+              rows={2}
+              value={fields.mustKeep}
+              onChange={(event) => onFieldChange({ mustKeep: event.target.value })}
+            />
+          </div>
 
-        <div className="wb-field">
-          <label htmlFor="wb-can-cut">{t("canCut")}</label>
-          <textarea
-            id="wb-can-cut"
-            rows={2}
-            value={fields.canCut}
-            onChange={(event) => onFieldChange({ canCut: event.target.value })}
-          />
-        </div>
+          <div className="wb-field">
+            <label htmlFor="wb-can-cut">{t("canCut")}</label>
+            <textarea
+              id="wb-can-cut"
+              rows={2}
+              value={fields.canCut}
+              onChange={(event) => onFieldChange({ canCut: event.target.value })}
+            />
+          </div>
 
-        <div className="wb-field">
-          <label htmlFor="wb-reference-feel">{t("referenceFeel")}</label>
-          <textarea
-            id="wb-reference-feel"
-            rows={2}
-            value={fields.referenceFeel}
-            onChange={(event) => onFieldChange({ referenceFeel: event.target.value })}
-          />
-        </div>
+          <div className="wb-field">
+            <label htmlFor="wb-reference-feel">{t("referenceFeel")}</label>
+            <textarea
+              id="wb-reference-feel"
+              rows={2}
+              value={fields.referenceFeel}
+              onChange={(event) => onFieldChange({ referenceFeel: event.target.value })}
+            />
+          </div>
 
-        <div className="wb-field">
-          <label htmlFor="wb-playable-loop">{t("playableLoop")}</label>
-          <textarea
-            id="wb-playable-loop"
-            rows={2}
-            value={fields.playableLoop}
-            onChange={(event) => onFieldChange({ playableLoop: event.target.value })}
-          />
+          <div className="wb-field">
+            <label htmlFor="wb-playable-loop">{t("playableLoop")}</label>
+            <textarea
+              id="wb-playable-loop"
+              rows={2}
+              value={fields.playableLoop}
+              onChange={(event) => onFieldChange({ playableLoop: event.target.value })}
+            />
+          </div>
         </div>
 
         {openQuestions.length ? (
@@ -152,9 +165,9 @@ export function SeedInspector({
           </div>
         ) : null}
 
-        <h3 className="wb-block-title">{t("configuration")}</h3>
+        <h3 className="wb-seed-heading">{t("configuration")}</h3>
 
-        <div className="wb-field-row">
+        <div className="wb-field-grid compact">
           <div className="wb-field">
             <label htmlFor="wb-minutes">{t("minutes")}</label>
             <input
@@ -252,6 +265,6 @@ export function SeedInspector({
           </button>
         </div>
       </div>
-    </section>
+    </details>
   );
 }

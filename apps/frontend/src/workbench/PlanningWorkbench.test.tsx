@@ -188,7 +188,7 @@ function chatBox() {
 
 function send(text: string) {
   fireEvent.change(chatBox(), { target: { value: text } });
-  fireEvent.click(screen.getByText("Initial idea"));
+  fireEvent.click(screen.getByText("Send"));
 }
 
 function fillSeed() {
@@ -283,6 +283,26 @@ describe("planning workbench tool calls", () => {
         "wall-run across collapsing rooftops"
       )
     );
+  });
+
+  it("opens the seed editor and stays in the conversation when a seed arrives", async () => {
+    // The extraction answer belongs to the conversation: the fields it fills
+    // live under the thread, so the main area must not jump to a plan panel,
+    // and the editor must open itself -- before the sidebar layout the fields
+    // were always on screen, and a user who cannot see them change has no way
+    // to know the extraction worked.
+    responder = () => seedEnvelope();
+    renderWorkbench();
+    send("rooftop parkour courier");
+    fireEvent.click(screen.getByText("Extract idea"));
+
+    await waitFor(() =>
+      expect((document.querySelector("#wb-core-action") as HTMLTextAreaElement).value).toBe(
+        "wall-run across collapsing rooftops"
+      )
+    );
+    expect(screen.getByTestId("discovery-thread")).toBeTruthy();
+    expect((document.querySelector(".wb-seed") as HTMLDetailsElement).open).toBe(true);
   });
 
   it("generates a plan and hands it to the flow console", async () => {

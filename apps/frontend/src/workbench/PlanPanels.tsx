@@ -85,6 +85,17 @@ export const PLAN_TOOLS: Array<{ tool: string; labelKey: string }> = [
   { tool: "prepare_qa_plan", labelKey: "toolQaPlan" }
 ];
 
+/**
+ * The ten plan tools, as a sidebar block rather than a right-column card.
+ *
+ * They are actions, not content: running one lands a result in the main area,
+ * so they live next to the navigation that selects which result you read. The
+ * disabled state is the gate made visible -- every button reads as unavailable
+ * until the idea is confirmed, which is the one rule this view enforces.
+ *
+ * The `data-tool` order is the `PLAN_TOOLS` table's order and a test asserts
+ * the whole list; a tool added to the table must appear here in that order.
+ */
 export function ToolActions({
   t,
   enabled,
@@ -99,28 +110,22 @@ export function ToolActions({
   onRun: (tool: string) => void;
 }) {
   return (
-    <section className="wb-card" aria-label={t("toolActions")}>
-      <header className="wb-card-head">
-        <div>
-          <h2>{t("toolActions")}</h2>
-          <p>{t("toolActionsHint")}</p>
-        </div>
-      </header>
-      <div className="wb-card-body">
-        <div className="wb-tool-grid">
-          {PLAN_TOOLS.map(({ tool, labelKey }) => (
-            <button
-              key={tool}
-              type="button"
-              className={`wb-button${running === tool ? " active" : ""}`}
-              data-tool={tool}
-              disabled={busy || !enabled}
-              onClick={() => onRun(tool)}
-            >
-              {t(labelKey)}
-            </button>
-          ))}
-        </div>
+    <section className="wb-side-tools" aria-label={t("toolActions")}>
+      <p className="wb-side-label">{t("toolActions")}</p>
+      <p className="wb-side-hint">{t("toolActionsHint")}</p>
+      <div className="wb-tool-grid">
+        {PLAN_TOOLS.map(({ tool, labelKey }) => (
+          <button
+            key={tool}
+            type="button"
+            className={`wb-button${running === tool ? " active" : ""}`}
+            data-tool={tool}
+            disabled={busy || !enabled}
+            onClick={() => onRun(tool)}
+          >
+            {t(labelKey)}
+          </button>
+        ))}
       </div>
     </section>
   );
