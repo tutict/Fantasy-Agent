@@ -5,7 +5,7 @@
 
 ## 0. 现状一句话
 
-`apps/frontend/` 是唯一一代界面（Vite + React/TSX），经 `apps/frontend/dist/` 由 Studio 服务。三条路由对应三个整页视图，设置类面板（工具环境 / API / Agent）内联在同一个外壳里。视觉方向是**暖纸色 + 氧化铜**（`3af5854` 定），本文只记录规则，不重开色系讨论。
+`apps/frontend/` 是唯一一代界面（Vite + React/TSX），经 `apps/frontend/dist/` 由 Studio 服务。四条路由对应四个整页视图，设置类面板（工具环境 / API / Agent）内联在同一个外壳里。视觉方向是**暖纸色 + 氧化铜**（`3af5854` 定），本文只记录规则，不重开色系讨论。
 
 ## 1. 导航结构
 
@@ -16,20 +16,22 @@
 | `/workbench` | `workbench` | `workbench/PlanningWorkbench.tsx` | 策划：只做规划，不写文件不起进程 |
 | `/pipeline` | `pipeline` | `orchestration/OrchestrationBoard.tsx` | 编排：`production_pipeline` 的运行状态 |
 | `/web-console` | `console` | `console/FlowConsole.tsx` | 执行：执行前体检、确认、试玩、手改回扫 |
+| `/assets` | `assets` | `assets/AssetLibrary.tsx` | 资产库：开源资产录入 + 生成资产的审阅决策 |
 | 其它任意路径 | `workbench`（兜底） | — | `panelFromPathname()` 的 default |
 
 - 路由表是 `StudioShell.tsx` 里的 `PANEL_ROUTES`，路径解析是 `panelFromPathname()`。两者都在同一个文件里，**不写行号**——拆分会立刻让它漂，而名字不会。
 - **兜底是 `workbench`**：任何不认识的路径都渲染策划工作台，不报错也不 404。
 - 设置类三个面板（`mcp` / `api` / `agent`）**没有自己的路由**，是 `StudioShell` 内的二级导航（`SETTING_NAV`），共用 `/workbench` 那条路径。
+- `assets` 同理不是设置项、也不是六步旅程的一步：它是**你去干活的地方**，所以拿的是 console 那样的整页路由待遇（自有 URL + `visitedPanels` 首访挂载 + `ErrorBoundary`），导航上是单条目组。生成资产那一侧读的是 Creative Review 的审批清单，不另存一份。
 - `basePath()` 读 `import.meta.env.BASE_URL` 并剥掉尾斜杠。**它必须是显式参数而不是内联读取**：`import.meta.env` 编译期内联，测试里恒为真，生产分支否则没有任何测试够得着（它就是这么漏掉一次 404 的）。变异用例 FE4-6 钉住这条。
 
-### 1.1 六面板内联，切走不卸载
+### 1.1 七面板内联，切走不卸载
 
-六个面板全部**内联在同一个 document 里**。`visitedPanels` 记录访问过的面板，首次访问即挂载，之后只由 CSS 隐藏、永不卸载。按这条规则挂载的是三个整页视图加 `api`；`mcp` 与 `agent` 常驻，因为门控它们买不到东西——工具状态只在 mcp 成为活动面板时才拉（`StudioShell` 里那个 effect 自己看着 `activePanel`），而 Agent 面板一个 mount effect 都没有，它的工具目录是展开时才拉的。
+七个面板全部**内联在同一个 document 里**。`visitedPanels` 记录访问过的面板，首次访问即挂载，之后只由 CSS 隐藏、永不卸载。按这条规则挂载的是四个整页视图加 `api`；`mcp` 与 `agent` 常驻，因为门控它们买不到东西——工具状态只在 mcp 成为活动面板时才拉（`StudioShell` 里那个 effect 自己看着 `activePanel`），而 Agent 面板一个 mount effect 都没有，它的工具目录是展开时才拉的。
 
 **为什么不能改成卸载**：console 有在飞的 job 轮询、策划有未保存的对话，都在组件 state 里，卸载就是丢进度。**这不是样式取舍。** 行为面由 `studio/StudioShell.test.tsx` 的 "keeps a visited view mounted once the user switches away" 与变异用例 FE4-5 钉住；`api` 的首访挂载由同文件的 "does not read settings until the panel that needs them is opened" 与 FE10-1 钉住（那条用例同时钉着 mcp 的工具状态：自己的面板打开才拉）。
 
-**这条决策的代价**：访问过的视图永久挂载，DOM 与 component state 只增不减。本仓库目前没有守卫覆盖这个增长，长期使用的内存表现是未验证的。共担一棵树还有更尖的一根刺：一个面板 render 抛错曾经带走整窗（sidebar 和 nav 一起）。六个面板现在各自由 `shared/ui/ErrorBoundary.tsx` 包着——boundary 只替换**后代**的 render，所以崩溃表达式必须落在子组件里（`McpServiceGrid` 就是为此从外壳 render 里抽出来的），外壳 chrome 不包进 boundary。
+**这条决策的代价**：访问过的视图永久挂载，DOM 与 component state 只增不减。本仓库目前没有守卫覆盖这个增长，长期使用的内存表现是未验证的。共担一棵树还有更尖的一根刺：一个面板 render 抛错曾经带走整窗（sidebar 和 nav 一起）。七个面板现在各自由 `shared/ui/ErrorBoundary.tsx` 包着——boundary 只替换**后代**的 render，所以崩溃表达式必须落在子组件里（`McpServiceGrid` 就是为此从外壳 render 里抽出来的），外壳 chrome 不包进 boundary。
 
 ## 2. 面板归属
 
@@ -39,6 +41,7 @@
 | `pipeline` | `orchestration/OrchestrationBoard.tsx` + `orchestration/StageCard.tsx` | `orchestration.css`（`or-*`） | **无媒体查询**：它本来就是单列流式布局，加断点只会让它在某个宽度下突然变形 |
 | `console` | `console/FlowConsole.tsx`（`Metric` / `AssetList` / `Panel` / `SegmentedControl` 在 `FlowConsole.parts.tsx`，执行阶段/试玩/纠偏三张卡片各在自己目录） | `console.css` + `studio.css` 同页共存 | tab 只有 2 个：`review` / `specs` |
 | `mcp` / `api` / `agent` | `studio/settings/`（`McpCard.tsx` 连 `McpServiceGrid`、`ApiSettingsPanel.tsx`、`AgentPanel.tsx`、`ToolCatalogPanel.tsx`） | `studio.css`（`mcp-*` / `api-*` / `agent-*`） | 设置类；`api` 首访才挂载，见 §1.1 |
+| `assets` | `assets/AssetLibrary.tsx` + `assets/parts.tsx`（无 state 的小件：条目卡、生成资产卡、空态、许可证预设） | `assets.css`（`as-*`） | 唯一断点 `max-width: 1100px`（条目网格 2→1 列）；按钮/徽章/空态走共享原语 |
 
 样式表的归属判据：**一个 class 只属于一张表**。`shared/panelStyles.test.ts` 钉着共享面板发出的每个 class 必须在 `workbench.css` 有定义、console 私有类必须留在 `console.css`。
 
@@ -68,6 +71,7 @@ wc -l apps/frontend/src/workbench/PlanningWorkbench.tsx \
 | `or-*` | 编排板私有 | `or-card`、`or-answer` |
 | `mcp-*` `api-*` `agent-*` | 设置面板私有 | `mcp-status-card`、`api-field` |
 | `playtest-*` `rework-*` `correction-*` `manual-*` | console 私有，四种都表示「带状态列表的侧面板」 | `playtest-panel`、`rework-panel` |
+| `as-*` | 资产库面板私有 | `as-entry`、`as-form`、`as-filter` |
 | **无前缀** | console 私有 | `rail-card`、`gate-item`、`pane-section-header` |
 
 `api-*` 有一处**既存借用**：`orchestration/OrchestrationBoard.tsx` 的审批条用的是 `api-header` / `api-summary` / `api-form` / `api-field` / `api-toggle` / `api-actions`。`cssHygiene.test.ts` 的 pairs 把「组件 ↔ 双样式表」的联合检查钉住（该条目的注释里有完整记录）。**新借用要先在这里登记**——不登记，读 §4 的人就会以为 `api-*` 没有例外。
@@ -84,7 +88,7 @@ wc -l apps/frontend/src/workbench/PlanningWorkbench.tsx \
 
 1. 被 **≥2 个文件**引用（含测试文件）→ 独立文件 + 必须导出
 2. **≥50 行** → 独立文件
-3. 携带自己的 CSS 前缀（`or-*` / `mcp-*` / `api-*` / `agent-*` / `wb-*`）→ 独立文件 + 独立样式表归属
+3. 携带自己的 CSS 前缀（`or-*` / `mcp-*` / `api-*` / `agent-*` / `as-*` / `wb-*`）→ 独立文件 + 独立样式表归属
 4. 有 **≥3 个专属 i18n 键** → 独立文件
 5. 被 **≥6 处**使用 → 独立文件
 

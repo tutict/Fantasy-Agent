@@ -594,6 +594,77 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/studio/StudioShell.test.tsx",
         "does not read settings until the panel that needs them is opened",
     ),
+    # ── the asset library panel ──────────────────────────────────────────────
+    (
+        # The half-done rename, against the pair registered for this panel in
+        # cssHygiene: the card's class moves, the stylesheet's rule does not,
+        # and every ingested entry renders unboxed with nothing saying so.
+        "FE11-1 a class is renamed in the card but not the stylesheet",
+        "apps/frontend/src/assets/parts.tsx",
+        b'    <article className="as-entry" data-kind={entry.kind} id={`as-entry-${entry.id}`}>\n',
+        b'    <article className="as-entry-card" data-kind={entry.kind} id={`as-entry-${entry.id}`}>\n',
+        "src/shared/cssHygiene.test.ts",
+        "styles the base class a component hangs its modifiers on",
+    ),
+    (
+        # A label typed straight into the JSX. The dictionary keeps its key,
+        # the panel stops calling it, and the guard that reads source text is
+        # the only thing that can see the difference -- a translation would
+        # otherwise silently stop applying to one row of the entry card. The
+        # mutant's label is the zh-CN value of the key it replaces, escaped:
+        # a bytes literal is ASCII-only, and the value itself is what a
+        # hardcoded label would say.
+        "FE11-2 a label is hardcoded and its key is orphaned",
+        "apps/frontend/src/assets/parts.tsx",
+        b'        <dt>{t("assetsIngestedAt")}</dt>\n',
+        b"        <dt>\xe7\x99\xbb\xe5\x85\xa5\xe6\x97\xb6\xe9\x97\xb4</dt>\n",
+        "src/shared/panelI18n.test.ts",
+        "has no orphaned studio keys either",
+    ),
+    (
+        # The panel stops being a whole view: no route, so no URL, so nothing
+        # to deep-link and nothing for `panelFromPathname` to open. `panelHref`
+        # answers null for a panel the table does not name, so the shell keeps
+        # running -- it just never goes there.
+        "FE11-3 the asset panel loses its route",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        b'  assets: "/assets"\n',
+        b"",
+        "src/studio/StudioShell.test.tsx",
+        "gets its own URL and mounts on first visit",
+    ),
+    (
+        # The dialog's cancel runs the delete. The shape is the shared
+        # primitive's, but the wiring is this panel's: the cancel handler is
+        # where "asks first" lives, and pointing it at the confirm path is
+        # how a two-step confirmation silently becomes one step.
+        "FE11-4 cancelling the removal proceeds with it",
+        "apps/frontend/src/assets/AssetLibrary.tsx",
+        b"        onCancel={() => setPendingRemoval(null)}\n",
+        b"        onCancel={() => void confirmRemoval()}\n",
+        "src/assets/AssetLibrary.test.tsx",
+        "asks before removing, and only then deletes",
+    ),
+    (
+        # The failed read answers "nothing was ever ingested" again. The
+        # guard is the honesty rule this panel was written against: a load
+        # that failed is not evidence of an empty library, and the empty
+        # state is a claim the panel may only make from data it has.
+        "FE11-5 a failed load answers with an empty library again",
+        "apps/frontend/src/assets/AssetLibrary.tsx",
+        (
+            b"        ) : overview ? (\n"
+            b"          <GeneratedEmptyState t={t} />\n"
+            b"        ) : null}\n"
+        ),
+        (
+            b"        ) : (\n"
+            b"          <GeneratedEmptyState t={t} />\n"
+            b"        )}\n"
+        ),
+        "src/assets/AssetLibrary.test.tsx",
+        "surfaces a failed load as an error instead of an empty library",
+    ),
 )
 
 #: vitest's `Tests` line. Absent means the run died before reporting.

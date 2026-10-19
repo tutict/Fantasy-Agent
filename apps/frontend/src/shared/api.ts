@@ -5,6 +5,9 @@ import type {
   AssetExecuteJob,
   AssetExecutePreview,
   AssetExecuteStart,
+  AssetIngestRequest,
+  AssetLibraryEntry,
+  AssetLibraryOverview,
   BlenderPlan,
   BlenderScriptArtifact,
   CreativeReview,
@@ -426,6 +429,49 @@ export function cancelAssetExecutionJob(jobId: string): Promise<JobCancelRespons
   return jsonRequest<JobCancelResponse>(`/api/assets/execute/${encodeURIComponent(jobId)}/cancel`, {
     method: "POST"
   });
+}
+
+/**
+ * The asset library: ingested open-source files plus the review decisions for
+ * what was generated.
+ *
+ * Read-only, so there is no approval flag. It reads two YAML files and
+ * decides nothing; a manifest that exists but cannot be parsed answers 400,
+ * which the panel shows as an error rather than as an empty generated list --
+ * "nothing was generated" is a claim, and a broken file is not evidence.
+ */
+export function getAssetLibrary(): Promise<AssetLibraryOverview> {
+  return jsonRequest<AssetLibraryOverview>("/api/assets");
+}
+
+/**
+ * Ingest one local file into the library.
+ *
+ * The only write in the asset surface with no two-step confirmation: it copies
+ * a file the user explicitly named, launches no process, and burns no engine
+ * time. The path is a path on this machine -- the backend never fetches from
+ * the network, which is the whole product's local-first posture.
+ */
+export function ingestAsset(request: AssetIngestRequest): Promise<{ status: string; entry: AssetLibraryEntry }> {
+  return jsonRequest<{ status: string; entry: AssetLibraryEntry }>("/api/assets", {
+    method: "POST",
+    body: JSON.stringify(request)
+  });
+}
+
+/**
+ * Remove one library entry and delete its copy inside the library.
+ *
+ * The user's original download is never reachable from here -- the backend
+ * re-checks that the entry's path sits under the library directory before
+ * unlinking anything. An unknown id is a 404, which surfaces through the same
+ * error unwrapping as every other failure.
+ */
+export function removeAsset(assetId: string): Promise<{ status: string; removed_id: string }> {
+  return jsonRequest<{ status: string; removed_id: string }>(
+    `/api/assets/${encodeURIComponent(assetId)}`,
+    { method: "DELETE" }
+  );
 }
 
 

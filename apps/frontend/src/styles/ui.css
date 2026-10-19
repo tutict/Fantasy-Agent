@@ -183,6 +183,19 @@ textarea:focus-visible {
 .status-badge[data-status="degraded"] { color: var(--status-waiting); }
 .status-badge[data-status="confirming"]::before,
 .status-badge[data-status="preview"]::before { border-radius: 50%; }
+/* The four Creative Review decisions, shown verbatim in the asset library.
+   They reuse the same seven mutually exclusive status colours rather than
+   adding palette entries: approved is a pass, a rejection is a failure, a
+   revision request is a warning, and a pending review waits on a person --
+   which is what `--status-human` is for. */
+.status-badge[data-status="approved"] { color: var(--status-success); }
+.status-badge[data-status="approved"]::before { border-radius: var(--radius-xs); background: currentColor; }
+.status-badge[data-status="needs_revision"] { color: var(--status-warning); }
+.status-badge[data-status="needs_revision"]::before { border-radius: 50%; }
+.status-badge[data-status="rejected"] { color: var(--status-danger); }
+.status-badge[data-status="rejected"]::before { border-radius: var(--radius-xs); background: currentColor; }
+.status-badge[data-status="pending_user_review"] { color: var(--status-human); }
+.status-badge[data-status="pending_user_review"]::before { border-radius: 50%; }
 .empty-state,
 .log-block,
 .confirm-dialog,

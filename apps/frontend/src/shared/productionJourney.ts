@@ -1,7 +1,7 @@
 import type { DirectorBuildPlan, OrchestrationSession } from "./types";
 
 export type JourneyStepId = "idea" | "plan" | "orchestrate" | "execute" | "review" | "qa";
-export type JourneyPanel = "workbench" | "pipeline" | "console" | "mcp" | "api" | "agent";
+export type JourneyPanel = "workbench" | "pipeline" | "console" | "assets" | "mcp" | "api" | "agent";
 export type OperationPhase = "idle" | "preview" | "confirming" | "running" | "cancelable" | "succeeded" | "degraded" | "failed" | "resumable";
 export type JourneyStepState = "complete" | "current" | "blocked" | "attention" | "upcoming";
 

@@ -259,6 +259,47 @@ describe("the panel URL follows the host that will serve it", () => {
   });
 });
 
+describe("the asset library is a whole view like the console", () => {
+  // The panel is somewhere you go to work with assets, not a settings page
+  // and not a step of the six-step journey, so it gets the console's
+  // treatment: its own route, its own frame, mounted on first visit.
+
+  it("gets its own URL and mounts on first visit", () => {
+    const { container } = renderShell();
+
+    // Same rule as the console: nothing is paid for until someone looks.
+    expect(container.querySelector('[data-frame="assets"]')).toBeNull();
+
+    fireEvent.click(navButton("assets"));
+    expect(window.location.pathname).toBe("/assets");
+    expect(container.querySelector('[data-frame="assets"]')).not.toBeNull();
+  });
+
+  it("opens the view the URL names", () => {
+    window.history.pushState({}, "", "/assets");
+
+    const { container } = renderShell();
+
+    expect(container.querySelector('[data-frame="assets"]')?.classList.contains("active")).toBe(true);
+  });
+
+  it("stays mounted once the user switches away", () => {
+    const { container } = renderShell();
+
+    fireEvent.click(navButton("assets"));
+    fireEvent.click(navButton("workbench"));
+
+    const frame = container.querySelector('[data-frame="assets"]');
+    expect(frame, "unmounting would re-fetch the library on every switch").not.toBeNull();
+    expect(frame?.classList.contains("active")).toBe(false);
+  });
+
+  it("carries the base in dev and drops it in production, like the others", () => {
+    expect(panelHref("assets", true, "/frontend")).toBe("/frontend/assets");
+    expect(panelHref("assets", false, "/frontend")).toBe("/assets");
+  });
+});
+
 describe("locale and theme have one owner", () => {
   it("refuses to render a view outside the provider", () => {
     // A fallback here would restore the old shape -- two truths about the

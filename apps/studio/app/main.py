@@ -14,10 +14,18 @@ from pydantic import BaseModel, Field, ValidationError
 
 from fantasy_agent import api_settings, local_tools
 from fantasy_agent.api_settings import llm_enabled, public_settings
+from fantasy_agent.asset_library import (
+    AssetLibraryError,
+    ingest_asset,
+    library_overview,
+    remove_asset,
+)
 from fantasy_agent.atomic_write import write_atomic
 from fantasy_agent.blender_codegen import build_blender_script_artifact
 from fantasy_agent.contracts import (
     AssetApprovalManifest,
+    AssetLibraryEntry,
+    AssetLibraryOverview,
     BlenderAssetPlan,
     BlenderScriptArtifact,
     ComfyUIVisualPlan,
@@ -141,6 +149,35 @@ class AssetExecutionRequest(StrictModel):
     confirmed: bool = False
 
 
+class AssetIngestRequest(StrictModel):
+    """Ingest one local open-source asset file into the library.
+
+    ``source_path`` points at a file on this machine -- the product is
+    local-first and this endpoint never fetches from the network (see
+    ``fantasy_agent/asset_library.py``'s module docstring). An absolute path is
+    taken as the user pointing at a download they already have; a relative one
+    resolves against the workspace.
+    """
+
+    name: str = Field(min_length=1, max_length=120)
+    source_path: str = Field(min_length=1)
+    license: str = ""
+    author: str = ""
+    source_url: str = ""
+    notes: str = ""
+    tags: list[str] = Field(default_factory=list)
+
+
+class AssetIngestResponse(BaseModel):
+    status: str
+    entry: AssetLibraryEntry
+
+
+class AssetRemoveResponse(BaseModel):
+    status: str
+    removed_id: str
+
+
 class ExecuteDemoRequest(StrictModel):
     plan: DirectorBuildPlan
     engine: str = ""  # inferred from plan when empty
@@ -161,6 +198,9 @@ ApprovalManifestResponse.model_rebuild()
 SpecBundlePreviewRequest.model_rebuild()
 SpecBundlePreviewResponse.model_rebuild()
 AssetExecutionRequest.model_rebuild()
+AssetIngestRequest.model_rebuild()
+AssetIngestResponse.model_rebuild()
+AssetRemoveResponse.model_rebuild()
 ExecuteDemoRequest.model_rebuild()
 
 
@@ -454,6 +494,21 @@ def pipeline_board() -> FileResponse:
 
     A route inside the SPA bundle like the other two: the board is a whole view,
     so it gets its own URL rather than only being reachable from the sidebar.
+    """
+
+    return _frontend_index_or()
+
+
+@app.get("/assets")
+def asset_library_page() -> FileResponse:
+    """Serve the asset library.
+
+    A whole view like the board, so it gets its own URL. Note this is *not* the
+    ``/assets`` mount that used to serve the retired hand-written pages -- that
+    mount is gone, and what answers here is the same SPA bundle as every other
+    route. The old assertion "``/assets`` must not exist" therefore became
+    wrong the moment the library got a page; the replacement assertion checks
+    the bundle, not the path.
     """
 
     return _frontend_index_or()
@@ -1084,6 +1139,71 @@ def asset_execute_status(job_id: str) -> dict[str, Any]:
 @app.post("/api/assets/execute/{job_id}/cancel")
 def asset_execute_cancel(job_id: str) -> dict[str, Any]:
     return _ASSET_JOB_REGISTRY.cancel(job_id)
+
+
+@app.get("/api/assets")
+def asset_library_overview_endpoint() -> AssetLibraryOverview:
+    """Everything the asset panel renders: ingested entries + review decisions.
+
+    Read-only and synchronous -- it reads two YAML files and decides nothing,
+    so there is no job to poll and no approval flag to thread. A manifest that
+    exists but cannot be parsed answers 400 rather than an empty generated
+    list: "nothing was generated" is a claim, and a broken file is not
+    evidence for it.
+    """
+
+    try:
+        return library_overview(workspace_root=REPO_ROOT)
+    except AssetLibraryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/assets")
+def asset_ingest_endpoint(req: AssetIngestRequest) -> AssetIngestResponse:
+    """Copy one local file into the library and record its provenance.
+
+    Synchronous on purpose: the work is a single local file copy, seconds at
+    most, so a job registry would buy nothing but a polling round-trip. This
+    is the one write in the asset surface that needs no two-step confirmation
+    -- it copies a file the user explicitly named, launches no process, and
+    burns no engine time.
+    """
+
+    try:
+        entry = ingest_asset(
+            name=req.name,
+            source_path=req.source_path,
+            license=req.license,
+            author=req.author,
+            source_url=req.source_url,
+            notes=req.notes,
+            tags=req.tags,
+            workspace_root=REPO_ROOT,
+        )
+    except AssetLibraryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"资产无法读取：{exc}") from exc
+    return AssetIngestResponse(status="ingested", entry=entry)
+
+
+@app.delete("/api/assets/{asset_id}")
+def asset_remove_endpoint(asset_id: str) -> AssetRemoveResponse:
+    """Remove one library entry and delete its copy inside the library.
+
+    The id is matched as a plain string and never becomes part of a path --
+    ``remove_asset`` re-resolves the entry's own recorded path -- so there is
+    no segment-safety question here of the kind ``session_id`` has. An unknown
+    id is a 404, not a 400: the request was well-formed, the thing is absent.
+    """
+
+    try:
+        entry = remove_asset(asset_id, workspace_root=REPO_ROOT)
+    except AssetLibraryError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if entry is None:
+        raise HTTPException(status_code=404, detail=f"资产不存在：{asset_id!r}")
+    return AssetRemoveResponse(status="removed", removed_id=entry.id)
 
 
 class PlaytestRunRequest(PlaytestRequest):

@@ -72,6 +72,20 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - **没有校验和、没有备份轮转、`schema_version` 不做迁移**，这是决定不是遗漏。`os.replace` 已经消灭了唯一的现实损坏源；再加校验和会把「罕见半截文件」换成「罕见静默全量重放」，而用户分辨不出发生了哪个（两个加载器对两者返回同一个值）。迁移函数需要一个「从哪个版本」，而除 `"0.1"` 外从未写过别的版本；本仓对版本不匹配的既定口径是**拒绝**（见 `production_spec_runtime.py`），不是迁移。
 - 给 `StageState` / `PipelineState` 加字段**必须带默认值**：它们是 `extra="forbid"` 模型，旧文件配新模型要靠默认值才读得进来（新文件配旧模型才会被拒——方向与直觉相反，实测过）。理由写在该模块的 `record_stage` docstring 里。
 
+## 资产库（fantasy_agent/asset_library.py、/assets 面板）
+
+开源资产的录入与清点：`POST /api/assets` 把用户本机文件复制进 `generated/asset-library/`，`GET /api/assets` 把录入条目和 Creative Review 的审批决策合成面板载荷。**生成资产侧不另存一份清单**——读的就是 ingest 闸门同一份 `generated/asset-approval-manifest.yaml`，`status` 原样呈现 decision。
+
+- **录入零网络出口，这是决定**：源路径只接受本机文件（绝对路径=用户显式指向自己已有的文件，同 `open_manual_correction_target` 的性质；相对路径对工作区解析）。贴 URL 下载会开出整个产品没有的网络出口，连同内容类型、大小、压缩包（zip-slip）三类新危害——那些值得自己一轮、带自己的确认闸门，不搭车。取舍记录在 `docs/superpowers/plans/2026-10-18-asset-library.md` §1.1。
+- **先复制、后写清单**（变异 AL3 钉「保存失败不许静默」）：反序的残留是一条指向从未写入文件的条目，面板会渲染成坏资产；正序的残留只是一个无引用文件，无害。
+- **库清单是决策输入，走 `write_atomic`**（AL2）：它被读回来做列表/计数/删除，半截清单会解析成一个更小的库，而不是一次失败的保存。
+- **磁盘名是 `<id><ext>`，永远不用用户文件名**（AL5）：`victim.` 与 `victim` 是同一个目录，折叠发生在文件系统内部，容错检查看不见。原名只进 `original_name` 元数据，永远不进路径。
+- **缺失=空库且不记 warning；损坏=抛错**（AL4）：对损坏文件答「空」，等于让下一次录入静默吞掉用户看不见的条目——与 `api_settings` / `pipeline_state` 同口径。
+- **删除只删库内副本**（AL1）：`remove_asset` 重解析条目自己记录的 path，要求落在库 files 目录内才 unlink——手改清单把条目指到库外（比如 `llm-api.json`）必须拒绝。用户的原始下载按构造不可达。
+- **`asset_id` 只做字符串精确匹配、不拼进任何路径**：删除目标来自条目的 path 字段，没有 `session_id` 那样的段安全问题；未知 id 答 404 不是 400（请求合法，东西不在——AL7）。
+- **256 MiB 上限录入时强制并报告，不静默截断**（AL6）。
+- 面板侧同口径：**读取失败不伪装成空库**（FE11-5）——空态是断言，只能从真正读回来的数据说；删除走两步确认且文案明说只删副本（FE11-4）；`studioI18n` 的 `assets*` 键丢了调用点会被 `panelI18n` 抓成孤儿（FE11-2）。
+
 ## 编排会话恢复（fantasy_agent/orchestration_state.py）
 
 重启后板子应当回到刚才那一版，而不是空白。`_ORCHESTRATION_SESSIONS` 是有意保持内存态的（`_outcomes` 是「不重放已完成 stage」的全部机制，`_confirmed` 是「不重复问同一批准」的全部机制），所以恢复靠落盘补：每个 stage 跑完 `_record` 写一份 `_orchestration_state.json`，`GET/POST /api/orchestration/*` 在注册表里找不到时经**同一个** `_restore_orchestration` 读回来。

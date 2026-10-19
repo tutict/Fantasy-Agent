@@ -581,6 +581,59 @@ export type AssetExecuteStart = ExecuteStart;
 export type AssetExecuteJob = ExecuteJob;
 
 /**
+ * One ingested open-source asset.
+ *
+ * Mirrors `fantasy_agent/contracts.py::AssetLibraryEntry`. `sha256` is the
+ * identity of the library's copy, computed with the same helper the approval
+ * manifest uses -- so the same file reviewed and the same file ingested can be
+ * compared by digest.
+ */
+export interface AssetLibraryEntry {
+  id: string;
+  name: string;
+  kind: "mesh" | "texture" | "audio" | "other";
+  source: "open_source";
+  original_name: string;
+  path: string;
+  size_bytes: number;
+  sha256: string;
+  license: string;
+  author: string;
+  source_url: string;
+  notes: string;
+  tags: string[];
+  ingested_at: string;
+}
+
+/** One Creative Review decision, as the library panel renders it. */
+export interface GeneratedAssetRecord {
+  asset_id: string;
+  source: "blender" | "comfyui";
+  asset_path: string;
+  gameplay_role: string;
+  status: string;
+  sha256: string | null;
+}
+
+export interface AssetLibraryOverview {
+  entries: AssetLibraryEntry[];
+  generated: GeneratedAssetRecord[];
+  library_path: string;
+  generated_manifest_path: string;
+  generated_manifest_present: boolean;
+}
+
+export interface AssetIngestRequest {
+  name: string;
+  source_path: string;
+  license?: string;
+  author?: string;
+  source_url?: string;
+  notes?: string;
+  tags?: string[];
+}
+
+/**
  * A measured headless playtest.
  *
  * `session_seconds` is engine-internal time, never a frame count: a headless

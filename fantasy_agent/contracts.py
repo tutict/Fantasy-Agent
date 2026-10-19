@@ -1003,6 +1003,68 @@ class AssetApprovalManifest(StrictModel):
     pending_asset_ids: list[str] = Field(default_factory=list)
 
 
+class AssetLibraryEntry(StrictModel):
+    """One ingested open-source asset in the local library.
+
+    The persisted form of ``fantasy_agent/asset_library.py``. ``id`` is a
+    directory name on disk, so the pattern is the same shape
+    ``path_safety.assert_safe_path_segment`` accepts -- a hand-edited library
+    file cannot smuggle in a traversal id even before the resolver sees it.
+    """
+
+    id: str = Field(pattern=r"^asset-[0-9a-f]{12}$")
+    name: str = Field(min_length=1, max_length=120)
+    kind: Literal["mesh", "texture", "audio", "other"] = "other"
+    source: Literal["open_source"] = "open_source"
+    original_name: str = ""
+    #: Workspace-relative. Always points inside the library's own files
+    #: directory; ``remove_asset`` re-checks that before deleting anything.
+    path: str
+    size_bytes: int = Field(ge=0)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    license: str = ""
+    author: str = ""
+    source_url: str = ""
+    notes: str = ""
+    tags: list[str] = Field(default_factory=list)
+    #: ISO 8601 UTC. Defaulted, not required, for the same reason every other
+    #: field here is: a library file written before a field existed has to
+    #: stay readable (``extra="forbid"`` cuts the other direction).
+    ingested_at: str = ""
+
+
+class AssetLibrary(StrictModel):
+    source: str = "studio.asset-library"
+    schema_version: str = "0.1"
+    entries: list[AssetLibraryEntry] = Field(default_factory=list)
+
+
+class GeneratedAssetRecord(StrictModel):
+    """One Creative Review decision, in the shape the library panel renders.
+
+    Not a second source of truth: every field is read from
+    ``generated/asset-approval-manifest.yaml``, the same file the ingest gate
+    reads. ``status`` is the decision verbatim (approved / needs_revision /
+    rejected / pending_user_review).
+    """
+
+    asset_id: str
+    source: CreativeReviewSource
+    asset_path: str
+    gameplay_role: str
+    status: str
+    sha256: str | None = None
+
+
+class AssetLibraryOverview(StrictModel):
+    entries: list[AssetLibraryEntry] = Field(default_factory=list)
+    generated: list[GeneratedAssetRecord] = Field(default_factory=list)
+    #: Workspace-relative, so the panel can show where the library lives.
+    library_path: str
+    generated_manifest_path: str
+    generated_manifest_present: bool
+
+
 class HumanDecisionRecord(StrictModel):
     """What one human gate decided, written where the stage said it would.
 

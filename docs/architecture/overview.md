@@ -47,9 +47,10 @@ Studio 内的页面：
 - **策划工作台**（`/workbench`）：负责创意挖掘和计划生成，通过 `POST /api/tools/{tool_name}` 调用只读规划工具。
 - **编排板**（`/pipeline`）：展示 `production_pipeline` 的运行状态，区分计划态与运行态。
 - **流程控制台**（`/web-console`）：负责接收计划、记录纠偏、检查执行准备度，并触发执行与无头试玩。
+- **资产库**（`/assets`）：录入开源资产（复制本机文件进 `generated/asset-library/`，记录 license / author / 来源 / sha256），并同屏呈现 Creative Review 的审阅决策。
 - **工具环境检测**：负责检查 ComfyUI、Blender、Unreal、Godot 和 GitHub CLI 在本机是否可用。
 
-三条路由是同一个 SPA 的路由（`apps/frontend/` 的 React 应用），不是三个独立服务；详情见 `docs/ui/architecture.md`。
+四条路由是同一个 SPA 的路由（`apps/frontend/` 的 React 应用），不是四个独立服务；详情见 `docs/ui/architecture.md`。
 
 ## 库内生产角色
 

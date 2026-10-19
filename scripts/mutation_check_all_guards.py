@@ -1772,6 +1772,124 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         b"",
         "tests/test_packaging.py::test_every_payload_entry_exists",
     ),
+    # ── the asset library: a manifest that is read back to decide ─────────────
+    (
+        # The manifest is a file the user can hand-edit, so an entry rewritten
+        # to point outside the library must not turn delete into
+        # delete-anything. `if False` is the "the path is already resolved, so
+        # the containment check is redundant" tidy-up; the guard goes red on
+        # the missing raise, and the untouched file is the second half of it.
+        "AL1 the containment check is treated as redundant",
+        "fantasy_agent/asset_library.py",
+        b"    if files_root not in target.parents:\n",
+        b"    if False:  # mutation: containment treated as redundant\n",
+        "tests/test_asset_library.py::test_remove_refuses_a_path_outside_the_library",
+    ),
+    (
+        # The manifest is read back to list, count and delete, so it is written
+        # the way the credentials file is (A5). A plain write here means a
+        # crash mid-save parses as a smaller library rather than as a failed
+        # save -- and the panel would render that smaller library as fact.
+        "AL2 the library manifest is written in place",
+        "fantasy_agent/asset_library.py",
+        (
+            b"    return write_atomic(\n"
+            b"        path,\n"
+            b'        yaml.safe_dump(library.model_dump(mode="json"), sort_keys=False, allow_unicode=True),\n'
+            b"    )\n"
+        ),
+        (
+            b"    path.write_text(\n"
+            b'        yaml.safe_dump(library.model_dump(mode="json"), sort_keys=False, allow_unicode=True),\n'
+            b'        encoding="utf-8",\n'
+            b"    )\n"
+            b"    return path\n"
+        ),
+        "tests/test_asset_library.py::test_an_interrupted_save_keeps_the_previous_library",
+    ),
+    (
+        # The copy lands before the manifest on purpose: that order's residue
+        # is an unreferenced file, the other order's is a manifest entry
+        # pointing at a file that was never written. Swallowing the save
+        # failure is the mistake that hides the difference -- ingest answers
+        # success with nothing durable behind it.
+        "AL3 a failed manifest save is silent",
+        "fantasy_agent/asset_library.py",
+        (
+            b"    library = load_asset_library(workspace_root=workspace_root)\n"
+            b"    library.entries.append(entry)\n"
+            b"    save_asset_library(library, workspace_root=workspace_root)\n"
+            b"    return entry\n"
+        ),
+        (
+            b"    library = load_asset_library(workspace_root=workspace_root)\n"
+            b"    library.entries.append(entry)\n"
+            b"    try:\n"
+            b"        save_asset_library(library, workspace_root=workspace_root)\n"
+            b"    except OSError:\n"
+            b"        pass  # mutation: a failed save is silent\n"
+            b"    return entry\n"
+        ),
+        "tests/test_asset_library.py::test_a_failed_manifest_save_leaves_no_entry_behind",
+    ),
+    (
+        # Answering "empty" to a manifest that exists but cannot be parsed
+        # lets the next ingest overwrite every entry the user cannot see. The
+        # mutant is the loader degrading instead of complaining -- the shape
+        # api_settings and pipeline_state were both fixed out of (K4/K5/A6).
+        "AL4 a corrupt library reads as empty",
+        "fantasy_agent/asset_library.py",
+        (
+            b'    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}\n'
+            b"    return AssetLibrary.model_validate(data)\n"
+        ),
+        (
+            b"    try:\n"
+            b'        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}\n'
+            b"        return AssetLibrary.model_validate(data)\n"
+            b"    except (yaml.YAMLError, ValueError):\n"
+            b"        return AssetLibrary()  # mutation: corrupt reads as empty\n"
+        ),
+        "tests/test_asset_library.py::test_a_corrupt_library_raises_instead_of_reading_as_empty",
+    ),
+    (
+        # Disk names are `<id><ext>` because the user's file name cannot be
+        # made safe on Windows: `victim.` and `victim` are one directory, and
+        # the folding happens inside the filesystem where a containment check
+        # cannot see it. The mutant is the name the module used before that
+        # decision, and the guard pins the id-named copy.
+        "AL5 the disk name goes back to the user's file name",
+        "fantasy_agent/asset_library.py",
+        b'        f"{FILES_SUBDIR}/{entry_id}/{entry_id}{extension}",\n',
+        b'        f"{FILES_SUBDIR}/{entry_id}/{source.name}",\n',
+        "tests/test_asset_library.py::test_ingest_copies_the_file_and_records_where_it_came_from",
+    ),
+    (
+        # The limit is enforced and reported at ingest time, never silently
+        # truncated. Dropping the comparison is the "we validate elsewhere"
+        # tidy-up; the guard's monkeypatched limit is what makes it bite.
+        "AL6 the size limit stops being enforced",
+        "fantasy_agent/asset_library.py",
+        (
+            b"    if size_bytes > MAX_INGEST_BYTES:\n"
+            b"        limit_mib = MAX_INGEST_BYTES // (1024 * 1024)\n"
+        ),
+        (
+            b"    if False:  # mutation: the size limit stops being enforced\n"
+            b"        limit_mib = MAX_INGEST_BYTES // (1024 * 1024)\n"
+        ),
+        "tests/test_asset_library.py::test_ingest_rejects_sources_it_cannot_use",
+    ),
+    (
+        # An unknown id is a 404, not a 400: the request was well-formed, the
+        # thing is absent. The mutant is the "anything the user asked for that
+        # did not happen is a 400" collapse.
+        "AL7 an unknown id answers 400",
+        "apps/studio/app/main.py",
+        b'        raise HTTPException(status_code=404, detail=f"',
+        b'        raise HTTPException(status_code=400, detail=f"',
+        "tests/test_studio_app.py::test_asset_remove_api_answers_404_for_an_unknown_id",
+    ),
 )
 
 

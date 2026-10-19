@@ -282,6 +282,11 @@ describe("stylesheet hygiene", () => {
       // unboxed paragraph and nothing here would say so.
       ["shared/ui/ErrorBoundary.tsx", "workbench.css"],
       ["orchestration/StageCard.tsx", "orchestration.css"],
+      // The asset library panel. Its own `as-*` layout lives in `assets.css`;
+      // buttons, badges and empty states come from the shared primitives, so
+      // the base classes it emits literally are all its own.
+      ["assets/AssetLibrary.tsx", "assets.css"],
+      ["assets/parts.tsx", "assets.css"],
       // The board was missing from this list for as long as it has existed, so
       // `or-*` had no "the class you render is the class that is styled" check
       // behind it at all. Adding it with the StageCard split, since a split is

@@ -418,6 +418,7 @@ python -m fantasy_agent --prompt "a rooftop parkour demo with wall-runs and chec
 - M6f approval gate QA 与预览闭环已接入：执行阶段会写出 `approval-gate-report.yaml`，Studio 会显示 approved / skipped / revision / rejected / pending 摘要。
 - Creative Review 决策已经可以写入 `generated/asset-approval-manifest.yaml`。
 - M7.1-M7.5 已完成第一轮：Bundle 加载/阻断、Godot Spec 驱动、配置编译、Studio 追踪和 Unreal adapter/QA 已贯通。
+- 游戏资产管理界面（`/assets`）已接入 Studio：可从本机录入开源资产（复制进 `generated/asset-library/`，记录 license / author / 来源 / sha256），并与 Creative Review 的审阅决策同屏呈现。
 - 四层质量保障（pytest / ruff / 后端与前端变异守卫）接入 CI，本地命令与三条诚实规则见「开发 - 质量保障」。
 
 下一步优先级：

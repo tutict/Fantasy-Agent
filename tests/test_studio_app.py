@@ -38,9 +38,15 @@ def _materialize_review_artifacts(review, root: Path, *, target: str = 'unreal')
     return review
 
 
-def test_studio_serves_combined_desktop_panel():
+def test_studio_serves_combined_desktop_panel(monkeypatch, tmp_path):
     module = _load_studio_app()
     paths = {route.path for route in module.app.routes}
+    # The backend job in CI never builds the frontend bundle, so the index
+    # document is stubbed rather than assumed -- same reason
+    # test_workbench_serves_the_react_app_when_dist_exists stubs it.
+    built = tmp_path / "index.html"
+    built.write_text("<!doctype html><div id=root></div>", encoding="utf-8")
+    monkeypatch.setattr(module, "FRONTEND_INDEX_PATH", built)
 
     assert module.health()["agent"] == "fantasy-agent-studio"
     assert module.health()["mode"] == "standalone"
@@ -77,7 +83,13 @@ def test_studio_serves_combined_desktop_panel():
     # nobody maintains, and the two views drift without anyone noticing.
     assert not module.APP_DIR.joinpath("static").exists()
     assert "/studio-static" not in paths
-    assert "/assets" not in paths
+    # `/assets` is a route again since the asset library got a page, but it
+    # answers with the same SPA bundle as every other view -- the retired
+    # static mount is still gone. What is pinned here is *what serves*, not
+    # the absence of the path: a mount would show up as a directory answer
+    # with no route function behind it, so the route function is called.
+    assert "/assets" in paths
+    assert Path(module.asset_library_page().path) == module.FRONTEND_INDEX_PATH
     assert module.REPO_ROOT.joinpath("apps/frontend/src/workbench/PlanningWorkbench.tsx").exists()
     assert module.REPO_ROOT.joinpath("apps/frontend/src/console/FlowConsole.tsx").exists()
     status = module.mcp_status()
@@ -865,6 +877,69 @@ def test_execute_demo_job_ids_do_not_collide(monkeypatch):
 def test_asset_execute_status_unknown_job():
     module = _load_studio_app()
     assert module.asset_execute_status("nope")["status"] == "unknown"
+
+
+def _ingest_via_api(module, tmp_path: Path, **overrides) -> dict:
+    source = tmp_path / "downloads" / "nature.glb"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_bytes(b"stub-glb-bytes")
+    request = {
+        "name": "Kenney Nature Pack",
+        "source_path": str(source),
+        "license": "CC0",
+        "author": "Kenney",
+        "source_url": "https://kenney.nl/assets/nature-pack",
+    }
+    request.update(overrides)
+    response = module.asset_ingest_endpoint(module.AssetIngestRequest(**request))
+    return response.model_dump(mode="json")
+
+
+def test_asset_library_api_ingests_lists_and_removes(monkeypatch, tmp_path):
+    module = _load_studio_app()
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+
+    entry = _ingest_via_api(module, tmp_path)["entry"]
+    assert entry["kind"] == "mesh"
+    assert entry["path"].startswith("generated/asset-library/files/")
+    stored = tmp_path / entry["path"]
+    assert stored.read_bytes() == b"stub-glb-bytes"
+
+    overview = module.asset_library_overview_endpoint().model_dump(mode="json")
+    assert [item["id"] for item in overview["entries"]] == [entry["id"]]
+    assert overview["generated_manifest_present"] is False
+
+    removed = module.asset_remove_endpoint(entry["id"])
+    assert removed.removed_id == entry["id"]
+    assert not stored.exists()
+    # The download the user pointed at is still there.
+    assert (tmp_path / "downloads" / "nature.glb").exists()
+    assert module.asset_library_overview_endpoint().entries == []
+
+
+def test_asset_ingest_api_reports_a_missing_source(monkeypatch, tmp_path):
+    module = _load_studio_app()
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as caught:
+        module.asset_ingest_endpoint(
+            module.AssetIngestRequest(name="Nope", source_path=str(tmp_path / "nope.glb"))
+        )
+    assert caught.value.status_code == 400
+    assert "不存在" in caught.value.detail
+
+
+def test_asset_remove_api_answers_404_for_an_unknown_id(monkeypatch, tmp_path):
+    module = _load_studio_app()
+    monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
+
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as caught:
+        module.asset_remove_endpoint("asset-000000000000")
+    assert caught.value.status_code == 404
 
 
 def test_approval_manifest_api_returns_synchronized_bundle(monkeypatch, tmp_path):

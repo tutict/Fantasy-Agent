@@ -728,6 +728,10 @@ button:disabled {
 .settings-nav summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted-strong); }
 .settings-nav button { min-height: 44px; display: flex; align-items: center; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-m); background: transparent; color: inherit; text-align: left; }
 .settings-nav button.active { background: var(--accent-soft); color: var(--accent-deep); }
+.assets-nav { display: grid; gap: var(--space-1_5); margin-top: var(--space-5); }
+.assets-nav summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--muted-strong); }
+.assets-nav button { min-height: 44px; display: flex; align-items: center; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-m); background: transparent; color: inherit; text-align: left; }
+.assets-nav button.active { background: var(--accent-soft); color: var(--accent-deep); }
 .studio-topbar { min-height: auto; align-items: stretch; }
 .studio-topbar .journey-header { width: 100%; margin: 0; }
 .nav-copy { display: grid; min-width: 0; }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
+import { AssetLibrary } from "../assets/AssetLibrary";
 import { FlowConsole } from "../console/FlowConsole";
 import { OrchestrationBoard } from "../orchestration/OrchestrationBoard";
 import {
@@ -22,22 +23,24 @@ import { ApiSettingsPanel } from "./settings/ApiSettingsPanel";
 import { McpServiceGrid } from "./settings/McpCard";
 import "../styles/studio.css";
 
-type PanelKey = "workbench" | "pipeline" | "console" | "mcp" | "api" | "agent";
+type PanelKey = "workbench" | "pipeline" | "console" | "assets" | "mcp" | "api" | "agent";
 
 const panels: Record<PanelKey, { titleKey: string; icon: string }> = {
   workbench: { titleKey: "workbench", icon: "PL" },
   pipeline: { titleKey: "pipeline", icon: "OR" },
   console: { titleKey: "console", icon: "FC" },
+  assets: { titleKey: "assets", icon: "AS" },
   mcp: { titleKey: "mcp", icon: "MC" },
   api: { titleKey: "api", icon: "AI" },
   agent: { titleKey: "agent", icon: "AG" }
 };
 
-/** The three panels that are whole views, so they get their own URL. */
+/** The panels that are whole views, so they get their own URL. */
 const PANEL_ROUTES: Partial<Record<PanelKey, string>> = {
   workbench: "/workbench",
   pipeline: "/pipeline",
-  console: "/web-console"
+  console: "/web-console",
+  assets: "/assets"
 };
 
 const DEFAULT_PANEL: PanelKey = "workbench";
@@ -66,6 +69,10 @@ function panelFromPathname(): PanelKey {
 
   if (route.startsWith("/web-console")) return "console";
   if (route.startsWith("/pipeline")) return "pipeline";
+  // The asset library is its own view, like the console and the board, and
+  // not a settings panel: it is somewhere you go to work with assets, not a
+  // preference you set once.
+  if (route.startsWith("/assets")) return "assets";
   return DEFAULT_PANEL;
 }
 
@@ -265,6 +272,16 @@ export function StudioShell() {
           ))}
         </Disclosure>
 
+        {/* Assets get their own group rather than a journey step or a
+            settings slot: the six steps are the production journey and asset
+            management is not one of them, and it is not a preference you set
+            once either. One entry, so it reads as a destination. */}
+        <Disclosure className="assets-nav" title={t("assetsNavLabel")}>
+          <button className={activePanel === "assets" ? "active" : ""} type="button" data-target="assets" onClick={() => selectPanel("assets")}>
+            <span className="nav-label">{t("assets")}</span>
+          </button>
+        </Disclosure>
+
         <section className="studio-status">
           <strong>{t(panels[activePanel].titleKey)}</strong>
           <code>{panelEndpoint(activePanel)}</code>
@@ -344,6 +361,18 @@ export function StudioShell() {
               </ErrorBoundary>
             </section>
           )}
+          {visitedPanels.includes("assets") && (
+            <section
+              className={`studio-frame ${activePanel === "assets" ? "active" : ""}`}
+              data-frame="assets"
+              data-panel="assets"
+              aria-hidden={activePanel !== "assets"}
+            >
+              <ErrorBoundary t={t}>
+                <AssetLibrary t={t} />
+              </ErrorBoundary>
+            </section>
+          )}
           <section className={`mcp-panel ${activePanel === "mcp" ? "active" : ""}`} data-panel="mcp">
             <div className="mcp-header">
               <div>
@@ -418,6 +447,7 @@ function panelEndpoint(panel: PanelKey) {
   if (panel === "mcp") return "/api/tool-status";
   if (panel === "console") return "/web-console";
   if (panel === "pipeline") return "/api/orchestration/run";
+  if (panel === "assets") return "/api/assets";
   if (panel === "api") return "/api/settings/llm";
   if (panel === "agent") return "/api/agent/run";
   return "/workbench";
