@@ -33,6 +33,23 @@
 
 **这条决策的代价**：访问过的视图永久挂载，DOM 与 component state 只增不减。本仓库目前没有守卫覆盖这个增长，长期使用的内存表现是未验证的。共担一棵树还有更尖的一根刺：一个面板 render 抛错曾经带走整窗（sidebar 和 nav 一起）。七个面板现在各自由 `shared/ui/ErrorBoundary.tsx` 包着——boundary 只替换**后代**的 render，所以崩溃表达式必须落在子组件里（`McpServiceGrid` 就是为此从外壳 render 里抽出来的），外壳 chrome 不包进 boundary。
 
+### 1.2 外壳侧边栏：一条导航，四个层级
+
+侧边栏只做一件事——**告诉你你在哪、能去哪**。不装设置（语言/主题退到页脚）、不装调试信息、没有盒子：分组之间是发丝线与留白，唯一的实色元素是品牌标（身份）、当前项的竖条（位置）和状态点（进度）。行式语言与「点子」页内侧边栏（`wb-*`）逐项相同。
+
+| 层 | 内容 | 视觉重量 |
+|---|---|---|
+| L1 身份与位置 | 品牌行（灵标 + 产品名）；旅程**当前项**高亮 | 最重：唯一实心品牌标 + 唯一竖条 |
+| L2 可去之处 | 旅程六步（顺序即生产流程）→ 资产（单行）→ 设置三项（小标题 + 缩进三行） | 中：等重量的行，靠顺序与分组表达结构，不靠盒子 |
+| L3 状态 | 每行右侧 6px 点：current / complete / blocked / attention 实心（status 色）、upcoming 空心 | 最轻的一点信息 |
+| L4 环境 | 语言 / 主题两枚紧凑分段 + 「本地工坊」弱化小字 | 最轻：xs 字号、吸底 |
+
+两个「当前」必须分开：`.active`（竖条）= **你正在看的面板**；`aria-current="step"` + 状态点 = **旅程进度走到哪**。
+
+宽度默认 240px（可拖 220–430，折叠 82px——编号就是折叠态的图标），`overflow-y: auto`：矮窗口下页脚随滚动可达。窄屏走既有 900px 断点（不新增）：侧边栏变顶部横带，旅程/设置行改横排网格、页脚分段横排，`journey-nav` 的 `<details>` 折叠能力保留（summary 仅窄屏可见）。
+
+外壳控件全部收编在 `studio-*` 命名空间下（`.studio-seg` / `.studio-brand-mark` / `.studio-nav-dot` …），`console.css` 与 `studio.css` 不得定义同名键类——两表都进同一个 document 而 studio.css 排后，同名即「胜负由导入顺序决定」。方案、十条缺陷与守卫清单见 `docs/superpowers/plans/2026-10-19-shell-sidebar-redesign.md`；守卫在 `cssHygiene.test.ts`（"keeps the shell's two stylesheets from dressing the same class"、"keeps the sidebar's current row distinct from a hovered one"、"keeps one state dot per journey row, coloured by data-state"）与 `studio/StudioShell.test.tsx`（"marks every journey row with one state dot, and no text of its own"），变异用例 FE13 组。
+
 ## 2. 面板归属
 
 | 面板 key | 组件 | 样式表 | 状态 |
@@ -70,6 +87,7 @@ wc -l apps/frontend/src/workbench/PlanningWorkbench.tsx \
 | `wb-*` | 共享面板（workbench 与 console 共用） | `wb-card`、`wb-button`、`wb-empty` |
 | `or-*` | 编排板私有 | `or-card`、`or-answer` |
 | `mcp-*` `api-*` `agent-*` | 设置面板私有 | `mcp-status-card`、`api-field` |
+| `studio-*` | 外壳 chrome 私有（侧边栏 / 顶栏 / 面板框） | `studio-sidebar`、`studio-seg`、`studio-brand-mark` |
 | `playtest-*` `rework-*` `correction-*` `manual-*` | console 私有，四种都表示「带状态列表的侧面板」 | `playtest-panel`、`rework-panel` |
 | `as-*` | 资产库面板私有 | `as-entry`、`as-form`、`as-filter` |
 | **无前缀** | console 私有 | `rail-card`、`gate-item`、`pane-section-header` |
