@@ -10,8 +10,8 @@ import { makeTranslator, studioI18n } from "../shared/i18n";
 import { useLocaleTheme } from "../shared/localeTheme";
 import { selectedEngineVersion } from "../shared/planModel";
 import { useJourney } from "../shared/journeyContext";
-import { JOURNEY_PANELS, JOURNEY_STATE_KEYS, JOURNEY_STEP_KEYS, type JourneyStepId } from "../shared/productionJourney";
-import { Disclosure, JourneyHeader } from "../shared/ui/primitives";
+import { JOURNEY_PANELS, JOURNEY_STEP_KEYS, type JourneyStepId } from "../shared/productionJourney";
+import { JourneyHeader } from "../shared/ui/primitives";
 import { ErrorBoundary } from "../shared/ui/ErrorBoundary";
 import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, readHandoffPlan } from "../shared/storage";
 import type {
@@ -25,14 +25,14 @@ import "../styles/studio.css";
 
 type PanelKey = "workbench" | "pipeline" | "console" | "assets" | "mcp" | "api" | "agent";
 
-const panels: Record<PanelKey, { titleKey: string; icon: string }> = {
-  workbench: { titleKey: "workbench", icon: "PL" },
-  pipeline: { titleKey: "pipeline", icon: "OR" },
-  console: { titleKey: "console", icon: "FC" },
-  assets: { titleKey: "assets", icon: "AS" },
-  mcp: { titleKey: "mcp", icon: "MC" },
-  api: { titleKey: "api", icon: "AI" },
-  agent: { titleKey: "agent", icon: "AG" }
+const panels: Record<PanelKey, { titleKey: string }> = {
+  workbench: { titleKey: "workbench" },
+  pipeline: { titleKey: "pipeline" },
+  console: { titleKey: "console" },
+  assets: { titleKey: "assets" },
+  mcp: { titleKey: "mcp" },
+  api: { titleKey: "api" },
+  agent: { titleKey: "agent" }
 };
 
 /** The panels that are whole views, so they get their own URL. */
@@ -210,11 +210,8 @@ export function StudioShell() {
     >
       <aside className="studio-sidebar">
         <header className="studio-sidebar-header">
-          <div className="brand-mark" aria-hidden="true">灵</div>
-          <div className="brand">
-            <p>{t("productLabel")}</p>
-            <h1>{t("brandName")}</h1>
-          </div>
+          <div className="studio-brand-mark" aria-hidden="true">灵</div>
+          <h1 className="brand-name">{t("brandName")}</h1>
           <button
             className="collapse-button"
             type="button"
@@ -228,64 +225,124 @@ export function StudioShell() {
           </button>
         </header>
 
-        <div className="locale-switch" aria-label="Interface language">
-          <button className={`locale-option ${locale === "en" ? "active" : ""}`} type="button" data-locale="en" onClick={() => setLocale("en")}>
-            EN
-          </button>
-          <button className={`locale-option ${locale === "zh-CN" ? "active" : ""}`} type="button" data-locale="zh-CN" onClick={() => setLocale("zh-CN")}>
-            中文
-          </button>
-        </div>
-
-        <div className="theme-switch" aria-label="Theme">
-          <button className={`theme-option ${theme === "dark" ? "active" : ""}`} type="button" data-theme-choice="dark" onClick={() => setTheme("dark")}>
-            {t("themeDark")}
-          </button>
-          <button className={`theme-option ${theme === "light" ? "active" : ""}`} type="button" data-theme-choice="light" onClick={() => setTheme("light")}>
-            {t("themeLight")}
-          </button>
-        </div>
-
+        {/* One surface, one job: the sidebar navigates. The locale and theme
+            switches used to sit here as two full-width controls directly under
+            the brand, which made the first thing below the product name a pair
+            of settings and pushed the journey down. They live in the footer
+            now. */}
         <details className="journey-nav" open>
           <summary>{t("journeyLabel")}</summary>
           <nav className="studio-nav" aria-label={t("journeyLabel")}>
             {JOURNEY_STEPS.map((step, index) => {
               const panel = JOURNEY_PANELS[step];
               const stepState = snapshot.steps.find((item) => item.id === step)?.state ?? "upcoming";
+              const label = t(JOURNEY_STEP_KEYS[step]);
               return (
-                <button className={viewedJourneyStep === step ? "active" : ""} type="button" data-target={panel} data-journey={step} aria-current={snapshot.currentStep === step ? "step" : undefined} data-state={stepState} key={step} onClick={() => selectPanel(panel, step)}>
-                  <span className="nav-index" aria-hidden="true">{index + 1}</span>
-                  <span className="nav-copy">
-                    <span className="nav-label">{t(JOURNEY_STEP_KEYS[step])}</span>
-                    <span className="nav-state">{t(JOURNEY_STATE_KEYS[stepState])}</span>
-                  </span>
+                <button
+                  className={viewedJourneyStep === step ? "active" : ""}
+                  type="button"
+                  data-target={panel}
+                  data-journey={step}
+                  aria-current={snapshot.currentStep === step ? "step" : undefined}
+                  aria-label={label}
+                  title={label}
+                  data-state={stepState}
+                  key={step}
+                  onClick={() => selectPanel(panel, step)}
+                >
+                  <span className="studio-nav-index" aria-hidden="true">{index + 1}</span>
+                  <span className="nav-label">{label}</span>
+                  <span className="studio-nav-dot" aria-hidden="true" />
                 </button>
               );
             })}
           </nav>
         </details>
-        <Disclosure className="settings-nav" title={t("journeySettings")}>
-          {SETTING_NAV.map((key) => (
-            <button className={activePanel === key ? "active" : ""} type="button" data-target={key} key={key} onClick={() => selectPanel(key)}>
-              <span className="nav-label">{t(panels[key].titleKey)}</span>
-            </button>
-          ))}
-        </Disclosure>
 
-        {/* Assets get their own group rather than a journey step or a
-            settings slot: the six steps are the production journey and asset
-            management is not one of them, and it is not a preference you set
-            once either. One entry, so it reads as a destination. */}
-        <Disclosure className="assets-nav" title={t("assetsNavLabel")}>
-          <button className={activePanel === "assets" ? "active" : ""} type="button" data-target="assets" onClick={() => selectPanel("assets")}>
+        {/* One entry, not a group: asset management is not a journey step and
+            not a preference, so it reads as a destination. It used to be a
+            disclosure whose collapsed state was a large box around one word.
+            The dot is hollow because the asset library has no journey state --
+            it keeps the row the same shape as the six above it. */}
+        <section className="studio-side-group">
+          <button
+            className={activePanel === "assets" ? "active" : ""}
+            type="button"
+            data-target="assets"
+            aria-label={t("assets")}
+            title={t("assets")}
+            onClick={() => selectPanel("assets")}
+          >
             <span className="nav-label">{t("assets")}</span>
+            <span className="studio-nav-dot" aria-hidden="true" />
           </button>
-        </Disclosure>
-
-        <section className="studio-status">
-          <strong>{t(panels[activePanel].titleKey)}</strong>
-          <code>{panelEndpoint(activePanel)}</code>
         </section>
+
+        <section className="studio-side-group">
+          <p className="studio-side-label">{t("journeySettings")}</p>
+          <div className="studio-side-rows">
+            {SETTING_NAV.map((key) => {
+              const label = t(panels[key].titleKey);
+              return (
+                <button
+                  className={activePanel === key ? "active" : ""}
+                  type="button"
+                  data-target={key}
+                  aria-label={label}
+                  title={label}
+                  key={key}
+                  onClick={() => selectPanel(key)}
+                >
+                  <span className="nav-label">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* The footer: environment, not navigation. The two switches are the
+            same compact segmented controls the workbench page uses, and
+            `productLabel` -- "local studio" -- moved down from the brand row,
+            which needed one line for the product name, not two. */}
+        <div className="studio-side-foot">
+          <div className="studio-seg" aria-label={t("interfaceLanguage")}>
+            <button
+              type="button"
+              className={`studio-seg-option${locale === "en" ? " active" : ""}`}
+              data-locale="en"
+              onClick={() => setLocale("en")}
+            >
+              EN
+            </button>
+            <button
+              type="button"
+              className={`studio-seg-option${locale === "zh-CN" ? " active" : ""}`}
+              data-locale="zh-CN"
+              onClick={() => setLocale("zh-CN")}
+            >
+              中文
+            </button>
+          </div>
+          <div className="studio-seg" aria-label={t("themeSwitch")}>
+            <button
+              type="button"
+              className={`studio-seg-option${theme === "dark" ? " active" : ""}`}
+              data-theme-choice="dark"
+              onClick={() => setTheme("dark")}
+            >
+              {t("themeDark")}
+            </button>
+            <button
+              type="button"
+              className={`studio-seg-option${theme === "light" ? " active" : ""}`}
+              data-theme-choice="light"
+              onClick={() => setTheme("light")}
+            >
+              {t("themeLight")}
+            </button>
+          </div>
+          <p className="studio-side-note">{t("productLabel")}</p>
+        </div>
 
         <div
           className="sidebar-resizer"
@@ -441,16 +498,6 @@ export function StudioShell() {
       </section>
     </main>
   );
-}
-
-function panelEndpoint(panel: PanelKey) {
-  if (panel === "mcp") return "/api/tool-status";
-  if (panel === "console") return "/web-console";
-  if (panel === "pipeline") return "/api/orchestration/run";
-  if (panel === "assets") return "/api/assets";
-  if (panel === "api") return "/api/settings/llm";
-  if (panel === "agent") return "/api/agent/run";
-  return "/workbench";
 }
 
 /**

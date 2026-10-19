@@ -30,7 +30,6 @@ const ALPHA_TOKENS = [
   "--focus-soft",
   "--grid-line-a",
   "--grid-line-b",
-  "--brand-tint",
   "--surface-translucent"
 ];
 
@@ -166,7 +165,10 @@ describe("drafting-table tokens", () => {
       .filter((name) => name.endsWith(".css") && name !== "tokens.css")
       .map((name) => readFileSync(resolve(stylesDir, name), "utf8"))].join("\n");
 
-    expect(ALPHA_TOKENS.length).toBeGreaterThanOrEqual(5);
+    // A floor, not a snapshot: the list may grow, and it shrank once for a
+    // reason worth naming here -- `--brand-tint` was retired together with the
+    // sidebar's card styles, which were its only reader (2026-10-19).
+    expect(ALPHA_TOKENS.length).toBeGreaterThanOrEqual(4);
     for (const name of ALPHA_TOKENS) {
       for (const [theme, block] of [["light", light], ["dark", dark]] as const) {
         const declared = [...block.matchAll(new RegExp(`^\\s*${name}\\s*:\\s*([^;]+)`, "gm"))];

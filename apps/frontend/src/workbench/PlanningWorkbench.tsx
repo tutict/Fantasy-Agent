@@ -358,7 +358,7 @@ export function PlanningWorkbench() {
             switches in the product once the shell's own sidebar is collapsed
             to icons (where its switches are display:none). */}
         <div className="wb-side-foot">
-          <div className="wb-seg" aria-label="Interface language">
+          <div className="wb-seg" aria-label={t("interfaceLanguage")}>
             <button
               type="button"
               className={`wb-seg-option${locale === "en" ? " active" : ""}`}
@@ -376,7 +376,7 @@ export function PlanningWorkbench() {
               中文
             </button>
           </div>
-          <div className="wb-seg" aria-label="Theme">
+          <div className="wb-seg" aria-label={t("themeSwitch")}>
             <button
               type="button"
               className={`wb-seg-option${theme === "dark" ? " active" : ""}`}

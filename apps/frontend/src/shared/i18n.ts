@@ -737,6 +737,11 @@ export const studioI18n: Record<Locale, Dictionary> = {
     mcpNextGithubOptional: "Install GitHub CLI only for PR, issue, or repository automation.",
     collapseSidebar: "Collapse sidebar",
     expandSidebar: "Expand sidebar",
+    // The aria-labels of the two footer switches. The workbench sidebar uses
+    // the same pair -- its copies used to be hardcoded English, so a Chinese
+    // interface announced them in English.
+    interfaceLanguage: "Interface language",
+    themeSwitch: "Theme",
     themeDark: "Dark",
     themeLight: "Light",
     api: "API access",
@@ -858,7 +863,6 @@ export const studioI18n: Record<Locale, Dictionary> = {
     // The asset library panel (`/assets`). Keys are prefixed `assets` so the
     // panel's vocabulary stays findable next to `mcp*` and `agent*`.
     assets: "Asset Library",
-    assetsNavLabel: "Assets",
     assetsTitle: "Asset library",
     assetsHint:
       "Everything this project can build with: open-source assets you ingested, and what the generators produced. Ingestion copies a local file into the library and records where it came from -- nothing is fetched from the network.",
@@ -1014,6 +1018,8 @@ export const studioI18n: Record<Locale, Dictionary> = {
     mcpNextGithubOptional: "只有需要 PR、issue 或仓库自动化时才需要安装 GitHub CLI。",
     collapseSidebar: "收起侧栏",
     expandSidebar: "展开侧栏",
+    interfaceLanguage: "界面语言",
+    themeSwitch: "主题",
     themeDark: "深色",
     themeLight: "浅色",
     api: "API 接入",
@@ -1131,7 +1137,6 @@ export const studioI18n: Record<Locale, Dictionary> = {
     panelCrashedBody: "工作室的其他部分仍可正常使用。刷新页面可以恢复这个面板。",
     // 资产库面板（/assets）。键名统一 assets 前缀，与 mcp* / agent* 同一套找法。
     assets: "资产库",
-    assetsNavLabel: "资产",
     assetsTitle: "资产库",
     assetsHint:
       "这个项目能用来搭建切片的一切：你录入的开源资产，以及各生成工人产出的资产。录入只复制你本机的文件进库并记录来源——不从网络下载任何东西。",
@@ -1272,6 +1277,8 @@ export const workbenchI18n: Record<Locale, Dictionary> = {
     failure: "Failure",
     packaging: "Packaging",
     noPlan: "Generated plans will appear here after confirmation.",
+    interfaceLanguage: "Interface language",
+    themeSwitch: "Theme",
     themeDark: "Dark",
     themeLight: "Light",
     toolActions: "Plan tools",
@@ -1372,6 +1379,8 @@ export const workbenchI18n: Record<Locale, Dictionary> = {
     failure: "失败",
     packaging: "打包",
     noPlan: "确认点子后，生成的计划会显示在这里。",
+    interfaceLanguage: "界面语言",
+    themeSwitch: "主题",
     themeDark: "深色",
     themeLight: "浅色",
     toolActions: "计划工具",
