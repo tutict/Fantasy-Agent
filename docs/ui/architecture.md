@@ -13,7 +13,7 @@
 
 | 路由 | 面板 key | 组件 | 用途 |
 |---|---|---|---|
-| `/workbench` | `workbench` | `workbench/PlanningWorkbench.tsx` | 策划：只做规划，不写文件不起进程 |
+| `/workbench` | `workbench` | `workbench/PlanningWorkbench.tsx`（外壳，下含 `DiscoveryThread` / `SeedInspector` / `PlanPanels`） | 策划：只做规划，不写文件不起进程 |
 | `/pipeline` | `pipeline` | `orchestration/OrchestrationBoard.tsx` | 编排：`production_pipeline` 的运行状态 |
 | `/web-console` | `console` | `console/FlowConsole.tsx` | 执行：执行前体检、确认、试玩、手改回扫 |
 | `/assets` | `assets` | `assets/AssetLibrary.tsx` | 资产库：开源资产录入 + 生成资产的审阅决策 |
@@ -37,7 +37,7 @@
 
 | 面板 key | 组件 | 样式表 | 状态 |
 |---|---|---|---|
-| `workbench` | `workbench/PlanningWorkbench.tsx` | `workbench.css` + 共享 `wb-*` | — |
+| `workbench` | `workbench/PlanningWorkbench.tsx`（外壳）+ `workbench/DiscoveryThread.tsx` / `SeedInspector.tsx` / `PlanPanels.tsx` | `workbench.css` + 共享 `wb-*` | 侧边栏（导航 + 动作）+ 主区二选一（对话态／计划态）；2026-10-19 重设计，见 `docs/superpowers/plans/2026-10-19-idea-page-redesign.md` |
 | `pipeline` | `orchestration/OrchestrationBoard.tsx` + `orchestration/StageCard.tsx` | `orchestration.css`（`or-*`） | **无媒体查询**：它本来就是单列流式布局，加断点只会让它在某个宽度下突然变形 |
 | `console` | `console/FlowConsole.tsx`（`Metric` / `AssetList` / `Panel` / `SegmentedControl` 在 `FlowConsole.parts.tsx`，执行阶段/试玩/纠偏三张卡片各在自己目录） | `console.css` + `studio.css` 同页共存 | tab 只有 2 个：`review` / `specs` |
 | `mcp` / `api` / `agent` | `studio/settings/`（`McpCard.tsx` 连 `McpServiceGrid`、`ApiSettingsPanel.tsx`、`AgentPanel.tsx`、`ToolCatalogPanel.tsx`） | `studio.css`（`mcp-*` / `api-*` / `agent-*`） | 设置类；`api` 首访才挂载，见 §1.1 |
@@ -98,7 +98,7 @@ wc -l apps/frontend/src/workbench/PlanningWorkbench.tsx \
 
 判据的**动作**是「移出 `FlowConsole.tsx`」，**不是**「每个组件一个文件」。同一个文件里可以放多个组件，只要它们共用同一个理由被拆出来。当前 `FlowConsole.parts.tsx` 装的是四个无 state、无异步、无路由知识的小组件（`AssetList` / `Metric` / `Panel` / `SegmentedControl`），外加两个纯格式化函数。
 
-`cssHygiene.test.ts` 的 `pairs` 清单要覆盖每一个发静态 className 字面量的组件——它起步时只有 2 个，后来每一次拆分都往里补。漏过一次，代价是 FE6-1 长期由**别的**守卫代红，而那条用例看上去一直是绿的。**新增组件要同步加进那个清单**，它不是可选的完备性检查。清单当前有多少条不写在这里（会漂），要数就数 `pairs` 数组本身。
+`cssHygiene.test.ts` 的 `pairs` 清单要覆盖每一个发静态 className 字面量的组件——它起步时只有 2 个，后来每一次拆分都往里补。漏过一次，代价是 FE6-1 长期由**别的**守卫代红，而那条用例看上去一直是绿的。workbench 的四个文件（`PlanningWorkbench` / `DiscoveryThread` / `SeedInspector` / `PlanPanels`）也一直不在清单里，2026-10-19 点子页重设计时才补齐（那次同时新增了变异用例 FE12-1 钉住 `SeedInspector` 的类名）。**新增组件要同步加进那个清单**，它不是可选的完备性检查。清单当前有多少条不写在这里（会漂），要数就数 `pairs` 数组本身。
 
 ## 6. 状态的两个 owner
 
