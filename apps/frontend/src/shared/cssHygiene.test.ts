@@ -79,6 +79,44 @@ function isExemptValue(line: string): boolean {
   return NOT_SPACING.some((pattern) => pattern.test(line));
 }
 
+/** The source with every block comment blanked out, so prose cannot look like a selector. */
+function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ");
+}
+
+/**
+ * The classes a sheet defines *on its own*: the class is the only simple
+ * selector in its rule's key compound, optionally trailed by pseudo-classes,
+ * pseudo-elements or attributes.
+ *
+ * `.studio-topbar .journey-header` does not count -- that is a contextual
+ * override of a shared component, the more specific selector wins no matter
+ * which sheet is emitted last, and it is a shape worth allowing. Neither does
+ * `.studio-nav button.active`: the key compound there is `button.active`, whose
+ * only class is the `.active` modifier riding on a type selector, and a
+ * modifier is not an owner.
+ *
+ * What this is after is the accident shape -- `.locale-switch` defined by two
+ * sheets, where the winner is decided by import order -- which is what
+ * `console.css` and `studio.css` did to the locale switch, the theme switch
+ * and the brand mark. Every view stylesheet lands in one document and
+ * `studio.css` is imported after `console.css`, so the shell's copy of a
+ * shared class silently dressed the console's controls.
+ */
+function standaloneClasses(source: string): Set<string> {
+  const owned = new Set<string>();
+  for (const [, selectorList] of source.matchAll(/([^{}]+)\{/g)) {
+    for (const selector of selectorList.split(",")) {
+      const compound = selector.trim().split(/[\s>+~]+/).pop() ?? "";
+      const classes = compound.match(/\.[a-zA-Z][a-zA-Z0-9_-]*/g) ?? [];
+      if (classes.length !== 1) continue;
+      const rest = compound.replace(classes[0], "");
+      if (/^(?::[a-zA-Z-]+(\([^)]*\))?|\[[^\]]*\])*$/.test(rest)) owned.add(classes[0].slice(1));
+    }
+  }
+  return owned;
+}
+
 const [lightBlock] = tokensSource.split(':root[data-theme="dark"]');
 
 /**
@@ -438,5 +476,96 @@ describe("stylesheet hygiene", () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("keeps the shell's two stylesheets from dressing the same class", () => {
+    // The 2026-10-19 sidebar redesign's namespacing rule. The shell's locale
+    // switch, theme switch and brand mark each had two live consumers -- one in
+    // the sidebar, one in the console's top bar -- and two definitions, one per
+    // sheet. `studio.css` is imported after `console.css`, so the shell's rules
+    // won every time and the console's controls were restyled by a sheet that
+    // had no say in the matter: 36px borderless switches and a solid brand
+    // square where `console.css` asks for 40px bordered ones and a soft tile.
+    // The shell's controls now live under `studio-*` names; what is left below
+    // is the complete list of shared names, and every entry is a decision.
+    const consoleClasses = standaloneClasses(stripComments(readFileSync(resolve(stylesDir, "console.css"), "utf8")));
+    const studioClasses = standaloneClasses(stripComments(readFileSync(resolve(stylesDir, "studio.css"), "utf8")));
+
+    const KNOWN_SHARED: Record<string, string> = {
+      // The console's stage list and the shell's mcp panel both show a status
+      // pill under one name. Registered rather than fixed: renaming it touches
+      // the console's rendering for no visual gain, and the console's rule is
+      // scoped (`.generate-stages .mcp-state`) so it wins on specificity, not
+      // on import order.
+      "mcp-state": "the console's scoped pill and the shell's mcp panel pill",
+      // The console's run button and the shell's mcp refresh button share the
+      // primary-button class across two sheets. Same registration.
+      "primary-action": "the console's run button and the shell's refresh button"
+    };
+
+    const shared = [...consoleClasses].filter((name) => studioClasses.has(name)).sort();
+    const unregistered = shared.filter((name) => !(name in KNOWN_SHARED));
+    expect(
+      unregistered,
+      "a class both sheets define is dressed by import order, not by decision"
+    ).toEqual([]);
+
+    // The shell's own controls are namespaced, and the console's names stay in
+    // console.css, where their one consumer lives.
+    for (const name of ["studio-seg", "studio-seg-option", "studio-nav-dot", "studio-nav-index"]) {
+      expect(studioClasses.has(name), `the shell no longer defines .${name}`).toBe(true);
+    }
+    for (const name of ["locale-switch", "locale-option", "theme-switch", "theme-option", "brand-mark"]) {
+      expect(studioClasses.has(name), `.${name} belongs to console.css`).toBe(false);
+    }
+  });
+
+  it("keeps the sidebar's current row distinct from a hovered one", () => {
+    // "You are here" and "the mouse is here" used to be one rule, so the
+    // current panel was indistinguishable from a row being crossed. They are
+    // two rules with two backgrounds now (`--accent-soft` against
+    // `--surface-muted`), and the current one carries a bar on its left edge.
+    const studio = stripComments(readFileSync(resolve(stylesDir, "studio.css"), "utf8"));
+    const rules = [...studio.matchAll(/([^{}]+)\{([^{}]*)\}/g)];
+
+    const active = rules.find(([, selectors]) =>
+      selectors.split(",").some((selector) => selector.trim().endsWith("button.active"))
+    );
+    expect(active, "the current-row rule is gone").toBeDefined();
+    expect(active![2], "the current row has no left bar to mark it").toMatch(/border-left|::before/);
+
+    // And the two may not be merged back into one selector list: a combined
+    // `:hover, .active` rule is the regression this pins.
+    const merged = rules.filter(
+      ([, selectors]) =>
+        /\.studio-nav button:hover/.test(selectors) && /\.studio-nav button\.active/.test(selectors)
+    );
+    expect(merged.map(([selectors]) => selectors.trim().replace(/\s+/g, " "))).toEqual([]);
+  });
+
+  it("keeps one state dot per journey row, coloured by data-state", () => {
+    // The row used to state its journey state three ways -- the index chip's
+    // colour and shape, the data attribute, and a "current / later" text line.
+    // The dot is the one visual claim left; the attribute stays for the tests
+    // and the header, and this guard keeps the dot from being dropped for it.
+    const studio = stripComments(readFileSync(resolve(stylesDir, "studio.css"), "utf8"));
+
+    const base = /\.studio-nav-dot\s*\{([^}]*)\}/.exec(studio);
+    expect(base, "the state dot is gone").not.toBeNull();
+    expect(base![1]).toMatch(/border:/);
+    expect(base![1], "an unstarted step must read as hollow").toMatch(/background:\s*transparent/);
+
+    const coloured = new Map(
+      [...studio.matchAll(/\.studio-nav button\[data-state="([a-z]+)"\]\s*\.studio-nav-dot\s*\{([^}]*)\}/g)].map(
+        ([, state, body]) => [state, body]
+      )
+    );
+    for (const state of ["current", "complete", "blocked", "attention"]) {
+      const body = coloured.get(state);
+      expect(body, `data-state="${state}" no longer colours the dot`).toBeDefined();
+      expect(body, `data-state="${state}" must colour the dot from the status palette`).toMatch(/var\(--status-/);
+    }
+    // Upcoming has no rule on purpose: the hollow base dot is its statement.
+    expect(coloured.has("upcoming"), "an upcoming step must stay hollow").toBe(false);
   });
 });

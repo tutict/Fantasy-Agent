@@ -271,11 +271,13 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # A `var(--x, #hex)` fallback reads as "already tokenised" to anyone
         # skimming the file, but the hex never renders -- the variable is always
         # defined, which is exactly why the fallback is there and wrong. Five of
-        # these lived in studio.css.
+        # these lived in studio.css; the sidebar rewrite took the last of them
+        # out, which is why the needle below moved from 282px to the width the
+        # rewrite left behind. The shape being guarded did not change.
         "FE6-4 a dead color fallback comes back",
         "apps/frontend/src/styles/studio.css",
-        b"  --sidebar-width: 282px;\n  display: grid;\n",
-        b"  --sidebar-width: 282px;\n  color: var(--nonexistent-token, #6ea8fe);\n  display: grid;\n",
+        b"  --sidebar-width: 240px;\n  display: grid;\n",
+        b"  --sidebar-width: 240px;\n  color: var(--nonexistent-token, #6ea8fe);\n  display: grid;\n",
         "src/shared/cssHygiene.test.ts",
         "keeps colors in tokens; a fallback in var() is not an exemption",
     ),
@@ -708,6 +710,64 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         b"              Send\n",
         "src/shared/panelI18n.test.ts",
         "has no orphaned workbench keys",
+    ),
+    # ── the shell sidebar redesign (2026-10-19) ─────────────────────────────
+    (
+        # The current row loses its left bar. Every other decoration can go and
+        # the row still reads as current -- the bar is the one mark that says
+        # "you are here" without leaning on the fill, which the hover also has.
+        "FE13-1 the current row loses its left bar",
+        "apps/frontend/src/styles/studio.css",
+        (
+            b".studio-nav button.active,\n"
+            b".studio-side-rows button.active,\n"
+            b".studio-side-group > button.active {\n"
+            b"  border-left-color: var(--brand);\n"
+        ),
+        (
+            b".studio-nav button.active,\n"
+            b".studio-side-rows button.active,\n"
+            b".studio-side-group > button.active {\n"
+        ),
+        "src/shared/cssHygiene.test.ts",
+        "keeps the sidebar's current row distinct from a hovered one",
+    ),
+    (
+        # The shell's footer segmented control takes the console's class name
+        # back -- the exact shape of the collision the namespacing removed: two
+        # live consumers, two sheets, one document, and the winner decided by
+        # import order. Written as a selector added to the shell's own rule so
+        # the mutant stays parseable and changes no rendered value.
+        "FE13-2 the footer control takes the console's class name back",
+        "apps/frontend/src/styles/studio.css",
+        b".studio-seg {\n",
+        b".locale-switch,\n.studio-seg {\n",
+        "src/shared/cssHygiene.test.ts",
+        "keeps the shell's two stylesheets from dressing the same class",
+    ),
+    (
+        # The other half of the same collision, from the markup side: the shell
+        # renders `locale-switch` and nothing in studio.css styles it, so the
+        # console's rules dress the shell's footer control instead. The pairs
+        # check is what sees it -- the class the component emits is the class
+        # its sheet has to define.
+        "FE13-3 the footer control is renamed in the component only",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        b'          <div className="studio-seg" aria-label={t("interfaceLanguage")}>\n',
+        b'          <div className="locale-switch" aria-label={t("interfaceLanguage")}>\n',
+        "src/shared/cssHygiene.test.ts",
+        "styles the base class a component hangs its modifiers on",
+    ),
+    (
+        # A journey row loses its state dot. The attribute stays, so the row
+        # still *has* a state -- it just stops saying it, which is how the
+        # triple expression the dot replaced got started.
+        "FE13-4 a journey row loses its state dot",
+        "apps/frontend/src/studio/StudioShell.tsx",
+        b'                  <span className="studio-nav-dot" aria-hidden="true" />\n',
+        b"",
+        "src/studio/StudioShell.test.tsx",
+        "marks every journey row with one state dot, and no text of its own",
     ),
 )
 

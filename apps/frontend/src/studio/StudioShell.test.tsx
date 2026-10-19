@@ -341,6 +341,27 @@ describe("locale and theme have one owner", () => {
     expect(screen.getByText("设置")).toBeTruthy();
   });
 
+  it("marks every journey row with one state dot, and no text of its own", () => {
+    // The row used to say its state three ways -- the index chip's colour and
+    // shape, the data attribute, and a "current / later" text line. The dot is
+    // the one visual claim left; if a row loses it, the state has to be read
+    // from the attribute alone, which is how the triple expression started.
+    renderShell();
+
+    const rows = [...document.querySelectorAll(".studio-nav button")];
+    expect(rows.length).toBe(6);
+    for (const row of rows) {
+      const dots = row.querySelectorAll(".studio-nav-dot");
+      expect(dots.length, `${row.getAttribute("data-journey")} lost its state dot`).toBe(1);
+      expect(dots[0].textContent, "the dot is a mark, not a second label").toBe("");
+    }
+
+    // The asset row keeps the journey rows' shape with a hollow dot: it has no
+    // journey state to claim, and the dot is what says so.
+    const assets = document.querySelector('[data-target="assets"]') as HTMLButtonElement;
+    expect(assets.querySelectorAll(".studio-nav-dot").length).toBe(1);
+  });
+
   it("restores the handed-off project into the journey on a fresh render", () => {
     localStorage.setItem("fantasy-agent-studio-locale", "zh-CN");
     localStorage.setItem(
