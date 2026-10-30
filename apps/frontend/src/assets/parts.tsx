@@ -160,7 +160,7 @@ export function GeneratedAssetCard({
   t: Translator;
 }) {
   return (
-    <article className="as-entry as-entry-generated" data-status={record.status}>
+    <article className="as-entry" data-origin="generated" data-status={record.status}>
       <div className="as-entry-top">
         <strong>{record.asset_id}</strong>
         <StatusBadge status={record.status} label={t(statusLabelKey(record.status))} />

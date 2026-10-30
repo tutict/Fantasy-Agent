@@ -404,6 +404,12 @@ describe("planning workbench tool calls", () => {
 
     fireEvent.click(toolButton("prepare_qa_plan"));
     await waitFor(() => expect(document.body.textContent).toContain("prompt 至少需要 8 个字符"));
-    expect(screen.getByTestId("status-chip").className).toContain("error");
+    // The state, not the spelling of it. The chip used to carry its state as a
+    // second class (`wb-chip error`), so this read the class name and would
+    // have gone on passing if the colour had silently stopped arriving. It
+    // carries `data-status` now, which is the same attribute every other badge
+    // in the app is coloured from -- so this asserts the state is present,
+    // which is the thing the colour is derived from.
+    expect(screen.getByTestId("status-chip").getAttribute("data-status")).toBe("error");
   });
 });

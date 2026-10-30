@@ -111,7 +111,7 @@ function TaskRow({ task, locale, t }: { task: TaskItem; locale: Locale; t: Trans
         <Pill>{task.status}</Pill>
         {task.id ? <Pill>{task.id}</Pill> : null}
         {task.agent ? <Pill>{task.agent}</Pill> : null}
-        {task.requires_confirmation ? <Pill variant="warn">{t("confirmation")}</Pill> : null}
+        {task.requires_confirmation ? <Pill variant="warning">{t("confirmation")}</Pill> : null}
         {task.depends_on?.length ? (
           <Pill>{`${t("dependencies")}: ${task.depends_on.join(", ")}`}</Pill>
         ) : null}

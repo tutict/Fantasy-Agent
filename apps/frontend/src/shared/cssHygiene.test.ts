@@ -84,6 +84,24 @@ function stripComments(source: string): string {
   return source.replace(/\/\*[\s\S]*?\*\//g, " ");
 }
 
+function stylesheetClasses(source: string): Set<string> {
+  const classes = new Set<string>();
+  const clean = stripComments(source);
+  for (const [, selectorList, body] of clean.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    // This shared reset only clears an inherited tone. It is not a component
+    // definition and must not make a missing base rule look owned by ui.css.
+    if (selectorList.includes(":where(") && /^\s*--tone(?:-soft)?\s*:/m.test(body)) continue;
+    for (const [, name] of selectorList.matchAll(/\.([a-zA-Z][a-zA-Z0-9_-]*)/g)) classes.add(name!);
+  }
+  return classes;
+}
+
+function renderedClassNames(source: string): Set<string> {
+  return new Set(
+    [...source.matchAll(/className="([^"{}]+)"/g)].flatMap((match) => match[1]!.trim().split(/\s+/))
+  );
+}
+
 /**
  * The classes a sheet defines *on its own*: the class is the only simple
  * selector in its rule's key compound, optionally trailed by pseudo-classes,
@@ -103,6 +121,41 @@ function stripComments(source: string): string {
  * `studio.css` is imported after `console.css`, so the shell's copy of a
  * shared class silently dressed the console's controls.
  */
+/**
+ * The classes a sheet gives a PLAIN `.name` rule -- 0,1,0, nothing attached.
+ *
+ * Two of those in two sheets is the hazard: neither one has anything to beat
+ * the other with, so which one dresses the element is decided by which sheet
+ * arrived last. Everything else is excluded on purpose, because it is not a
+ * tie:
+ *
+ *   `.review-pill[data-status="human"]`  0,2,0 -- the attribute wins outright
+ *   `.recovery-actions .ghost-action`    0,2,0 -- the combinator does too
+ *   `:where(.review-pill)`               0,0,0 -- zero by construction, it is
+ *                                                how the vocabulary lists its
+ *                                                readers without competing
+ *
+ * It is a separate function from `standaloneClasses` below because that one
+ * answers a different question (does this sheet style this class at all) and
+ * widening it would have changed the answers of the guards that use it.
+ */
+function baseClasses(source: string): Set<string> {
+  const owned = new Set<string>();
+  for (const [, selectorList] of source.matchAll(/([^{}]+)\{/g)) {
+    // A multi-line `:where(...)` splits on commas into members that no longer
+    // start with `:where(`, so the whole rule has to be recognised here, at the
+    // level of the list as it was captured.
+    if (selectorList.includes(":where(")) continue;
+    for (const selector of selectorList.split(",")) {
+      const trimmed = selector.trim();
+      if (!trimmed) continue;
+      if (/\s/.test(trimmed)) continue;
+      if (/^\.[a-zA-Z][a-zA-Z0-9_-]*$/.test(trimmed)) owned.add(trimmed.slice(1));
+    }
+  }
+  return owned;
+}
+
 function standaloneClasses(source: string): Set<string> {
   const owned = new Set<string>();
   for (const [, selectorList] of source.matchAll(/([^{}]+)\{/g)) {
@@ -211,6 +264,36 @@ const NOT_SPACING = [
 ];
 
 describe("stylesheet hygiene", () => {
+  it("does not treat selector-looking comments as stylesheet definitions", () => {
+    expect(stylesheetClasses("/* .ghost { color: red; } */\n.real { color: blue; }")).toEqual(
+      new Set(["real"])
+    );
+  });
+
+  it("does not treat a tone-reset reader list as an owner", () => {
+    expect(stylesheetClasses(":where(.status-chip, .other-pill) {\n  --tone: initial;\n}")).toEqual(
+      new Set()
+    );
+  });
+
+  it("keeps modifier tokens in the component style ownership scan", () => {
+    expect(renderedClassNames('<div className="or-pill or-pill-decision" />')).toEqual(
+      new Set(["or-pill", "or-pill-decision"])
+    );
+  });
+
+  it("maps lifecycle tones used by the console and asset summary", () => {
+    const vocabulary = stripComments(readFileSync(resolve(stylesDir, "ui.css"), "utf8"));
+    for (const [status, tone] of [
+      ["running", "--status-running"],
+      ["error", "--status-danger"],
+      ["ok", "--status-success"]
+    ]) {
+      const mapping = new RegExp(`\\[data-status="${status}"\\][^{]*\\{[^}]*--tone:\\s*var\\(${tone}\\);`, "s");
+      expect(vocabulary, `data-status="${status}" is not mapped to ${tone}`).toMatch(mapping);
+    }
+  });
+
   it("keeps colors in tokens; a fallback in var() is not an exemption", () => {
     const offenders: string[] = [];
     for (const sheet of styleSheets()) {
@@ -270,17 +353,12 @@ describe("stylesheet hygiene", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("styles the base class a component hangs its modifiers on", () => {
+  it("styles every static class token a component emits", () => {
     // Renaming `.mcp-status-card` to `.stage-card` in console.css was silent:
     // nothing compared the class a component emits against the sheet that is
     // supposed to style it, so renaming one side and forgetting the other
     // rendered an unstyled card and every test stayed green. This is the check
     // that would have caught it.
-    //
-    // **The first class only.** `className="rail-card handoff-panel"` styles
-    // from `.rail-card`; `handoff-panel` is a modifier that may legitimately
-    // have no rules yet (it marks a panel planned to diverge). A modifier may
-    // be aspirational; a base may not.
     //
     // Scoped to the components whose markup is static enough to read and whose
     // styles live in one sheet each. Not swept across every class in the
@@ -355,6 +433,14 @@ describe("stylesheet hygiene", () => {
       // quietly orphan one.
       ["orchestration/OrchestrationBoard.tsx", ["orchestration.css", "studio.css"]]
     ];
+    // Every component may draw on `ui.css`, and it is not listed per pair.
+    // `main.tsx` imports that sheet once and every route renders inside it, so
+    // a class defined only there is styled everywhere -- which is exactly why
+    // the shared button bases and `.ui-hint` moved into it on 2026-10-19.
+    // Listing it per pair would mean editing this list every time a class moves
+    // into the shared sheet, and forgetting that edit reports a styled class as
+    // unstyled: the failure this check exists to catch, pointed the wrong way.
+    const shared = stylesheetClasses(readFileSync(resolve(stylesDir, "ui.css"), "utf8"));
     const problems: string[] = [];
     for (const [component, sheets] of pairs) {
       const source = readFileSync(resolve(root, component), "utf8");
@@ -362,16 +448,16 @@ describe("stylesheet hygiene", () => {
       const allowed = new Set(
         names.flatMap((sheetName) => {
           const sheet = readFileSync(resolve(stylesDir, sheetName), "utf8");
-          return [...sheet.matchAll(/\.([a-zA-Z][a-zA-Z0-9_-]*)/g)].map((match) => match[1]);
+          return [...stylesheetClasses(sheet)];
         })
       );
-      const bases = new Set(
-        [...source.matchAll(/className="([^"{}]+)"/g)].map((match) => match[1].trim().split(/\s+/)[0])
-      );
-      for (const name of bases) {
+      const classes = renderedClassNames(source);
+      for (const name of classes) {
         if (!name || name.includes("$")) continue;
-        if (!allowed.has(name)) {
-          problems.push(`${component} renders class "${name}" but ${names.join(" / ")} does not define it`);
+        if (!allowed.has(name) && !shared.has(name)) {
+          problems.push(
+            `${component} renders class "${name}" but neither ${names.join(" / ")} nor ui.css defines it`
+          );
         }
       }
     }
@@ -478,40 +564,85 @@ describe("stylesheet hygiene", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps the shell's two stylesheets from dressing the same class", () => {
-    // The 2026-10-19 sidebar redesign's namespacing rule. The shell's locale
-    // switch, theme switch and brand mark each had two live consumers -- one in
-    // the sidebar, one in the console's top bar -- and two definitions, one per
-    // sheet. `studio.css` is imported after `console.css`, so the shell's rules
-    // won every time and the console's controls were restyled by a sheet that
-    // had no say in the matter: 36px borderless switches and a solid brand
-    // square where `console.css` asks for 40px bordered ones and a soft tile.
-    // The shell's controls now live under `studio-*` names; what is left below
-    // is the complete list of shared names, and every entry is a decision.
-    const consoleClasses = standaloneClasses(stripComments(readFileSync(resolve(stylesDir, "console.css"), "utf8")));
-    const studioClasses = standaloneClasses(stripComments(readFileSync(resolve(stylesDir, "studio.css"), "utf8")));
+  it("keeps any two stylesheets from dressing the same class", () => {
+    // The 2026-10-19 sidebar redesign's namespacing rule, extended to every
+    // pair of sheets on the same day it was written for one.
+    //
+    // It started as console.css x studio.css only, and the day it was extended
+    // it caught three collisions the one-pair version could not see -- all
+    // three created hours earlier by moving a shared rule into `ui.css` while
+    // its copy in `console.css` was still there. A collision between two sheets
+    // nobody was comparing is invisible for exactly as long as nobody compares
+    // them, which is the whole argument for not leaving 20 of the 21 pairs
+    // unchecked.
+    //
+    // The shell's locale switch, theme switch and brand mark each had two live
+    // consumers -- one in the sidebar, one in the console's top bar -- and two
+    // definitions, one per sheet. `studio.css` is imported after `console.css`,
+    // so the shell's rules won every time and the console's controls were
+    // restyled by a sheet that had no say in the matter: 36px borderless
+    // switches and a solid brand square where `console.css` asks for 40px
+    // bordered ones and a soft tile. The shell's controls now live under
+    // `studio-*` names; what is left below is the complete list of shared
+    // names across all 21 pairs, and every entry is a decision.
+    const sheets = ["console.css", "studio.css", "workbench.css", "ui.css", "orchestration.css", "assets.css"];
+    const owned = new Map(
+      sheets.map((sheet) => [
+        sheet,
+        baseClasses(stripComments(readFileSync(resolve(stylesDir, sheet), "utf8")))
+      ])
+    );
 
-    const KNOWN_SHARED: Record<string, string> = {
-      // The console's stage list and the shell's mcp panel both show a status
-      // pill under one name. Registered rather than fixed: renaming it touches
-      // the console's rendering for no visual gain, and the console's rule is
-      // scoped (`.generate-stages .mcp-state`) so it wins on specificity, not
-      // on import order.
-      "mcp-state": "the console's scoped pill and the shell's mcp panel pill",
-      // The console's run button and the shell's mcp refresh button share the
-      // primary-button class across two sheets. Same registration.
-      "primary-action": "the console's run button and the shell's refresh button"
-    };
+    // Empty as of 2026-10-21, and that is the point rather than an absence:
+    // `.primary-action` was the last entry. It was registered because the
+    // console and the shell each hand-tuned their own copy of the one primary
+    // button, and a rename would only have hidden the disagreement -- but with
+    // the design direction settled as a drafting table, one tool is one tool,
+    // so the class now has a single definition in `ui.css` and the collision is
+    // gone rather than tolerated.
+    //
+    // The registry stays because the next collision needs somewhere to be
+    // recorded, and the loop below stays because a stale entry is worse than a
+    // missing one: it is a decision recorded for a disagreement that ended.
+    const KNOWN_SHARED: Record<string, string> = {};
 
-    const shared = [...consoleClasses].filter((name) => studioClasses.has(name)).sort();
-    const unregistered = shared.filter((name) => !(name in KNOWN_SHARED));
+    const collisions: { a: string; b: string; name: string }[] = [];
+    for (let i = 0; i < sheets.length; i += 1) {
+      for (let j = i + 1; j < sheets.length; j += 1) {
+        const a = sheets[i]!;
+        const b = sheets[j]!;
+        for (const name of [...owned.get(a)!].filter((n) => owned.get(b)!.has(n)).sort()) {
+          collisions.push({ a, b, name });
+        }
+      }
+    }
+    const unregistered = collisions
+      .filter(({ name }) => !(name in KNOWN_SHARED))
+      .map(({ a, b, name }) => `${a} x ${b}: .${name}`);
     expect(
       unregistered,
-      "a class both sheets define is dressed by import order, not by decision"
+      "a class two sheets both give a plain base rule is dressed by import order, not by decision"
     ).toEqual([]);
 
+    // The registry is a list of decisions, and a stale entry is worse than a
+    // missing one: it is a decision recorded for a collision that no longer
+    // exists. `.mcp-state` was in it until the day this guard was extended --
+    // the console's half had become `.generate-stages .mcp-state`, a
+    // descendant selector, so it had stopped colliding long before anyone
+    // looked. An entry must be checked on every run, not trusted.
+    for (const [name, reason] of Object.entries(KNOWN_SHARED)) {
+      expect(reason.length, `.${name} is registered without a reason`).toBeGreaterThan(20);
+      const stillCollides = collisions.some((c) => c.name === name);
+      expect(stillCollides, `.${name} is registered but no longer collides -- drop it`).toBe(true);
+    }
+
     // The shell's own controls are namespaced, and the console's names stay in
-    // console.css, where their one consumer lives.
+    // console.css, where their one consumer lives. Read with
+    // `standaloneClasses` rather than `baseClasses`: the question here is
+    // "does the shell claim this name at all", not "does it tie on it".
+    const studioClasses = standaloneClasses(
+      stripComments(readFileSync(resolve(stylesDir, "studio.css"), "utf8"))
+    );
     for (const name of ["studio-seg", "studio-seg-option", "studio-nav-dot", "studio-nav-index"]) {
       expect(studioClasses.has(name), `the shell no longer defines .${name}`).toBe(true);
     }
@@ -543,29 +674,41 @@ describe("stylesheet hygiene", () => {
     expect(merged.map(([selectors]) => selectors.trim().replace(/\s+/g, " "))).toEqual([]);
   });
 
-  it("keeps one state dot per journey row, coloured by data-state", () => {
+  it("keeps one state dot per journey row, coloured by the shared vocabulary", () => {
     // The row used to state its journey state three ways -- the index chip's
     // colour and shape, the data attribute, and a "current / later" text line.
     // The dot is the one visual claim left; the attribute stays for the tests
     // and the header, and this guard keeps the dot from being dropped for it.
     const studio = stripComments(readFileSync(resolve(stylesDir, "studio.css"), "utf8"));
+    // The dot does not know what colour "current" is any more -- ui.css holds
+    // that, and the dot asks. So the guard has to read BOTH files: one to see
+    // that the dot still asks, and one to see that the answer still exists.
+    const ui = stripComments(readFileSync(resolve(stylesDir, "ui.css"), "utf8"));
 
     const base = /\.studio-nav-dot\s*\{([^}]*)\}/.exec(studio);
     expect(base, "the state dot is gone").not.toBeNull();
     expect(base![1]).toMatch(/border:/);
     expect(base![1], "an unstarted step must read as hollow").toMatch(/background:\s*transparent/);
 
-    const coloured = new Map(
-      [...studio.matchAll(/\.studio-nav button\[data-state="([a-z]+)"\]\s*\.studio-nav-dot\s*\{([^}]*)\}/g)].map(
-        ([, state, body]) => [state, body]
-      )
-    );
+    // One rule for EVERY state, not one rule per state. Four per-state copies
+    // used to sit here, each holding its own idea of which colour a state was;
+    // they collapsed into this when the vocabulary became the only place that
+    // answers. A fifth copy is the regression this pins.
+    const dots = [
+      ...studio.matchAll(/\.studio-nav button\[data-state[^\]]*\]\s*\.studio-nav-dot\s*\{([^}]*)\}/g)
+    ];
+    expect(dots, "the dot has no rule that reads the state").toHaveLength(1);
+    expect(dots[0]![1], "the dot must take its colour from the vocabulary").toMatch(/var\(--tone/);
+
+    // And the vocabulary must still answer for each of them. Without this the
+    // guard would stay green while every dot went grey: the dot would be
+    // asking a question nobody answers.
     for (const state of ["current", "complete", "blocked", "attention"]) {
-      const body = coloured.get(state);
-      expect(body, `data-state="${state}" no longer colours the dot`).toBeDefined();
-      expect(body, `data-state="${state}" must colour the dot from the status palette`).toMatch(/var\(--status-/);
+      const key = new RegExp(`\\[data-state="${state}"\\][^{]*\\{[^}]*--tone:`);
+      expect(ui, `data-state="${state}" is no longer in the vocabulary`).toMatch(key);
     }
-    // Upcoming has no rule on purpose: the hollow base dot is its statement.
-    expect(coloured.has("upcoming"), "an upcoming step must stay hollow").toBe(false);
+    // Upcoming has no key on purpose: the hollow base dot is its statement,
+    // and a vocabulary entry for it would paint a step that has not run.
+    expect(ui, "an upcoming step must stay hollow").not.toMatch(/\[data-state="upcoming"\]/);
   });
 });

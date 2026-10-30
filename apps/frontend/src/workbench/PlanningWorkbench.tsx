@@ -398,7 +398,7 @@ export function PlanningWorkbench() {
           <span className="wb-chip" data-testid="service-chip">
             {t("localService")}: {t("serviceOnline")}
           </span>
-          <span className={`wb-chip ${status}`} data-testid="status-chip">
+          <span className="wb-chip" data-status={status} data-testid="status-chip">
             {t(status)}
           </span>
         </div>

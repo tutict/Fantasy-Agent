@@ -8,7 +8,7 @@
 `styles/*.css`（除 `tokens.css`）里**不得出现**裸的 `#hex`、`rgb(`、`hsl(`。颜色、字号、间距、圆角一律走 token。
 
 - `.tsx` 侧同规则由 `visualSystem.test.ts` 守住；CSS 侧由 `cssHygiene.test.ts` 守卫 1 守住。
-- 2026-10-04 之前 CSS 侧完全裸奔：`studio.css` 一家就有 5 处 `var(--accent, #hex)` 形式的**误导性 fallback**（`--accent` 明暗两块都定义了，所以 `#hex` 那个值从不渲染，但它让人以为焦点环是亮蓝色的）。这类代码比硬编码更坏：它看起来已经归了 token。
+- 2026-10-04 之前 CSS 侧完全裸奔：`studio.css` 一家就有 5 处 `var(--accent, #hex)` 形式的**误导性 fallback**（那个 `--accent` 明暗两块都定义了，所以 `#hex` 那个值从不渲染，但它让人以为焦点环是亮蓝色的）。这类代码比硬编码更坏：它看起来已经归了 token。那个 `--accent` 连同整套旧名别名已于 2026-10-19 退役并删除。
 
 ## 2. 阶梯
 
@@ -77,11 +77,36 @@ ui.css   .ui-button/button/a/input/select/textarea/summary/iframe:focus-visible
 - console 私有类不加前缀；`playtest-*` / `rework-*` / `correction-*` / `manual-*` 四种都表示「带状态列表的侧面板」，写法保持一致。
 - **CSS class 不带视图名**：没有 `.workbench-*`、`.console-*`、`.orchestration-*`。判断新 class 归哪张表看它属于哪个面板，不看它在哪个文件里。
 - 状态类用 `X-state` 形态由模板字符串发出（如 `playtest-${status}`、`rework-${status}`），这类**不算死样式**——静态 grep 会误判。
+- **状态不要再写成第二个 class**：`wb-chip ${status}` 这种写法是词汇表读不到的拼写，它必然导致那张表里再长出一小套映射（2026-10-19 收敛前有 11 条这样的）。状态一律走 `data-status`，颜色去 `ui.css` 取。
+
+## 5.1 状态 → 颜色：只有一个地方知道答案
+
+```
+[data-status="running"]  ─┐
+[data-state="current"]   ─┤  ui.css 的一张表  ──►  --tone / --tone-soft
+[data-decision="…"]      ─┤                        组件只负责「涂在哪」
+[data-permission="…"]    ─┘
+```
+
+- 四个属性名是**一张表的四种输入**，不是四套映射。`data-status` 跑生命周期、`data-state` 跑旅程步和可用性、`data-decision` 跑人的裁决、`data-permission` 跑工具权限。
+- 组件规则读 `var(--tone, <自己的中性色>)`。**fallback 是组件自己的**，它决定「没有状态时我长什么样」；**取值是词汇表的**，它决定「这个状态是什么颜色」。
+- 组件必须先在 `ui.css` 的 `:where(...)` 读者名单里关掉继承，否则一个没带状态的 pill 会捡起父元素的 tone。
+- **affordance 和 report 不是一回事**：一个 pill 报告「已批准」是 success；一个你按下去去批准的按钮不是「已批准的东西」，它是品牌色的可点提示。所以 `.or-button[data-decision="approved"]` 不读词汇表——这是唯一两条留在表外的映射，各自在原地写了理由。
+- 改之前先跑 `python scripts/ui_metrics.py --json` 看 `state_mappings_outside_vocabulary`（当前 2，就是上面那两条）。**这个数涨了就是有人又自己造了一套。**
+
+## 5.2 组件族：合并还是保留
+
+判据只有一条，写在文件里而不是留在口头上：
+
+> 两个成员**视觉可区分**吗？可区分 → 保留（`.journey-header` 就该和 `.pane-section-header` 不同）。不可区分 → 合并。
+
+**「不可区分」要拿规则体证明，不能凭名字像。** 2026-10-19 核过 `-note` 族 5 个成员：都是「弱化的小字段落」，差异在 `margin` 与 `font-size`（`--text-xs` vs `--text-s`、上下外边距各差一档）。**这是漂移，不是设计** —— 但要合并就要同时改 5 个组件的外观，那是设计决定，不是清理，所以本轮没动。判据留在这里，等有人愿意承担视觉改动时照它执行。
 
 ## 6. 加新样式前的检查
 
 1. 这个值在阶梯上吗？不在 → 加 token 或就近取整，别写裸值。
 2. 这个颜色有 token 吗？没有就在 `tokens.css` 明暗**成对**加，而不是在组件里硬编码 + 留 fallback。
-3. 这个 class 属于哪张表？跨表就是设计错误。
-4. 焦点环、`@media` 断点、reduced-motion 里有重复实现吗？分别是 `ui.css`、4 档栅格、`ui.css` 全局那一条。
-5. 改完跑 `npm run frontend:test` 与 `python scripts/mutation_check_frontend_guards.py`。
+3. 这个 class 属于哪张表？跨表就是设计错误。**「谁渲染它」说了算**：只有 console 渲染的留在 `console.css`，两个视图都渲染的必须进 `ui.css` —— 视图表只在首次访问该视图时才注入文档，所以 `/workbench` 上 `console.css` 的类是裸的。
+4. 这个状态的颜色是自己写的吗？是 → 挪进 `ui.css` 的词汇表，见 §5.1。
+5. 焦点环、`@media` 断点、reduced-motion 里有重复实现吗？分别是 `ui.css`、4 档栅格、`ui.css` 全局那一条。
+6. 改完跑 `npm run frontend:test`、`python scripts/ui_metrics.py --check` 与 `python scripts/mutation_check_frontend_guards.py`。前端 CI 也会执行 UI Metrics 预算检查，预算变化必须随代码一起审阅。

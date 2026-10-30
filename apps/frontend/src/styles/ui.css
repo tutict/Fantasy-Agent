@@ -59,15 +59,22 @@ textarea {
   border-radius: 50%;
   font-size: var(--text-s);
 }
-.journey-steps [data-state="current"] { color: var(--status-running); }
-.journey-steps [data-state="current"] .journey-mark { background: var(--status-running); color: var(--on-brand); border-radius: 50%; }
-.journey-steps [data-state="blocked"] { color: var(--status-danger); }
-.journey-steps [data-state="blocked"] .journey-mark { background: var(--status-danger); color: var(--on-danger); border-radius: var(--radius-xs); }
-.journey-steps [data-state="attention"] { color: var(--status-waiting); }
-.journey-steps [data-state="attention"] .journey-mark { background: var(--status-waiting); color: var(--on-danger); transform: rotate(45deg); }
+/**
+ * The journey's four steps. The colour half is the shared vocabulary -- the
+ * `<li>` carries `data-state` and the mark inherits its tone from it. The shape
+ * half is the journey's own and stays here: circle / square / diamond say
+ * "this one" / "settled" / "look at this" independently of the colour, which is
+ * the half that still reads when the colour does not.
+ */
+.journey-steps [data-state="current"] { color: var(--tone, var(--muted)); }
+.journey-steps [data-state="current"] .journey-mark { background: var(--tone, var(--line)); color: var(--on-brand); border-radius: 50%; }
+.journey-steps [data-state="blocked"] { color: var(--tone, var(--muted)); }
+.journey-steps [data-state="blocked"] .journey-mark { background: var(--tone, var(--line)); color: var(--on-danger); border-radius: var(--radius-xs); }
+.journey-steps [data-state="attention"] { color: var(--tone, var(--muted)); }
+.journey-steps [data-state="attention"] .journey-mark { background: var(--tone, var(--line)); color: var(--on-danger); transform: rotate(45deg); }
 .journey-steps [data-state="attention"] .journey-mark span { transform: rotate(-45deg); }
-.journey-steps [data-state="complete"] { color: var(--status-success); }
-.journey-steps [data-state="complete"] .journey-mark { background: var(--status-success); color: var(--on-brand); border-radius: var(--radius-xs); }
+.journey-steps [data-state="complete"] { color: var(--tone, var(--muted)); }
+.journey-steps [data-state="complete"] .journey-mark { background: var(--tone, var(--line)); color: var(--on-brand); border-radius: var(--radius-xs); }
 .journey-state { font-size: var(--text-s); }
 .journey-next em { color: var(--status-danger); font-style: normal; }
 .ui-button {
@@ -82,6 +89,119 @@ textarea {
 }
 .ui-button[data-tone="primary"] { background: var(--brand); color: var(--on-brand); }
 .ui-button[data-tone="danger"] { background: var(--status-danger); color: var(--on-danger); }
+/**
+ * The one explanatory-paragraph style. It was `.handoff-note` in
+ * `console.css`, named for the caller that introduced it while the correction
+ * queue, the rework list, the playtest panel and the spec-regeneration block
+ * all used it for the same thing: a muted line saying what this control does.
+ * The `ui-` prefix is the point -- the name says it is shared rather than
+ * letting a reader assume it belongs to the handoff card.
+ */
+.ui-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-s);
+}
+/**
+ * The two button bases that CANNOT live in a view sheet, and why the other
+ * five are not here.
+ *
+ * `main.tsx` imports this file once, on every route. Every other sheet is
+ * imported by its own view and only lands in the document once that view is
+ * first visited. So a class two views render has to be styled here, or it
+ * renders unstyled on whichever route opens first. `.tab` is rendered by the
+ * workbench as well as the console, and `.ghost-action` by `shared/panels/`.
+ *
+ * `.locale-option`, `.theme-option`, `.mini-action`, `.review-action` and
+ * `.mode-option` have exactly one consumer directory -- the console -- so they
+ * are in `console.css` beside it. They were in this list for part of
+ * 2026-10-19 and were moved back: being in the shared sheet is a claim about
+ * who renders a class, and for those five the answer is "only the console".
+ * Moving them here bought nothing and cost three new two-sheet collisions.
+ */
+.tab,
+.ghost-action {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  color: var(--muted-strong);
+  padding: 0 var(--space-3);
+  font-size: var(--text-s);
+  font-weight: 850;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+.ghost-action {
+  min-height: 40px;
+}
+/* The tab row is a tighter strip than a toolbar, and its labels are one or two
+   words that must not wrap. */
+.tab {
+  min-height: 34px;
+  white-space: nowrap;
+}
+.tab:hover,
+.ghost-action:hover,
+.tab.active,
+.ghost-action.active {
+  border-color: var(--line-strong);
+  background: var(--brand-soft);
+  color: var(--text);
+}
+.tab:active,
+.ghost-action:active {
+  transform: scale(0.98);
+}
+
+/* One primary action, defined once.
+
+   A drafting table has one of each tool, and the reader who presses this button
+   on Tuesday is the same reader who presses it on Wednesday -- so it has to be
+   the same button in the console, on the orchestration board and in the shell's
+   settings panels. It used to be two hand-tuned copies: 44px at
+   `font-weight: 900` in `console.css`, 40px at 850 in `studio.css`. Because
+   both sheets gave the same plain base class a rule, which one applied depended
+   on which view the reader visited first and therefore on stylesheet injection
+   order -- the button was a different size depending on where you came from.
+
+   What stays per-view below is not drift but layout: the console's buttons are
+   full-width blocks, the settings panels' sit inline. They come back as custom
+   properties set at `:where()` specificity, which is 0,0,0 and so cannot tie
+   with this rule on import order -- the thing being set differs, so nothing is
+   left to the order. */
+.primary-action {
+  width: var(--primary-action-width, auto);
+  min-height: var(--size-control);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--brand);
+  color: var(--on-brand);
+  padding: 0 var(--space-3_5);
+  font-size: var(--text-s);
+  font-weight: 900;
+  transition:
+    transform 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.primary-action:hover {
+  background: var(--brand-strong);
+  color: var(--on-brand);
+  box-shadow: 0 0 0 4px var(--brand-soft);
+  transform: translateY(-1px);
+}
+
+.primary-action:disabled {
+  cursor: wait;
+  background: var(--muted);
+  transform: none;
+}
+
 .ui-button:focus-visible,
 button:focus-visible,
 a:focus-visible,
@@ -149,6 +269,207 @@ textarea:focus-visible {
     outline-offset: 2px;
   }
 }
+/**
+ * The one status vocabulary. Seven readers, one table.
+ *
+ * It used to be five mappings in five places, and the 2026-10-19 audit that
+ * found three of them was itself an undercount -- it went looking for pills and
+ * badges and stopped there. The five were: `.status-badge[data-status=…]` here,
+ * `.review-pill.<state>` / `.task-pill.<state>` in `console.css`,
+ * `.wb-pill.<state>` in `workbench.css`, `.or-card` / `.or-status` in
+ * `orchestration.css`, and `.agent-call` in `studio.css`. They disagreed about
+ * the same states: a warning was a soft border in the console, a solid one in
+ * the workbench, and a third solid one on the board's status chip; `done` was
+ * `--brand` on the board and `--status-success` here. Which one you saw
+ * depended on which view rendered the thing, and no single file showed it.
+ *
+ * The seam is a custom property, not a shared selector list. `--tone` is
+ * declared here and *consumed* in each component's own sheet, and that is what
+ * makes this import-order-safe: a custom property and the `color` that reads it
+ * are different properties, so there is no cascade between them to lose. Had
+ * this file declared `color: var(--status-warning)` while `console.css`
+ * declared `border: 1px solid var(--line)`, the later sheet's shorthand would
+ * land at equal specificity and take the colour with it -- silently, and only
+ * in the entry points that happened to be visited.
+ *
+ * That is also why the rules below are bare `[data-status="…"]` rather than
+ * `.thing[data-status="…"]`. A custom property declaration only has to beat the
+ * reset underneath it, so it needs no component prefix to win; the prefix would
+ * cost 90 characters a line to buy specificity nobody is competing for. The
+ * reset is what keeps the broad selector honest -- see the next note.
+ *
+ * The readers are listed here because the list is the registry: a component
+ * that wants a tone has to be in it, or it inherits one by accident.
+ */
+/**
+ * Custom properties inherit, and that would be a bug here: a plain
+ * `<span class="review-pill">` inside an element that does carry `data-status`
+ * would pick up its parent's tone and read as that state while carrying none of
+ * its own. So every reader switches inheritance off and each state puts it back.
+ *
+ * `initial` on an unregistered custom property is the guaranteed-invalid value,
+ * which is what makes `var(--tone, <fallback>)` fall through to the component's
+ * own neutral colour. The selector is only a `:where()` list, so it scores
+ * 0,0,0 -- every state rule below is 0,1,0 and overrides it, and the reset can
+ * never win a tie it was not meant to.
+ */
+/* `.journey-mark` is deliberately absent: it is a reader that *wants* to
+   inherit. The number badge takes its colour from the `<li data-state=…>` it
+   sits in, so blocking inheritance there would blank the one thing the list is
+   for. Every other reader carries its own state and must not inherit one. */
+:where(.status-badge, .review-pill, .task-pill, .wb-pill, .or-status, .or-card,
+       .status-chip, .manual-tool-row, .agent-call, .api-summary,
+       .generate-stages .stage-card, .spec-qa-row, .review-action,
+       .or-pill-decision, .as-summary, .tool-row,
+       .rework-item, .playtest-verdict, .playtest-finding, .wb-chip) {
+  --tone: initial;
+  --tone-soft: initial;
+}
+/**
+ * Four attribute names, ONE table. That number is a deliberate trade, and it
+ * is the trade the 2026-10-19 sweep forced:
+ *
+ *   `data-status`    a lifecycle state -- running, succeeded, failed
+ *   `data-state`     a journey step, or a tool's / server's availability
+ *   `data-decision`  a human's answer to a gate or to an asset
+ *   `data-permission` what a tool is allowed to do
+ *
+ * What was duplicated before was never the name, it was the MAPPING: seven
+ * tables, each holding part of "which state is which colour", spread over four
+ * files. Collapsing the names as well would have been a further 18 edits
+ * across 10 components, and a rename can be undone by the next careless
+ * commit, whereas the thing that cannot be undone is the check that no
+ * stylesheet outside this one maps a state to a colour at all -- which is the
+ * guard. So the names stay as four inputs to one table, and the guard holds
+ * the table to being the only one. A component reading the vocabulary may use
+ * any of the four and gets the same answer.
+ */
+[data-status="running"],
+[data-status="cancelable"],
+[data-state="current"] {
+  --tone: var(--status-running);
+  --tone-soft: var(--status-running-soft);
+}
+/* The "it came out right" keys, across every name that carries one: a finished
+   run, a finished step, a QA row that passed, an approved asset, and a gate
+   someone approved. They reuse the existing tones rather than adding palette
+   entries: a pass is a success and an approval is a success.
+   `data-state="complete"` is the journey step that finished; `passed` was once
+   brand-coloured on the spec-regen chip and on the QA row, but a pass is a
+   pass -- and an approved gate was brand-coloured too, which made approving
+   something look like the brand and not like the thing being finished. */
+[data-status="succeeded"],
+[data-status="done"],
+[data-status="passed"],
+[data-status="approved"],
+[data-status="ok"],
+[data-state="complete"],
+[data-state="passed"],
+[data-decision="approved"] {
+  --tone: var(--status-success);
+  --tone-soft: var(--status-success-soft);
+}
+[data-status="failed"],
+[data-status="error"],
+[data-status="resumable"],
+[data-status="rejected"],
+[data-status="blocked"],
+[data-state="blocked"],
+/* A manual-correction target, an MCP server, or an engine that cannot be
+   opened. The row and the card both say `data-state="unavailable"`.
+   `data-permission="execute"` is the odd one out, and it is here on purpose:
+   a tool that can execute is the one that can do damage, so it carries the
+   colour the app uses for that, which is not the brand's. */
+[data-decision="rejected"],
+[data-permission="execute"],
+/* A playtest finding that blocks: the one severity that stops the build, so
+   it takes the tone the app uses for things that stop the build. */
+[data-status="blocking"],
+[data-state="unavailable"] {
+  --tone: var(--status-danger);
+  --tone-soft: var(--status-danger-soft);
+}
+[data-status="confirming"],
+[data-status="preview"],
+/* The board's two "it is someone's turn" states, and the shell's word for a
+   model that declined. All three are waiting, not warning: nothing has gone
+   wrong yet. `attention` is the journey step's waiting. */
+[data-status="awaiting_confirmation"],
+[data-status="refused"],
+/* A rework stage nobody chose to rework. It is neither progress nor failure,
+   and it used to be painted the saturated blue of a stage that is running --
+   which said the opposite of what it means. A skipped stage is one that will
+   not happen, and "has not happened" is what the waiting tone is for. */
+[data-status="skipped"],
+[data-state="attention"] {
+  --tone: var(--status-waiting);
+  --tone-soft: var(--status-waiting-soft);
+}
+/* `degraded` belongs here and not in the waiting group above, which is where
+   it sat: it is an engine or a server that is UP BUT IMPAIRED, which is
+   something having gone wrong. The two sheets disagreed -- the console gave it
+   the warning tone and the shell gave it the waiting one -- and warning is the
+   one that is true.
+   `warning` is the spec validator's middle state: not a pass, not a failure.
+   Two chips rendering it disagreed, and it was not a tie that could be broken
+   on specificity alone -- `.status-chip.warning` painted it amber while
+   `.spec-regen-status.warning` painted it red, and the latter outranked the
+   former on the same element. Red would have made `warning` and `failed` the
+   same colour, so the middle state keeps the middle colour and the vocabulary
+   holds one answer. */
+[data-status="needs_revision"],
+[data-decision="needs_revision"],
+/* `warning` was `warn` here until the pill primitive and the validator each
+   had their own spelling of it; the validator's is the one that survived,
+   because two components render its values and one renders theirs. */
+[data-status="warning"],
+[data-status="degraded"],
+[data-state="warning"],
+[data-state="degraded"] {
+  --tone: var(--status-warning);
+  --tone-soft: var(--status-warning-soft);
+}
+/* Not a lifecycle state: an MCP server or a manual-correction target that is
+   available, or the recommended one, or a tool that may write. It is a
+   positive affordance, so it takes the brand tone -- "you could use this",
+   not "this finished". */
+[data-status="ready"],
+[data-state="ready"],
+[data-permission="write"] {
+  --tone: var(--brand);
+  --tone-soft: var(--brand-soft);
+}
+[data-status="pending_user_review"],
+[data-status="awaiting_human"] {
+  --tone: var(--status-human);
+  --tone-soft: var(--status-human-soft);
+}
+/**
+ * A human gate runs no tool, so it reads as "nothing executes here" instead of
+ * as a status: dashed, like the empty-state borders, in the neutral line
+ * colour. It is the one key that deliberately gets no status tone.
+ *
+ * Nothing renders it today. It stays as one rule for three components rather
+ * than as three copies -- the console's copy said as much in its own comment
+ * while it sat there unrendered -- so whoever renders a human gate next gets
+ * this meaning instead of a status colour.
+ *
+ * The border style is the one thing here that cannot be a custom property: a
+ * component's base sets it with the `border` shorthand, and that shorthand
+ * lands after this file in the import order. So this rule names its three
+ * components outright instead of hiding them in `:where()` -- 0,2,0 against the
+ * base's 0,1,0, which wins on specificity instead of on arrival time. One rule
+ * in one file is still one source; it just cannot be the lowest one.
+ */
+[data-status="human"] {
+  --tone: var(--muted-strong);
+  --tone-soft: var(--line-strong);
+}
+.review-pill[data-status="human"],
+.task-pill[data-status="human"],
+.wb-pill[data-status="human"] {
+  border-style: dashed;
+}
 .status-badge {
   display: inline-flex;
   min-height: 28px;
@@ -157,7 +478,7 @@ textarea:focus-visible {
   padding: 0 var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--surface-muted);
-  color: var(--text);
+  color: var(--tone, var(--text));
 }
 .status-badge::before {
   content: "";
@@ -165,37 +486,39 @@ textarea:focus-visible {
   height: 8px;
   border: 2px solid currentColor;
 }
-.status-badge[data-status="running"],
-.status-badge[data-status="cancelable"] { color: var(--status-running); }
+/**
+ * Only the badge carries a marker dot, and the shape is this component's own
+ * business rather than part of the shared vocabulary. Three shapes say
+ * "running" / "settled" / "waiting" to someone who cannot read the colour, so
+ * the shape is the half that has to keep working when the colour does not --
+ * which is also why the shape list is kept contiguous: when these were written
+ * per-state, `failed` / `error` / `resumable` had no shape rule at all and fell
+ * back to an unfilled square while `rejected` next to them was filled, so two
+ * adjacent states read as two shapes for no reason.
+ */
 .status-badge[data-status="running"]::before,
-.status-badge[data-status="cancelable"]::before { border-radius: 50%; background: currentColor; }
-.status-badge[data-status="succeeded"],
-.status-badge[data-status="done"],
-.status-badge[data-status="passed"] { color: var(--status-success); }
+.status-badge[data-status="cancelable"]::before {
+  border-radius: 50%;
+  background: currentColor;
+}
 .status-badge[data-status="succeeded"]::before,
 .status-badge[data-status="done"]::before,
-.status-badge[data-status="passed"]::before { border-radius: var(--radius-xs); background: currentColor; }
-.status-badge[data-status="failed"],
-.status-badge[data-status="error"],
-.status-badge[data-status="resumable"] { color: var(--status-danger); }
-.status-badge[data-status="confirming"],
-.status-badge[data-status="preview"],
-.status-badge[data-status="degraded"] { color: var(--status-waiting); }
+.status-badge[data-status="passed"]::before,
+.status-badge[data-status="approved"]::before,
+.status-badge[data-status="failed"]::before,
+.status-badge[data-status="error"]::before,
+.status-badge[data-status="resumable"]::before,
+.status-badge[data-status="rejected"]::before {
+  border-radius: var(--radius-xs);
+  background: currentColor;
+}
 .status-badge[data-status="confirming"]::before,
-.status-badge[data-status="preview"]::before { border-radius: 50%; }
-/* The four Creative Review decisions, shown verbatim in the asset library.
-   They reuse the same seven mutually exclusive status colours rather than
-   adding palette entries: approved is a pass, a rejection is a failure, a
-   revision request is a warning, and a pending review waits on a person --
-   which is what `--status-human` is for. */
-.status-badge[data-status="approved"] { color: var(--status-success); }
-.status-badge[data-status="approved"]::before { border-radius: var(--radius-xs); background: currentColor; }
-.status-badge[data-status="needs_revision"] { color: var(--status-warning); }
-.status-badge[data-status="needs_revision"]::before { border-radius: 50%; }
-.status-badge[data-status="rejected"] { color: var(--status-danger); }
-.status-badge[data-status="rejected"]::before { border-radius: var(--radius-xs); background: currentColor; }
-.status-badge[data-status="pending_user_review"] { color: var(--status-human); }
-.status-badge[data-status="pending_user_review"]::before { border-radius: 50%; }
+.status-badge[data-status="preview"]::before,
+.status-badge[data-status="degraded"]::before,
+.status-badge[data-status="needs_revision"]::before,
+.status-badge[data-status="pending_user_review"]::before {
+  border-radius: 50%;
+}
 .empty-state,
 .log-block,
 .confirm-dialog {

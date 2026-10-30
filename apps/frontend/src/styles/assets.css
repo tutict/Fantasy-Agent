@@ -35,14 +35,16 @@
   flex-shrink: 0;
 }
 
+/*
+ * The asset library's one-line report: what it is holding, until something
+ * goes wrong and the line itself is what says so. `data-state="error"` is the
+ * vocabulary's key and this rule is the reader of it, so the line does not
+ * hold a second opinion about what an error looks like.
+ */
 .as-summary {
   margin: 0 0 var(--space-2);
-  color: var(--muted-strong);
+  color: var(--tone, var(--muted-strong));
   font-size: var(--text-s);
-}
-
-.as-summary[data-state="error"] {
-  color: var(--status-danger);
 }
 
 .as-path-note {

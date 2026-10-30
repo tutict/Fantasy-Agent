@@ -415,7 +415,7 @@ describe("deciding a human gate", () => {
   async function decide(which: "approved" | "rejected"): Promise<void> {
     await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
     fireEvent.click(
-      document.querySelector(`[data-decision="${which}"]`) as HTMLButtonElement
+      document.querySelector(`button[data-decision="${which}"]`) as HTMLButtonElement
     );
   }
 
@@ -426,14 +426,16 @@ describe("deciding a human gate", () => {
     // Before the first pass there is no session to attach a decision to, and a
     // button that could only answer "run the plan first" would be a dead end
     // that looks like a control.
-    expect(document.querySelector('[data-decision="approved"]')).toBeNull();
+    expect(document.querySelector('button[data-decision="approved"]')).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
     await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
 
     const gate = document.querySelector('[data-stage="creative_review"]')!;
-    expect(gate.querySelector('[data-decision="approved"]')).toBeTruthy();
-    expect(gate.querySelector('[data-decision="rejected"]')).toBeTruthy();
+    // Two buttons and a decision pill share the attribute, so the button is
+    // named: `[data-decision=…]` alone would be answered by the pill too.
+    expect(gate.querySelector('button[data-decision="approved"]')).toBeTruthy();
+    expect(gate.querySelector('button[data-decision="rejected"]')).toBeTruthy();
     // Still not an approve button: approving a gate would not make it run.
     expect(gate.querySelector('[data-approve]')).toBeNull();
   });
@@ -496,11 +498,9 @@ describe("deciding a human gate", () => {
     const gate = document.querySelector('[data-stage="creative_review"]')!;
     // A decided gate is not asked again: the buttons are gone, and what was
     // decided is on the card.
-    expect(gate.querySelector('[data-decision="approved"]')).toBeNull();
-    expect(gate.querySelector('[data-decision="rejected"]')).toBeNull();
-    expect(gate.querySelector(".or-pill-decision")?.getAttribute("data-decision-state")).toBe(
-      "rejected"
-    );
+    expect(gate.querySelector('button[data-decision="approved"]')).toBeNull();
+    expect(gate.querySelector('button[data-decision="rejected"]')).toBeNull();
+    expect(gate.querySelector(".or-pill-decision")?.getAttribute("data-decision")).toBe("rejected");
   });
 
   it("lists the gates still waiting for a decision, apart from the approvals", async () => {

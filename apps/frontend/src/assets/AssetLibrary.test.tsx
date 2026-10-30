@@ -139,9 +139,11 @@ describe("asset library panel", () => {
     renderPanel();
 
     expect(screen.getByText("录入开源资产")).toBeTruthy();
+    expect(document.querySelector("#as-summary")?.getAttribute("data-status")).toBeNull();
     await waitFor(() => {
       expect(screen.getByText("还没有录入任何资产。先在上方添加一个开源资产。")).toBeTruthy();
     });
+    expect(document.querySelector("#as-summary")?.getAttribute("data-status")).toBe("ok");
     expect(screen.getByText("还没有任何审阅决策记录。")).toBeTruthy();
   });
 
@@ -255,6 +257,7 @@ describe("asset library panel", () => {
     await waitFor(() => {
       expect(screen.getByText(/资产库读取失败/)).toBeTruthy();
     });
+    expect(screen.getByText(/资产库读取失败/).closest("#as-summary")?.getAttribute("data-status")).toBe("error");
     // "Nothing was generated" would be a claim; the panel does not make it.
     expect(screen.queryByText("还没有任何审阅决策记录。")).toBeNull();
   });

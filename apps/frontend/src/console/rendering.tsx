@@ -138,7 +138,7 @@ export function ReviewPanel({
               {t("writeApprovalManifest")}
             </button>
             {manifestPath ? (
-              <p className="handoff-note">
+              <p className="ui-hint">
                 {t("approvalManifestWritten")}: <code>{manifestPath}</code>
               </p>
             ) : null}
@@ -172,7 +172,7 @@ function ReviewItem({
         <p>{item.user_prompt}</p>
         <code>{item.asset_path}</code>
         <div className="review-meta">
-          <span className={`review-pill ${decision}`}>{statusLabel(decision, t)}</span>
+          <span className="review-pill" data-status={decision}>{statusLabel(decision, t)}</span>
           <span className="review-pill">{item.source}</span>
           <span className="review-pill">{item.gameplay_role}</span>
         </div>
@@ -227,12 +227,12 @@ export function SpecBundlePanel({
           <p className="eyebrow">{t("specBundleSource")}</p>
           <h3>{bundle.gameplay_spec_title || t("specBundleTitle")}</h3>
         </div>
-        <span className={`status-chip spec-status ${validation?.status || "idle"}`}>
+        <span className="status-chip" data-status={validation?.status || "idle"}>
           {validation?.status || t("specPreviewLoading")}
         </span>
       </header>
       {error ? (
-        <p className="handoff-note">
+        <p className="ui-hint">
           {t("specPreviewFailed")}: {error}
         </p>
       ) : null}
@@ -370,10 +370,10 @@ export function SpecRegenPanel({
       <div className="spec-regen-head">
         <div>
           <h3>{t("specRegenTitle")}</h3>
-          <p className="handoff-note">{t("specRegenHint")}</p>
+          <p className="ui-hint">{t("specRegenHint")}</p>
         </div>
         {diff ? (
-          <span className={`status-chip spec-regen-status ${diff.mirrorStale ? "warning" : "passed"}`}>
+          <span className="status-chip" data-status={diff.mirrorStale ? "warning" : "passed"}>
             {diff.mirrorStale
               ? t("specRegenDrifted", { count: String(diff.changedCount) })
               : t("specRegenIdentical")}
@@ -406,13 +406,13 @@ export function SpecRegenPanel({
                 backend ignored them would be right -- but for the wrong reason,
                 and they would have no way to tell that from a healthy no-op.
               */}
-              <dd className="handoff-note">{t("specRegenScopeCaveat")}</dd>
+              <dd className="ui-hint">{t("specRegenScopeCaveat")}</dd>
             </div>
           </dl>
-          <p className="handoff-note">{t("specRegenPromptCaveat")}</p>
+          <p className="ui-hint">{t("specRegenPromptCaveat")}</p>
         </details>
       ) : (
-        <p className="handoff-note">{t("specRegenNeedsPlan")}</p>
+        <p className="ui-hint">{t("specRegenNeedsPlan")}</p>
       )}
 
       <div className="spec-regen-actions">
@@ -433,7 +433,7 @@ export function SpecRegenPanel({
       </div>
 
       {error ? (
-        <p className="handoff-note" id="spec-regen-error">
+        <p className="ui-hint" id="spec-regen-error">
           {t("specRegenFailed")}: {error}
         </p>
       ) : null}
@@ -479,7 +479,7 @@ export function SpecRegenPanel({
               ))}
           </div>
         ) : (
-          <p className="handoff-note" id="spec-diff-list">
+          <p className="ui-hint" id="spec-diff-list">
             {t("specDiffNone")}
           </p>
         )

@@ -24,7 +24,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-1) 2px 32px;
+  /* The 2px sides are not spacing, they are room for the cards' focus rings to
+     draw inside the shell instead of clipping at its edge; the bottom is, and
+     used to be 32px written out, which is `--space-6` with the name off. */
+  padding: var(--space-1) 2px var(--space-6);
 }
 
 .or-plan-meta {
@@ -48,14 +51,14 @@
   padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--brand);
   font: inherit;
   cursor: pointer;
   text-decoration: underline;
 }
 
 .or-link:hover {
-  color: var(--accent-deep);
+  color: var(--brand-strong);
 }
 
 .or-pending {
@@ -63,8 +66,8 @@
   padding: var(--space-2_5) var(--space-3_5);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
-  background: var(--amber-soft);
-  color: var(--amber);
+  background: var(--status-warning-soft);
+  color: var(--status-warning);
   font-size: var(--text-s);
   overflow-wrap: anywhere;
 }
@@ -77,21 +80,21 @@
  * sentence is read, the same way the gate section below is blue.
  */
 .or-pending-gates {
-  border-color: var(--blue);
-  background: var(--blue-soft);
-  color: var(--blue);
+  border-color: var(--status-running);
+  background: var(--status-running-soft);
+  color: var(--status-running);
 }
 
 .or-gates {
   padding: var(--space-3) var(--space-3_5);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
-  background: var(--blue-soft);
+  background: var(--status-running-soft);
 }
 
 .or-gates h4 {
   margin: 0 0 var(--space-2);
-  color: var(--blue);
+  color: var(--status-running);
   font-size: var(--text-s);
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -119,27 +122,13 @@
   gap: var(--space-2);
   padding: var(--space-3_5) var(--space-4);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--line);
+  /* The left edge carries the runtime state, which is the thing a board is
+     for. It takes the solid tone rather than the soft one: a 3px edge is a
+     deliberate thickness, and the soft variants are mixed for hairlines, where
+     they read as a hint of colour instead of as a pale slab. */
+  border-left: 3px solid var(--tone, var(--line));
   border-radius: var(--radius-m-lg);
   background: var(--surface);
-}
-
-/* The left edge carries the runtime state, which is the thing a board is for. */
-.or-card[data-status="done"] {
-  border-left-color: var(--accent);
-}
-
-.or-card[data-status="failed"] {
-  border-left-color: var(--danger);
-}
-
-.or-card[data-status="awaiting_confirmation"],
-.or-card[data-status="awaiting_human"] {
-  border-left-color: var(--amber);
-}
-
-.or-card[data-status="running"] {
-  border-left-color: var(--blue);
 }
 
 .or-card-head {
@@ -163,35 +152,25 @@
   font-size: var(--text-s);
 }
 
+/**
+ * The board's status chip. It is a pill, so it reads the same vocabulary the
+ * console's and the shared panels' pills read -- and it now behaves like them,
+ * which it did not before: its old rules painted a *solid* coloured border,
+ * while the console painted a soft one, so the same "failed" looked like two
+ * different components depending on which view you were in. Soft won, because
+ * that is what the three other pills already did.
+ *
+ * `done` also stopped meaning the brand colour. It is a finished thing, and
+ * finished things are `--status-success` everywhere else.
+ */
 .or-status {
   padding: var(--space-1) 9px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--tone-soft, var(--line));
   border-radius: var(--radius-pill);
   background: var(--pill-bg);
-  color: var(--muted-strong);
+  color: var(--tone, var(--muted-strong));
   font-size: var(--text-xs);
   white-space: nowrap;
-}
-
-.or-status[data-status="done"] {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.or-status[data-status="failed"] {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.or-status[data-status="awaiting_confirmation"],
-.or-status[data-status="awaiting_human"] {
-  border-color: var(--amber);
-  color: var(--amber);
-}
-
-.or-status[data-status="running"] {
-  border-color: var(--blue);
-  color: var(--blue);
 }
 
 /* Dimmer than the runtime pill: the plan-time status is context, not the news. */
@@ -214,7 +193,7 @@
 }
 
 .or-line-detail {
-  color: var(--danger);
+  color: var(--status-danger);
 }
 
 .or-answer {
@@ -241,25 +220,30 @@
 }
 
 .or-pill-human {
-  border-color: var(--blue);
-  color: var(--blue);
+  border-color: var(--status-running);
+  color: var(--status-running);
 }
 
 .or-pill-ok {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
-/* A decided gate, in the colour of the decision that was given: the same
- * distinction the two buttons made, read back after the fact. */
-.or-pill-decision[data-decision-state="approved"] {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.or-pill-decision[data-decision-state="rejected"] {
-  border-color: var(--danger);
-  color: var(--danger);
+/*
+ * A decided gate, in the colour of the decision that was given: the same
+ * distinction the two buttons below make, read back after the fact. It reads
+ * the shared vocabulary, which is what makes "approved" and "rejected" mean
+ * the same thing here as they do in the asset library.
+ *
+ * The buttons are NOT readers, and that is the point of the split: a pill
+ * reports a decision that was made, while a button OFFERS one. The vocabulary
+ * holds the reported meaning -- approved finishes something, so it is green --
+ * and the button keeps its own affordance colour, because "press me to
+ * approve" is not the same claim as "this was approved".
+ */
+.or-pill-decision {
+  border-color: var(--tone, var(--line-strong));
+  color: var(--tone, var(--muted-strong));
 }
 
 .or-actions {
@@ -290,17 +274,27 @@
 }
 
 .or-button.is-on {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
-/* The gate's own decision. Accent for the one that moves the plan; the send
- * back keeps the neutral button rather than a red one, because refusing a gate
- * is a normal outcome and not an error. */
+/*
+ * The gate's own decision, as an AFFORDANCE rather than as a status: accent
+ * for the one that moves the plan, and the send back keeps the neutral button
+ * rather than a red one, because refusing a gate is a normal outcome and not
+ * an error.
+ *
+ * That is why this button is the one neighbour of the vocabulary that does not
+ * read it. The vocabulary says "rejected" is the danger tone, and it is right
+ * for a pill reporting it -- but a button you press to reject something is not
+ * itself in a failed state, and painting it red would say it was. The
+ * affordance and the report are different claims with different colours, so
+ * this one rule is the button's and stays in this file.
+ */
 .or-button[data-decision="approved"] {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .or-steps {
@@ -310,8 +304,9 @@
   font-size: var(--text-s);
 }
 
-.or-empty {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--text-s);
-}
+/*
+ * `.or-empty` used to sit here. The board never renders it: it renders
+ * `.or-pending` when a gate is waiting and `.or-pending-gates` for the list,
+ * and the empty case is expressed by the list being absent rather than by a
+ * paragraph saying so.
+ */

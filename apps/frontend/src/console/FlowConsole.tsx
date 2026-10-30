@@ -12,7 +12,8 @@ import {
   startAssetExecution,
   startExecute,
   startPlaytest,
-  getSessionState
+  getSessionState,
+  getOrchestrationState
 } from "../shared/api";
 import { consoleI18n, makeTranslator } from "../shared/i18n";
 import { useLocaleTheme } from "../shared/localeTheme";
@@ -28,8 +29,10 @@ import type {
   PlaytestResult,
   SessionState,
   StatusState,
+  OrchestrationSession,
   Theme
 } from "../shared/types";
+import { readOrchestrationEngine, readOrchestrationSessionId } from "../shared/storage";
 import {
   GateItem,
   ReviewPanel,
@@ -61,6 +64,13 @@ const correctionModeKeys: Record<CorrectionMode, string> = {
   scope: "modeScope",
   import: "modeImport"
 };
+
+/**
+ * The four panels of the plan rail. These double as the `data-panel` values the
+ * tests select on, so a card's identity lives in one string and not in a class
+ * name that a later restyle would move.
+ */
+type PlanCardKey = "handoff" | "correction" | "manual-correction" | "operator";
 
 const correctionModeManualTargets: Record<CorrectionMode, string> = {
   gameplay: "planning",
@@ -102,7 +112,7 @@ const tabGroups: Array<{ labelKey: string; tabs: Array<[TabKey, string]> }> = [
  * away is no longer the view a fresh handoff is addressed to.
  */
 export function FlowConsole({ active = true, focus = "review", reviewStage = "" }: { active?: boolean; focus?: "review" | "specs"; reviewStage?: string } = {}) {
-  const { update } = useJourney();
+  const { update, session: orchestrationSession } = useJourney();
   // Locale and theme are the provider's, not this view's. The console used to
   // own both and write `document.documentElement` itself -- correct while it was
   // its own document, wrong now that it renders inside the shell, where two
@@ -112,6 +122,7 @@ export function FlowConsole({ active = true, focus = "review", reviewStage = "" 
   const [activeTab, setActiveTab] = useState<TabKey>(focus);
   const [pendingResume, setPendingResume] = useState<string | null>(null);
   const [pendingManualTarget, setPendingManualTarget] = useState<string | null>(null);
+  const [orchestrationSessionLoading, setOrchestrationSessionLoading] = useState(false);
   const [reviewTarget, setReviewTarget] = useState(reviewStage);
   const [withAssets, setWithAssets] = useState(false);
   const [withVisuals, setWithVisuals] = useState(false);
@@ -123,6 +134,14 @@ export function FlowConsole({ active = true, focus = "review", reviewStage = "" 
   const [assetEffects, setAssetEffects] = useState<string[] | null>(null);
   const [playtestRuns, setPlaytestRuns] = useState(3);
   const [playtestEffects, setPlaytestEffects] = useState<string[] | null>(null);
+  /**
+   * Which card of the plan rail is unfolded. The rail is four panels of input
+   * and queues and a reader only ever works in one of them, so the other three
+   * stay as title bars. Nothing is unmounted: the correction composer keeps
+   * whatever was typed into it, and the run rail -- which owns the in-flight
+   * jobs -- is not folded at all.
+   */
+  const [openPlanCard, setOpenPlanCard] = useState<PlanCardKey>("handoff");
 
   const t = useMemo(() => makeTranslator(locale, consoleI18n), [locale]);
 
@@ -142,6 +161,33 @@ export function FlowConsole({ active = true, focus = "review", reviewStage = "" 
     renderHandoffTitle,
     loadPlanningHandoff
   } = usePlanningHandoff({ active, locale, t, addActivity, setStatus });
+  useEffect(() => {
+    if (!active || orchestrationSession) {
+      setOrchestrationSessionLoading(false);
+      return;
+    }
+    const orchestrationSessionId = readOrchestrationSessionId();
+    if (!orchestrationSessionId) {
+      setOrchestrationSessionLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setOrchestrationSessionLoading(true);
+    void getOrchestrationState(orchestrationSessionId, readOrchestrationEngine())
+      .then((session) => {
+        if (!cancelled && session.found && session.stages?.length) update({ session });
+      })
+      .catch(() => {
+        // A missing or unreadable orchestration snapshot does not block the console.
+      })
+      .finally(() => {
+        if (!cancelled) setOrchestrationSessionLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, orchestrationSession, update]);
   const { manualTargetsPayload, loadManualTargets, fallbackManualTargets } = useManualTargets(currentPlan);
   const { specPreview, specPreviewError } = useSpecPreview(currentPlan, activeTab === "specs");
   const { request: specRegenRequest, regenerated, regenerating, regenError, regenerate, clear: clearRegen } =
@@ -242,6 +288,34 @@ export function FlowConsole({ active = true, focus = "review", reviewStage = "" 
     setStatus,
     addActivity
   });
+
+  /**
+   * How much is waiting on the operator right now: queued corrections plus
+   * approvals the current orchestration pass is actually waiting on. The plan's
+   * `requires_confirmation` flags describe future work, not a live approval.
+   * This is the one number a folded
+   * rail may never hide -- a confirmation nobody can see is a pipeline that
+   * stops for no visible reason -- so it badges the collapsed title *and*
+   * forces the gates card open while it is non-zero.
+   */
+  const activePipelineStageIds = new Set(currentPlan?.production_pipeline?.stages?.map((stage) => stage.id) ?? []);
+  const pendingConfirmations = (orchestrationSession?.pending_confirmations ?? []).filter((stageId) => {
+    const stage = orchestrationSession?.stages?.find((item) => item.stage_id === stageId);
+    return activePipelineStageIds.has(stageId) && stage?.status === "awaiting_confirmation" && !stage.confirmed;
+  });
+  const pendingGates = correctionEntries.length + pendingConfirmations.length;
+
+  /** Exactly one card of the plan rail is open, plus the gates card when it has
+   * something to say. See `openPlanCard` for why the other three stay folded. */
+  const planCardOpen = (key: PlanCardKey) => openPlanCard === key || (key === "operator" && pendingGates > 0);
+
+  /**
+   * Toggling is not `onToggle`: a `<details>` fires that after the browser has
+   * already changed `open`, which with React re-rendering from state means two
+   * sources of truth fighting over one attribute. The card's openness is
+   * derived from `openPlanCard`, and this is the only writer.
+   */
+  const togglePlanCard = (key: PlanCardKey) => setOpenPlanCard((current) => (current === key ? "handoff" : key));
 
   const recommendedManualTargetId = useCallback(() => {
     const mapped = correctionModeManualTargets[selectedCorrectionMode] || "planning";
@@ -476,7 +550,7 @@ const demoPhase = operationPhase({
             <p className="eyebrow">{t("statusLabel")}</p>
             <h2 id="plan-title">{currentPlan ? titleForPlan(currentPlan) : t("emptyTitle")}</h2>
           </div>
-          <div className="status-chip" id="status-chip" data-state={status}>
+          <div className="status-chip" id="status-chip" data-status={status}>
             {t(status)}
           </div>
         </div>
@@ -511,13 +585,14 @@ const demoPhase = operationPhase({
         <aside className="side-rail plan-rail" aria-label="Plan intake and corrections">
           <p className="rail-title">{t("railPlanTitle")}</p>
 
-          <section className="rail-card handoff-panel" aria-label="Planning handoff">
-            <div className="pane-section-header">
+          <details className="rail-fold" data-panel="handoff" aria-label="Planning handoff" open={planCardOpen("handoff")}>
+            <summary onClick={(event) => { event.preventDefault(); togglePlanCard("handoff"); }}>
               <h2>{t("handoffTitle")}</h2>
               <span className="handoff-chip" id="handoff-state">
                 {currentHandoff?.plan ? t("handoffLoadedShort") : t("waitingForPlan")}
               </span>
-            </div>
+            </summary>
+            <div className="rail-card-body">
             <div id="handoff-summary" className="handoff-summary">
               {currentHandoff?.invalid ? (
                 <p>{t("invalidHandoff")}</p>
@@ -548,13 +623,15 @@ const demoPhase = operationPhase({
                 {t("loadHandoff")}
               </button>
             </div>
-            <p className="handoff-note">{t("handoffHint")}</p>
-          </section>
-
-          <section className="rail-card correction-panel" aria-label="Correction queue">
-            <div className="pane-section-header">
-              <h2>{t("correctionTitle")}</h2>
+            <p className="ui-hint">{t("handoffHint")}</p>
             </div>
+          </details>
+
+          <details className="rail-fold" data-panel="correction" aria-label="Correction queue" open={planCardOpen("correction")}>
+            <summary onClick={(event) => { event.preventDefault(); togglePlanCard("correction"); }}>
+              <h2>{t("correctionTitle")}</h2>
+            </summary>
+            <div className="rail-card-body">
             <div className="mode-grid" role="group" aria-label="Correction mode">
               {(["gameplay", "visuals", "scope", "import"] as CorrectionMode[]).map((mode) => (
                 <button
@@ -581,13 +658,15 @@ const demoPhase = operationPhase({
             <button className="secondary-action" type="button" id="record-correction-button" onClick={recordCorrection}>
               {t("recordCorrection")}
             </button>
-          </section>
-
-          <section className="rail-card manual-correction-panel" aria-label="Manual correction tools">
-            <div className="pane-section-header">
-              <h2>{t("manualCorrectionTitle")}</h2>
             </div>
-            <p className="handoff-note">{t("manualCorrectionHint")}</p>
+          </details>
+
+          <details className="rail-fold" data-panel="manual-correction" aria-label="Manual correction tools" open={planCardOpen("manual-correction")}>
+            <summary onClick={(event) => { event.preventDefault(); togglePlanCard("manual-correction"); }}>
+              <h2>{t("manualCorrectionTitle")}</h2>
+            </summary>
+            <div className="rail-card-body">
+            <p className="ui-hint">{t("manualCorrectionHint")}</p>
             <div className="manual-summary-row">
               <span id="manual-tool-summary">
                 {t("manualRecommended")}: {manualTargetLabel(recommendedTarget)} / {modeLabel(selectedCorrectionMode)}
@@ -612,10 +691,12 @@ const demoPhase = operationPhase({
                 >
                   <div className="manual-tool-name">
                     <h3>{manualTargetLabel(target)}</h3>
-                    {target.id === recommendedManualTargetId() ? <span className="task-pill ready">{t("manualRecommended")}</span> : null}
+                    {target.id === recommendedManualTargetId() ? (
+                      <span className="task-pill" data-status="ready">{t("manualRecommended")}</span>
+                    ) : null}
                   </div>
                   <div className="manual-tool-side">
-                    <span className="task-pill">{manualStatusLabel(target.status, t)}</span>
+                    <span className="task-pill" data-status={target.status}>{manualStatusLabel(target.status, t)}</span>
                     <button className="mini-action" type="button" data-manual-target={target.id} disabled={!target.openable} onClick={() => void openManualTarget(target.id)}>
                       {t("manualOpen")}
                     </button>
@@ -636,21 +717,35 @@ const demoPhase = operationPhase({
               </button>
               {correctionScan ? <CorrectionReportCard report={correctionScan} t={t} /> : null}
             </div>
-          </section>
-
-          <section className="rail-card operator-strip" aria-label="Execution confirmations">
-            <div className="pane-section-header">
-              <h2>{t("gatesTitle")}</h2>
             </div>
+          </details>
+
+          <details className="rail-fold" data-panel="operator" aria-label="Execution confirmations" aria-busy={orchestrationSessionLoading} open={planCardOpen("operator")}>
+            <summary onClick={(event) => { event.preventDefault(); togglePlanCard("operator"); }}>
+              <h2>{t("gatesTitle")}</h2>
+              {pendingGates > 0 ? (
+                <span className="gate-count" id="gate-count" aria-label={t("gatesPending")}>
+                  {pendingGates}
+                </span>
+              ) : null}
+            </summary>
+            <div className="rail-card-body">
             <div id="gate-summary" className="gate-stack">
               {currentPlan ? (
                 <>
                   {correctionEntries.slice(0, 3).map((entry) => (
                     <GateItem key={entry.createdAt} title={`${t("correctionPending")} · ${modeLabel(entry.mode)}`} detail={entry.notes} />
                   ))}
-                  {(currentPlan.task_breakdown?.tasks || []).filter((task) => task.requires_confirmation).slice(0, 6).map((task) => (
-                    <GateItem key={task.id} title={task.title || task.id || t("confirmation")} detail={task.side_effects?.join(", ") || task.status || ""} />
-                  ))}
+                  {pendingConfirmations.slice(0, 6).map((stageId) => {
+                    const stage = orchestrationSession?.stages?.find((item) => item.stage_id === stageId);
+                    return (
+                      <GateItem
+                        key={stageId}
+                        title={stage?.title || stageId || t("confirmation")}
+                        detail={stage?.detail || stage?.status || ""}
+                      />
+                    );
+                  })}
                 </>
               ) : (
                 <>
@@ -660,7 +755,8 @@ const demoPhase = operationPhase({
                 </>
               )}
             </div>
-          </section>
+            </div>
+          </details>
 
         </aside>
 
@@ -726,11 +822,11 @@ const demoPhase = operationPhase({
         <aside className="side-rail run-rail" aria-label="Execution center">
           <p className="rail-title">{t("railRunTitle")}</p>
 
-          <section className="rail-card generate-panel" aria-label="Run approved asset workers">
+          <section className="rail-card" data-panel="run" aria-label="Run approved asset workers">
             <div className="pane-section-header">
               <h2>{t("assetExecutionTitle")}</h2>
             </div>
-            <p className="handoff-note">{t("assetExecutionHint")}</p>
+            <p className="ui-hint">{t("assetExecutionHint")}</p>
             <div className="generate-options">
               <label>
                 <input type="checkbox" id="asset-with-assets" checked={assetWithAssets} onChange={(event) => setAssetWithAssets(event.target.checked)} /> <span>{t("generateWithAssets")}</span>
@@ -768,11 +864,11 @@ const demoPhase = operationPhase({
             </div>
           </section>
 
-          <section className="rail-card generate-panel" aria-label="Generate playable demo">
+          <section className="rail-card" data-panel="generate" aria-label="Generate playable demo">
             <div className="pane-section-header">
               <h2>{t("generateTitle")}</h2>
             </div>
-            <p className="handoff-note">{t("generateHint")}</p>
+            <p className="ui-hint">{t("generateHint")}</p>
             <div className="generate-options">
               <label>
                 <input type="checkbox" id="generate-with-assets" checked={withAssets} onChange={(event) => setWithAssets(event.target.checked)} /> <span>{t("generateWithAssets")}</span>
@@ -850,7 +946,7 @@ const demoPhase = operationPhase({
             <div id="generate-stages" className="generate-stages">
               {generateResult?.stages?.map((stage) => <ExecutionStageCard key={stage.name} stage={stage} t={t} />)}
               {generateResult?.project_dir ? (
-                <p className="handoff-note">
+                <p className="ui-hint">
                   {t("generateArtifact")}: <code>{generateResult.project_dir}</code>
                 </p>
               ) : null}
@@ -860,13 +956,13 @@ const demoPhase = operationPhase({
                 <div className="pane-section-header">
                   <h3>{t("reworkTitle")}</h3>
                 </div>
-                <p className="handoff-note">{t("reworkHint")}</p>
-                <p className="handoff-note">
+                <p className="ui-hint">{t("reworkHint")}</p>
+                <p className="ui-hint">
                   {t("reworkSession")}: <code>{sessionId}</code>
                 </p>
                 <ul className="rework-list">
                   {(sessionState?.stages || []).map((stage) => (
-                    <li key={stage.name} className={`rework-item rework-${stage.status || "unknown"}`}>
+                    <li key={stage.name} className="rework-item" data-status={stage.status || "unknown"}>
                       <span className="rework-name">{stage.name}</span>
                       <span className="rework-status">{stage.status}</span>
                       {stage.status === "failed" ? (
@@ -886,13 +982,13 @@ const demoPhase = operationPhase({
               <div className="pane-section-header">
                 <h3>{t("playtestTitle")}</h3>
               </div>
-              <p className="handoff-note">{t("playtestHint")}</p>
+              <p className="ui-hint">{t("playtestHint")}</p>
               {playtestProjectDir ? (
-                <p className="handoff-note">
+                <p className="ui-hint">
                   {t("playtestProject")}: <code>{playtestProjectDir}</code>
                 </p>
               ) : (
-                <p className="handoff-note">{t("playtestNeedsProject")}</p>
+                <p className="ui-hint">{t("playtestNeedsProject")}</p>
               )}
               <label className="playtest-field">
                 <span>{t("playtestRunsLabel")}</span>

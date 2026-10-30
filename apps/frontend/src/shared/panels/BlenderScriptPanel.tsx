@@ -20,10 +20,15 @@
  *
  * **It emits `wb-*`, not the console's action classes.** This mounts inside the
  * shared `BuildPanel`, so it renders on `/workbench` as well as `/web-console`,
- * and `/workbench` only loads `workbench.css`. The console's `secondary-action`
- * / `ghost-action` / `status-chip` / `handoff-note` live in `console.css`, so
- * using them here would render bare HTML on the workbench route.
- * `shared/panelStyles.test.ts` fails if that happens.
+ * and `/workbench` only loads `workbench.css`. The console's
+ * `secondary-action` and `status-chip` live in `console.css`, so using them
+ * here would render bare HTML on the workbench route.
+ *
+ * The list got shorter on 2026-10-19: `.ghost-action` moved to `ui.css` and
+ * `.handoff-note` became `.ui-hint` there too, because the rule is "which
+ * sheet is loaded on this route", not "which directory wrote the class".
+ * Anything under `ui.css` is safe on every route; anything under `console.css`
+ * is not.
  */
 
 import { useCallback, useState } from "react";

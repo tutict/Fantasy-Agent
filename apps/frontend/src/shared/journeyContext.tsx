@@ -13,7 +13,11 @@ export interface JourneySignals {
 
 const EMPTY: JourneySignals = { plan: null, session: null, executionStatus: "", reviewPending: 0, qaStatus: "" };
 
-const JourneyContext = createContext<{ snapshot: JourneySnapshot; update: (patch: Partial<JourneySignals>) => void } | null>(null);
+const JourneyContext = createContext<{
+  snapshot: JourneySnapshot;
+  session: OrchestrationSession | null;
+  update: (patch: Partial<JourneySignals>) => void;
+} | null>(null);
 
 export function JourneyProvider({ children }: { children: ReactNode }) {
   const [signals, setSignals] = useState<JourneySignals>(EMPTY);
@@ -24,7 +28,10 @@ export function JourneyProvider({ children }: { children: ReactNode }) {
       return { ...current, ...patch };
     });
   }, []);
-  const value = useMemo(() => ({ snapshot: journeySnapshot(signals), update }), [signals, update]);
+  const value = useMemo(
+    () => ({ snapshot: journeySnapshot(signals), session: signals.session, update }),
+    [signals, update]
+  );
   return <JourneyContext.Provider value={value}>{children}</JourneyContext.Provider>;
 }
 

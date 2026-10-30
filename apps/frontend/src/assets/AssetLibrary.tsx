@@ -166,7 +166,7 @@ export function AssetLibrary({ t }: { t: Translator }) {
         </Button>
       </div>
 
-      <p className="as-summary" id="as-summary" data-state={failure ? "error" : "ok"}>
+      <p className="as-summary" id="as-summary" data-status={failure ? "error" : overview ? "ok" : undefined}>
         {/* A count is a claim about what the library holds, so it waits for a
             read that actually came back: zero during the load would be the
             same lie an empty state tells after a failure. */}

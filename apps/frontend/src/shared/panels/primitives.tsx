@@ -58,6 +58,21 @@ export function PillRow({ children }: { children: ReactNode }) {
   return <div className="wb-meta">{children}</div>;
 }
 
-export function Pill({ children, variant }: { children: ReactNode; variant?: "warn" | "human" }) {
-  return <span className={`wb-pill${variant ? ` ${variant}` : ""}`}>{children}</span>;
+/**
+ * The colour is not chosen here. `data-status` is the one vocabulary every
+ * badge and pill in the app reads, and `ui.css` is the only file that maps it
+ * to a tone; this component and the console's own pills are two readers of it.
+ *
+ * The variant names are spelling of that vocabulary, not a second one: this
+ * component used to say `warn` while the spec validator and the playtest
+ * report both say `warning`, and two words for one tone is how a mapping ends
+ * up with two entries for the same row. `warn` is gone; the vocabulary says
+ * `warning`, so this does too.
+ */
+export function Pill({ children, variant }: { children: ReactNode; variant?: "warning" | "human" }) {
+  return (
+    <span className="wb-pill" data-status={variant}>
+      {children}
+    </span>
+  );
 }

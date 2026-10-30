@@ -15,7 +15,7 @@ export function PlaytestReportCard({
   const runs = aggregate.runs ?? 0;
   return (
     <div className="playtest-report" id="playtest-report">
-      <span className={`playtest-verdict playtest-${report.status || "unknown"}`}>
+      <span className="playtest-verdict" data-status={report.status || "unknown"}>
         {t(report.status === "passed" ? "playtestStatusPassed" : report.status === "warning" ? "playtestStatusWarning" : "playtestStatusFailed")}
       </span>
       <div className="playtest-metrics">
@@ -31,7 +31,7 @@ export function PlaytestReportCard({
       {report.findings?.length ? (
         <ul className="playtest-findings">
           {report.findings.map((finding) => (
-            <li key={finding.code} className={`playtest-finding playtest-${finding.severity || "warning"}`}>
+            <li key={finding.code} className="playtest-finding" data-status={finding.severity || "warning"}>
               <strong>{finding.code}</strong>
               <span>{finding.message}</span>
               <span className="playtest-rework">
@@ -52,7 +52,7 @@ export function PlaytestReportCard({
         </ul>
       ) : null}
       {report.artifact_paths?.length ? (
-        <p className="handoff-note">
+        <p className="ui-hint">
           {t("playtestArtifacts")}: <code>{report.artifact_paths.join(", ")}</code>
         </p>
       ) : null}

@@ -235,7 +235,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         b'className="stage-card"',
         b'className="mcp-status-card"',
         "src/shared/cssHygiene.test.ts",
-        "styles the base class a component hangs its modifiers on",
+        "styles every static class token a component emits",
     ),
     (
         # The other half of a rename, in the direction the forward check cannot
@@ -343,13 +343,14 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # `console.css` is not console-scoped -- it lands on every field in the
         # app while the file says otherwise, and the ring now has a second home.
         #
-        # Two such rules were added in this very round while the ring was being
-        # consolidated, and the consolidation was documented as "one home" with
-        # nothing enforcing it. The mutation puts one back.
+        # The console button base survives in this sheet, although its shared
+        # button styling moved to ui.css. Adding a focus selector to that valid
+        # rule keeps the mutant parseable while the focus-location guard catches
+        # it.
         "FE6-10 a view stylesheet grows its own focus rule",
         "apps/frontend/src/styles/console.css",
-        b".primary-action,\n.secondary-action {",
-        b"textarea:focus-visible,\n.primary-action,\n.secondary-action {",
+        b".secondary-action {\n",
+        b"textarea:focus-visible,\n.secondary-action {\n",
         "src/shared/cssHygiene.test.ts",
         "keeps the focus ring in one place",
     ),
@@ -512,7 +513,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         b'className="wb-empty"',
         b'className="wb-empty-x"',
         "src/shared/cssHygiene.test.ts",
-        "styles the base class a component hangs its modifiers on",
+        "styles every static class token a component emits",
     ),
     (
         # Deleting the log line. React prints its own "the above error occurred
@@ -606,7 +607,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         b'    <article className="as-entry" data-kind={entry.kind} id={`as-entry-${entry.id}`}>\n',
         b'    <article className="as-entry-card" data-kind={entry.kind} id={`as-entry-${entry.id}`}>\n',
         "src/shared/cssHygiene.test.ts",
-        "styles the base class a component hangs its modifiers on",
+        "styles every static class token a component emits",
     ),
     (
         # A label typed straight into the JSX. The dictionary keeps its key,
@@ -678,7 +679,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         b'      <div className="wb-seed-body">\n',
         b'      <div className="wb-seed-panel">\n',
         "src/shared/cssHygiene.test.ts",
-        "styles the base class a component hangs its modifiers on",
+        "styles every static class token a component emits",
     ),
     (
         # The auto-open, removed. The seed editor is a disclosure now -- it
@@ -738,12 +739,16 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # live consumers, two sheets, one document, and the winner decided by
         # import order. Written as a selector added to the shell's own rule so
         # the mutant stays parseable and changes no rendered value.
+        # The guard this case was written for only compared console.css with
+        # studio.css. It now compares every pair, so the title changed -- and a
+        # case naming a title that no longer exists matches nothing and reports
+        # DID NOT RUN, which reads like a pass until somebody reads the label.
         "FE13-2 the footer control takes the console's class name back",
         "apps/frontend/src/styles/studio.css",
         b".studio-seg {\n",
         b".locale-switch,\n.studio-seg {\n",
         "src/shared/cssHygiene.test.ts",
-        "keeps the shell's two stylesheets from dressing the same class",
+        "keeps any two stylesheets from dressing the same class",
     ),
     (
         # The other half of the same collision, from the markup side: the shell
@@ -756,7 +761,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         b'          <div className="studio-seg" aria-label={t("interfaceLanguage")}>\n',
         b'          <div className="locale-switch" aria-label={t("interfaceLanguage")}>\n',
         "src/shared/cssHygiene.test.ts",
-        "styles the base class a component hangs its modifiers on",
+        "styles every static class token a component emits",
     ),
     (
         # A journey row loses its state dot. The attribute stays, so the row
@@ -768,6 +773,229 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         b"",
         "src/studio/StudioShell.test.tsx",
         "marks every journey row with one state dot, and no text of its own",
+    ),
+    (
+        # The reason the collision guard was extended from one pair to all 21.
+        # `assets.css` grows a base rule for `.or-card`, which
+        # `orchestration.css` already owns: two sheets, two 0,1,0 rules, one
+        # element, winner decided by which sheet Vite emitted later. The old
+        # guard compared console.css with studio.css and would have sat through
+        # this in silence -- the mutation is the evidence that extending it was
+        # not tidiness.
+        "FE14-1 an unrelated sheet grows a second base rule for a class",
+        "apps/frontend/src/styles/assets.css",
+        b".as-path-note {\n",
+        b".or-card,\n.as-path-note {\n",
+        "src/shared/cssHygiene.test.ts",
+        "keeps any two stylesheets from dressing the same class",
+    ),
+    (
+        # The regression that actually happened while this was being built: the
+        # shared button bases were moved into `ui.css` and their copies in
+        # `console.css` were still there, so `.tab`, `.mode-grid` and
+        # `.review-actions` each had two plain base rules. The one-pair guard
+        # saw none of them because `ui.css` was not in any pair.
+        "FE14-2 a moved shared base leaves its copy behind",
+        "apps/frontend/src/styles/console.css",
+        b".content-frame {\n",
+        b".tab,\n.content-frame {\n",
+        "src/shared/cssHygiene.test.ts",
+        "keeps any two stylesheets from dressing the same class",
+    ),
+    (
+        # The registry half of the same guard: an entry naming a collision that
+        # no longer exists is a decision recorded for a disagreement that ended.
+        # `.mcp-state` sat in that registry for exactly this reason -- the
+        # console's half had become a descendant selector and stopped colliding
+        # long before anyone looked -- so every entry is checked on each run
+        # instead of trusted.
+        #
+        # Retargeted 2026-10-21. This case used to rename the shell's copy of
+        # `.primary-action` away, which worked while the registry still held
+        # that entry; the class now has one definition and the registry is
+        # empty, so there is no entry left to make stale by editing a
+        # stylesheet. The mutant instead writes a stale entry straight into the
+        # registry, which is the failure the assertion exists for and the one a
+        # future contributor will actually produce.
+        "FE14-3 a registered collision stops colliding and the entry goes stale",
+        "apps/frontend/src/shared/cssHygiene.test.ts",
+        b"    const KNOWN_SHARED: Record<string, string> = {};",
+        (
+            b'    const KNOWN_SHARED: Record<string, string> = {\n'
+            b'      "mcp-status-grid": "a studio-only layout rule that has never collided"\n'
+            b'    };'
+        ),
+        "src/shared/cssHygiene.test.ts",
+        "keeps any two stylesheets from dressing the same class",
+    ),
+    (
+        # The journey dot's colour moved out of `studio.css` and into the shared
+        # vocabulary, so the guard that keeps the dot coloured has to read both
+        # files: one to see the dot still asks, one to see the answer exists.
+        # Without this half the guard would stay green while every dot went
+        # grey -- it would be asserting a question nobody answers.
+        # `current` is the key, and the first version of this case renamed
+        # `cancelable` instead -- a key the dot guard never reads, so the guard
+        # stayed green and the case reported MISSED. The mutant has to remove
+        # the key the assertion actually looks up. It renames it to `upcoming`
+        # rather than deleting it, which trips the second assertion too: an
+        # upcoming step has to stay hollow, and a vocabulary entry for it would
+        # paint a step that has not run.
+        "FE14-4 a journey state falls out of the shared vocabulary",
+        "apps/frontend/src/styles/ui.css",
+        b'[data-state="current"] {\n',
+        b'[data-state="upcoming"] {\n',
+        "src/shared/cssHygiene.test.ts",
+        "keeps one state dot per journey row, coloured by the shared vocabulary",
+    ),
+    (
+        # The density guard's own reason for existing: a twelfth panel in the
+        # console's rail, which used to cost nothing. Every other guard in the
+        # repo reads source text, and source text cannot tell you that a view
+        # now asks the reader to take in one more block than it did -- that is a
+        # property of the rendered tree, so only a mounted measurement sees it.
+        #
+        # The mutant is a COMPLETE empty section. Duplicating only an opening
+        # tag -- the first version of this case -- leaves the tree unbalanced,
+        # the module fails to transform, vitest reports "no tests", and the case
+        # is recorded as NO RUN. A mutant that does not compile proves the file
+        # is broken, not that the guard has teeth.
+        #
+        # The needle was the handoff card's opening tag until the plan rail
+        # folded and that tag became a `<details>`; it now hangs off the rail's
+        # title, which the fold did not touch. Move the needle with the code or
+        # this case silently reports nothing proved.
+        "FE15-1 the console's rail grows one more panel",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        b'          <p className="rail-title">{t("railPlanTitle")}</p>\n',
+        (
+            b'          <p className="rail-title">{t("railPlanTitle")}</p>\n'
+            b'          <section className="rail-card" data-panel="extra"></section>\n'
+        ),
+        "src/shared/viewDensity.test.tsx",
+        "keeps the flow console inside its budget",
+    ),
+    (
+        # The density guard measures what is PRESENTED, not what is in the DOM:
+        # a folded `<details>` keeps its body in the document on purpose. Make
+        # the guard stop asking and it counts the three folded panels again --
+        # 29 controls and 2286 characters against budgets of 20 and 1316. If
+        # this comes back GREEN, the fold-awareness is decoration and the
+        # budgets are really ceilings on the DOM, which is not what was measured.
+        "FE16-1 the density guard stops noticing folds",
+        "apps/frontend/src/shared/viewDensity.test.tsx",
+        b'    if (node.tagName === "DETAILS" && !(node as HTMLDetailsElement).open) {',
+        b'    if (node.tagName === "DETAILS_NEVER" && !(node as HTMLDetailsElement).open) {',
+        "src/shared/viewDensity.test.tsx",
+        "keeps the flow console inside its budget",
+    ),
+    (
+        # One card open at a time is the whole point of the fold. Pin it open
+        # and the correction composer's six controls come back on screen.
+        "FE16-2 a folded card is pinned open again",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        b'open={planCardOpen("correction")}',
+        b"open={true}",
+        "src/shared/viewDensity.test.tsx",
+        "keeps the flow console inside its budget",
+    ),
+    (
+        # The run rail owns the in-flight jobs, so it is the one rail that must
+        # never fold. This is the only guard on that: a fold is exactly the edit
+        # that would tempt somebody into unmounting a polling card.
+        "FE16-3 the run rail gets a fold",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        b'          <p className="rail-title">{t("railRunTitle")}</p>\n',
+        (
+            b'          <p className="rail-title">{t("railRunTitle")}</p>\n'
+            b"          <details><summary>folded</summary></details>\n"
+        ),
+        "src/console/planRail.test.tsx",
+        "never folds the run rail, which owns the in-flight jobs",
+    ),
+    (
+        # The last collision in the repo was `.primary-action`, hand-tuned twice:
+        # 44px in the console, 40px in the shell, so the one primary button was a
+        # different size depending on which view the reader came from. It is
+        # defined once in `ui.css` now. This is the guard against it drifting
+        # back -- the drift costs nothing to reintroduce and, once reintroduced,
+        # is invisible until somebody notices a button that changed size.
+        "FE17-1 the one primary action grows a second definition again",
+        "apps/frontend/src/styles/studio.css",
+        b".mcp-status-grid {\n",
+        b".primary-action {\n  min-height: 40px;\n}\n\n.mcp-status-grid {\n",
+        "src/shared/cssHygiene.test.ts",
+        "keeps any two stylesheets from dressing the same class",
+    ),
+    (
+        # The shared state reader reset is not a style owner: otherwise removing
+        # a component's base rule still leaves its class name in ui.css and the
+        # owner guard turns green on a reset-only selector.
+        "FE18-1 a tone reset stops masquerading as a style owner",
+        "apps/frontend/src/shared/cssHygiene.test.ts",
+        b'    if (selectorList.includes(":where(") && /^\\s*--tone(?:-soft)?\\s*:/m.test(body)) continue;\n',
+        b"    if (false) continue;\n",
+        "src/shared/cssHygiene.test.ts",
+        "does not treat a tone-reset reader list as an owner",
+    ),
+    (
+        # The view must be measured after its readiness marker appears. Replacing
+        # the awaited per-view condition with the old generic DOM-size condition
+        # measures the synthetic view before its delayed text arrives.
+        "FE18-2 density is measured before the view settles",
+        "apps/frontend/src/shared/viewDensity.test.tsx",
+        b"  await ready(view.container);\n",
+        b'  await waitFor(() => expect(view.container.querySelectorAll("*").length).toBeGreaterThan(10));\n',
+        "src/shared/viewDensity.test.tsx",
+        "waits for its view readiness condition before measuring settled content",
+    ),
+    (
+        # A selector-shaped class name in prose must not satisfy the stylesheet
+        # ownership scan after the corresponding rule is removed.
+        "FE18-3 selector-like prose counts as a CSS definition",
+        "apps/frontend/src/shared/cssHygiene.test.ts",
+        b"  const clean = stripComments(source);\n",
+        b"  const clean = source;\n",
+        "src/shared/cssHygiene.test.ts",
+        "does not treat selector-looking comments as stylesheet definitions",
+    ),
+    (
+        # The class after the first token may carry its own visible modifier
+        # styling, so reducing the scan back to the base token must be caught.
+        "FE18-4 static class modifiers fall out of ownership checks",
+        "apps/frontend/src/shared/cssHygiene.test.ts",
+        b".flatMap((match) => match[1]!.trim().split(/\\s+/))",
+        b".map((match) => match[1]!.trim().split(/\\s+/)[0]!)",
+        "src/shared/cssHygiene.test.ts",
+        "keeps modifier tokens in the component style ownership scan",
+    ),
+    (
+        # The two lifecycle chips use data-status because the shared vocabulary
+        # maps running and error as lifecycle states.
+        "FE19-1 the console status leaves the lifecycle vocabulary",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        b'className="status-chip" id="status-chip" data-status={status}',
+        b'className="status-chip" id="status-chip" data-state={status}',
+        "src/console/FlowConsole.approval.test.tsx",
+        "marks console lifecycle errors with the shared status attribute",
+    ),
+    (
+        "FE19-2 the asset summary leaves the lifecycle vocabulary",
+        "apps/frontend/src/assets/AssetLibrary.tsx",
+        b'data-status={failure ? "error" : overview ? "ok" : undefined}',
+        b'data-state={failure ? "error" : overview ? "ok" : undefined}',
+        "src/assets/AssetLibrary.test.tsx",
+        "surfaces a failed load as an error instead of an empty library",
+    ),
+    (
+        # A plan-time task flag is not an active approval. Restoring that count
+        # opens the operator card before the orchestration pass reaches a stage.
+        "FE20-1 future plan confirmations appear as pending gates",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        b"const pendingGates = correctionEntries.length + pendingConfirmations.length;",
+        b"const pendingGates = correctionEntries.length + (currentPlan?.task_breakdown?.tasks || []).filter((task) => task.requires_confirmation).length;",
+        "src/console/planRail.test.tsx",
+        "does not count plan-time confirmations as active approvals",
     ),
 )
 

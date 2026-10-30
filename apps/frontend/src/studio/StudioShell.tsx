@@ -461,7 +461,7 @@ export function StudioShell() {
             <ErrorBoundary t={t}>
               <div className="mcp-status-grid" id="mcp-status-grid">
                 {mcpError ? (
-                  <article className="mcp-status-card mcp-status-error" data-state="unavailable">
+                  <article className="mcp-status-card" data-state="unavailable">
                     <p>{t("mcpCheckFailed")}: {mcpError}</p>
                   </article>
                 ) : (

@@ -193,7 +193,7 @@ button:disabled {
 .studio-side-rows button.active,
 .studio-side-group > button.active {
   border-left-color: var(--brand);
-  background: var(--accent-soft);
+  background: var(--brand-soft);
   color: var(--text);
   font-weight: 850;
 }
@@ -227,7 +227,7 @@ button:disabled {
 }
 
 .studio-nav button.active .studio-nav-index {
-  color: var(--accent);
+  color: var(--brand);
 }
 
 /* State, one dot per row. The three ways this used to be said -- the index
@@ -242,24 +242,16 @@ button:disabled {
   background: transparent;
 }
 
-.studio-nav button[data-state="current"] .studio-nav-dot {
-  border-color: var(--status-running);
-  background: var(--status-running);
-}
-
-.studio-nav button[data-state="complete"] .studio-nav-dot {
-  border-color: var(--status-success);
-  background: var(--status-success);
-}
-
-.studio-nav button[data-state="blocked"] .studio-nav-dot {
-  border-color: var(--status-danger);
-  background: var(--status-danger);
-}
-
-.studio-nav button[data-state="attention"] .studio-nav-dot {
-  border-color: var(--status-waiting);
-  background: var(--status-waiting);
+/**
+ * The dot beside a sidebar row. Four rules used to say this, one per journey
+ * state, and all four said the same thing in a different colour -- which is
+ * exactly the shape the shared vocabulary exists to collapse. The colour now
+ * comes from the row's `data-state` through the one table in `ui.css`; this
+ * rule only decides that a dot is a filled circle.
+ */
+.studio-nav button[data-state] .studio-nav-dot {
+  border-color: var(--tone, var(--line-strong));
+  background: var(--tone, transparent);
 }
 
 .nav-label {
@@ -332,8 +324,8 @@ button:disabled {
 }
 
 .studio-seg-option.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 .studio-side-note {
@@ -350,7 +342,7 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
   background: var(--code-bg);
-  color: var(--accent);
+  color: var(--brand);
   padding: var(--space-2);
   font: 12px/1.45 "Cascadia Code", Consolas, monospace;
   text-overflow: ellipsis;
@@ -468,16 +460,9 @@ button:disabled {
   color: var(--muted-strong);
 }
 
-.primary-action {
-  min-height: 40px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-m);
-  background: var(--accent);
-  color: var(--on-brand);
-  padding: 0 var(--space-3_5);
-  font-size: var(--text-s);
-  font-weight: 850;
-}
+/* `.primary-action` is defined in `ui.css`. It used to be redefined here, 40px
+   against the console's 44px, which made the button's size a function of which
+   view the reader visited first. One definition, one tool. */
 
 .mcp-status-grid {
   display: grid;
@@ -490,22 +475,14 @@ button:disabled {
   display: grid;
   gap: var(--space-2_5);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--muted);
+  /* The left edge carries the server's availability. Three rules used to say
+     this, and `degraded` disagreed with the console's reading of the same word
+     -- waiting here, warning there. It is a warning: a degraded server is up
+     but impaired, which is something having gone wrong. */
+  border-left: 3px solid var(--tone, var(--muted));
   border-radius: var(--radius-m-lg);
   background: var(--chrome);
   padding: var(--space-3_5);
-}
-
-.mcp-status-card[data-state="ready"] {
-  border-left-color: var(--accent);
-}
-
-.mcp-status-card[data-state="degraded"] {
-  border-left-color: var(--status-waiting);
-}
-
-.mcp-status-card[data-state="unavailable"] {
-  border-left-color: var(--danger);
 }
 
 .mcp-status-top {
@@ -577,7 +554,7 @@ button:disabled {
 .api-toggle input {
   width: 18px;
   height: 18px;
-  accent-color: var(--accent);
+  accent-color: var(--brand);
 }
 
 .api-field {
@@ -640,11 +617,7 @@ button:disabled {
 
 .api-summary {
   margin-top: var(--space-3);
-  color: var(--muted-strong);
-}
-
-.api-summary[data-state="error"] {
-  color: var(--danger);
+  color: var(--tone, var(--muted-strong));
 }
 
 /* ── agent loop ─────────────────────────────────────────────────────────── */
@@ -661,13 +634,17 @@ button:disabled {
 }
 
 .agent-note {
-  margin: -4px 0 8px;
+  /* Pulled up under the field it annotates, by one step of the ladder rather
+     than by a number: `calc(-1 * …)` is the only way to say a negative
+     distance with a token, and it is worth saying, because a bare `-4px` here
+     is a spacing value that no grep for the scale would ever recognise. */
+  margin: calc(-1 * var(--space-1)) 0 var(--space-2);
   color: var(--muted);
   font-size: var(--text-s);
 }
 
 .agent-note-danger {
-  color: var(--danger);
+  color: var(--status-danger);
 }
 
 .agent-answer {
@@ -692,22 +669,15 @@ button:disabled {
 
 .agent-call {
   border: 1px solid var(--line);
-  border-left: 3px solid var(--muted);
+  /* The left edge carries the call's outcome. Its three states were the fifth
+     copy of the status mapping in the app, and the only one whose keys were
+     nobody else's (`ok` / `refused`); the keys are now registered in the one
+     vocabulary in `ui.css` and the colour comes from it. Solid tone, like the
+     board's card edge: this is a 3px edge, not a hairline. */
+  border-left: 3px solid var(--tone, var(--muted));
   border-radius: var(--radius-m-lg);
   background: var(--chrome);
   padding: var(--space-3) var(--space-3_5);
-}
-
-.agent-call[data-status="ok"] {
-  border-left-color: var(--status-success);
-}
-
-.agent-call[data-status="refused"] {
-  border-left-color: var(--status-waiting);
-}
-
-.agent-call[data-status="error"] {
-  border-left-color: var(--danger);
 }
 
 .agent-call-top {
@@ -780,21 +750,23 @@ button:disabled {
   letter-spacing: 0.08em;
 }
 
+/*
+ * What a tool may do, on the left edge of the row that lists it: a tool that
+ * can write takes the brand tone and one that can execute takes the danger
+ * tone, because executing is the permission that can do real damage and it
+ * should not be the one wearing the friendly colour.
+ *
+ * The two permissions are keys in the shared vocabulary, not a second table:
+ * the mapping lives with every other "what does this mean" answer, and this
+ * rule only says where on the row the answer goes.
+ */
 .tool-row {
   border: 1px solid var(--line);
-  border-left: 3px solid var(--muted);
+  border-left: 3px solid var(--tone, var(--muted));
   border-radius: var(--radius-m);
   background: var(--chrome);
   padding: var(--space-2_5) var(--space-3);
   margin-bottom: var(--space-2);
-}
-
-.tool-row[data-permission="write"] {
-  border-left-color: var(--accent);
-}
-
-.tool-row[data-permission="execute"] {
-  border-left-color: var(--danger);
 }
 
 .tool-row-top {
@@ -839,7 +811,7 @@ button:disabled {
 }
 
 .tool-row-flag-danger {
-  color: var(--danger);
+  color: var(--status-danger);
 }
 
 .tool-catalog-gap {

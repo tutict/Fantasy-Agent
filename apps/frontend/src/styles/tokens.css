@@ -1,6 +1,20 @@
 /* Drafting table. One owner: main.tsx imports this file once.
    Groups: brand, text, surface, line, status, focus, data.
-   Legacy names (--accent, --amber, --danger, --blue) alias those groups. */
+
+   There used to be a second vocabulary here: `--accent`/`--accent-deep`/
+   `--accent-soft` aliasing the brand group and `--amber`/`--danger`/`--blue`
+   aliasing the status group, kept so files that used the old names still
+   compiled. It was a migration with no finish line recorded anywhere, so it
+   never finished: 2026-10-19 measured 119 references to the old names against
+   40 to the semantic ones, split by file -- `ui.css` and `assets.css` had
+   converted, the other four sheets had not, and which vocabulary you read
+   depended on which file you opened.
+
+   The aliasing also hid meaning: `.review-pill.approved { color: var(--accent) }`
+   reads as "approved is the brand colour" when it means "approved is a success
+   state", so retuning the brand would have retuned every approval. The names
+   are gone, not deprecated -- a deprecated alias still compiles, and a token
+   that still compiles is a token that gets written again. */
 :root {
   color-scheme: light;
   --font-ui: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -84,16 +98,6 @@
   --data-4: #6b3f69;
   --data-5: #854d0e;
   --data-6: #1e3a4c;
-
-  --accent: var(--brand);
-  --accent-deep: var(--brand-strong);
-  --accent-soft: var(--brand-soft);
-  --blue: var(--status-running);
-  --blue-soft: var(--status-running-soft);
-  --amber: var(--status-warning);
-  --amber-soft: var(--status-warning-soft);
-  --danger: var(--status-danger);
-  --danger-soft: var(--status-danger-soft);
 }
 
 :root[data-theme="dark"] {
@@ -153,14 +157,4 @@
   --data-4: #e0b3dc;
   --data-5: #f0d48a;
   --data-6: #b7d4cf;
-
-  --accent: var(--brand);
-  --accent-deep: var(--brand-strong);
-  --accent-soft: var(--brand-soft);
-  --blue: var(--status-running);
-  --blue-soft: var(--status-running-soft);
-  --amber: var(--status-warning);
-  --amber-soft: var(--status-warning-soft);
-  --danger: var(--status-danger);
-  --danger-soft: var(--status-danger-soft);
 }

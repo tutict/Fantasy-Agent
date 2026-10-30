@@ -64,7 +64,7 @@ export function SeedInspector({
       <summary className="wb-seed-summary">
         <span className="wb-seed-title">{t("seedPreviewTitle")}</span>
         <span className="wb-seed-sub">{t("seedPreviewSubtitle")}</span>
-        <span className={`wb-chip ${seedConfirmed ? "ready" : ""}`}>
+        <span className="wb-chip" data-status={seedConfirmed ? "ready" : undefined}>
           {seedConfirmed ? t("seedConfirmed") : t("seedDraft")}
         </span>
       </summary>

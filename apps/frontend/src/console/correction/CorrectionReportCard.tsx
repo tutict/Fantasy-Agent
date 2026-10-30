@@ -30,7 +30,7 @@ export function CorrectionReportCard({ report, t }: { report: CorrectionReport; 
   return (
     <div className="correction-report" id="correction-report">
       {!report.manifest_found ? (
-        <p className="handoff-note">{t("correctionNoManifest")}</p>
+        <p className="ui-hint">{t("correctionNoManifest")}</p>
       ) : null}
       {drifted.length ? (
         <div className="correction-block">
@@ -43,7 +43,7 @@ export function CorrectionReportCard({ report, t }: { report: CorrectionReport; 
               </li>
             ))}
           </ul>
-          <p className="handoff-note">{t("correctionOverwriteWarning")}</p>
+          <p className="ui-hint">{t("correctionOverwriteWarning")}</p>
         </div>
       ) : null}
       {recoverable.length ? (
@@ -73,7 +73,7 @@ export function CorrectionReportCard({ report, t }: { report: CorrectionReport; 
               </li>
             ))}
           </ul>
-          <p className="handoff-note">{t("correctionEngineOnlyHint")}</p>
+          <p className="ui-hint">{t("correctionEngineOnlyHint")}</p>
         </div>
       ) : null}
       {report.notes?.length ? (

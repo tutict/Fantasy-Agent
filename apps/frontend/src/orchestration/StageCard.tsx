@@ -82,7 +82,7 @@ export function StageCard({
         ) : null}
         {card.confirmed ? <span className="or-pill or-pill-ok">{t("orchestrationConfirmed")}</span> : null}
         {isHuman && card.human_resolution ? (
-          <span className="or-pill or-pill-decision" data-decision-state={card.human_resolution}>
+          <span className="or-pill or-pill-decision" data-decision={card.human_resolution}>
             {t(decisionLabelKey(card.human_resolution) || card.human_resolution)}
           </span>
         ) : null}

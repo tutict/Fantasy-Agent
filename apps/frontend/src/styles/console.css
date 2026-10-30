@@ -91,8 +91,8 @@ button:disabled {
   height: 40px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-size: var(--text-s);
   font-weight: 900;
 }
@@ -219,6 +219,68 @@ p {
   padding: var(--space-3_5);
 }
 
+/* The plan rail is four panels of input and queues, and a reader only ever
+   works in one of them, so the rail folds: the other three stay as title bars.
+   Native `<details>` is deliberate over unmounting -- the correction composer
+   keeps whatever was typed into it, and the run rail, which owns the in-flight
+   jobs, is not folded at all for the same reason.
+
+   `open` is driven by state in `FlowConsole`, and the summary cancels its own
+   click: a `<details>` that the browser also toggles has two writers for one
+   attribute, and they disagree the moment React re-renders. */
+.rail-fold {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m-lg);
+  background: var(--chrome);
+  box-shadow: var(--shadow);
+}
+
+.rail-fold > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2_5);
+  min-height: var(--size-control);
+  padding: 0 var(--space-3_5);
+  cursor: pointer;
+  list-style: none;
+}
+
+/* The marker is a second, unstyled "this opens" next to a layout that already
+   says it: title on the left, state on the right. */
+.rail-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.rail-fold > summary h2 {
+  font-size: var(--text-s);
+}
+
+.rail-fold[open] > summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.rail-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3_5);
+}
+
+/* How much is waiting on the operator, carried on the folded title: folding the
+   gates card must never hide a pending confirmation, and a count the reader
+   cannot see is exactly that. */
+.gate-count {
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  background: var(--brand-soft);
+  color: var(--brand);
+  padding: 0 var(--space-1_5);
+  font-size: var(--text-xs);
+  font-weight: 900;
+}
+
 .center-pane {
   grid-area: center;
   display: grid;
@@ -234,6 +296,12 @@ p {
 
 /* --------------------------------------------------------------------------
    Shared controls
+
+   Only the console renders these, so only this sheet styles them. `.tab` and
+   `.ghost-action` are the two exceptions -- they are rendered by the workbench
+   and by `shared/panels/` too, and a view sheet only lands in the document
+   once its view is first visited, so they live in `ui.css` instead. See the
+   note there for the rule in full.
 -------------------------------------------------------------------------- */
 
 .locale-switch,
@@ -248,9 +316,7 @@ p {
 
 .locale-option,
 .theme-option,
-.tab,
 .mini-action,
-.ghost-action,
 .review-action,
 .mode-option {
   min-height: 40px;
@@ -270,31 +336,28 @@ p {
 
 .locale-option:hover,
 .theme-option:hover,
-.tab:hover,
 .mini-action:hover,
-.ghost-action:hover,
 .review-action:hover,
 .mode-option:hover,
 .locale-option.active,
 .theme-option.active,
-.tab.active,
 .mini-action.active,
 .mode-option.active {
   border-color: var(--line-strong);
-  background: var(--accent-soft);
+  background: var(--brand-soft);
   color: var(--text);
 }
 
 .locale-option:active,
 .theme-option:active,
-.tab:active,
 .mini-action:active,
-.ghost-action:active,
 .review-action:active,
 .mode-option:active {
   transform: scale(0.98);
 }
 
+/* The locale and theme switches sit in a tighter row than the action
+   buttons: they are a pair of one-word options, not a toolbar. */
 .locale-option,
 .theme-option {
   min-height: 34px;
@@ -316,8 +379,8 @@ p {
   flex: 0 0 auto;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-pill);
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--brand-soft);
+  color: var(--brand);
   padding: var(--space-1) 9px;
   font-size: var(--text-xs);
   font-weight: 850;
@@ -353,11 +416,9 @@ p {
   font-weight: 800;
 }
 
-.handoff-note {
-  margin: 0;
-  color: var(--muted);
-  font-size: var(--text-s);
-}
+/* `.ui-hint` moved to `ui.css`: it was `.handoff-note`, named for the one
+   caller that introduced it while twelve others used it the same way. The
+   name now says which namespace it belongs to rather than who asked first. */
 
 .manual-summary-row {
   display: grid;
@@ -386,12 +447,18 @@ p {
   gap: var(--space-1_5);
 }
 
+/*
+ * No per-state rules: the row carries `data-state` and the shared vocabulary
+ * turns it into a tone. A degraded tool and a broken one used to be the only
+ * two rows with a coloured border -- every other state, `ready` included,
+ * borrowed the recommended row's brand-soft border or had none.
+ */
 .manual-tool-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-1) var(--space-2_5);
-  border: 1px solid var(--line);
+  border: 1px solid var(--tone-soft, var(--line));
   border-radius: var(--radius-m);
   background: var(--surface-muted);
   padding: var(--space-2_5) var(--space-2_5);
@@ -400,17 +467,17 @@ p {
     border-color 160ms ease;
 }
 
+/*
+ * The other half of the row's appearance, and the other affordance: being
+ * recommended is a fact about the row that outranks its state, so this rule
+ * names the attribute and wins on specificity instead of on arrival time.
+ * Being recommended is not a status -- no state key means "recommended" --
+ * so it keeps its own rule here rather than becoming a fifth spelling in the
+ * vocabulary with one key.
+ */
 .manual-tool-row[data-recommended="true"] {
   border-color: var(--line-strong);
-  background: var(--accent-soft);
-}
-
-.manual-tool-row[data-state="degraded"] {
-  border-color: var(--amber-soft);
-}
-
-.manual-tool-row[data-state="unavailable"] {
-  border-color: var(--danger-soft);
+  background: var(--brand-soft);
 }
 
 .manual-tool-name {
@@ -490,11 +557,21 @@ input[type="text"] {
   padding: 0 var(--space-3);
 }
 
-.primary-action,
+/* The console's buttons are full-width blocks; the shell's are inline. That is
+   a layout fact about where each one sits, not a second opinion about what the
+   button looks like -- so it travels as a custom property at `:where()`
+   specificity and the button itself is defined once in `ui.css`. */
+:where(.primary-action) {
+  --primary-action-width: 100%;
+}
+
 .secondary-action {
   width: 100%;
   min-height: 46px;
+  border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-weight: 900;
   transition:
     transform 160ms ease,
@@ -503,34 +580,8 @@ input[type="text"] {
     box-shadow 160ms ease;
 }
 
-.primary-action {
-  border: 1px solid var(--line-strong);
-  background: var(--brand);
-  color: var(--on-brand);
-  min-height: var(--size-control);
-}
-
-.primary-action:hover {
-  background: var(--brand-strong);
-  color: var(--on-brand);
-  box-shadow: 0 0 0 4px var(--brand-soft);
-  transform: translateY(-1px);
-}
-
-.primary-action:disabled {
-  cursor: wait;
-  background: var(--muted);
-  transform: none;
-}
-
-.secondary-action {
-  border: 1px solid var(--line-strong);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
 .secondary-action:hover {
-  background: var(--accent-soft);
+  background: var(--brand-soft);
   transform: translateY(-1px);
 }
 
@@ -558,42 +609,27 @@ input[type="text"] {
   font-size: var(--text-s);
 }
 
+/*
+ * Three call sites, three different ways of naming a state: this one carried a
+ * `data-state`, the spec validator's and the regen-diff's carried a class
+ * modifier. All three now say `data-status` and this rule reads the shared
+ * vocabulary, so the chip is one rule instead of four and the states it can
+ * show are the states that exist.
+ *
+ * It fills its own background with the soft tone, which is this component's
+ * shape, not the vocabulary's: the vocabulary says which tone, and the chip
+ * says where it goes. The fallbacks are what a chip with no state reads as.
+ */
 .status-chip {
   flex: 0 0 auto;
   min-height: 34px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--tone-soft, var(--line));
   border-radius: var(--radius-pill);
-  background: var(--surface);
+  background: var(--tone-soft, var(--surface));
   padding: var(--space-2) var(--space-3);
-  color: var(--muted-strong);
+  color: var(--tone, var(--muted-strong));
   font-size: var(--text-s);
   font-weight: 900;
-}
-
-.status-chip[data-state="ready"],
-.status-chip.passed {
-  border-color: var(--line-strong);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.status-chip[data-state="running"] {
-  border-color: var(--blue-soft);
-  background: var(--blue-soft);
-  color: var(--blue);
-}
-
-.status-chip.warning {
-  border-color: var(--amber-soft);
-  background: var(--amber-soft);
-  color: var(--amber);
-}
-
-.status-chip[data-state="error"],
-.status-chip.failed {
-  border-color: var(--danger-soft);
-  background: var(--danger-soft);
-  color: var(--danger);
 }
 
 /* --------------------------------------------------------------------------
@@ -680,10 +716,8 @@ input[type="text"] {
   gap: var(--space-1);
 }
 
-.tab {
-  min-height: 34px;
-  white-space: nowrap;
-}
+/* `.tab` is styled in `ui.css`: the workbench renders it too. Its old
+   `min-height: 34px; white-space: nowrap` refinement went with it. */
 
 .content-frame {
   min-height: 0;
@@ -714,10 +748,14 @@ input[type="text"] {
   }
 }
 
-.hidden {
-  display: none !important;
-}
-
+/*
+ * `.hidden { display: none !important }` used to live here. It is gone because
+ * nothing in the app has used it since the console's sections stopped being
+ * toggled by class -- they are toggled by which panel is mounted. A global
+ * `!important` utility with no callers is the worst kind of dead code: it
+ * outranks everything, so it cannot be overridden by whoever needs to hide
+ * something next, and it reads as available.
+ */
 .review-item,
 .review-inspector {
   border: 1px solid var(--line);
@@ -754,43 +792,27 @@ input[type="text"] {
   margin-top: var(--space-2_5);
 }
 
+/**
+ * The pill's shape. Its colour is not here and must not come back: this sheet
+ * used to carry its own `.review-pill.<state>` / `.task-pill.<state>` mapping,
+ * a second table of the same states the badge in `ui.css` already mapped, and
+ * the two disagreed -- a pass was `--brand` here and `--status-success` there,
+ * a warning was a soft border here and a solid one in `workbench.css`.
+ *
+ * What is left is the seam: read `--tone` / `--tone-soft`, which `ui.css`
+ * declares from the one vocabulary. It is a custom property on purpose. If this
+ * declared `color: var(--status-warning)` directly, the tie would be broken by
+ * import order instead of by anything anyone decided.
+ */
 .task-pill,
 .review-pill {
-  border: 1px solid var(--line);
+  border: 1px solid var(--tone-soft, var(--line));
   border-radius: var(--radius-pill);
   background: var(--pill-bg);
   padding: var(--space-1) var(--space-2);
-  color: var(--muted-strong);
+  color: var(--tone, var(--muted-strong));
   font-size: var(--text-xs);
   font-weight: 850;
-}
-
-.task-pill.ready,
-.review-pill.approved {
-  border-color: var(--line-strong);
-  color: var(--accent);
-}
-
-.task-pill.blocked,
-.review-pill.rejected {
-  border-color: var(--danger-soft);
-  color: var(--danger);
-}
-
-.review-pill.needs_revision {
-  border-color: var(--amber-soft);
-  color: var(--amber);
-}
-
-/**
- * The human-gate pill is no longer rendered here — shared panels emit
- * `wb-pill human`, styled in `workbench.css`. Kept so the state still reads as
- * "nothing executes at this gate" if the console brings the pill back.
- */
-.review-pill.human {
-  border-style: dashed;
-  border-color: var(--line-strong);
-  color: var(--muted-strong);
 }
 
 .review-layout {
@@ -827,22 +849,16 @@ input[type="text"] {
   max-width: 230px;
 }
 
-.review-action.active[data-decision="approved"] {
-  border-color: var(--line-strong);
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-
-.review-action.active[data-decision="needs_revision"] {
-  border-color: var(--amber-soft);
-  background: var(--amber-soft);
-  color: var(--amber);
-}
-
-.review-action.active[data-decision="rejected"] {
-  border-color: var(--danger-soft);
-  background: var(--danger-soft);
-  color: var(--danger);
+/*
+ * The three Creative Review decisions, as one rule. The `.active` is load
+ * bearing and stays: an unselected button is the shared button base above and
+ * must not take a tone, so the tone is read only once the button is the one
+ * the operator chose.
+ */
+.review-action.active {
+  border-color: var(--tone-soft, var(--line-strong));
+  background: var(--tone-soft, var(--brand-soft));
+  color: var(--tone, var(--brand));
 }
 
 .review-inspector {
@@ -990,7 +1006,7 @@ input[type="text"] {
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
   padding: var(--space-3);
-  background: var(--accent-soft);
+  background: var(--brand-soft);
   font-size: var(--text-s);
   color: var(--text-soft);
 }
@@ -1050,16 +1066,15 @@ input[type="text"] {
   background: var(--surface);
 }
 
-.rework-item.rework-done {
-  border-left-color: var(--accent);
-}
-
-.rework-item.rework-failed {
-  border-left-color: var(--danger);
-}
-
-.rework-item.rework-skipped {
-  border-left-color: var(--blue);
+/*
+ * The three rework outcomes and their colours, as one reader. `done` was
+ * brand-coloured here while every other "finished" thing in the app is the
+ * success tone, and `skipped` was painted the running blue -- a stage that
+ * will not run, in the colour of a stage that is running. The vocabulary
+ * answers all three now, so the list holds outcomes and not palettes.
+ */
+.rework-item[data-status] {
+  border-left-color: var(--tone, var(--muted));
 }
 
 .rework-name {
@@ -1104,23 +1119,11 @@ input[type="text"] {
   flex-direction: column;
   gap: var(--space-1_5);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--muted);
+  border-left: 3px solid var(--tone, var(--muted));
   border-radius: var(--radius-m);
   padding: var(--space-2_5) var(--space-3);
   background: var(--surface);
   font-size: var(--text-s);
-}
-
-.generate-stages .stage-card[data-state="ready"] {
-  border-left-color: var(--accent);
-}
-
-.generate-stages .stage-card[data-state="degraded"] {
-  border-left-color: var(--amber);
-}
-
-.generate-stages .stage-card[data-state="unavailable"] {
-  border-left-color: var(--danger);
 }
 
 .generate-stages .stage-top {
@@ -1279,17 +1282,22 @@ input[type="text"] {
   overflow-wrap: anywhere;
 }
 
+/*
+ * One row per QA check, tinted by its result. The fallback is the danger tone
+ * and not a neutral one on purpose: `passed` was the ONLY result with a rule
+ * of its own, so a `warning` row and an `error` row were the same red, and the
+ * one QA result that means "look at this but it ran" was indistinguishable
+ * from the one that means "this broke". The vocabulary separates them; the
+ * fallback keeps an unrecognised result reading as a failure, which is what an
+ * unrecognised QA result is.
+ */
 .spec-qa-row {
   display: grid;
   grid-template-columns: minmax(160px, 0.45fr) minmax(0, 1fr);
   gap: var(--space-3);
-  border-left: 3px solid var(--danger);
+  border-left: 3px solid var(--tone, var(--status-danger));
   padding: var(--space-2) var(--space-2_5);
   background: var(--surface-muted);
-}
-
-.spec-qa-row[data-state="passed"] {
-  border-left-color: var(--accent);
 }
 
 /* --------------------------------------------------------------------------
@@ -1314,17 +1322,13 @@ input[type="text"] {
   margin: 0;
 }
 
-.spec-regen-status[data-state="passed"],
-.spec-regen-status.passed {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.spec-regen-status.warning {
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
+/* `.spec-regen-status` and `.spec-status` carried their own state rules, and
+   both of them disagreed with the `.status-chip` rules they sat on top of:
+   `passed` was brand-coloured here and success-coloured there, `warning` was
+   red here and amber there. Two spellings of the same state on the same
+   element, resolved by whichever selector happened to score higher. The chip
+   reads the vocabulary now, so both of these are gone and the tag classes go
+   with them -- `.spec-status` had no rules of its own at all. */
 .spec-regen-request {
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
@@ -1386,7 +1390,7 @@ input[type="text"] {
   grid-template-columns: minmax(150px, 0.6fr) minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-2_5);
-  border-left: 3px solid var(--danger);
+  border-left: 3px solid var(--status-danger);
   padding: var(--space-2) var(--space-2_5);
   background: var(--surface-muted);
 }
@@ -1622,19 +1626,19 @@ input[type="text"] {
   border: 1px solid var(--line-strong);
 }
 
-.playtest-verdict.playtest-passed {
-  color: var(--status-success);
-  border-color: var(--status-success);
-}
-
-.playtest-verdict.playtest-warning {
-  color: var(--status-warning);
-  border-color: var(--status-warning);
-}
-
-.playtest-verdict.playtest-failed {
-  color: var(--status-danger);
-  border-color: var(--status-danger);
+/*
+ * One verdict, three outcomes. The state used to arrive as a second class
+ * (`playtest-verdict playtest-passed`), which is a spelling the vocabulary
+ * cannot read -- and it is the spelling that made this file hold its own
+ * three-entry copy of the mapping. It arrives as `data-status` now.
+ *
+ * The fallbacks are the "unknown" verdict: it was the only one with a rule of
+ * its own that painted nothing, and it still reads as plain text in a plain
+ * border, which is what an unknown result should look like.
+ */
+.playtest-verdict[data-status] {
+  color: var(--tone, var(--text));
+  border-color: var(--tone, var(--line-strong));
 }
 
 .playtest-findings,
@@ -1658,18 +1662,17 @@ input[type="text"] {
   font-size: var(--text-s);
 }
 
-/* No verdict yet, or one the UI does not recognise: stay neutral rather than
-   borrowing a status colour that would read as a judgement. */
-.playtest-verdict.playtest-unknown {
-  color: var(--text);
-}
-
-.playtest-finding.playtest-blocking {
-  border-color: var(--status-danger);
-}
-
-.playtest-finding.playtest-warning {
-  border-color: var(--status-warning);
+/*
+ * A finding's severity, on its left edge. Two severities, two borders, one
+ * reader: `blocking` is the one that stops the build and `warning` is the one
+ * that does not, and which is which is the vocabulary's answer.
+ *
+ * There is no `.playtest-unknown` rule any more. An unrecognised severity gets
+ * the fallback, which is the plain border every other unknown gets -- and that
+ * is the intent the old rule was writing out by hand in this file.
+ */
+.playtest-finding[data-status] {
+  border-color: var(--tone, var(--line));
 }
 
 .playtest-finding strong {

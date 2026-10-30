@@ -49,6 +49,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  localStorage.clear();
   openMock.mockReset();
   openMock.mockResolvedValue({ status: "started" });
   vi.stubGlobal("fetch", emptyJsonFetch());
@@ -85,5 +86,14 @@ describe("manual correction approval gate", () => {
     fireEvent.click(button);
     await screen.findByRole("dialog");
     expect(openMock.mock.calls.filter((call) => call[2] === true)).toHaveLength(0);
+  });
+
+  it("marks console lifecycle errors with the shared status attribute", async () => {
+    const { view } = await renderConsole();
+    fireEvent.click(view.container.querySelector<HTMLButtonElement>("#load-handoff-button")!);
+
+    await waitFor(() => {
+      expect(view.container.querySelector("#status-chip")?.getAttribute("data-status")).toBe("error");
+    });
   });
 });

@@ -46,7 +46,11 @@ PY
 
 阶梯的档位会随 token 治理增删，所以这里列的是**当前成员**而不是「共几档」。要确认某一档在不在，看 `tokens.css`；要确认它有没有人在用，看 `cssHygiene.test.ts` 的 "does not accumulate tokens nothing reads"。
 
-**正名与别名**：状态色是正名（`--status-success` 等），`--accent` / `--blue` / `--amber` / `--danger` 是**活着的**兼容别名（30 / 10 / 10 / 23 处 `var()` 引用），都用 `var(--status-*)` 转指。**新代码写正名。**
+**只有一个词汇，没有别名。** 状态色是正名（`--status-success` 等），品牌色是 `--brand*`。
+
+这一句以前说 `--accent` / `--blue` / `--amber` / `--danger` 是**活着的**兼容别名，用 `var(--status-*)` / `var(--brand-*)` 转指。**它们已于 2026-10-19 退役并删除**：那是一次没有终点线的迁移，实测 119 处旧名引用对 40 处正名，而且按文件分裂——`ui.css` / `assets.css` 已经转完，另外四张表没有，所以你读到哪个词汇取决于你打开哪个文件。留着别名，下一个人又会照旧名写；**能编译的 token 就是会被再写一遍的 token**。旧名引用已逐个改为正名，别名本身的 9 条声明（明暗各一份）已从 `tokens.css` 删除。
+
+删掉它们还有一个理由是它们遮蔽语义：`.review-pill.approved { color: var(--accent) }` 读作「批准 = 品牌色」，实际意思是「批准 = 成功态」——照前一句去调品牌色，会把所有批准态一起改掉，而那不是任何人的决定。
 
 这一句以前把 `--ok` 和 `--warn` 也列进去，说它们是兼容别名。**它不是**——这两个名字在 `tokens.css` 里没有定义，全仓 `var()` 引用 0 处。照着这句话写代码的人会得到一个无效变量，而失效的 `var()` 在 CSS 里不报错，元素只是悄悄没有那个颜色。已从这句话里删掉；`docsTokenNames.test.ts` 现在会挡住它回来。
 
@@ -82,7 +86,7 @@ PY
 | 项 | 怎么确认的 | 状态 |
 |---|---|---|
 | `--layer-overlay` | `grep -- '--layer-overlay:' tokens.css` 有定义；全仓 `var(--layer-overlay)` 零引用 | 零引用，待找 z-index 消费点或删 |
-| `--accent-deep` / `--accent-soft` / `--blue*` / `--amber*` / `--danger*` | 全仓有引用 | **保留**：是活跃的兼容层，不是债 |
+| `--accent-deep` / `--accent-soft` / `--blue*` / `--amber*` / `--danger*` | 2026-10-19 已移除：119 处引用逐个改为正名，别名声明本身一并删除 | **已删**，不再是债也不是兼容层 |
 | `UNREFERENCED_EXEMPT` 里那批（`--data-*` / `--status-*-soft` / `--duration-slow` / `--layer-sticky` / `--layer-overlay` / `--shadow-s` / `--space-6` / `--space-7`） | `cssHygiene.test.ts` 的豁免清单，逐条带理由 | 豁免而非债：调色板先于视图存在，或阶梯的上下界。改豁免清单必须是决定，不是绕过去 |
 
 ## 5. 写 token 时的两条纪律

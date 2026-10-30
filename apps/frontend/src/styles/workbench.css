@@ -57,8 +57,8 @@
   height: 40px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--brand-soft);
+  color: var(--brand);
   font-size: var(--text-s);
   font-weight: 900;
 }
@@ -125,7 +125,7 @@
 
 .wb-nav-item.active {
   border-color: var(--line-strong);
-  background: var(--accent-soft);
+  background: var(--brand-soft);
   color: var(--text);
 }
 
@@ -194,8 +194,8 @@
 }
 
 .wb-seg-option.active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--brand-soft);
+  color: var(--brand);
 }
 
 /* ---------- main area ---------- */
@@ -245,9 +245,9 @@
    in the sidebar carries the state; this carries the reason. */
 .wb-notice {
   margin: 0;
-  border: 1px solid var(--danger);
+  border: 1px solid var(--status-danger);
   border-radius: var(--radius-m);
-  background: var(--danger-soft);
+  background: var(--status-danger-soft);
   padding: var(--space-2_5) var(--space-3);
   color: var(--text);
   font-size: var(--text-s);
@@ -432,19 +432,20 @@
   white-space: nowrap;
 }
 
-.wb-chip.ready {
-  border-color: var(--line-strong);
-  color: var(--accent);
-}
-
-.wb-chip.running {
-  border-color: var(--blue);
-  color: var(--blue);
-}
-
-.wb-chip.error {
-  border-color: var(--danger);
-  color: var(--danger);
+/*
+ * The planning sidebar's two status chips, and one reader for both. They used
+ * to carry their state as a second class (`wb-chip running`), which is a
+ * spelling the vocabulary cannot read, so this file held its own three-entry
+ * mapping -- and a fourth state was already falling through it: the chip
+ * renders whatever `status` is, and only three of the values had a rule.
+ *
+ * `ready` had a neutral border while `running` and `error` painted theirs, so
+ * the one that is only an offer was the odd one out; it takes the tone now
+ * like the other two.
+ */
+.wb-chip[data-status] {
+  border-color: var(--tone, var(--line));
+  color: var(--tone, var(--text-soft));
 }
 
 .wb-button {
@@ -469,8 +470,8 @@
 }
 
 .wb-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--brand);
+  border-color: var(--brand);
   color: var(--on-brand);
   font-weight: 600;
 }
@@ -487,7 +488,7 @@
 
 .wb-button.active {
   border-color: var(--line-strong);
-  background: var(--accent-soft);
+  background: var(--brand-soft);
 }
 
 /* ---------- plan panels ---------- */
@@ -585,28 +586,21 @@
   margin-top: var(--space-2);
 }
 
+/**
+ * The shared panels' pill. `ui.css` holds the vocabulary this reads -- the
+ * third copy of that mapping used to live right here, as `.wb-pill.warn` and
+ * `.wb-pill.human`, and it disagreed with the console's copy about what a
+ * warning looks like: solid `--status-warning` border here, soft
+ * `--status-warning-soft` there. The soft one won, so every warning in the app
+ * now has the same edge as every other warning.
+ */
 .wb-pill {
   padding: var(--space-1) var(--space-2);
   border-radius: var(--radius-pill);
   background: var(--pill-bg);
-  border: 1px solid var(--line);
+  border: 1px solid var(--tone-soft, var(--line));
   font-size: var(--text-xs);
-  color: var(--muted);
-}
-
-.wb-pill.warn {
-  border-color: var(--amber);
-  color: var(--amber);
-}
-
-/**
- * A human gate runs no tool, so it reads as "nothing executes here": dashed,
- * like the empty-state borders, instead of a status colour.
- */
-.wb-pill.human {
-  border-style: dashed;
-  border-color: var(--line-strong);
-  color: var(--muted-strong);
+  color: var(--tone, var(--muted));
 }
 
 .wb-empty {
@@ -676,7 +670,7 @@
   margin: 0;
   font-size: var(--text-s);
   line-height: 1.6;
-  color: var(--danger);
+  color: var(--status-danger);
   overflow-wrap: anywhere;
 }
 
@@ -722,8 +716,8 @@
 .wb-script-effects {
   margin: 0;
   padding: var(--space-2) var(--space-2_5) var(--space-2) var(--space-5);
-  border-left: 3px solid var(--danger);
-  background: var(--danger-soft);
+  border-left: 3px solid var(--status-danger);
+  background: var(--status-danger-soft);
   font-size: var(--text-s);
   line-height: 1.6;
   color: var(--text);
