@@ -48,7 +48,7 @@ jobs:
         run: python scripts/mutation_check_all_guards.py
 
   frontend:
-    name: Frontend (typecheck + test + build + mutation guards)
+    name: Frontend (typecheck + test + UI metrics + build + mutation guards)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -74,6 +74,9 @@ jobs:
 
       - name: Test
         run: npm run frontend:test
+
+      - name: UI Metrics
+        run: python scripts/ui_metrics.py --check
 
       # A harness nobody runs is indistinguishable from no harness, and these
       # guards fail silently by construction: a source scan that stops matching

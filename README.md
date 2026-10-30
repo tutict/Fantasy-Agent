@@ -1,14 +1,14 @@
 # 灵构工坊
 
-**灵构工坊（Fantasy Agent）是一个 AI 原生的单进程本地游戏生产工作台。**
+**灵构工坊（Fantasy Agent）是一个 AI 原生、本地优先的游戏生产工作台：它把玩法创意推进为可审阅、可执行、可测试的 5–15 分钟垂直切片。**
 
 [![CI](https://github.com/tutict/Fantasy-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/tutict/Fantasy-Agent/actions/workflows/ci.yml)
 
-灵构工坊不是一键生成游戏的包装器，也不是无代码工具或 vibe coding 演示。它的目标是把玩法想法推进成可以检查、可以执行、可以测试的游戏原型生产工作流，重点服务 game jam 规模的 5 到 15 分钟垂直切片。
+工作流串起玩法策划、结构化交接、Creative Review、本地工具准备、执行确认和 QA。每一步都能检查与返工，玩法循环优先于画面扩展，服务 game jam 规模的短周期原型制作。
 
 `Fantasy Agent` 保留为仓库名、包名、类名、工具名和实现标识；`灵构工坊` 作为面向人的中文项目名。
 
-灵构工坊是一个**独立工作台**：单个 Python 进程、一个本地端口、一套共享库。它不连接外部 Agent，也不对外暴露任何 MCP 端点供其他客户端接入。所有生产角色（Director、Gameplay、GDD、Blender、ComfyUI、Unreal、Godot、QA）都以 `fantasy_agent/` 下的库内模块形式存在，由 Studio 进程直接调用，没有进程间 RPC。本地工具（Blender / ComfyUI / Unreal / Godot / GitHub CLI）仍会被探测与执行，但它们是你自己机器上的工具，不是外部 Agent 服务。
+Studio 是唯一入口，以单个 Python 进程直接调用 `fantasy_agent/` 下的生产角色与共享库；策划 API 供内置工作台使用，服务只绑定本机回环地址。Blender、ComfyUI、Unreal、Godot 和 GitHub CLI 由你的本机安装提供，工具调用有明确的执行确认与创意审阅关卡。
 
 长期愿景：
 
@@ -328,15 +328,19 @@ Studio 是唯一入口，没有需要单独启动的 Agent 服务。
 
 ### 质量保障
 
-四层校验，由 `.github/workflows/ci.yml` 的 Backend 与 Frontend 两个 job 全量执行——
+质量门禁由 `.github/workflows/ci.yml` 的 Backend 与 Frontend 两个 job 执行——
 每次推送到 main、每个 PR 都跑，两个 job 都跑在 ubuntu-latest 上：
 
 | 层 | 本地命令 | 证明什么 |
 | --- | --- | --- |
 | pytest | `scripts/run_tests.py` | 当前行为符合预期 |
 | ruff | `python -m ruff check fantasy_agent tests apps scripts` | 静态检查；跟随默认规则集，不设 `select` 白名单 |
+| 前端类型检查 | `npm run frontend:typecheck` | React/TypeScript 类型契约成立 |
+| 前端测试 | `npm run frontend:test` | 组件、状态和样式守卫通过 |
+| UI 指标预算 | `python scripts/ui_metrics.py --check` | 样式规模、重复与状态映射没有超出已审阅预算 |
 | 后端变异守卫 | `python scripts/mutation_check_all_guards.py` | 守卫在行为被拿掉时**真的会红** |
 | 前端变异守卫 | `python scripts/mutation_check_frontend_guards.py` | 同上，前端守卫那一侧 |
+| 前端生产构建 | `npm run frontend:build` | Studio 可发布的静态前端能生成 |
 
 变异守卫是「测试通过」和「测试有用」之间的那一层：每条用例把一个真实回归形状的变异写进
 源码，跑一条点名的守卫，要求它红，再逐字节还原。绿的套件只说明现在没坏；变异 harness
