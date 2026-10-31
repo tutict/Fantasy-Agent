@@ -439,6 +439,7 @@ export function StudioShell() {
                   focus={consoleFocus}
                   reviewStage={reviewStage}
                   journeyStep={viewedJourneyStep === "review" ? "review" : viewedJourneyStep === "qa" ? "qa" : "execute"}
+                  onNavigateStep={(step) => selectPanel(JOURNEY_PANELS[step] as PanelKey, step)}
                 />
               </ErrorBoundary>
             </section>

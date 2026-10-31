@@ -475,11 +475,9 @@ button:disabled {
   display: grid;
   gap: var(--space-2_5);
   border: 1px solid var(--line);
-  /* The left edge carries the server's availability. Three rules used to say
-     this, and `degraded` disagreed with the console's reading of the same word
-     -- waiting here, warning there. It is a warning: a degraded server is up
-     but impaired, which is something having gone wrong. */
-  border-left: 3px solid var(--tone, var(--muted));
+  /* A quiet inset edge carries server availability without turning every card
+     into a coloured side tab. */
+  box-shadow: inset 2px 0 0 var(--tone, var(--muted));
   border-radius: var(--radius-m-lg);
   background: var(--chrome);
   padding: var(--space-3_5);
@@ -650,7 +648,7 @@ button:disabled {
 .agent-answer {
   margin-top: var(--space-3_5);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--brand);
+  box-shadow: inset 2px 0 0 var(--brand);
   border-radius: var(--radius-m-lg);
   background: var(--chrome);
   padding: var(--space-3_5) var(--space-4);
@@ -669,12 +667,9 @@ button:disabled {
 
 .agent-call {
   border: 1px solid var(--line);
-  /* The left edge carries the call's outcome. Its three states were the fifth
-     copy of the status mapping in the app, and the only one whose keys were
-     nobody else's (`ok` / `refused`); the keys are now registered in the one
-     vocabulary in `ui.css` and the colour comes from it. Solid tone, like the
-     board's card edge: this is a 3px edge, not a hairline. */
-  border-left: 3px solid var(--tone, var(--muted));
+  /* The call outcome remains visible as a quiet inset edge. The shared tone
+     vocabulary supplies the colour; the card no longer becomes a side tab. */
+  box-shadow: inset 2px 0 0 var(--tone, var(--muted));
   border-radius: var(--radius-m-lg);
   background: var(--chrome);
   padding: var(--space-3) var(--space-3_5);
@@ -762,7 +757,7 @@ button:disabled {
  */
 .tool-row {
   border: 1px solid var(--line);
-  border-left: 3px solid var(--tone, var(--muted));
+  box-shadow: inset 2px 0 0 var(--tone, var(--muted));
   border-radius: var(--radius-m);
   background: var(--chrome);
   padding: var(--space-2_5) var(--space-3);

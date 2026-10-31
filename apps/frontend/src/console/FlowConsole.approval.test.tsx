@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { JourneyProvider } from "../shared/journeyContext";
 import { FlowConsole } from "./FlowConsole";
 import { LocaleThemeProvider } from "../shared/localeTheme";
+import { ORCHESTRATION_ENGINE_KEY, ORCHESTRATION_SESSION_KEY } from "../shared/storage";
 
 /**
  * The approval gate lives in the UI: opening a correction target spawns a
@@ -95,5 +96,40 @@ describe("manual correction approval gate", () => {
     await waitFor(() => {
       expect(view.container.querySelector("#status-chip")?.getAttribute("data-status")).toBe("error");
     });
+  });
+
+  it("offers a live approval status link to the orchestration step", async () => {
+    localStorage.setItem(
+      "fantasy-agent-planning-handoff",
+      JSON.stringify({
+        plan: {
+          gameplay_spec: { title: "Status link fixture", target_session_minutes: 10 },
+          production_pipeline: { stages: [{ id: "creative_review" }] }
+        }
+      })
+    );
+    localStorage.setItem(ORCHESTRATION_SESSION_KEY, "session-status-link");
+    localStorage.setItem(ORCHESTRATION_ENGINE_KEY, "godot");
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (String(input).includes("/api/orchestration/session-status-link")) {
+        return Promise.resolve(Response.json({
+          found: true,
+          session_id: "session-status-link",
+          pending_confirmations: ["creative_review"],
+          stages: [{ stage_id: "creative_review", title: "Creative review", status: "awaiting_confirmation", confirmed: false }]
+        }));
+      }
+      return Promise.resolve(Response.json({}));
+    }));
+    const onNavigateStep = vi.fn();
+    render(
+      <LocaleThemeProvider>
+        <JourneyProvider><FlowConsole onNavigateStep={onNavigateStep} /></JourneyProvider>
+      </LocaleThemeProvider>
+    );
+
+    const link = await screen.findByRole("button", { name: /orchestrate/i });
+    fireEvent.click(link);
+    expect(onNavigateStep).toHaveBeenCalledWith("orchestrate");
   });
 });

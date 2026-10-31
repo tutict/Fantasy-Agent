@@ -272,7 +272,7 @@ const BUDGETS: Record<string, Budget> = {
     sections: 15,
     controls: 20,
     headings: 10,
-    chars: 1316
+    chars: 1320
   },
   // Fewer blocks than the console but more controls: one composer plus a tool
   // rail, and every tool is a button. A screen can be light on panels and still

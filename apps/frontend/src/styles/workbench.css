@@ -809,8 +809,8 @@
    another bullet list next to the execution notes. */
 .wb-script-effects {
   margin: 0;
-  padding: var(--space-2) var(--space-2_5) var(--space-2) var(--space-5);
-  border-left: 3px solid var(--status-danger);
+  padding: var(--space-2) var(--space-2_5);
+  box-shadow: inset 2px 0 0 var(--status-danger);
   background: var(--status-danger-soft);
   font-size: var(--text-s);
   line-height: 1.6;

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useJourney } from "../shared/journeyContext";
-import { operationPhase, operationReason } from "../shared/productionJourney";
-import { JOURNEY_STEP_KEYS, type JourneyStepId } from "../shared/productionJourney";
+import { operationPhase, operationReason, JOURNEY_STEP_KEYS, type JourneyStepId } from "../shared/productionJourney";
 import { ConfirmDialog, LogBlock, StatusBadge } from "../shared/ui/primitives";
 import type { ReactNode } from "react";
 import {
@@ -116,8 +115,15 @@ export function FlowConsole({
   active = true,
   focus = "review",
   reviewStage = "",
-  journeyStep = "execute"
-}: { active?: boolean; focus?: "review" | "specs"; reviewStage?: string; journeyStep?: "execute" | "review" | "qa" } = {}) {
+  journeyStep = "execute",
+  onNavigateStep
+}: {
+  active?: boolean;
+  focus?: "review" | "specs";
+  reviewStage?: string;
+  journeyStep?: "execute" | "review" | "qa";
+  onNavigateStep?: (step: JourneyStepId) => void;
+} = {}) {
   const { update, session: orchestrationSession } = useJourney();
   // Locale and theme are the provider's, not this view's. The console used to
   // own both and write `document.documentElement` itself -- correct while it was
@@ -314,6 +320,11 @@ export function FlowConsole({
     return activePipelineStageIds.has(stageId) && stage?.status === "awaiting_confirmation" && !stage.confirmed;
   });
   const pendingGates = correctionEntries.length + pendingConfirmations.length;
+  const statusStep: JourneyStepId = pendingConfirmations.length
+    ? "orchestrate"
+    : pollPlaytestJobId
+      ? "qa"
+      : journeyStep;
 
   /** Exactly one card of the plan rail is open, plus the gates card when it has
    * something to say. See `openPlanCard` for why the other three stay folded. */
@@ -593,7 +604,16 @@ const demoPhase = operationPhase({
 
       {(pendingGates > 0 || pollJobId || pollAssetJobId || pollPlaytestJobId || status === "error") ? (
         <div className="journey-status-bar" role="status" data-status={status === "error" ? "error" : pollJobId || pollAssetJobId || pollPlaytestJobId ? "running" : "awaiting_confirmation"}>
-          <strong>{t(JOURNEY_STEP_KEYS[journeyStep])}</strong>
+          {onNavigateStep ? (
+            <button
+              className="journey-status-link"
+              type="button"
+              onClick={() => onNavigateStep(statusStep)}
+              aria-label={`${t(JOURNEY_STEP_KEYS[statusStep])}: ${t("journeyNext")}`}
+            >
+              {t(JOURNEY_STEP_KEYS[statusStep])}
+            </button>
+          ) : <strong>{t(JOURNEY_STEP_KEYS[statusStep])}</strong>}
           <span>
             {pendingGates > 0
               ? t("gatesPending")
@@ -846,7 +866,7 @@ const demoPhase = operationPhase({
         {journeyStep !== "review" ? <aside className="side-rail run-rail" aria-label="Execution center">
           <p className="rail-title">{t("railRunTitle")}</p>
 
-          <section className="rail-card" data-panel="run" aria-label="Run approved asset workers">
+          {journeyStep === "execute" ? <section className="rail-card" data-panel="run" aria-label="Run approved asset workers">
             <div className="pane-section-header">
               <h2>{t("assetExecutionTitle")}</h2>
             </div>
@@ -886,12 +906,13 @@ const demoPhase = operationPhase({
             <div id="asset-execute-stages" className="generate-stages">
               {assetResult?.stages?.map((stage) => <ExecutionStageCard key={stage.name} stage={stage} t={t} />)}
             </div>
-          </section>
+          </section> : null}
 
-          <section className="rail-card" data-panel="generate" aria-label="Generate playable demo">
+          <section className="rail-card" data-panel="generate" aria-label={journeyStep === "qa" ? "Playtest and recovery" : "Generate playable demo"}>
             <div className="pane-section-header">
-              <h2>{t("generateTitle")}</h2>
+              <h2>{journeyStep === "qa" ? t("playtestTitle") : t("generateTitle")}</h2>
             </div>
+            {journeyStep === "execute" ? <>
             <p className="ui-hint">{t("generateHint")}</p>
             <div className="generate-options">
               <label>
@@ -975,6 +996,7 @@ const demoPhase = operationPhase({
                 </p>
               ) : null}
             </div>
+            </> : null}
             {sessionId && sessionState?.found ? (
               <div className="rework-panel" id="rework-panel">
                 <div className="pane-section-header">
