@@ -95,7 +95,15 @@ flowchart LR
 
 外壳本身是一条侧边栏导航，不是盒子墙：品牌行、六步旅程（每步一枚状态点）、资产入口、设置分组，底部常驻界面语言与主题切换。侧边栏可折叠到 82px 只留图标列；视口 ≤900px 时侧边栏变成顶部横带，旅程步骤收进「旅程」折叠器。层级与命名规则见 `docs/ui/architecture.md` §1.2。
 
-策划工作台按同一条原则重画过：左侧是导航与动作（点子 / 方案 / 发送），主区在同一位置二选一——对话态持续挖掘点子，计划态查看整理出的方案，不再四个盒子同屏。设计记录见 `docs/superpowers/plans/2026-10-19-idea-page-redesign.md` 与 `docs/superpowers/plans/2026-10-19-shell-sidebar-redesign.md`。
+界面现在按六步旅程聚焦：点子、计划、编排、执行、审阅、质量可以自由跳转，每一步默认只显示一个主工作面。工作台的计划工具、资产录入表单和控制台的次要队列默认收起，只有真实审批、运行中任务或失败阻塞出现时，顶部才显示可跳转的状态条。步骤焦点写入 URL，便于刷新、前进/后退和直接打开：
+
+```text
+/workbench?step=idea|plan
+/pipeline?step=orchestrate
+/web-console?step=execute|review|qa
+```
+
+执行步骤聚焦确认与运行，审阅步骤聚焦 Creative Review，质量步骤聚焦 Spec、试玩和返工。运行中的轮询组件保持挂载，计划中的未来确认不会被显示成当前待审批。资产库继续作为独立入口，录入表单默认收起，资产清单是主工作面。产品和视觉背景见根目录 `PRODUCT.md` 与 `DESIGN.md`。
 
 Windows 快速启动（推荐，桌面窗口）：
 
@@ -279,7 +287,7 @@ Fantasy-Agent/
 
 策划工作台页面由 Studio 直接提供，打开 `http://127.0.0.1:7860/workbench` 即可使用，不需要任何外部客户端。
 
-页面布局：左侧边栏放导航与动作（点子 / 方案 / 发送），主区二选一——对话态持续挖掘点子，计划态查看整理出的方案。点子和方案在同一处交替，不并排堆多个盒子。
+页面布局：外壳侧栏负责六步旅程，工作台内部只保留当前步骤的主工作面。`step=idea` 显示点子对话，`step=plan` 显示计划内容；计划工具默认在按需抽屉中，不与内容并排占用首屏。
 
 生成完整方案后，策划工作台会写入本地策划交接，流程控制台可以载入它，在执行 ComfyUI、Blender、Unreal 或 Godot 实际操作前进行审阅和纠偏。
 
@@ -432,12 +440,14 @@ python -m fantasy_agent --prompt "a rooftop parkour demo with wall-runs and chec
 - 四层质量保障（pytest / ruff / 后端与前端变异守卫）接入 CI，本地命令与三条诚实规则见「开发 - 质量保障」。
 - 2026-10-19：点子页重设计——策划工作台改为「侧边栏（导航 + 动作）+ 主区二选一（对话态 / 计划态）」，不再四个盒子同屏。
 - 2026-10-19：Studio 外壳侧边栏重设计——从盒子墙改为一条导航（品牌 / 六步旅程 / 资产 / 设置 / 页脚语言主题），可折叠至 82px，≤900px 转顶部横带；新增三条 CSS 守卫与 FE13 变异用例。
+- 2026-10-31：低密度分步工作台——六步焦点进入 URL，工作台工具与资产录入按需展开，控制台按执行 / 审阅 / 质量收敛工作面，真实状态通过顶部状态条跳转；新增 `PRODUCT.md` / `DESIGN.md` 与步骤路由、密度和状态跳转回归。
 
 下一步优先级：
 
 - 在真实 Unreal Editor 中导入 M7 DataTable/DataAsset adapter 源并运行 PIE/DataValidation。
 - 增加 Godot packaged playtest 与运行时指标采集，让机器 QA 使用真实 playtest 数据。
 - 为 schema version 增加 migration、bundle diff 和变更审批能力。
+- 用真实项目数据补做执行、审阅和质量步骤的人工走查，继续收敛状态条与报告的文案层级。
 
 ## M7 Agent 可执行生产 Spec
 
