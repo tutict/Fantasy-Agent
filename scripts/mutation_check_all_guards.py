@@ -863,8 +863,14 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # is broken rather than that the guard has teeth.
         "F4-1 the shell puts a view back inside a frame",
         "apps/frontend/src/studio/StudioShell.tsx",
-        b"              <PlanningWorkbench />\n",
-        b'              <iframe src={panelHref("workbench") ?? ""} title="workbench" />\n',
+        # The needle tracks the call site, not a shape on memory: the view
+        # grew a `journeyStep` prop and moved one indent deeper inside its
+        # `ErrorBoundary`, and the old fourteen-space `<PlanningWorkbench />`
+        # stopped existing without anyone touching this case. A stale needle
+        # is silent until the harness runs, which is why
+        # `test_every_needle_still_matches_exactly_once` reads this list.
+        b'                <PlanningWorkbench journeyStep={viewedJourneyStep === "plan" ? "plan" : "idea"} />\n',
+        b'                <iframe src={panelHref("workbench") ?? ""} title="workbench" />\n',
         "tests/test_studio_app.py::test_studio_shell_includes_bilingual_ui_controls",
     ),
     (
