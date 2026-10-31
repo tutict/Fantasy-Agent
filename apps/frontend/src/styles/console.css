@@ -179,6 +179,46 @@ p {
   min-height: 0;
 }
 
+.journey-status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  min-height: var(--size-control);
+  border: 1px solid var(--tone, var(--line));
+  border-radius: var(--radius-m);
+  background: var(--tone-soft, var(--surface));
+  color: var(--text-soft);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-s);
+}
+
+.journey-status-bar strong {
+  color: var(--brand);
+}
+
+.journey-status-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  margin-left: auto;
+  border-radius: var(--radius-pill);
+  background: var(--brand);
+  color: var(--on-brand);
+  font-weight: 800;
+}
+
+.shell[data-journey-step="review"] .workspace {
+  grid-template-areas: "center";
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.shell[data-journey-step="qa"] .workspace {
+  grid-template-areas: "center run";
+  grid-template-columns: 1fr 1fr;
+}
+
 .side-rail {
   display: flex;
   flex-direction: column;
@@ -1457,6 +1497,13 @@ input[type="text"] {
 
   .activity-log {
     max-height: 260px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .shell[data-journey-step="qa"] .workspace {
+    grid-template-areas: "center" "run";
+    grid-template-columns: 1fr;
   }
 }
 

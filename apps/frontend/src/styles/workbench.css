@@ -238,6 +238,9 @@
   gap: var(--space-4);
   min-height: 0;
   overflow-y: auto;
+  max-width: 1080px;
+  width: 100%;
+  margin: 0 auto;
   padding: var(--space-4) var(--space-5);
 }
 
@@ -415,6 +418,97 @@
   gap: var(--space-2);
   color: var(--muted);
   font-size: var(--text-xs);
+}
+
+/* The shell already owns navigation, locale and theme. Workbench controls are
+   a task drawer so the current step can keep one uninterrupted work surface. */
+.wb-shell {
+  display: block;
+  min-height: 100%;
+  background: var(--surface);
+}
+
+.wb-tools-drawer {
+  border-bottom: 1px solid var(--line);
+  background: var(--chrome);
+}
+
+.wb-tools-drawer > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--size-control);
+  padding: 0 var(--space-5);
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: var(--text-s);
+  font-weight: 750;
+  list-style: none;
+}
+
+.wb-tools-drawer > summary::-webkit-details-marker {
+  display: none;
+}
+
+.wb-tools-drawer > summary::after {
+  content: "+";
+  color: var(--brand);
+  font-size: var(--text-l);
+}
+
+.wb-tools-drawer[open] > summary::after {
+  content: "−";
+}
+
+.wb-tools-drawer .wb-side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
+  gap: var(--space-4);
+  border: 0;
+  border-top: 1px solid var(--line);
+  padding: var(--space-3) var(--space-5);
+}
+
+.wb-tools-drawer .wb-side-brand,
+.wb-tools-drawer .wb-side-foot {
+  display: none;
+}
+
+.wb-tools-drawer .wb-side-status {
+  grid-column: 1;
+}
+
+.wb-tools-drawer .wb-side-nav {
+  grid-column: 1;
+}
+
+.wb-tools-drawer .wb-side-tools {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+.wb-main {
+  min-height: calc(100% - var(--size-control));
+}
+
+@media (max-width: 900px) {
+  .wb-tools-drawer .wb-side {
+    grid-template-columns: 1fr;
+    padding: var(--space-3);
+  }
+
+  .wb-tools-drawer .wb-side-tools {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .wb-main-head,
+  .wb-main-body,
+  .wb-composer {
+    padding-left: var(--space-3);
+    padding-right: var(--space-3);
+  }
 }
 
 /* ---------- chips & buttons ---------- */

@@ -146,8 +146,8 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # parameter.
         "FE4-6 the panel URL keeps the base prefix in production",
         "apps/frontend/src/studio/StudioShell.tsx",
-        b"  return dev && base ? `${base}${route}` : route;\n",
-        b"  return `${base}${route}`;\n",
+        b"  const path = dev && base ? `${base}${route}` : route;\n  return withJourneyStep(path, step);\n",
+        b"  const path = `${base}${route}`;\n  return withJourneyStep(path, step);\n",
         "src/studio/StudioShell.test.tsx",
         "carries the dev server's base, and drops it in production",
     ),
@@ -310,8 +310,8 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # no check is a suggestion.
         "FE6-7 a breakpoint joins the grid from outside it",
         "apps/frontend/src/styles/console.css",
-        b"@media (max-width: 1100px) {\n",
-        b"@media (max-width: 1150px) {\n",
+        b"@media (max-width: 1100px) {\n  /* Stacked single-column",
+        b"@media (max-width: 1150px) {\n  /* Stacked single-column",
         "src/shared/cssHygiene.test.ts",
         "keeps breakpoints on the documented four-step grid",
     ),
@@ -489,10 +489,10 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "apps/frontend/src/studio/StudioShell.tsx",
         (
             b"              <ErrorBoundary t={t}>\n"
-            b"                <PlanningWorkbench />\n"
+            b"                <PlanningWorkbench journeyStep={viewedJourneyStep === \"plan\" ? \"plan\" : \"idea\"} />\n"
             b"              </ErrorBoundary>"
         ),
-        b"              <PlanningWorkbench />",
+        b"              <PlanningWorkbench journeyStep={viewedJourneyStep === \"plan\" ? \"plan\" : \"idea\"} />",
         "src/studio/StudioShell.test.tsx",
         "keeps the shell standing when one panel's render throws",
     ),

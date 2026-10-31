@@ -874,3 +874,100 @@ button:disabled {
   width: 100%;
   margin: 0;
 }
+
+/* The outer shell owns the six-step journey. The topbar carries only the
+   project context and the next action; the full step list stays in the sidebar
+   so the same navigation is not rendered twice. */
+.studio-topbar .journey-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2_5) 0;
+}
+
+.studio-topbar .journey-header .journey-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.studio-topbar .journey-header .journey-heading h2 {
+  overflow: hidden;
+  min-width: 0;
+  margin: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.studio-topbar .journey-header .journey-heading dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+}
+
+.studio-topbar .journey-header .journey-heading dl div {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.studio-topbar .journey-header .journey-heading dt {
+  color: var(--muted);
+}
+
+.studio-topbar .journey-header .journey-heading dd {
+  margin: 0;
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.studio-topbar .journey-header .journey-focus {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  text-align: right;
+}
+
+.studio-topbar .journey-header .journey-focus > span {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.studio-topbar .journey-header .journey-focus-label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.studio-topbar .journey-header .journey-focus strong {
+  color: var(--text-soft);
+  font-weight: 700;
+}
+
+.studio-topbar .journey-header .journey-focus em {
+  max-width: 20ch;
+  overflow: hidden;
+  color: var(--status-danger);
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .studio-topbar .journey-header {
+    grid-template-columns: 1fr;
+    gap: var(--space-1_5);
+  }
+
+  .studio-topbar .journey-header .journey-focus {
+    justify-content: flex-start;
+    text-align: left;
+  }
+}

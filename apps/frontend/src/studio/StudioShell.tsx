@@ -11,6 +11,7 @@ import { useLocaleTheme } from "../shared/localeTheme";
 import { selectedEngineVersion } from "../shared/planModel";
 import { useJourney } from "../shared/journeyContext";
 import { JOURNEY_PANELS, JOURNEY_STEP_KEYS, type JourneyStepId } from "../shared/productionJourney";
+import { journeyStepForPanel, withJourneyStep } from "../shared/journeyRouting";
 import { JourneyHeader } from "../shared/ui/primitives";
 import { ErrorBoundary } from "../shared/ui/ErrorBoundary";
 import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, readHandoffPlan } from "../shared/storage";
@@ -76,6 +77,11 @@ function panelFromPathname(): PanelKey {
   return DEFAULT_PANEL;
 }
 
+function journeyStepFromLocation(panel: PanelKey): JourneyStepId | null {
+  const requested = new URLSearchParams(window.location.search).get("step");
+  return requested ? journeyStepForPanel(panel, requested) : null;
+}
+
 /**
  * The URL for a panel that has one.
  *
@@ -95,12 +101,14 @@ function panelFromPathname(): PanelKey {
 export function panelHref(
   panel: PanelKey,
   dev: boolean = import.meta.env.DEV,
-  base: string = basePath()
+  base: string = basePath(),
+  step?: JourneyStepId | null
 ): string | null {
   const route = PANEL_ROUTES[panel];
   if (!route) return null;
 
-  return dev && base ? `${base}${route}` : route;
+  const path = dev && base ? `${base}${route}` : route;
+  return withJourneyStep(path, step);
 }
 
 export function StudioShell() {
@@ -110,6 +118,7 @@ export function StudioShell() {
   const { locale, theme, setLocale, setTheme } = useLocaleTheme();
   const { snapshot, update } = useJourney();
   const [activePanel, setActivePanel] = useState<PanelKey>(panelFromPathname);
+  const [locationJourneyStep, setLocationJourneyStep] = useState<JourneyStepId | null>(() => journeyStepFromLocation(panelFromPathname()));
   // Mounted on first visit, then kept mounted and hidden with CSS.
   //
   // The console polls the execute-status endpoint while a job is in flight and
@@ -150,21 +159,26 @@ export function StudioShell() {
 
   // Back/forward move between the panels that have a route of their own.
   useEffect(() => {
-    const syncFromHistory = () => setActivePanel(panelFromPathname());
+    const syncFromHistory = () => {
+      const panel = panelFromPathname();
+      setActivePanel(panel);
+      setLocationJourneyStep(journeyStepFromLocation(panel));
+    };
     window.addEventListener("popstate", syncFromHistory);
     return () => window.removeEventListener("popstate", syncFromHistory);
   }, []);
 
   const [consoleFocus, setConsoleFocus] = useState<"review" | "specs">("review");
   const [reviewStage, setReviewStage] = useState("");
-  const [chosenJourneyStep, setChosenJourneyStep] = useState<JourneyStepId | null>(null);
+  const [chosenJourneyStep, setChosenJourneyStep] = useState<JourneyStepId | null>(locationJourneyStep);
   const selectPanel = useCallback((next: PanelKey, step?: JourneyStepId) => {
-    if (step) setChosenJourneyStep(step);
+    const nextStep = step ?? journeyStepForPanel(next, null);
+    setChosenJourneyStep(nextStep);
     if (step === "review") setConsoleFocus("review");
     if (step === "qa") setConsoleFocus("specs");
     setActivePanel(next);
-    const href = panelHref(next);
-    if (href && window.location.pathname !== href) {
+    const href = panelHref(next, import.meta.env.DEV, basePath(), nextStep);
+    if (href && `${window.location.pathname}${window.location.search}` !== href) {
       window.history.pushState({ panel: next }, "", href);
     }
   }, []);
@@ -175,6 +189,12 @@ export function StudioShell() {
     const stepsOnPanel = JOURNEY_STEPS.filter((step) => JOURNEY_PANELS[step] === activePanel);
     return stepsOnPanel.length === 1 ? stepsOnPanel[0] : null;
   }, [activePanel, chosenJourneyStep, snapshot.currentStep]);
+
+  useEffect(() => {
+    if (locationJourneyStep && JOURNEY_PANELS[locationJourneyStep] === activePanel) {
+      setChosenJourneyStep(locationJourneyStep);
+    }
+  }, [activePanel, locationJourneyStep]);
 
   useEffect(() => {
     localStorage.setItem(STUDIO_SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? "1" : "0");
@@ -385,7 +405,7 @@ export function StudioShell() {
               aria-hidden={activePanel !== "workbench"}
             >
               <ErrorBoundary t={t}>
-                <PlanningWorkbench />
+                <PlanningWorkbench journeyStep={viewedJourneyStep === "plan" ? "plan" : "idea"} />
               </ErrorBoundary>
             </section>
           )}
@@ -414,7 +434,12 @@ export function StudioShell() {
               aria-hidden={activePanel !== "console"}
             >
               <ErrorBoundary t={t}>
-                <FlowConsole active={activePanel === "console"} focus={consoleFocus} reviewStage={reviewStage} />
+                <FlowConsole
+                  active={activePanel === "console"}
+                  focus={consoleFocus}
+                  reviewStage={reviewStage}
+                  journeyStep={viewedJourneyStep === "review" ? "review" : viewedJourneyStep === "qa" ? "qa" : "execute"}
+                />
               </ErrorBoundary>
             </section>
           )}

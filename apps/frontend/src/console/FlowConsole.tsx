@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useJourney } from "../shared/journeyContext";
 import { operationPhase, operationReason } from "../shared/productionJourney";
+import { JOURNEY_STEP_KEYS, type JourneyStepId } from "../shared/productionJourney";
 import { ConfirmDialog, LogBlock, StatusBadge } from "../shared/ui/primitives";
 import type { ReactNode } from "react";
 import {
@@ -111,7 +112,12 @@ const tabGroups: Array<{ labelKey: string; tabs: Array<[TabKey, string]> }> = [
  * passes the real value: a view it keeps mounted after the operator switches
  * away is no longer the view a fresh handoff is addressed to.
  */
-export function FlowConsole({ active = true, focus = "review", reviewStage = "" }: { active?: boolean; focus?: "review" | "specs"; reviewStage?: string } = {}) {
+export function FlowConsole({
+  active = true,
+  focus = "review",
+  reviewStage = "",
+  journeyStep = "execute"
+}: { active?: boolean; focus?: "review" | "specs"; reviewStage?: string; journeyStep?: "execute" | "review" | "qa" } = {}) {
   const { update, session: orchestrationSession } = useJourney();
   // Locale and theme are the provider's, not this view's. The console used to
   // own both and write `document.documentElement` itself -- correct while it was
@@ -149,6 +155,10 @@ export function FlowConsole({ active = true, focus = "review", reviewStage = "" 
     if (active) setActiveTab(focus);
     if (reviewStage) setReviewTarget(reviewStage);
   }, [active, focus, reviewStage]);
+
+  useEffect(() => {
+    setActiveTab(journeyStep === "qa" ? "specs" : "review");
+  }, [journeyStep]);
   const { activityEntries, addActivity } = useActivityLog();
   const { enemyTuning, setEnemyTuningValue } = useEnemyTuning();
   const {
@@ -536,7 +546,7 @@ const demoPhase = operationPhase({
   };
 
   return (
-    <main className="shell">
+    <main className="shell" data-journey-step={journeyStep}>
       <header className="top-bar">
         <div className="brand-block">
           <span className="brand-mark" aria-hidden="true">FA</span>
@@ -581,8 +591,22 @@ const demoPhase = operationPhase({
         </div>
       </header>
 
+      {(pendingGates > 0 || pollJobId || pollAssetJobId || pollPlaytestJobId || status === "error") ? (
+        <div className="journey-status-bar" role="status" data-status={status === "error" ? "error" : pollJobId || pollAssetJobId || pollPlaytestJobId ? "running" : "awaiting_confirmation"}>
+          <strong>{t(JOURNEY_STEP_KEYS[journeyStep])}</strong>
+          <span>
+            {pendingGates > 0
+              ? t("gatesPending")
+              : pollJobId || pollAssetJobId || pollPlaytestJobId
+                ? t("operationRunning")
+                : t("operationFailed")}
+          </span>
+          {pendingGates > 0 ? <span className="journey-status-count">{pendingGates}</span> : null}
+        </div>
+      ) : null}
+
       <section className="workspace" aria-label={t("cockpitLabel")}>
-        <aside className="side-rail plan-rail" aria-label="Plan intake and corrections">
+        {journeyStep === "execute" ? <aside className="side-rail plan-rail" aria-label="Plan intake and corrections">
           <p className="rail-title">{t("railPlanTitle")}</p>
 
           <details className="rail-fold" data-panel="handoff" aria-label="Planning handoff" open={planCardOpen("handoff")}>
@@ -758,7 +782,7 @@ const demoPhase = operationPhase({
             </div>
           </details>
 
-        </aside>
+        </aside> : null}
 
         <section className="center-pane" aria-label="Plan inspection">
           <section className="insight-row" aria-label="Plan metrics">
@@ -819,7 +843,7 @@ const demoPhase = operationPhase({
 
         </section>
 
-        <aside className="side-rail run-rail" aria-label="Execution center">
+        {journeyStep !== "review" ? <aside className="side-rail run-rail" aria-label="Execution center">
           <p className="rail-title">{t("railRunTitle")}</p>
 
           <section className="rail-card" data-panel="run" aria-label="Run approved asset workers">
@@ -1042,7 +1066,7 @@ const demoPhase = operationPhase({
               ))}
             </ol>
           </section>
-        </aside>
+        </aside> : null}
       </section>
 
 

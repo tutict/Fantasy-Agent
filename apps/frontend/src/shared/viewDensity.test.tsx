@@ -432,4 +432,19 @@ describe("information density per view", () => {
       await waitFor(() => expect(container.querySelector('[data-origin="generated"] strong')?.textContent).toBe("measured-generated-prop"));
     });
   });
+
+  it("keeps step-focused views from mounting their unrelated rails", async () => {
+    localStorage.setItem("fantasy-agent-planning-handoff", JSON.stringify({ title: "Step focused plan", plan: DENSITY_PLAN }));
+    await check(
+      "console review step",
+      <FlowConsole journeyStep="review" />,
+      async (container) => {
+        await waitFor(() => expect(container.querySelector("#plan-title")?.textContent).toBe("Measured rooftop courier"));
+        expect(container.querySelector(".plan-rail")).toBeNull();
+        expect(container.querySelector(".run-rail")).toBeNull();
+        expect(container.querySelector(".center-pane")).not.toBeNull();
+      },
+      { reason: "review keeps the decision surface as the only work area", sections: 8, controls: 12, headings: 8, chars: 900 }
+    );
+  });
 });

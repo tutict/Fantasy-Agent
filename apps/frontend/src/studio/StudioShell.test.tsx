@@ -341,6 +341,22 @@ describe("locale and theme have one owner", () => {
     expect(screen.getByText("设置")).toBeTruthy();
   });
 
+  it("writes the selected journey step into the route and restores it from history", async () => {
+    renderShell();
+    fireEvent.click(document.querySelector('[data-journey="execute"]') as HTMLButtonElement);
+
+    expect(window.location.pathname).toBe("/web-console");
+    expect(window.location.search).toBe("?step=execute");
+    expect(document.querySelector('[data-frame="console"]')).toBeTruthy();
+
+    window.history.pushState({}, "", "/workbench?step=plan");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+
+    expect(window.location.pathname).toBe("/workbench");
+    expect(window.location.search).toBe("?step=plan");
+    await waitFor(() => expect(document.querySelector('[data-journey="plan"]')?.classList.contains("active")).toBe(true));
+  });
+
   it("marks every journey row with one state dot, and no text of its own", () => {
     // The row used to say its state three ways -- the index chip's colour and
     // shape, the data attribute, and a "current / later" text line. The dot is

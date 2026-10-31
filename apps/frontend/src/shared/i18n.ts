@@ -873,6 +873,7 @@ export const studioI18n: Record<Locale, Dictionary> = {
     assetsLoadFailed: "The library could not be read:",
     assetsLibraryPath: "Library file",
     assetsIngestTitle: "Ingest an open-source asset",
+    assetsOpenIngest: "Add an open-source asset",
     assetsIngestHint:
       "Point at a file you already downloaded. The backend copies it into generated/asset-library/, records its sha256, and never touches the original.",
     assetsName: "Name",
@@ -1147,6 +1148,7 @@ export const studioI18n: Record<Locale, Dictionary> = {
     assetsLoadFailed: "资产库读取失败：",
     assetsLibraryPath: "库文件",
     assetsIngestTitle: "录入开源资产",
+    assetsOpenIngest: "添加开源资产",
     assetsIngestHint:
       "指向一个你已经下载到本机的文件。后端会把它复制进 generated/asset-library/、记录 sha256，且不动原文件。",
     assetsName: "名称",

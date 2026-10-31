@@ -7,6 +7,8 @@
 
 `apps/frontend/` 是唯一一代界面（Vite + React/TSX），经 `apps/frontend/dist/` 由 Studio 服务。四条路由对应四个整页视图，设置类面板（工具环境 / API / Agent）内联在同一个外壳里。视觉方向是**暖纸色 + 氧化铜**（`3af5854` 定），本文只记录规则，不重开色系讨论。
 
+2026-10-31 起的低密度基线是：六步旅程是唯一主导航；每个步骤只有一个主工作面；工作台工具、资产录入和控制台次要队列按需展开；顶部只显示项目上下文和条件状态条。产品与视觉上下文见根目录 `PRODUCT.md` 和 `DESIGN.md`。
+
 ## 1. 导航结构
 
 单一根组件 `main.tsx` → `StudioShell` 读一次 pathname，**没有路由库**。
@@ -23,6 +25,7 @@
 - **兜底是 `workbench`**：任何不认识的路径都渲染策划工作台，不报错也不 404。
 - 设置类三个面板（`mcp` / `api` / `agent`）**没有自己的路由**，是 `StudioShell` 内的二级导航（`SETTING_NAV`），共用 `/workbench` 那条路径。
 - `assets` 同理不是设置项、也不是六步旅程的一步：它是**你去干活的地方**，所以拿的是 console 那样的整页路由待遇（自有 URL + `visitedPanels` 首访挂载 + `ErrorBoundary`），导航上是单条目组。生成资产那一侧读的是 Creative Review 的审批清单，不另存一份。
+- 六步焦点通过查询参数保存：`/workbench?step=idea|plan`、`/pipeline?step=orchestrate`、`/web-console?step=execute|review|qa`。缺失或无效参数回退到该路由的默认步骤；浏览器前进/后退恢复焦点。资产库和设置不接入 `step` 参数。
 - `basePath()` 读 `import.meta.env.BASE_URL` 并剥掉尾斜杠。**它必须是显式参数而不是内联读取**：`import.meta.env` 编译期内联，测试里恒为真，生产分支否则没有任何测试够得着（它就是这么漏掉一次 404 的）。变异用例 FE4-6 钉住这条。
 
 ### 1.1 七面板内联，切走不卸载
@@ -35,7 +38,7 @@
 
 ### 1.2 外壳侧边栏：一条导航，四个层级
 
-侧边栏只做一件事——**告诉你你在哪、能去哪**。不装设置（语言/主题退到页脚）、不装调试信息、没有盒子：分组之间是发丝线与留白，唯一的实色元素是品牌标（身份）、当前项的竖条（位置）和状态点（进度）。行式语言与「点子」页内侧边栏（`wb-*`）逐项相同。
+侧边栏只做一件事——**告诉你你在哪、能去哪**。不装设置（语言/主题退到页脚）、不装调试信息、没有盒子：分组之间是发丝线与留白，唯一的实色元素是品牌标（身份）、当前项的竖条（位置）和状态点（进度）。工作台与控制台不再渲染第二条常驻导航；工具与次要队列由按需抽屉承载。
 
 | 层 | 内容 | 视觉重量 |
 |---|---|---|
@@ -54,11 +57,11 @@
 
 | 面板 key | 组件 | 样式表 | 状态 |
 |---|---|---|---|
-| `workbench` | `workbench/PlanningWorkbench.tsx`（外壳）+ `workbench/DiscoveryThread.tsx` / `SeedInspector.tsx` / `PlanPanels.tsx` | `workbench.css` + 共享 `wb-*` | 侧边栏（导航 + 动作）+ 主区二选一（对话态／计划态）；2026-10-19 重设计，见 `docs/superpowers/plans/2026-10-19-idea-page-redesign.md` |
+| `workbench` | `workbench/PlanningWorkbench.tsx`（外壳）+ `workbench/DiscoveryThread.tsx` / `SeedInspector.tsx` / `PlanPanels.tsx` | `workbench.css` + 共享 `wb-*` | 当前步骤主工作面；工具抽屉默认收起；`step=idea` 显示点子对话，`step=plan` 显示计划内容 |
 | `pipeline` | `orchestration/OrchestrationBoard.tsx` + `orchestration/StageCard.tsx` | `orchestration.css`（`or-*`） | **无媒体查询**：它本来就是单列流式布局，加断点只会让它在某个宽度下突然变形 |
-| `console` | `console/FlowConsole.tsx`（`Metric` / `AssetList` / `Panel` / `SegmentedControl` 在 `FlowConsole.parts.tsx`，执行阶段/试玩/纠偏三张卡片各在自己目录） | `console.css` + `studio.css` 同页共存 | tab 只有 2 个：`review` / `specs` |
+| `console` | `console/FlowConsole.tsx`（`Metric` / `AssetList` / `Panel` / `SegmentedControl` 在 `FlowConsole.parts.tsx`，执行阶段/试玩/纠偏三张卡片各在自己目录） | `console.css` + `studio.css` 同页共存 | `step=execute` 聚焦执行，`step=review` 聚焦审阅，`step=qa` 聚焦质量；只在真实状态需要时显示顶部状态条 |
 | `mcp` / `api` / `agent` | `studio/settings/`（`McpCard.tsx` 连 `McpServiceGrid`、`ApiSettingsPanel.tsx`、`AgentPanel.tsx`、`ToolCatalogPanel.tsx`） | `studio.css`（`mcp-*` / `api-*` / `agent-*`） | 设置类；`api` 首访才挂载，见 §1.1 |
-| `assets` | `assets/AssetLibrary.tsx` + `assets/parts.tsx`（无 state 的小件：条目卡、生成资产卡、空态、许可证预设） | `assets.css`（`as-*`） | 唯一断点 `max-width: 1100px`（条目网格 2→1 列）；按钮/徽章/空态走共享原语 |
+| `assets` | `assets/AssetLibrary.tsx` + `assets/parts.tsx`（无 state 的小件：条目卡、生成资产卡、空态、许可证预设） | `assets.css`（`as-*`） | 录入表单默认收起；资产清单是主工作面；唯一断点 `max-width: 1100px`（条目网格 2→1 列） |
 
 样式表的归属判据：**一个 class 只属于一张表**。`shared/panelStyles.test.ts` 钉着共享面板发出的每个 class 必须在 `workbench.css` 有定义、console 私有类必须留在 `console.css`。
 

@@ -21,9 +21,7 @@ textarea {
   letter-spacing: .08em;
   text-transform: uppercase;
 }
-.journey-heading,
-.journey-steps,
-.journey-next {
+.journey-heading {
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -39,44 +37,6 @@ textarea {
   gap: var(--space-2);
   margin: 0;
 }
-.journey-steps {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.journey-steps li {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--muted);
-}
-.journey-mark {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  border: 1px solid var(--line-strong);
-  border-radius: 50%;
-  font-size: var(--text-s);
-}
-/**
- * The journey's four steps. The colour half is the shared vocabulary -- the
- * `<li>` carries `data-state` and the mark inherits its tone from it. The shape
- * half is the journey's own and stays here: circle / square / diamond say
- * "this one" / "settled" / "look at this" independently of the colour, which is
- * the half that still reads when the colour does not.
- */
-.journey-steps [data-state="current"] { color: var(--tone, var(--muted)); }
-.journey-steps [data-state="current"] .journey-mark { background: var(--tone, var(--line)); color: var(--on-brand); border-radius: 50%; }
-.journey-steps [data-state="blocked"] { color: var(--tone, var(--muted)); }
-.journey-steps [data-state="blocked"] .journey-mark { background: var(--tone, var(--line)); color: var(--on-danger); border-radius: var(--radius-xs); }
-.journey-steps [data-state="attention"] { color: var(--tone, var(--muted)); }
-.journey-steps [data-state="attention"] .journey-mark { background: var(--tone, var(--line)); color: var(--on-danger); transform: rotate(45deg); }
-.journey-steps [data-state="attention"] .journey-mark span { transform: rotate(-45deg); }
-.journey-steps [data-state="complete"] { color: var(--tone, var(--muted)); }
-.journey-steps [data-state="complete"] .journey-mark { background: var(--tone, var(--line)); color: var(--on-brand); border-radius: var(--radius-xs); }
-.journey-state { font-size: var(--text-s); }
-.journey-next em { color: var(--status-danger); font-style: normal; }
 .ui-button {
   min-height: var(--size-control);
   padding: 0 var(--space-4);
@@ -321,7 +281,8 @@ textarea:focus-visible {
        .status-chip, .manual-tool-row, .agent-call, .api-summary,
        .generate-stages .stage-card, .spec-qa-row, .review-action,
        .or-pill-decision, .as-summary, .tool-row,
-       .rework-item, .playtest-verdict, .playtest-finding, .wb-chip) {
+       .rework-item, .playtest-verdict, .playtest-finding, .wb-chip,
+       .journey-status-bar) {
   --tone: initial;
   --tone-soft: initial;
 }

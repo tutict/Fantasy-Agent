@@ -87,7 +87,7 @@ function mergePlanPatch(
 /** Which of the two things the main area shows: the conversation, or a plan panel. */
 type MainView = "chat" | "plan";
 
-export function PlanningWorkbench() {
+export function PlanningWorkbench({ journeyStep = "idea" }: { journeyStep?: "idea" | "plan" } = {}) {
   const { update } = useJourney();
   // Locale and theme belong to the provider. This view used to own them and write
   // `document.documentElement` plus `document.title` itself -- three views each
@@ -108,6 +108,7 @@ export function PlanningWorkbench() {
   const [fields, setFields] = useState<SeedEditorFields>(EMPTY_SEED_FIELDS);
   const [config, setConfig] = useState<WorkbenchConfig>(() => defaultConfig());
   const [mainView, setMainView] = useState<MainView>("chat");
+  const [toolsOpen, setToolsOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<WorkbenchPanelKey>("overview");
   const [running, setRunning] = useState<string | null>(null);
 
@@ -115,6 +116,10 @@ export function PlanningWorkbench() {
 
   const question = currentInterviewQuestion(answers, locale);
   const busy = running !== null;
+
+  useEffect(() => {
+    setMainView(journeyStep === "plan" ? "plan" : "chat");
+  }, [journeyStep]);
 
   /** Rebuild the seed from the editor; the editor is the source of truth once edited. */
   const rebuildSeed = useCallback(
@@ -342,7 +347,9 @@ export function PlanningWorkbench() {
   };
 
   return (
-    <div className="wb-shell" data-testid="planning-workbench">
+    <div className="wb-shell" data-testid="planning-workbench" data-journey-step={journeyStep}>
+      <details className="wb-tools-drawer" open={toolsOpen} onToggle={(event) => setToolsOpen(event.currentTarget.open)}>
+        <summary>{journeyStep === "plan" ? t("toolActions") : t("seedPreviewTitle")}</summary>
       <aside className="wb-side">
         <header className="wb-side-brand">
           <span className="wb-side-mark" aria-hidden="true">PL</span>
@@ -441,6 +448,7 @@ export function PlanningWorkbench() {
           onRun={onRunPlanTool}
         />
       </aside>
+      </details>
 
       <main className="wb-main">
         {mainView === "chat" ? (

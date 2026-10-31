@@ -178,15 +178,17 @@ export function AssetLibrary({ t }: { t: Translator }) {
         </p>
       ) : null}
 
-      <form
-        className="as-form"
-        id="as-form"
-        autoComplete="off"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
+      <details className="as-ingest-drawer">
+        <summary>{t("assetsOpenIngest")}</summary>
+        <form
+          className="as-form"
+          id="as-form"
+          autoComplete="off"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+        >
         <h4>{t("assetsIngestTitle")}</h4>
         <p>{t("assetsIngestHint")}</p>
         <div className="as-field">
@@ -259,7 +261,8 @@ export function AssetLibrary({ t }: { t: Translator }) {
             {busy ? t("assetsIngesting") : t("assetsSubmit")}
           </Button>
         </div>
-      </form>
+        </form>
+      </details>
 
       <section className="as-section" id="as-library">
         <div className="as-section-head">

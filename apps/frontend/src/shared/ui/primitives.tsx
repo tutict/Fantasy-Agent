@@ -14,16 +14,13 @@ export function JourneyHeader({ snapshot, t }: { snapshot: JourneySnapshot; t: T
           <div><dt>{t("journeyDuration")}</dt><dd>{snapshot.targetMinutes ? t("journeyMinutes", { count: snapshot.targetMinutes }) : t("journeyUnknown")}</dd></div>
         </dl>
       </div>
-      <ol className="journey-steps" aria-label={t("journeyLabel")}>
-        {snapshot.steps.map((step, index) => (
-          <li key={step.id} data-state={step.state}>
-            <span className="journey-mark" aria-hidden="true"><span>{index + 1}</span></span>
-            <strong>{t(JOURNEY_STEP_KEYS[step.id])}</strong>
-            <span className="journey-state">{t(JOURNEY_STATE_KEYS[step.state])}</span>
-          </li>
-        ))}
-      </ol>
-      <p className="journey-next" role="status"><strong>{t("journeyNext")}</strong><span>{t(snapshot.nextActionKey)}</span>{snapshot.blocker ? <em>{snapshot.blocker}</em> : null}</p>
+      <p className="journey-focus" role="status">
+        <span className="journey-focus-label">{t("journeyNext")}</span>
+        <span>{t(JOURNEY_STEP_KEYS[snapshot.currentStep])}</span>
+        <span>{t(JOURNEY_STATE_KEYS[snapshot.steps.find((step) => step.id === snapshot.currentStep)?.state ?? "upcoming"])}</span>
+        <strong>{t(snapshot.nextActionKey)}</strong>
+        {snapshot.blocker ? <em>{snapshot.blocker}</em> : null}
+      </p>
     </header>
   );
 }
