@@ -106,6 +106,7 @@ export interface PipelineStage {
 export interface ProductionPipeline {
   project_name?: string;
   goal?: string;
+  goal_i18n?: Partial<Record<Locale, string>>;
   current_stage?: string;
   next_stage?: string;
   stages?: PipelineStage[];

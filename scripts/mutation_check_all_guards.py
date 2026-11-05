@@ -76,11 +76,32 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "tests/test_playtest_bot.py::test_a_held_key_is_recorded_even_when_it_survives_the_previous_run",
     ),
     (
+        "I18N-3 a mechanic label swallows the projects proper name",
+        "fantasy_agent/i18n.py",
+        b'        if any(word.lower() not in TITLE_IGNORED_WORDS for word in re.findall(r"[A-Za-z0-9]+", remaining)):',
+        b"        if False:",
+        "tests/test_i18n.py::test_a_proper_name_is_not_discarded_when_the_idea_mentions_a_known_mechanic",
+    ),
+    (
         "HARNESS-UTF8 backend diagnostics fall back to the host codec",
         "scripts/mutation_check_all_guards.py",
         b'        encoding="utf-8",\n        errors="replace",\n',
         b'        encoding="gbk",\n        errors="replace",\n',
         "tests/test_mutation_harness.py::test_backend_runner_reads_utf8_diagnostics_on_a_gbk_host",
+    ),
+    (
+        "I18N-1 generated Chinese titles fall back to English",
+        "fantasy_agent/i18n.py",
+        b'        return "".join(dict.fromkeys(text for text, _ in matched))\n',
+        b"        return fallback_title\n",
+        "tests/test_i18n.py::test_english_ideas_get_chinese_display_titles_without_changing_identifiers[parkour]",
+    ),
+    (
+        "I18N-2 the unmatched English idea has no Chinese fallback",
+        "fantasy_agent/i18n.py",
+        b'    return DISPLAY_ZH_CN["default_title"]\n',
+        b"    return fallback_title\n",
+        "tests/test_i18n.py::test_an_unrecognized_english_idea_still_gets_a_chinese_display_title",
     ),
     (
         "EVO-6 frontend diagnostics fall back to the host codec",

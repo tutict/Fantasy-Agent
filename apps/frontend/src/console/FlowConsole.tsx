@@ -630,10 +630,10 @@ const demoPhase = operationPhase({
       ) : null}
 
       <section className="workspace" aria-label={t("cockpitLabel")}>
-        {journeyStep === "execute" ? <aside className="side-rail plan-rail" aria-label="Plan intake and corrections">
+        {journeyStep === "execute" ? <aside className="side-rail plan-rail" aria-label={t("railPlanTitle")}>
           <p className="rail-title">{t("railPlanTitle")}</p>
 
-          <details className="rail-fold" data-panel="handoff" aria-label="Planning handoff" open={planCardOpen("handoff")}>
+          <details className="rail-fold" data-panel="handoff" aria-label={t("handoffTitle")} open={planCardOpen("handoff")}>
             <summary onClick={(event) => { event.preventDefault(); togglePlanCard("handoff"); }}>
               <h2>{t("handoffTitle")}</h2>
               <span className="handoff-chip" id="handoff-state">
@@ -833,6 +833,7 @@ const demoPhase = operationPhase({
             <Panel tab="review" activeTab={activeTab}>
               <ReviewPanel
                 review={currentPlan?.creative_review}
+                locale={locale}
                 decisions={reviewDecisions}
                 setDecision={(assetId, decision) => {
                   setReviewDecisions((decisions) => ({ ...decisions, [assetId]: decision }));
@@ -850,6 +851,8 @@ const demoPhase = operationPhase({
               </div> : null}
               <SpecBundlePanel
                 bundle={currentPlan?.production_spec_bundle}
+                spec={currentPlan?.gameplay_spec}
+                locale={locale}
                 preview={specPreview}
                 error={specPreviewError}
                 t={t}
@@ -857,6 +860,7 @@ const demoPhase = operationPhase({
               {currentPlan?.production_spec_bundle ? (
                 <SpecRegenPanel
                   request={specRegenRequest}
+                  locale={locale}
                   regenerated={regenerated}
                   regenerating={regenerating}
                   error={regenError}
@@ -871,7 +875,7 @@ const demoPhase = operationPhase({
 
         </section>
 
-        {journeyStep !== "review" ? <aside className="side-rail run-rail" aria-label="Execution center">
+        {journeyStep !== "review" ? <aside className="side-rail run-rail" aria-label={t("railRunTitle")}>
           <p className="rail-title">{t("railRunTitle")}</p>
 
           {journeyStep === "execute" ? <section className="rail-card" data-panel="run" aria-label="Run approved asset workers">

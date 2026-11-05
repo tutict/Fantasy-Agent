@@ -327,13 +327,13 @@ export function PlanningWorkbench({ journeyStep = "idea" }: { journeyStep?: "ide
       case "tasks":
         return <TasksPanel plan={plan} t={t} locale={locale} />;
       case "build":
-        return <BuildPanel plan={plan} t={t} />;
+        return <BuildPanel plan={plan} locale={locale} t={t} />;
       case "visuals":
-        return <VisualsPanel plan={plan} t={t} />;
+        return <VisualsPanel plan={plan} locale={locale} t={t} />;
       case "gdd":
         return <GddPanel plan={plan} t={t} locale={locale} />;
       case "qa":
-        return <QaPanel plan={plan} t={t} />;
+        return <QaPanel plan={plan} locale={locale} t={t} />;
       case "dsl":
         return <DslPanel plan={plan} seed={seed} t={t} />;
       default:

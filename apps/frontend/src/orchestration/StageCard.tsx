@@ -1,4 +1,4 @@
-import { localizedTitle } from "../shared/planModel";
+import { localizedArray, localizedTitle, planningText } from "../shared/planModel";
 import type { Locale } from "../shared/types";
 import type { Translator } from "../shared/i18n";
 import {
@@ -71,13 +71,13 @@ export function StageCard({
         </span>
       </header>
 
-      {card.purpose ? <p className="or-purpose">{card.purpose}</p> : null}
+      {card.purpose ? <p className="or-purpose">{planningText(card.purpose, locale)}</p> : null}
 
       <div className="or-pills">
         {isHuman ? <span className="or-pill or-pill-human">{t("orchestrationHumanGate")}</span> : null}
         {card.owner_agent ? (
           <span className="or-pill">
-            {t("orchestrationOwner")}: {card.owner_agent}
+            {t("orchestrationOwner")}: {planningText(card.owner_agent, locale)}
           </span>
         ) : null}
         {card.confirmed ? <span className="or-pill or-pill-ok">{t("orchestrationConfirmed")}</span> : null}
@@ -134,12 +134,12 @@ export function StageCard({
       */}
       {card.quality_gates.length ? (
         <p className="or-line">
-          {t("orchestrationQualityGates")}: {card.quality_gates.join(" / ")}
+          {t("orchestrationQualityGates")}: {localizedArray(card.quality_gates, locale).join(" / ")}
         </p>
       ) : null}
       {card.risks.length ? (
         <p className="or-line">
-          {t("orchestrationRisks")}: {card.risks.join(" / ")}
+          {t("orchestrationRisks")}: {localizedArray(card.risks, locale).join(" / ")}
         </p>
       ) : null}
 

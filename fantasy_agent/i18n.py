@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 from fantasy_agent.axis_templates import AXIS_TEMPLATES, verb_fields
 from fantasy_agent.contracts import GameplaySpec, I18nBundle, LocaleCode, PromptRequest
@@ -9,6 +11,15 @@ SUPPORTED_LOCALES: tuple[LocaleCode, ...] = ("en", "zh-CN")
 
 # Derived from the axis templates: one place knows what an axis is called.
 AXIS_ZH = {key: template.zh_label for key, template in AXIS_TEMPLATES.items()}
+
+# The frontend reads this same vocabulary when displaying old saved plans.
+# It translates known generated descriptors, not implementation identifiers.
+DISPLAY_ZH_CN = json.loads(Path(__file__).with_name("display_zh_cn.json").read_text(encoding="utf-8"))
+TITLE_TERMS_ZH = [
+    (re.compile(term["pattern"], re.IGNORECASE), term["text"], term["mechanic"])
+    for term in DISPLAY_ZH_CN["title_terms"]
+]
+TITLE_IGNORED_WORDS = set(DISPLAY_ZH_CN["title_ignored_words"])
 
 VERB_ZH = {
     "sprint": "\u51b2\u523a",
@@ -63,7 +74,17 @@ def zh_title_from_prompt(prompt: str, fallback_title: str) -> str:
     compact = re.sub(r"\s+", "", prompt.strip())
     if contains_cjk(compact):
         return compact[:18] or fallback_title
-    return f"{fallback_title} 原型"
+    matched = [(text, mechanic) for pattern, text, mechanic in TITLE_TERMS_ZH if pattern.search(fallback_title)]
+    if any(mechanic for _, mechanic in matched):
+        remaining = fallback_title
+        for pattern, _, _ in TITLE_TERMS_ZH:
+            remaining = pattern.sub(" ", remaining)
+        if any(word.lower() not in TITLE_IGNORED_WORDS for word in re.findall(r"[A-Za-z0-9]+", remaining)):
+            return fallback_title
+        return "".join(dict.fromkeys(text for text, _ in matched))
+    if contains_cjk(fallback_title):
+        return fallback_title
+    return DISPLAY_ZH_CN["default_title"]
 
 
 def build_i18n_bundle(
@@ -96,7 +117,7 @@ def build_i18n_bundle(
     add(
         "logline",
         spec.logline,
-        f"一个 {spec.target_session_minutes} 分钟的可玩原型，围绕「{prompt}」展开，"
+        f"一个 {spec.target_session_minutes} 分钟的可玩原型，围绕「{prompt if contains_cjk(prompt) else zh_title}」展开，"
         "重点是清晰决策、快速反馈和可完成目标。",
     )
     add("player_fantasy", spec.player_fantasy, template.narrative.zh_player_fantasy)

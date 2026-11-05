@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { BuildPanel, OverviewPanel, QaPanel, TasksPanel, VisualsPanel } from "./rendering";
+import { BuildPanel, OverviewPanel, QaPanel, SpecBundlePanel, TasksPanel, VisualsPanel } from "./rendering";
 import { consoleI18n, makeTranslator } from "../shared/i18n";
 import type { DirectorBuildPlan, PipelineStage } from "../shared/types";
 
@@ -33,6 +33,44 @@ import type { DirectorBuildPlan, PipelineStage } from "../shared/types";
 const t = makeTranslator("en", consoleI18n);
 
 afterEach(() => cleanup());
+
+describe("Chinese production spec panel", () => {
+  it("shows Chinese QA labels and keeps table identifiers in technical details", () => {
+    const { container } = render(<SpecBundlePanel locale="zh-CN" t={makeTranslator("zh-CN", consoleI18n)}
+      bundle={{ config_tables: { tables: [{ table_id: "encounters" }] } }}
+      preview={{ executable_qa: { results: [{ assertion_id: "approved_assets_only", metric_key: "resource_approval", passed: false, message: "resource_approval did not satisfy eq True" }] } }} />);
+    expect(screen.getByText("仅使用已批准资产")).toBeTruthy();
+    expect(screen.getByText("资产审批检查未通过。")).toBeTruthy();
+    expect(container.querySelector(".spec-qa-row strong")?.getAttribute("title")).toBe("approved_assets_only");
+    expect(container.querySelector("#spec-artifacts")?.textContent).toContain("encounters");
+    expect(container.querySelector(".spec-domain-grid")?.textContent).not.toContain("encounters");
+  });
+
+  it("keeps artifact paths and field traces in closed technical details", () => {
+    const { container } = render(<SpecBundlePanel locale="zh-CN" t={makeTranslator("zh-CN", consoleI18n)}
+      bundle={{ gameplay_spec_title: "Rooftop Parkour Chase Across Neon", validation: { status: "passed" } }}
+      preview={{ artifacts: [{ path: "data/production-spec-runtime.json" }], traces: [{ spec_field: "numeric.player_move_speed", artifact_path: "scripts/player_controller.gd", consumer: "PlayerController" }] }} />);
+    const artifacts = container.querySelector<HTMLDetailsElement>("#spec-artifacts")!;
+    const traces = container.querySelector<HTMLDetailsElement>("#spec-traces")!;
+    expect(artifacts.open).toBe(false);
+    expect(traces.open).toBe(false);
+    expect(artifacts.textContent).toContain("data/production-spec-runtime.json");
+    expect(traces.textContent).toContain("numeric.player_move_speed");
+    expect(screen.getByText("通过")).toBeTruthy();
+  });
+
+  it("localizes the project title, validation status and duration while keeping field identifiers", () => {
+    render(<SpecBundlePanel locale="zh-CN" t={makeTranslator("zh-CN", consoleI18n)}
+      spec={{ title: "Rooftop Parkour Chase Across Neon", i18n: { field_translations: { title: { "zh-CN": "屋顶跑酷追逐" } } } }}
+      bundle={{ gameplay_spec_title: "Rooftop Parkour Chase Across Neon", numeric: { target_session_minutes: 10 }, validation: { status: "failed", issues: [{ severity: "error", field: "numeric.player_move_speed", message: "移动速度必须大于零" }] } }} />);
+    expect(screen.getByRole("heading", { name: "屋顶跑酷追逐" })).toBeTruthy();
+    expect(screen.getByText("失败")).toBeTruthy();
+    expect(screen.getByText("错误")).toBeTruthy();
+    expect(screen.getByText("10 分钟")).toBeTruthy();
+    expect(screen.getByText("numeric.player_move_speed")).toBeTruthy();
+    expect(screen.queryByText("Rooftop Parkour Chase Across Neon")).toBeNull();
+  });
+});
 
 function stage(overrides: Partial<PipelineStage> = {}): PipelineStage {
   return {

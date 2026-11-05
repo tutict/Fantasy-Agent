@@ -1,14 +1,16 @@
 import { forwardRef, useEffect, useRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { JOURNEY_STATE_KEYS, JOURNEY_STEP_KEYS, type JourneySnapshot } from "../productionJourney";
+import { planningText } from "../planModel";
+import type { Locale } from "../types";
 
 type Translator = (key: string, args?: Record<string, unknown>) => string;
 
-export function JourneyHeader({ snapshot, t }: { snapshot: JourneySnapshot; t: Translator }) {
+export function JourneyHeader({ snapshot, locale = "en", t }: { snapshot: JourneySnapshot; locale?: Locale; t: Translator }) {
   return (
     <header className="journey-header" data-current={snapshot.currentStep}>
       <p className="journey-kicker">{t("journeyLabel")}</p>
       <div className="journey-heading">
-        <h2>{snapshot.projectTitle || t("journeyNoProject")}</h2>
+        <h2>{snapshot.projectTitleByLocale?.[locale] || snapshot.projectTitle || t("journeyNoProject")}</h2>
         <dl>
           <div><dt>{t("journeyEngine")}</dt><dd>{snapshot.engineLabel || t("journeyUnknown")}</dd></div>
           <div><dt>{t("journeyDuration")}</dt><dd>{snapshot.targetMinutes ? t("journeyMinutes", { count: snapshot.targetMinutes }) : t("journeyUnknown")}</dd></div>
@@ -19,7 +21,7 @@ export function JourneyHeader({ snapshot, t }: { snapshot: JourneySnapshot; t: T
         <span>{t(JOURNEY_STEP_KEYS[snapshot.currentStep])}</span>
         <span>{t(JOURNEY_STATE_KEYS[snapshot.steps.find((step) => step.id === snapshot.currentStep)?.state ?? "upcoming"])}</span>
         <strong>{t(snapshot.nextActionKey)}</strong>
-        {snapshot.blocker ? <em>{snapshot.blocker}</em> : null}
+        {snapshot.blocker ? <em>{planningText(snapshot.blocker, locale)}</em> : null}
       </p>
     </header>
   );

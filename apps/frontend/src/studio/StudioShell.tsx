@@ -388,7 +388,7 @@ export function StudioShell() {
 
       <section className="studio-main">
         <header className="studio-topbar">
-          <JourneyHeader snapshot={snapshot} t={t} />
+          <JourneyHeader snapshot={snapshot} locale={locale} t={t} />
         </header>
 
         <section className="studio-panel-frame">

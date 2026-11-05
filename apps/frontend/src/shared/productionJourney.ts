@@ -1,4 +1,5 @@
-import type { DirectorBuildPlan, OrchestrationSession } from "./types";
+import type { DirectorBuildPlan, Locale, OrchestrationSession } from "./types";
+import { planDisplayTitle } from "./planModel";
 
 export type JourneyStepId = "idea" | "plan" | "orchestrate" | "execute" | "review" | "qa";
 export type JourneyPanel = "workbench" | "pipeline" | "console" | "assets" | "mcp" | "api" | "agent";
@@ -13,6 +14,7 @@ export interface JourneyStep {
 
 export interface JourneySnapshot {
   projectTitle: string;
+  projectTitleByLocale?: Partial<Record<Locale, string>>;
   engineLabel: string;
   targetMinutes: string;
   currentStep: JourneyStepId;
@@ -157,6 +159,7 @@ export function journeySnapshot(input: {
 
   return {
     projectTitle: text(plan?.gameplay_spec?.title, text(plan?.production_pipeline?.project_name, "")),
+    projectTitleByLocale: { "zh-CN": planDisplayTitle(plan, "zh-CN") },
     engineLabel: planned ? engineLabel(plan) : "",
     targetMinutes: plan?.gameplay_spec?.target_session_minutes ? String(plan.gameplay_spec.target_session_minutes) : "",
     currentStep: current,

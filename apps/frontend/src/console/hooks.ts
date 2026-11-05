@@ -316,8 +316,12 @@ export function usePlanningHandoff({
 
   const titleForPlan = useCallback((plan: DirectorBuildPlan) => preferredTitle(plan, locale, t), [locale, t]);
   const renderHandoffTitle = useCallback(
-    (handoff: PlanningHandoff | null) => handoff?.title || titleForPlan(handoff?.plan || {}) || t("emptyTitle"),
-    [titleForPlan, t]
+    (handoff: PlanningHandoff | null) => {
+      const storedTitle = handoff?.title;
+      if (locale === "en" && storedTitle && !/[\u3400-\u9fff]/.test(storedTitle)) return storedTitle;
+      return handoff?.plan ? titleForPlan(handoff.plan) : storedTitle || t("emptyTitle");
+    },
+    [locale, titleForPlan, t]
   );
 
   const mergeReviewDefaults = useCallback((plan: DirectorBuildPlan) => {

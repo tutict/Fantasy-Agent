@@ -31,7 +31,7 @@ import { useJourney } from "../shared/journeyContext";
 import { EmptyState } from "../shared/ui/primitives";
 
 import { decideHumanGate, getOrchestrationState, runOrchestration } from "../shared/api";
-import { localizedTitle } from "../shared/planModel";
+import { localizedTitle, planDisplayTitle, planningText } from "../shared/planModel";
 import {
   readHandoffPlan,
   readOrchestrationEngine,
@@ -210,6 +210,11 @@ export function OrchestrationBoard({
   const toggle = (list: string[], id: string): string[] =>
     list.includes(id) ? list.filter((entry) => entry !== id) : [...list, id];
 
+  const pipeline = plan?.production_pipeline;
+  const projectTitle = locale === "zh-CN" ? planDisplayTitle(plan, locale) || pipeline?.project_name : pipeline?.project_name;
+  let goal = localizedTitle({ title: pipeline?.goal, title_i18n: pipeline?.goal_i18n }, locale);
+  if (locale === "zh-CN" && plan?.gameplay_spec?.title) goal = goal.replaceAll(plan.gameplay_spec.title, planDisplayTitle(plan, locale));
+
   return (
     <div className="or-shell" data-testid="orchestration-board">
       <header className="api-header">
@@ -222,7 +227,7 @@ export function OrchestrationBoard({
       <p className="api-summary" data-state={failure ? "error" : "ok"} id="orchestration-summary">
         {failure ||
           (session
-            ? `[${session.status}] ${t("orchestrationSession")}: ${session.session_id}${
+            ? `[${planningText(session.status, locale)}] ${t("orchestrationSession")}: ${session.session_id}${
                 session.rewound?.length
                   ? ` · ${t("orchestrationRewound")}: ${session.rewound.join(", ")}`
                   : ""
@@ -232,11 +237,11 @@ export function OrchestrationBoard({
 
       {plan ? (
         <div className="or-plan-meta">
-          <span className="or-meta-line">
-            {t("orchestrationProject")}: {plan.production_pipeline?.project_name || "-"}
+          <span className="or-meta-line" title={pipeline?.project_name}>
+            {t("orchestrationProject")}: {projectTitle || "-"}
           </span>
           <span className="or-meta-line">
-            {t("orchestrationGoal")}: {plan.production_pipeline?.goal || "-"}
+            {t("orchestrationGoal")}: {goal || "-"}
           </span>
           <button
             className="or-link"

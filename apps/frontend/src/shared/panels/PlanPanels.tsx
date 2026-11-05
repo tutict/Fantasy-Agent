@@ -31,7 +31,7 @@ import type {
   TaskBreakdown,
   TaskItem
 } from "../types";
-import { localizedTitle, usesGodotEngine } from "../planModel";
+import { localizedArray, localizedTitle, planningText, planDisplayTitle, specFieldText, usesGodotEngine } from "../planModel";
 import { BlenderScriptPanel } from "./BlenderScriptPanel";
 import { Block, ListBlock, Pill, PillRow, TextBlock } from "./primitives";
 
@@ -71,33 +71,36 @@ export function OverviewPanel({
   }
 
   const spec = plan.gameplay_spec;
-  const loop = (spec?.core_loop ?? []).map((step) => {
-    const action = step.action ?? "";
-    const decision = step.player_decision ? ` -- ${step.player_decision}` : "";
+  const field = (path: string, value: string | undefined) => specFieldText(spec, path, value, locale);
+  const fields = (path: string, values: string[] | undefined) =>
+    (values ?? []).map((value, index) => field(`${path}.${index}`, value));
+  const loop = (spec?.core_loop ?? []).map((step, index) => {
+    const action = field(`core_loop.${index}.action`, step.action);
+    const decision = step.player_decision ? ` -- ${field(`core_loop.${index}.player_decision`, step.player_decision)}` : "";
     return `${action}${decision}`;
   });
-  const beats = (spec?.level_beats ?? []).map((beat) => {
-    const minutes = beat.duration_minutes ? `${beat.duration_minutes}m` : "";
-    return [beat.name, minutes, beat.gameplay_focus].filter(Boolean).join(" / ");
+  const beats = (spec?.level_beats ?? []).map((beat, index) => {
+    const minutes = beat.duration_minutes ? (locale === "zh-CN" ? `${beat.duration_minutes} ${t("minutes")}` : `${beat.duration_minutes}m`) : "";
+    return [field(`level_beats.${index}.name`, beat.name), minutes, field(`level_beats.${index}.gameplay_focus`, beat.gameplay_focus)].filter(Boolean).join(" / ");
   });
 
   return (
     <div className="wb-block-grid" id="overview-content">
-      <TextBlock title={t("logline")} body={spec?.logline} wide />
+      <TextBlock title={t("logline")} body={field("logline", spec?.logline)} wide />
       <TextBlock title={t("session")} body={`${spec?.target_session_minutes ?? "-"} ${t("minutes")}`} />
       <ListBlock title={t("gameplayLoop")} items={loop} wide />
-      <ListBlock title={t("coreVerbs")} items={spec?.core_verbs ?? []} />
-      <ListBlock title={t("pillars")} items={spec?.design_pillars ?? []} />
+      <ListBlock title={t("coreVerbs")} items={fields("core_verbs", spec?.core_verbs)} />
+      <ListBlock title={t("pillars")} items={fields("design_pillars", spec?.design_pillars)} />
       <ListBlock
         title={t("systems")}
-        items={(spec?.systems ?? []).map((system) => system.name ?? "")}
+        items={(spec?.systems ?? []).map((system, index) => field(`systems.${index}.name`, system.name))}
       />
       <ListBlock title={t("pacing")} items={beats} wide />
-      <TextBlock title={t("win")} body={spec?.win_state} />
-      <ListBlock title={t("failure")} items={spec?.failure_states ?? []} />
-      <ListBlock title={t("assetNeeds")} items={spec?.asset_needs ?? []} />
-      <ListBlock title={t("qaFocus")} items={spec?.qa_focus ?? []} />
-      <ListBlock title={t("next")} items={plan.next_actions ?? []} wide />
+      <TextBlock title={t("win")} body={field("win_state", spec?.win_state)} />
+      <ListBlock title={t("failure")} items={fields("failure_states", spec?.failure_states)} />
+      <ListBlock title={t("assetNeeds")} items={fields("asset_needs", spec?.asset_needs)} />
+      <ListBlock title={t("qaFocus")} items={fields("qa_focus", spec?.qa_focus)} />
+      <ListBlock title={t("next")} items={localizedArray(plan.next_actions, locale)} wide />
     </div>
   );
 }
@@ -106,17 +109,17 @@ function TaskRow({ task, locale, t }: { task: TaskItem; locale: Locale; t: Trans
   return (
     <div className="wb-row">
       <h4>{localizedTitle(task, locale)}</h4>
-      <p>{task.purpose}</p>
+      <p>{planningText(task.purpose, locale)}</p>
       <PillRow>
-        <Pill>{task.status}</Pill>
+        <Pill>{planningText(task.status, locale)}</Pill>
         {task.id ? <Pill>{task.id}</Pill> : null}
-        {task.agent ? <Pill>{task.agent}</Pill> : null}
+        {task.agent ? <Pill>{planningText(task.agent, locale)}</Pill> : null}
         {task.requires_confirmation ? <Pill variant="warning">{t("confirmation")}</Pill> : null}
         {task.depends_on?.length ? (
           <Pill>{`${t("dependencies")}: ${task.depends_on.join(", ")}`}</Pill>
         ) : null}
         {task.side_effects?.length ? (
-          <Pill>{`${t("sideEffects")}: ${task.side_effects.join(", ")}`}</Pill>
+          <Pill>{`${t("sideEffects")}: ${localizedArray(task.side_effects, locale).join(", ")}`}</Pill>
         ) : null}
       </PillRow>
     </div>
@@ -142,12 +145,16 @@ export function TasksPanel({
   const resolved = breakdown ?? plan?.task_breakdown;
   if (!resolved) return <div className="wb-block-grid" id="tasks-output" />;
 
-  const goal = localizedTitle({ title: resolved.goal }, locale) || resolved.goal || "";
+  let goal = localizedTitle({ title: resolved.goal, title_i18n: resolved.goal_i18n }, locale);
+  const originalTitle = plan?.gameplay_spec?.title;
+  if (locale === "zh-CN" && originalTitle) goal = goal.replaceAll(originalTitle, planDisplayTitle(plan, locale));
+  const nextTask = resolved.tasks?.find((task) => task.id === resolved.recommended_next_task);
+  const nextTitle = locale === "zh-CN" && nextTask ? localizedTitle(nextTask, locale) : resolved.recommended_next_task;
   return (
     <div className="wb-block-grid" id="tasks-output">
       <TextBlock
         title={t("recommended")}
-        body={`${goal} -> ${resolved.recommended_next_task ?? "-"}`}
+        body={`${goal} -> ${nextTitle ?? "-"}`}
         wide
       />
       {(resolved.tasks ?? []).map((task) => (
@@ -158,10 +165,8 @@ export function TasksPanel({
 }
 
 /**
- * `locale` is optional: only the panels that localize a stage or task title
- * need it, and the console passes its own locale only where it matters. Panels
- * that do need it fall back to `en`, which is the same default the translator
- * uses.
+ * `locale` is optional for callers inspecting the original plan. Both app
+ * entry points pass the interface locale so planning prose can be localized.
  *
  * The engine list is the union of what both halves listed. The console split
  * the Unreal plan into four labelled blocks and the workbench folded it into
@@ -170,9 +175,11 @@ export function TasksPanel({
  */
 export function BuildPanel({
   plan,
+  locale = "en",
   t
 }: {
   plan?: DirectorBuildPlan | null;
+  locale?: Locale;
   t: Translator;
 }) {
   if (!plan) return <p className="wb-empty">{t("noPlan")}</p>;
@@ -182,14 +189,14 @@ export function BuildPanel({
         ...(plan.godot_plan?.engine_version ? [plan.godot_plan.engine_version] : []),
         ...(plan.godot_plan?.scenes ?? []),
         ...(plan.godot_plan?.scripts ?? []),
-        ...(plan.godot_plan?.automation_steps ?? [])
+        ...localizedArray(plan.godot_plan?.automation_steps, locale)
       ]
     : [
         ...(plan.unreal_plan?.engine_version ? [plan.unreal_plan.engine_version] : []),
         ...(plan.unreal_plan?.maps ?? []),
         ...(plan.unreal_plan?.gameplay_classes ?? []),
         ...(plan.unreal_plan?.folders ?? []),
-        ...(plan.unreal_plan?.automation_steps ?? [])
+        ...localizedArray(plan.unreal_plan?.automation_steps, locale)
       ];
 
   return (
@@ -199,7 +206,7 @@ export function BuildPanel({
         <ListBlock
           title={t("blender")}
           items={(plan.blender_plan?.jobs ?? []).map((job) =>
-            [job.asset_name, job.purpose, job.export_path].filter(Boolean).join(" / ")
+            [job.asset_name, planningText(job.purpose, locale), job.export_path].filter(Boolean).join(" / ")
           )}
           wide
         />
@@ -218,11 +225,13 @@ export function VisualsPanel({
   plan,
   comfy,
   review,
+  locale = "en",
   t
 }: {
   plan?: DirectorBuildPlan | null;
   comfy?: ComfyPlan | null;
   review?: CreativeReview | null;
+  locale?: Locale;
   t: Translator;
 }) {
   const resolvedComfy = comfy ?? plan?.comfyui_plan;
@@ -234,11 +243,11 @@ export function VisualsPanel({
 
   return (
     <div className="wb-block-grid" id="visuals-output">
-      <TextBlock title={t("approvalGate")} body={resolvedReview?.approval_gate} wide />
+      <TextBlock title={t("approvalGate")} body={planningText(resolvedReview?.approval_gate, locale)} wide />
       <ListBlock
         title={t("creativeReview")}
         items={(resolvedReview?.items ?? []).map((item) =>
-          [item.asset_id, item.source, item.approval_status, item.asset_path]
+          [item.asset_id, item.source, planningText(item.approval_status, locale), item.asset_path]
             .filter(Boolean)
             .join(" / ")
         )}
@@ -246,22 +255,22 @@ export function VisualsPanel({
       />
       <ListBlock
         title={t("reviewQuestions")}
-        items={resolvedReview?.art_direction?.user_review_questions ?? []}
+        items={localizedArray(resolvedReview?.art_direction?.user_review_questions, locale)}
         wide
       />
       <ListBlock
         title={t("requiredDecisions")}
-        items={resolvedReview?.required_user_decisions ?? []}
+        items={localizedArray(resolvedReview?.required_user_decisions, locale)}
         wide
       />
       <ListBlock
         title={t("comfyui")}
         items={(resolvedComfy?.jobs ?? []).map((job) =>
-          [job.job_id, job.gameplay_constraint, job.workflow_template].filter(Boolean).join(" / ")
+          [job.job_id, planningText(job.gameplay_constraint, locale), job.workflow_template].filter(Boolean).join(" / ")
         )}
         wide
       />
-      <ListBlock title={t("rules")} items={resolvedComfy?.usage_rules ?? []} wide />
+      <ListBlock title={t("rules")} items={localizedArray(resolvedComfy?.usage_rules, locale)} wide />
     </div>
   );
 }
@@ -269,10 +278,12 @@ export function VisualsPanel({
 export function QaPanel({
   plan,
   qa,
+  locale = "en",
   t
 }: {
   plan?: DirectorBuildPlan | null;
   qa?: QaPlan | null;
+  locale?: Locale;
   t: Translator;
 }) {
   const resolved = qa ?? plan?.qa_plan;
@@ -280,10 +291,13 @@ export function QaPanel({
 
   return (
     <div className="wb-block-grid" id="qa-output">
-      <ListBlock title={t("smoke")} items={resolved.smoke_tests ?? []} />
-      <ListBlock title={t("playability")} items={resolved.playability_checks ?? []} />
-      <ListBlock title={t("failure")} items={resolved.failure_checks ?? []} />
-      <ListBlock title={t("packaging")} items={resolved.packaging_checks ?? []} />
+      <ListBlock title={t("smoke")} items={localizedArray(resolved.smoke_tests, locale)} />
+      <ListBlock title={t("playability")} items={localizedArray(resolved.playability_checks, locale)} />
+      <ListBlock title={t("failure")} items={(resolved.failure_checks ?? []).map((value) => {
+        const index = plan?.gameplay_spec?.failure_states?.indexOf(value) ?? -1;
+        return index >= 0 ? specFieldText(plan?.gameplay_spec, `failure_states.${index}`, value, locale) : planningText(value, locale);
+      })} />
+      <ListBlock title={t("packaging")} items={localizedArray(resolved.packaging_checks, locale)} />
     </div>
   );
 }

@@ -74,6 +74,21 @@ function renderShell() {
 }
 
 describe("the shell hosts its views inline", () => {
+  it("localizes the saved project header when the interface language changes", async () => {
+    localStorage.setItem("fantasy-agent-studio-locale", "zh-CN");
+    localStorage.setItem("fantasy-agent-planning-handoff", JSON.stringify({
+      title: "Rooftop Parkour Chase Across Neon",
+      plan: { gameplay_spec: { title: "Rooftop Parkour Chase Across Neon", i18n: { field_translations: { title: { "zh-CN": "Rooftop Parkour Chase Across Neon 原型" } } } } }
+    }));
+    const { container } = renderShell();
+    await waitFor(() => expect(container.querySelector(".journey-heading h2")?.textContent).toBe("屋顶跑酷追逐"));
+    fireEvent.click(container.querySelector('button[data-locale="en"]')!);
+    await waitFor(() => expect(container.querySelector(".journey-heading h2")?.textContent).toBe("Rooftop Parkour Chase Across Neon"));
+    fireEvent.click(container.querySelector('button[data-locale="zh-CN"]')!);
+    await waitFor(() => expect(container.querySelector(".journey-heading h2")?.textContent).toBe("屋顶跑酷追逐"));
+    expect(JSON.parse(localStorage.getItem("fantasy-agent-planning-handoff")!).plan.gameplay_spec.title).toBe("Rooftop Parkour Chase Across Neon");
+  });
+
   it("renders the active view as a component, not as a frame", () => {
     const { container } = renderShell();
 
@@ -391,14 +406,14 @@ describe("locale and theme have one owner", () => {
       })
     );
     renderShell();
-    expect(document.querySelector(".journey-header h2")?.textContent).toBe("Rooftop Chase");
+    expect(document.querySelector(".journey-header h2")?.textContent).toBe("屋顶追逐");
     expect(screen.getByText("Godot 4.6")).toBeTruthy();
     const activeSteps = [...document.querySelectorAll(".studio-nav button.active")].map((button) => button.getAttribute("data-journey"));
     expect(activeSteps).toEqual(["plan"]);
     expect(document.querySelector('[data-journey="plan"]')?.getAttribute("aria-current")).toBe("step");
 
     fireEvent.click(document.querySelector('[data-journey="execute"]') as HTMLButtonElement);
-    expect(document.querySelector(".journey-header h2")?.textContent).toBe("Rooftop Chase");
+    expect(document.querySelector(".journey-header h2")?.textContent).toBe("屋顶追逐");
     const viewedSteps = [...document.querySelectorAll(".studio-nav button.active")].map((button) => button.getAttribute("data-journey"));
     expect(viewedSteps).toEqual(["execute"]);
     expect(document.querySelector('[data-journey="plan"]')?.getAttribute("aria-current")).toBe("step");

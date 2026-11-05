@@ -18,9 +18,10 @@
  * `shared/planModel.ts`; they are re-exported for the same reason.
  */
 
-import type { CreativeReview, CreativeReviewItem, GameplaySpec, Locale, ProductionSpecBundle, PromptRequest, SpecBundlePreviewResponse } from "../shared/types";
+import type { CreativeReview, CreativeReviewItem, DirectorBuildPlan, GameplaySpec, Locale, ProductionSpecBundle, PromptRequest, SpecBundlePreviewResponse } from "../shared/types";
 import { diffSpecs, specDigest, type SpecDiffResult } from "../shared/specDiff";
 import type { Translator } from "../shared/panels/PlanPanels";
+import { localizedArray, planDisplayTitle, planningText, specDisplayTitle, specFieldText } from "../shared/planModel";
 
 export {
   BuildPanel,
@@ -41,17 +42,11 @@ export { selectedEngineVersion, usesGodotEngine } from "../shared/planModel";
 import "../styles/workbench.css";
 
 export function preferredTitle(
-  plan: { gameplay_spec?: { title?: string } } | undefined,
+  plan: DirectorBuildPlan | undefined,
   locale: Locale,
   t: Translator
 ): string {
-  const spec = plan?.gameplay_spec as
-    | { title?: string; i18n?: { field_translations?: { title?: Partial<Record<Locale, string>> } } }
-    | undefined;
-  if (!spec) return t("emptyTitle");
-  return locale === "zh-CN" && spec.i18n?.field_translations?.title?.["zh-CN"]
-    ? spec.i18n.field_translations.title["zh-CN"] ?? t("emptyTitle")
-    : spec.title ?? t("emptyTitle");
+  return planDisplayTitle(plan, locale) || t("emptyTitle");
 }
 
 export function statusLabel(status: string | undefined, t: Translator): string {
@@ -84,6 +79,7 @@ function list(items: unknown[] | undefined, t: Translator) {
 
 export function ReviewPanel({
   review,
+  locale = "en",
   decisions,
   setDecision,
   manifestPath,
@@ -91,6 +87,7 @@ export function ReviewPanel({
   t
 }: {
   review?: CreativeReview;
+  locale?: Locale;
   decisions: Record<string, string>;
   setDecision: (assetId: string, decision: string) => void;
   manifestPath?: string;
@@ -106,6 +103,7 @@ export function ReviewPanel({
             <ReviewItem
               key={item.asset_id}
               item={item}
+              locale={locale}
               decision={decisions[item.asset_id || ""] || item.approval_status || ""}
               setDecision={setDecision}
               t={t}
@@ -124,14 +122,14 @@ export function ReviewPanel({
         {review ? (
           <>
             <h3>{t("artDirection")}</h3>
-            <p>{review.art_direction?.visual_intent}</p>
+            <p>{planningText(review.art_direction?.visual_intent, locale)}</p>
             <h3>{t("reviewQuestions")}</h3>
-            {list(review.art_direction?.user_review_questions, t)}
+            {list(localizedArray(review.art_direction?.user_review_questions, locale), t)}
             <h3>{t("requiredDecisions")}</h3>
-            {list(review.required_user_decisions, t)}
+            {list(localizedArray(review.required_user_decisions, locale), t)}
             <div className="review-meta">
               <span className="review-pill">
-                {t("approvalGate")}: {review.approval_gate}
+                {t("approvalGate")}: {planningText(review.approval_gate, locale)}
               </span>
             </div>
             <button className="secondary-action" type="button" onClick={onWriteManifest}>
@@ -151,11 +149,13 @@ export function ReviewPanel({
 
 function ReviewItem({
   item,
+  locale,
   decision,
   setDecision,
   t
 }: {
   item: CreativeReviewItem;
+  locale: Locale;
   decision: string;
   setDecision: (assetId: string, decision: string) => void;
   t: Translator;
@@ -169,12 +169,12 @@ function ReviewItem({
     <section className="review-item" id={`review-asset-${item.asset_id || "unknown"}`} data-review-asset={item.asset_id || ""}>
       <div>
         <h3>{item.asset_id}</h3>
-        <p>{item.user_prompt}</p>
+        <p>{planningText(item.user_prompt, locale)}</p>
         <code>{item.asset_path}</code>
         <div className="review-meta">
           <span className="review-pill" data-status={decision}>{statusLabel(decision, t)}</span>
           <span className="review-pill">{item.source}</span>
-          <span className="review-pill">{item.gameplay_role}</span>
+          <span className="review-pill">{planningText(item.gameplay_role, locale)}</span>
         </div>
       </div>
       <div className="review-actions">
@@ -197,11 +197,15 @@ function ReviewItem({
 
 export function SpecBundlePanel({
   bundle,
+  spec,
+  locale = "en",
   preview,
   error,
   t
 }: {
   bundle?: ProductionSpecBundle;
+  spec?: GameplaySpec;
+  locale?: Locale;
   preview?: SpecBundlePreviewResponse | null;
   error?: string | null;
   t: Translator;
@@ -220,15 +224,18 @@ export function SpecBundlePanel({
   ].filter(Boolean);
   const validation = preview?.validation || bundle.validation || undefined;
   const qaResults = preview?.executable_qa?.results || [];
+  const titleSpec = spec?.title === bundle.gameplay_spec_title ? spec : { title: bundle.gameplay_spec_title };
+  const objective = bundle.narrative?.hud_text?.objective || bundle.narrative?.premise;
+  const objectiveField = objective === spec?.win_state ? "win_state" : objective === spec?.logline ? "logline" : "";
   return (
     <div className="spec-bundle-layout">
       <header className="spec-bundle-header">
         <div>
           <p className="eyebrow">{t("specBundleSource")}</p>
-          <h3>{bundle.gameplay_spec_title || t("specBundleTitle")}</h3>
+          <h3>{specDisplayTitle(titleSpec, locale) || t("specBundleTitle")}</h3>
         </div>
         <span className="status-chip" data-status={validation?.status || "idle"}>
-          {validation?.status || t("specPreviewLoading")}
+          {planningText(validation?.status, locale) || t("specPreviewLoading")}
         </span>
       </header>
       {error ? (
@@ -245,11 +252,11 @@ export function SpecBundlePanel({
         <section className="spec-domain">
           <h3>{t("specLevel")}</h3>
           <strong>{segments.length}</strong>
-          <p>{(bundle.level?.objective_gates || []).join(", ") || "-"}</p>
+          <p>{(bundle.level?.objective_gates || []).map((value) => value === spec?.win_state ? specFieldText(spec, "win_state", value, locale) : planningText(value, locale)).join(", ") || "-"}</p>
         </section>
         <section className="spec-domain">
           <h3>{t("specNumeric")}</h3>
-          <strong>{bundle.numeric?.target_session_minutes || "-"} min</strong>
+          <strong>{bundle.numeric?.target_session_minutes || "-"} {locale === "zh-CN" ? t("minutes") : "min"}</strong>
           <p>
             {t("specMoveSpeed")}: {bundle.numeric?.player_move_speed || "-"}
           </p>
@@ -257,12 +264,12 @@ export function SpecBundlePanel({
         <section className="spec-domain">
           <h3>{t("specNarrative")}</h3>
           <strong>{bundle.narrative?.beats?.length || 0}</strong>
-          <p>{bundle.narrative?.hud_text?.objective || bundle.narrative?.premise || "-"}</p>
+          <p>{(objectiveField ? specFieldText(spec, objectiveField, objective, locale) : planningText(objective, locale)) || "-"}</p>
         </section>
         <section className="spec-domain">
           <h3>{t("specConfig")}</h3>
           <strong>{bundle.config_tables?.tables?.length || 0}</strong>
-          <p>{(bundle.config_tables?.tables || []).map((table) => table.table_id).join(", ")}</p>
+          <p>{t("specTables")}</p>
         </section>
         <section className="spec-domain">
           <h3>{t("specResources")}</h3>
@@ -278,7 +285,7 @@ export function SpecBundlePanel({
           <ul>
             {validation.issues.map((issue, index) => (
               <li key={`${issue.field || "issue"}-${index}`}>
-                <strong>{issue.severity}</strong> <code>{issue.field}</code> {issue.message}
+                <strong>{planningText(issue.severity, locale)}</strong> <code>{issue.field}</code> {issue.message}
               </li>
             ))}
           </ul>
@@ -286,12 +293,13 @@ export function SpecBundlePanel({
           <p>{t("specValidationClean")}</p>
         )}
       </section>
-      <section className="spec-section">
-        <h3>{t("specArtifacts")}</h3>
+      <details className="spec-section" id="spec-artifacts">
+        <summary>{t("specArtifacts")}</summary>
+        {list((bundle.config_tables?.tables || []).map((table) => table.table_id || "-"), t)}
         {list((preview?.artifacts || []).map((artifact) => artifact.path || "-"), t)}
-      </section>
-      <section className="spec-section">
-        <h3>{t("specTrace")}</h3>
+      </details>
+      <details className="spec-section" id="spec-traces">
+        <summary>{t("specTrace")}</summary>
         <div className="spec-trace-list">
           {(preview?.traces || []).map((trace, index) => (
             <div className="spec-trace-row" key={`${trace.spec_field || "trace"}-${index}`}>
@@ -303,7 +311,7 @@ export function SpecBundlePanel({
           ))}
           {!preview?.traces?.length ? <p>{t("specPreviewLoading")}</p> : null}
         </div>
-      </section>
+      </details>
       <section className="spec-section">
         <h3>{t("specExecutableQa")}</h3>
         <div className="spec-qa-list">
@@ -313,8 +321,8 @@ export function SpecBundlePanel({
               data-state={result.passed ? "passed" : result.severity}
               key={result.assertion_id}
             >
-              <strong>{result.assertion_id}</strong>
-              <span>{result.passed ? t("specQaPassed") : result.message}</span>
+              <strong title={result.assertion_id}>{planningText(result.assertion_id, locale)}</strong>
+              <span>{result.passed ? t("specQaPassed") : planningText(result.message, locale)}</span>
             </div>
           ))}
         </div>
@@ -345,6 +353,7 @@ export function SpecBundlePanel({
  */
 export function SpecRegenPanel({
   request,
+  locale = "en",
   regenerated,
   regenerating,
   error,
@@ -354,6 +363,7 @@ export function SpecRegenPanel({
   t
 }: {
   request: PromptRequest | null;
+  locale?: Locale;
   regenerated?: GameplaySpec | null;
   regenerating?: boolean;
   error?: string | null;
@@ -441,7 +451,7 @@ export function SpecRegenPanel({
       {digest ? (
         <div className="spec-regen-digest" id="spec-regen-digest">
           <span>
-            {t("specRegenDigestTitle")}: <strong>{digest.title}</strong>
+            {t("specRegenDigestTitle")}: <strong>{specDisplayTitle(regenerated, locale)}</strong>
           </span>
           <span>
             {t("specRegenDigestTarget")}: <strong>{digest.targetMinutes}</strong> {t("minutes")}

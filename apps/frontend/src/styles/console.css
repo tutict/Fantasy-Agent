@@ -1562,6 +1562,11 @@ input[type="text"] {
     flex-direction: column;
   }
 
+  /* Row flex bases describe widths; in a column they become empty heights. */
+  .top-bar > * {
+    flex: 0 0 auto;
+  }
+
   .plan-headline {
     justify-content: space-between;
     border-left: 0;
