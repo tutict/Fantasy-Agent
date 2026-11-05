@@ -754,6 +754,84 @@ export interface PlaytestJob {
   error?: string;
 }
 
+export interface NumericChange {
+  field: "numeric.player_move_speed" | "numeric.pressure_clock_seconds"
+    | "numeric.enemy_pressure.enemy_count_multiplier" | "numeric.enemy_pressure.move_speed_multiplier"
+    | "numeric.enemy_pressure.detection_radius_multiplier";
+  before: number;
+  after: number;
+  reason: string;
+}
+
+export interface EvolutionOptions {
+  plan: DirectorBuildPlan;
+  max_iterations: number;
+  max_wall_seconds: number;
+  use_experience: boolean;
+}
+
+export interface EvolutionIteration {
+  index: number;
+  session_id: string;
+  plan: DirectorBuildPlan;
+  report: PlaytestReport | null;
+  changes: NumericChange[];
+  eligible: boolean;
+  improved: boolean;
+  notes: string[];
+}
+
+export interface EvolutionReport {
+  source?: string;
+  schema_version?: string;
+  inputs?: Record<string, string>;
+  outputs?: string[];
+  risks?: string[];
+  next_actions?: string[];
+  experiment_id: string;
+  status: "running" | "improved" | "unchanged" | "manual_rework" | "budget_exhausted" | "cancelled" | "failed" | "interrupted";
+  original_plan: DirectorBuildPlan;
+  iterations: EvolutionIteration[];
+  best_iteration: number | null;
+  adopted_iteration: number | null;
+  notes: string[];
+  elapsed_seconds: number;
+}
+
+export interface EvolutionExperience {
+  id: string;
+  experiment_id: string;
+  axis: string;
+  engine: string;
+  changes: NumericChange[];
+  feedback: string;
+  created_at: string;
+}
+
+export interface EvolutionPreview {
+  status: "confirmation_required";
+  planned_side_effects: string[];
+}
+
+export interface EvolutionStart {
+  status: "running";
+  job_id: string;
+  experiment_id: string;
+}
+
+export interface EvolutionJob {
+  status: string;
+  report: EvolutionReport | null;
+  error?: string;
+}
+
+export interface EvolutionSuggestion {
+  plan: DirectorBuildPlan;
+  changes: NumericChange[];
+  experience_id: string;
+  notes: string[];
+}
+
 export interface McpService {
   id?: string;
   label?: string;

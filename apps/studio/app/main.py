@@ -6,6 +6,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -62,6 +63,9 @@ from fantasy_agent.demo_launch import (
     normalize_demo_resume,
     validate_session_id,
 )
+from fantasy_agent.evolution.contracts import EvolutionRequest
+from fantasy_agent.evolution.controller import adopt_evolution, run_evolution, suggest_evolution
+from fantasy_agent.evolution.library import EvolutionLibraryError, list_experiences, load_report
 from fantasy_agent.generation import design_from_prompt
 from fantasy_agent.godot_playtest import PlaytestResult
 from fantasy_agent.local_tools import manual_correction_targets, open_manual_correction_target
@@ -215,6 +219,8 @@ _ASSET_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
 # instead of blocking, which is the honest failure mode for a measurement job.
 _PLAYTEST_POOL = ThreadPoolExecutor(max_workers=1)
 _PLAYTEST_JOB_REGISTRY = InMemoryJobRegistry(_PLAYTEST_POOL)
+_EVOLUTION_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
+_EVOLUTION_JOBS: dict[str, str] = {}
 
 
 def _frontend_index_or() -> FileResponse:
@@ -1267,6 +1273,112 @@ def playtest_status(job_id: str) -> dict[str, Any]:
 @app.post("/api/playtest/{job_id}/cancel")
 def playtest_cancel(job_id: str) -> dict[str, Any]:
     return _PLAYTEST_JOB_REGISTRY.cancel(job_id)
+
+
+class EvolutionPlanRequest(StrictModel):
+    plan: DirectorBuildPlan
+
+
+class EvolutionAdoptRequest(EvolutionPlanRequest):
+    feedback: str = Field(default="", max_length=4000)
+
+
+EvolutionPlanRequest.model_rebuild(_types_namespace={"DirectorBuildPlan": DirectorBuildPlan})
+EvolutionAdoptRequest.model_rebuild(_types_namespace={"DirectorBuildPlan": DirectorBuildPlan})
+
+
+@app.get("/api/evolution/experiences")
+def evolution_experiences() -> dict[str, Any]:
+    try:
+        experiences = list_experiences(workspace_root=REPO_ROOT)
+    except EvolutionLibraryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"experiences": [item.model_dump(mode="json") for item in experiences]}
+
+
+@app.post("/api/evolution/suggest")
+def evolution_suggest(req: EvolutionPlanRequest) -> dict[str, Any]:
+    try:
+        suggestion = suggest_evolution(req.plan, workspace_root=REPO_ROOT)
+    except EvolutionLibraryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "plan": suggestion.plan.model_dump(mode="json"),
+        "changes": [item.model_dump(mode="json") for item in suggestion.changes],
+        "experience_id": suggestion.experience_id, "notes": suggestion.notes,
+    }
+
+
+@app.post("/api/evolution/run")
+def evolution_run(req: EvolutionRequest) -> dict[str, Any]:
+    experiment_id = f"evolution-{uuid4().hex[:12]}"
+    try:
+        preview = run_evolution(
+            req.model_copy(update={"confirmed": False}),
+            experiment_id=experiment_id, workspace_root=REPO_ROOT,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not req.confirmed:
+        return _EVOLUTION_JOB_REGISTRY.preview(preview)
+    job_id = _EVOLUTION_JOB_REGISTRY.submit(lambda: run_evolution(
+        req, experiment_id=experiment_id, workspace_root=REPO_ROOT,
+    ))
+    _EVOLUTION_JOBS[experiment_id] = job_id
+    return {"status": "running", "experiment_id": experiment_id, "job_id": job_id}
+
+
+@app.get("/api/evolution/{experiment_id}")
+def evolution_status(experiment_id: str) -> dict[str, Any]:
+    try:
+        report = load_report(experiment_id, workspace_root=REPO_ROOT)
+    except EvolutionLibraryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    job_id = _EVOLUTION_JOBS.get(experiment_id)
+    job = _EVOLUTION_JOB_REGISTRY.status(job_id) if job_id else None
+    if job is not None:
+        payload = {"status": job["status"], "experiment_id": experiment_id,
+                   "report": report.model_dump(mode="json") if report else None}
+        if job.get("error"):
+            payload["error"] = job["error"]
+        return payload
+    if report is None:
+        return {"status": "unknown", "experiment_id": experiment_id, "report": None}
+    if report.status == "running":
+        # Cold GET only describes the lost worker, never registers or restarts it.
+        report = report.model_copy(update={
+            "status": "interrupted", "notes": [*report.notes, "Studio 已重启，实验中断；可明确开始新实验。"],
+        })
+    status = report.status if report.status in {"cancelled", "failed", "interrupted"} else "done"
+    return {"status": status, "experiment_id": experiment_id, "report": report.model_dump(mode="json")}
+
+
+@app.post("/api/evolution/{experiment_id}/cancel")
+def evolution_cancel(experiment_id: str) -> dict[str, Any]:
+    job_id = _EVOLUTION_JOBS.get(experiment_id)
+    if job_id is None:
+        return evolution_status(experiment_id)
+    return {**_EVOLUTION_JOB_REGISTRY.cancel(job_id), "experiment_id": experiment_id}
+
+
+@app.post("/api/evolution/{experiment_id}/adopt")
+def evolution_adopt(experiment_id: str, req: EvolutionAdoptRequest) -> dict[str, Any]:
+    try:
+        if load_report(experiment_id, workspace_root=REPO_ROOT) is None:
+            raise HTTPException(status_code=404, detail="实验不存在。")
+        plan, experience = adopt_evolution(
+            experiment_id, req.plan, feedback=req.feedback, workspace_root=REPO_ROOT,
+        )
+    except EvolutionLibraryError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "adopted", "plan": plan.model_dump(mode="json"),
+            "experience": experience.model_dump(mode="json")}
 
 
 def _resume_http_detail(exc: DemoLaunchError) -> str:

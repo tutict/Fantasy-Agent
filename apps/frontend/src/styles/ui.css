@@ -495,7 +495,9 @@ textarea:focus-visible {
   position: fixed;
   z-index: var(--layer-dialog);
   inset: auto var(--space-5) var(--space-5) auto;
-  max-width: 420px;
+  max-width: min(420px, calc(100vw - var(--space-5) * 2));
+  max-height: calc(100dvh - var(--space-5) * 2);
+  overflow-y: auto;
   box-shadow: var(--shadow-l);
 }
 .confirm-dialog p { white-space: pre-line; }

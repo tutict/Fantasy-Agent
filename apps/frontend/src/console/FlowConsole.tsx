@@ -57,6 +57,7 @@ import {
   useSpecRegen
 } from "./hooks";
 import "../styles/console.css";
+import { EvolutionPanel } from "./evolution/EvolutionPanel";
 
 const correctionModeKeys: Record<CorrectionMode, string> = {
   gameplay: "modeGameplay",
@@ -146,6 +147,8 @@ export function FlowConsole({
   const [assetEffects, setAssetEffects] = useState<string[] | null>(null);
   const [playtestRuns, setPlaytestRuns] = useState(3);
   const [playtestEffects, setPlaytestEffects] = useState<string[] | null>(null);
+  const [evolutionRunning, setEvolutionRunning] = useState(false);
+  const [evolutionVisited, setEvolutionVisited] = useState(journeyStep === "qa");
   /**
    * Which card of the plan rail is unfolded. The rail is four panels of input
    * and queues and a reader only ever works in one of them, so the other three
@@ -164,6 +167,7 @@ export function FlowConsole({
 
   useEffect(() => {
     setActiveTab(journeyStep === "qa" ? "specs" : "review");
+    if (journeyStep === "qa") setEvolutionVisited(true);
   }, [journeyStep]);
   const { activityEntries, addActivity } = useActivityLog();
   const { enemyTuning, setEnemyTuningValue } = useEnemyTuning();
@@ -322,7 +326,7 @@ export function FlowConsole({
   const pendingGates = correctionEntries.length + pendingConfirmations.length;
   const statusStep: JourneyStepId = pendingConfirmations.length
     ? "orchestrate"
-    : pollPlaytestJobId
+    : pollPlaytestJobId || evolutionRunning
       ? "qa"
       : journeyStep;
 
@@ -602,8 +606,8 @@ const demoPhase = operationPhase({
         </div>
       </header>
 
-      {(pendingGates > 0 || pollJobId || pollAssetJobId || pollPlaytestJobId || status === "error") ? (
-        <div className="journey-status-bar" role="status" data-status={status === "error" ? "error" : pollJobId || pollAssetJobId || pollPlaytestJobId ? "running" : "awaiting_confirmation"}>
+      {(pendingGates > 0 || pollJobId || pollAssetJobId || pollPlaytestJobId || evolutionRunning || status === "error") ? (
+        <div className="journey-status-bar" role="status" data-status={status === "error" ? "error" : pollJobId || pollAssetJobId || pollPlaytestJobId || evolutionRunning ? "running" : "awaiting_confirmation"}>
           {onNavigateStep ? (
             <button
               className="journey-status-link"
@@ -617,7 +621,7 @@ const demoPhase = operationPhase({
           <span>
             {pendingGates > 0
               ? t("gatesPending")
-              : pollJobId || pollAssetJobId || pollPlaytestJobId
+              : pollJobId || pollAssetJobId || pollPlaytestJobId || evolutionRunning
                 ? t("operationRunning")
                 : t("operationFailed")}
           </span>
@@ -840,6 +844,10 @@ const demoPhase = operationPhase({
               />
             </Panel>
             <Panel tab="specs" activeTab={activeTab}>
+              {evolutionVisited ? <div hidden={journeyStep !== "qa"}>
+                <EvolutionPanel plan={currentPlan} t={t} active={active && journeyStep === "qa"}
+                  onAdoptBundle={updateProductionSpecBundle} onRunningChange={setEvolutionRunning} />
+              </div> : null}
               <SpecBundlePanel
                 bundle={currentPlan?.production_spec_bundle}
                 preview={specPreview}

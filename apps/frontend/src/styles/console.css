@@ -230,6 +230,7 @@ p {
 .shell[data-journey-step="qa"] .workspace {
   grid-template-areas: "center run";
   grid-template-columns: 1fr 1fr;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .side-rail {
@@ -337,7 +338,7 @@ p {
 .center-pane {
   grid-area: center;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -1517,6 +1518,7 @@ input[type="text"] {
   .shell[data-journey-step="qa"] .workspace {
     grid-template-areas: "center" "run";
     grid-template-columns: 1fr;
+    grid-template-rows: none;
   }
 }
 
@@ -1806,4 +1808,18 @@ input[type="text"] {
   gap: var(--space-1);
   color: var(--text);
   font-size: var(--text-s);
+}
+.evolution-fold { border-top: 1px solid var(--line); }
+.evolution-fold code { overflow-wrap: anywhere; }
+.evolution-fold > summary { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-4) 0; cursor: pointer; }
+.evolution-fold > summary h2 { margin: 0; font-size: var(--text-l); }
+.evolution-chevron { width: 1em; height: 1em; flex: none; margin-left: auto; }
+.evolution-fold[open] .evolution-chevron { transform: rotate(180deg); }
+.evolution-controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); margin-bottom: var(--space-4); }
+.evolution-controls .playtest-field { display: grid; gap: var(--space-2); margin: 0; }
+.evolution-controls .playtest-field input { width: 100%; min-width: 0; }
+.evolution-summary { color: var(--text-soft); font-size: var(--text-s); font-variant-numeric: tabular-nums; }
+.evolution-effects { display: grid; gap: var(--space-3); margin: 0 0 var(--space-4); padding-left: var(--space-5); overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .evolution-controls { grid-template-columns: 1fr; }
 }

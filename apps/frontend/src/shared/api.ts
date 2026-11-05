@@ -37,6 +37,10 @@ import type {
   WorkbenchToolResult
 } from "./types";
 import type { DirectorBuildPlan, EnemyPressureTuning } from "./types";
+import type {
+  EvolutionExperience, EvolutionJob, EvolutionOptions, EvolutionPreview, EvolutionStart,
+  EvolutionSuggestion
+} from "./types";
 
 /**
  * FastAPI answers failures with ``{"detail": ...}``. ``detail`` is a plain
@@ -93,6 +97,43 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(errorMessageFromPayload(payload, response.status));
   }
   return (await response.json()) as T;
+}
+
+export function previewEvolution(request: EvolutionOptions): Promise<EvolutionPreview> {
+  return jsonRequest<EvolutionPreview>("/api/evolution/run", {
+    method: "POST", body: JSON.stringify({ ...request, confirmed: false })
+  });
+}
+
+/** The caller supplies the grant created by the experiment confirmation button. */
+export function startEvolution(request: EvolutionOptions, confirmedByUser: boolean): Promise<EvolutionStart> {
+  return jsonRequest<EvolutionStart>("/api/evolution/run", {
+    method: "POST", body: JSON.stringify({ ...request, confirmed: confirmedByUser })
+  });
+}
+
+export function getEvolution(experimentId: string): Promise<EvolutionJob> {
+  return jsonRequest<EvolutionJob>(`/api/evolution/${encodeURIComponent(experimentId)}`);
+}
+
+export function cancelEvolution(experimentId: string): Promise<{ status: string }> {
+  return jsonRequest(`/api/evolution/${encodeURIComponent(experimentId)}/cancel`, { method: "POST" });
+}
+
+export function adoptEvolution(experimentId: string, plan: DirectorBuildPlan, feedback: string): Promise<{
+  status: string; plan: DirectorBuildPlan; experience: EvolutionExperience;
+}> {
+  return jsonRequest(`/api/evolution/${encodeURIComponent(experimentId)}/adopt`, {
+    method: "POST", body: JSON.stringify({ plan, feedback })
+  });
+}
+
+export function getEvolutionExperiences(): Promise<{ experiences: EvolutionExperience[] }> {
+  return jsonRequest("/api/evolution/experiences");
+}
+
+export function suggestEvolution(plan: DirectorBuildPlan): Promise<EvolutionSuggestion> {
+  return jsonRequest("/api/evolution/suggest", { method: "POST", body: JSON.stringify({ plan }) });
 }
 
 export function getManualCorrectionTargets(engine: string): Promise<ManualTargetsPayload> {

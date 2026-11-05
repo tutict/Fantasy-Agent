@@ -823,7 +823,12 @@ button:disabled {
 @media (max-width: 900px) {
   .studio-shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    height: auto;
+    min-height: 100vh;
   }
+
+  .studio-main { min-height: 100vh; }
 
   .studio-sidebar {
     position: static;

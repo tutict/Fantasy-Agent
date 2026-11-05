@@ -65,6 +65,62 @@ VITEST = ROOT / "node_modules" / "vitest" / "vitest.mjs"
 #: the `it(...)` name, which has to appear in the output for the case to count.
 CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
     (
+        "FE-EVO-7 a failed read declares the running job stopped",
+        "apps/frontend/src/console/evolution/EvolutionPanel.tsx",
+        b"          if (polling) timer = setTimeout(() => void poll(), 1000);\n",
+        b"          setPolling(false);\n",
+        "src/console/evolution/EvolutionPanel.test.tsx",
+        "keeps cancellation available when a running job cannot be read",
+    ),
+    (
+        "FE-EVO-6 measured failures disappear from the report",
+        "apps/frontend/src/console/evolution/EvolutionPanel.tsx",
+        b"iteration.report?.findings?.map((finding, index) => (",
+        b"(iteration.report?.findings ?? []).filter(() => false).map((finding, index) => (",
+        "src/console/evolution/EvolutionPanel.test.tsx",
+        "shows the measured failure and project so the operator can rework it",
+    ),
+    (
+        "FE-EVO-1 preview manufactures an execution grant",
+        "apps/frontend/src/shared/api.ts",
+        b'    method: "POST", body: JSON.stringify({ ...request, confirmed: false })\n',
+        b'    method: "POST", body: JSON.stringify({ ...request, confirmed: true })\n',
+        "src/console/evolution/EvolutionPanel.test.tsx",
+        "starts no work until the user confirms the reviewed experiment",
+    ),
+    (
+        "FE-EVO-2 cancelling the prompt executes the experiment",
+        "apps/frontend/src/console/evolution/EvolutionPanel.tsx",
+        b"onConfirm={() => void confirmExperiment()} onCancel={() => setPreview(null)}",
+        b"onConfirm={() => void confirmExperiment()} onCancel={() => void confirmExperiment()}",
+        "src/console/evolution/EvolutionPanel.test.tsx",
+        "cancels the confirmation without executing",
+    ),
+    (
+        "FE-EVO-3 report restoration runs an experiment",
+        "apps/frontend/src/console/evolution/EvolutionPanel.tsx",
+        b"        const payload = await getEvolution(experimentId!);\n",
+        b"        if (plan) await startEvolution({ plan, max_iterations: 3, max_wall_seconds: 600, use_experience: true }, true);\n        const payload = await getEvolution(experimentId!);\n",
+        "src/console/evolution/EvolutionPanel.test.tsx",
+        "restores a report by reading without replaying the experiment",
+    ),
+    (
+        "FE-EVO-4 retrieved experience adopts itself",
+        "apps/frontend/src/console/evolution/EvolutionPanel.tsx",
+        b"      setSuggestion({ value, key });\n",
+        b"      setSuggestion({ value, key });\n      if (value.plan.production_spec_bundle) onAdoptBundle(value.plan.production_spec_bundle);\n",
+        "src/console/evolution/EvolutionPanel.test.tsx",
+        "applies a retrieved experience only on the user action",
+    ),
+    (
+        "FE-EVO-5 leaving quality unmounts the experiment",
+        "apps/frontend/src/console/FlowConsole.tsx",
+        b'              {evolutionVisited ? <div hidden={journeyStep !== "qa"}>\n',
+        b'              {journeyStep === "qa" ? <div hidden={journeyStep !== "qa"}>\n',
+        "src/console/evolution/EvolutionPanel.integration.test.tsx",
+        "keeps the visited evolution work mounted when leaving quality",
+    ),
+    (
         # The console writing the document element for itself. Harmless across
         # three documents with three <html> elements; a race in one, decided by
         # mount order.
