@@ -50,10 +50,15 @@ def test_deterministic_enemy_controller_has_m6b_behaviors():
     # fallback and nothing it can never instantiate.
     for behavior in ["patrol", "chase"]:
         assert behavior in enemy
-    # (``ranged_interval`` still ships as a tunable; the behavior branch does not.)
+    # Nothing the roster cannot use ships, including the knobs. A knob with no
+    # reader is a value the correction path can rewrite for no effect -- the same
+    # defect as a declared-and-unread mechanic, one layer down. These used to all
+    # ship regardless of the roster.
     for behavior in ("stationary", "ranged"):
         assert f'"{behavior}":' not in enemy
         assert f"func _{behavior}(" not in enemy
+    assert "detection_radius" in enemy, "the chaser it declares needs its detection radius"
+    assert "ranged_interval" not in enemy, "the roster declares no ranged enemy to use it"
     assert "fail_from_enemy" in enemy
     assert 'get_first_node_in_group("player")' in enemy
     assert "func take_damage" in enemy

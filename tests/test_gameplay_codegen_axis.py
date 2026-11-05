@@ -25,7 +25,7 @@ from fantasy_agent.gameplay_codegen import (
     ENEMY_SCRIPT,
     GAME_MANAGER_SCRIPT,
     PLAYER_SCRIPT,
-    _axis_from_verbs,
+    axis_for_spec,
     declared_input_actions,
     deterministic_gameplay_scripts,
     referenced_input_actions,
@@ -64,7 +64,7 @@ def test_axis_mechanics_cover_every_template_axis():
 
 @pytest.mark.parametrize("axis", ALL_AXES)
 def test_axis_is_detected_from_the_designs_own_verbs(axis):
-    assert _axis_from_verbs(_spec_for(axis)) == axis
+    assert axis_for_spec(_spec_for(axis)) == axis
 
 
 @pytest.mark.parametrize("axis", ALL_AXES)
@@ -137,14 +137,19 @@ def test_combat_axis_can_damage_enemies():
 
 
 def test_enemy_contact_text_is_axis_specific():
-    """Generic contact text makes every failure read the same in a playtest."""
+    """Generic contact text makes every playtest report read the same.
+
+    The text is what reaches the player when contact spends health, and what the
+    run's reason says if that spending is what ends it -- so it is still the
+    axis's own sentence, not a shared one.
+    """
 
     messages = {
         axis: deterministic_gameplay_scripts(_spec_for(axis))[ENEMY_SCRIPT]
         for axis in ALL_AXES
     }
     reasons = {
-        axis: source.split('_notify_failure("')[1].split('")')[0]
+        axis: source.split('_hurt_player_if_close("')[1].split('")')[0]
         for axis, source in messages.items()
     }
     assert len(set(reasons.values())) == len(ALL_AXES), reasons
@@ -312,7 +317,7 @@ def test_unknown_verbs_fall_back_to_the_generic_controller():
     spec.core_verbs = ["teleport", "sing", "trade"]
     scripts = deterministic_gameplay_scripts(spec)
     player = scripts[PLAYER_SCRIPT]
-    assert _axis_from_verbs(spec) == "generic"
+    assert axis_for_spec(spec) == "generic"
     assert player.startswith("extends CharacterBody3D")
     assert "move_and_slide()" in player
     for verb in ("teleport", "sing", "trade"):

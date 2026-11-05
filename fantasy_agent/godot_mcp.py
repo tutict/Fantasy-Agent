@@ -24,6 +24,7 @@ from fantasy_agent.contracts import (
     ProductionSpecBundle,
 )
 from fantasy_agent.corrections import ANCHOR_RE, file_sha256
+from fantasy_agent.godot_geometry import ENEMY_LANE, check_lane_layout
 from fantasy_agent.godot_playtest import run_playtest, summarize_playtest
 from fantasy_agent.mcp_bridge import DEFAULT_WORKSPACE_ROOT, BaseMCPBridge
 from fantasy_agent.path_safety import WorkspacePathError, resolve_workspace_path
@@ -408,6 +409,15 @@ class GodotMCPBridge(BaseMCPBridge):
         for asset_dir in artifact.asset_dirs:
             self._resolve_workspace_path(asset_dir).mkdir(parents=True, exist_ok=True)
 
+        # Which mechanic family this project was generated for. Derived from the
+        # same spec the scripts came from (``axis_for_spec``), so the axis the
+        # playtest reads back cannot disagree with the controller it plays.
+        axis = ""
+        if gameplay_spec is not None:
+            from fantasy_agent.gameplay_codegen import axis_for_spec
+
+            axis = axis_for_spec(gameplay_spec)
+
         project_file = self._resolve_workspace_path(artifact.project_file)
         main_scene_path = self._resolve_workspace_path(artifact.main_scene_path)
         manifest_path = self._resolve_workspace_path(artifact.manifest_path)
@@ -421,7 +431,7 @@ class GodotMCPBridge(BaseMCPBridge):
             player_script = (Path(artifact.project_dir) / "scripts" / "player_controller.gd").as_posix()
             artifact.script_paths.append(player_script)
 
-        self._write_text(project_file, _project_godot(plan))
+        self._write_text(project_file, _project_godot(plan, axis=axis))
         self._write_text(main_scene_path, _main_scene())
         has_gameplay = bool(gameplay_scripts)
         self._write_text(
@@ -593,26 +603,37 @@ def _error(message: str) -> dict[str, Any]:
     return {"isError": True, "content": [{"type": "text", "text": message}]}
 
 
-def _project_godot(plan: GodotProjectPlan) -> str:
-    return "\n".join(
-        [
-            "; Engine configuration file.",
-            "; Fantasy Agent generated Godot prototype handoff.",
-            "config_version=5",
-            "",
-            "[application]",
-            f'config/name="{plan.project_name}"',
-            'run/main_scene="res://scenes/main.tscn"',
-            f'config/features=PackedStringArray("{_engine_feature(plan.engine_version)}")',
-            "",
-            "[rendering]",
-            f'renderer/rendering_method="{_renderer_method(plan.renderer)}"',
-            "",
-            "[input]",
-            *[_input_action_line(action) for action in plan.input_actions],
-            "",
-        ]
-    )
+def _project_godot(plan: GodotProjectPlan, axis: str = "") -> str:
+    """The project file, with the mechanic axis recorded when there is one.
+
+    ``axis`` is not decoration: the playtest reads it back to decide which keys
+    the bot may press, so a project that does not record it can only ever be
+    walked. Written here rather than passed to the playtest by the caller,
+    because the axis that chose the generated controller and the axis the bot
+    plays have to be the same value -- and two callers supplying it separately
+    is how they drift.
+    """
+
+    lines = [
+        "; Engine configuration file.",
+        "; Fantasy Agent generated Godot prototype handoff.",
+        "config_version=5",
+        "",
+        "[application]",
+        f'config/name="{plan.project_name}"',
+        'run/main_scene="res://scenes/main.tscn"',
+        f'config/features=PackedStringArray("{_engine_feature(plan.engine_version)}")',
+        "",
+        "[rendering]",
+        f'renderer/rendering_method="{_renderer_method(plan.renderer)}"',
+        "",
+        "[input]",
+        *[_input_action_line(action) for action in plan.input_actions],
+        "",
+    ]
+    if axis:
+        lines += ["[fantasy_agent]", f'axis="{axis}"', ""]
+    return "\n".join(lines)
 
 
 def _main_scene() -> str:
@@ -951,14 +972,19 @@ func _enemy_spawn_position(index: int) -> Vector3:
     # from the first tile then landed the surplus on the exit tile, two of them
     # at the same coordinates.
     #
-    # Lateral lanes only: contact ends the run, so a lane down the middle of a
-    # 3m corridor would end it for anyone walking straight through. The three
-    # counters are mixed-radix over (tile, lane, row), so every index gets its
-    # own point however many enemies a design declares.
-    var lanes := [1.15, -1.15]
+    # Lateral lanes only: an enemy parked on the centreline reaches anyone
+    # walking straight through. The lane is ENEMY_LANE, imported from
+    # fantasy_agent.godot_geometry, and it is derived from the lethal radius
+    # rather than chosen here -- this line used to be a literal, and the literal
+    # was exactly the radius the enemy controller measured, so the two lanes
+    # together covered the whole 3m corridor and no run got past the first tile.
+    #
+    # The three counters are mixed-radix over (tile, lane, row), so every index
+    # gets its own point however many enemies a design declares.
+    var lanes := [ENEMY_LANE, -ENEMY_LANE]
     var floors := _route_floors()
     if floors.size() < 3:
-        return Vector3(1.15 if index % 2 == 0 else -1.15, 0.85, -5.0 - float(index) * 2.2)
+        return Vector3(ENEMY_LANE if index % 2 == 0 else -ENEMY_LANE, 0.85, -5.0 - float(index) * 2.2)
     var interior := floors.slice(1, floors.size() - 1)
     var per_row := interior.size() * lanes.size()
     var lane: float = lanes[floori(float(index) / float(interior.size())) % lanes.size()]
@@ -1067,6 +1093,15 @@ def _main_gd(
         "    _spawn_gameplay()\n" if with_gameplay else ""
     )
     gameplay_funcs = _GAMEPLAY_SPAWN_GD if with_gameplay else ""
+    # The lane the enemies stand in is not a tuning value: it is the other half
+    # of the lethal-radius contract the enemy controller measures against. Both
+    # halves come from one module now, and a layout that leaves no walkable
+    # width fails here instead of surviving into a playtest.
+    lane_const = ""
+    if with_gameplay:
+        lane_list = [ENEMY_LANE, -ENEMY_LANE]
+        check_lane_layout(lane_list)
+        lane_const = f"const ENEMY_LANE := {ENEMY_LANE:g}\n"
     return f'''extends Node3D
 
 const HANDOFF := {payload}
@@ -1075,7 +1110,7 @@ const MAT_HAZARD := Color(1.0, 0.18, 0.12, 1.0)
 const MAT_OBJECTIVE := Color(1.0, 0.84, 0.2, 1.0)
 const MAT_EXIT := Color(0.2, 0.55, 1.0, 1.0)
 const MAT_NEUTRAL := Color(0.38, 0.42, 0.4, 1.0)
-
+{lane_const}
 
 func _ready() -> void:
     _build_lighting()

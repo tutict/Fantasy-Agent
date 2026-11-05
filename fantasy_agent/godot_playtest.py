@@ -47,6 +47,7 @@ from fantasy_agent.path_safety import (
     resolve_workspace_path,
 )
 from fantasy_agent.pipeline_state import resume_stage_for
+from fantasy_agent.playtest_bot import policy_for, render_drive_gd
 from fantasy_agent.process_runner import run_streaming
 
 PROBE_FILENAME = "playtest_probe.gd"
@@ -72,6 +73,11 @@ _PROBE_TEMPLATE = '''extends SceneTree
 # Runs the prototype headlessly and reports what actually happened inside the
 # engine. Everything here is a LOWER BOUND on playability: a scripted bot can
 # prove the loop is reachable, it cannot prove the slice is fun.
+#
+# The keys the bot presses come from the project's own mechanic axis, read from
+# the [fantasy_agent] section of project.godot -- so a combat slice is played
+# with attack and evade instead of walk-and-jump. The table behind that lives in
+# fantasy_agent/playtest_bot.py; the block spliced in below is rendered from it.
 
 const RESULT_PREFIX := "PLAYTEST-RESULT "
 const MAX_RUNS := __RUNS__
@@ -80,8 +86,11 @@ const INPUT_PLAN := "__INPUT_PLAN__"
 const MIN_MOVE := __MIN_MOVE__
 const OUT_FILE := "__OUT_FILE__"
 
+__DRIVE__
+
 var _root: Window = null
 var _frames := 0
+var _run_frames := 0
 var _start_msec := 0
 var _runs: Array = []
 var _attempts := 0
@@ -97,6 +106,13 @@ var _scene_path := ""
 var _actions: Array = []
 var _error := ""
 var _degraded_reason := ""
+#: Observations the axis verbs are supposed to move. Reported per run, not
+#: judged here: the engine test is where a number becomes a verdict, and this
+#: probe does not know what the slice's numbers ought to be.
+var _stamina_min := 1.0
+var _has_stamina := false
+var _enemy_hp_peak := 0
+var _enemy_hp_now := 0
 
 
 func _initialize() -> void:
@@ -118,12 +134,11 @@ func _initialize() -> void:
 		_error = "the main scene could not be loaded: " + _scene_path
 		_finish()
 		return
-	if INPUT_PLAN != "idle" and _actions.has("move_forward"):
-		Input.action_press("move_forward")
 
 
 func _process(_delta: float) -> bool:
 	_frames += 1
+	_run_frames += 1
 	var tree := _root.get_tree()
 	var player := tree.get_first_node_in_group("player")
 	if player != null and player is Node3D:
@@ -134,6 +149,8 @@ func _process(_delta: float) -> bool:
 		else:
 			_moved += _player_last.distance_to(player.global_position)
 			_player_last = player.global_position
+		_observe_stamina(player)
+	_observe_enemies(tree)
 	var manager := tree.get_first_node_in_group("game_manager")
 	if manager != null:
 		_saw_manager = true
@@ -142,15 +159,31 @@ func _process(_delta: float) -> bool:
 			_recorded_id = 0
 		if bool(manager.get("_ended")) and _recorded_id != manager.get_instance_id():
 			_record(manager)
-	if INPUT_PLAN == "forward_and_jump" and _actions.has("jump"):
-		if _frames % 90 == 0:
-			Input.action_press("jump")
-		elif _frames % 90 == 6:
-			Input.action_release("jump")
+	_policy_drive(_run_frames)
 	if _attempts >= MAX_RUNS or _frames >= MAX_FRAMES:
 		_finish()
 		return true
 	return false
+
+
+func _observe_stamina(player: Node3D) -> void:
+	var stamina = player.get("_stamina")
+	if stamina == null:
+		return
+	_has_stamina = true
+	_stamina_min = minf(_stamina_min, float(stamina))
+
+
+func _observe_enemies(tree: SceneTree) -> void:
+	# Peak minus current is damage dealt: enemies never heal, and one that is
+	# freed leaves the group and so subtracts its whole bar in the same step.
+	var total := 0
+	for node in tree.get_nodes_in_group("enemy"):
+		var hp = node.get("hp")
+		if hp != null:
+			total += int(hp)
+	_enemy_hp_now = total
+	_enemy_hp_peak = maxi(_enemy_hp_peak, total)
 
 
 func _record(manager: Node) -> void:
@@ -174,6 +207,12 @@ func _record(manager: Node) -> void:
 		"frames": _frames,
 		"wall_msec": Time.get_ticks_msec() - _run_start_msec,
 		"playable": _saw_player and _moved > MIN_MOVE,
+		"axis": AXIS,
+		"taps": _taps.duplicate(),
+		"held": _held.duplicate(),
+		"missing_actions": _policy_missing.duplicate(),
+		"enemy_hp_lost": maxi(0, _enemy_hp_peak - _enemy_hp_now),
+		"stamina_spent": (1.0 - _stamina_min) if _has_stamina else -1.0,
 	})
 	# The next run reloads the scene, so the player teleports back to spawn.
 	# Dropping the tracked point makes that jump nobody's distance, and
@@ -182,6 +221,13 @@ func _record(manager: Node) -> void:
 	_moved = 0.0
 	_has_player = false
 	_run_start_msec = Time.get_ticks_msec()
+	_run_frames = 0
+	_taps.clear()
+	_held.clear()
+	_stamina_min = 1.0
+	_has_stamina = false
+	_enemy_hp_peak = 0
+	_enemy_hp_now = 0
 
 
 func _finish() -> void:
@@ -200,10 +246,18 @@ func _finish() -> void:
 			"frames": _frames,
 			"wall_msec": Time.get_ticks_msec() - _run_start_msec,
 			"playable": false,
+			"axis": AXIS,
+			"taps": _taps.duplicate(),
+			"held": _held.duplicate(),
+			"missing_actions": _policy_missing.duplicate(),
+			"enemy_hp_lost": maxi(0, _enemy_hp_peak - _enemy_hp_now),
+			"stamina_spent": (1.0 - _stamina_min) if _has_stamina else -1.0,
 		})
 	var payload := {
 		"scene_path": _scene_path,
 		"actions": _actions,
+		"axis": AXIS,
+		"missing_actions": _policy_missing.duplicate(),
 		"saw_player": _saw_player,
 		"saw_manager": _saw_manager,
 		"degraded_reason": _degraded_reason,
@@ -228,16 +282,61 @@ def render_probe_script(
     max_frames: int,
     input_plan: str,
     out_file: str,
+    axis: str = "",
 ) -> str:
-    """Render the GDScript probe with its budget baked in."""
+    """Render the GDScript probe with its budget and its bot baked in.
 
+    ``axis`` selects the key set the bot presses; it comes from the project's
+    own ``project.godot`` (see :func:`project_axis`), so the playtest plays the
+    mechanic the code was generated for instead of walking through it. An empty
+    or unknown axis falls back to walking only, and the report says so.
+    """
+
+    drive = render_drive_gd(policy_for(axis), input_plan=input_plan)
     return (
         _PROBE_TEMPLATE.replace("__RUNS__", str(runs))
         .replace("__MAX_FRAMES__", str(max_frames))
         .replace("__INPUT_PLAN__", input_plan)
         .replace("__OUT_FILE__", out_file)
         .replace("__MIN_MOVE__", str(MIN_PLAYER_MOVE_METERS))
+        .replace("__DRIVE__", drive.rstrip("\n"))
     )
+
+
+#: Section ``godot_mcp._project_godot`` writes for the playtest's benefit.
+AXIS_SECTION = "fantasy_agent"
+
+
+def project_axis(project_dir: Path | str) -> str:
+    """The mechanic axis a generated project declares, or ``""``.
+
+    Read from the project rather than passed by the caller: the axis decides
+    both which GDScript was emitted and which keys the bot may press, and two
+    callers supplying it separately is how they end up disagreeing. A project
+    that predates the section -- or a greybox with no gameplay at all -- answers
+    ``""``, and the report records that instead of pretending the verbs were
+    exercised.
+
+    A hand-rolled scanner, not ``configparser``: Godot's file has ``;`` comments,
+    repeated keys across sections, and a project name with ``%`` in it, all of
+    which the stdlib parser either rejects or interpolates.
+    """
+
+    text = _read_log(Path(project_dir) / "project.godot")
+    in_section = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith(";"):
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_section = stripped[1:-1] == AXIS_SECTION
+            continue
+        if not in_section or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        if key.strip() == "axis":
+            return value.strip().strip('"').strip("'")
+    return ""
 
 
 def _session_dir_name(session_id: str) -> str:
@@ -343,6 +442,11 @@ def _sample_from_payload(entry: dict, *, degraded_reason: str, script_errors: li
     if outcome == "fail" and reason:
         failure_reasons[reason] = 1
     moved = float(entry.get("player_moved_distance", 0.0) or 0.0)
+    taps = {
+        str(action): int(count)
+        for action, count in (entry.get("taps") or {}).items()
+        if isinstance(count, int | float)
+    }
     return PlaytestSample(
         run_index=int(entry.get("run_index", 0) or 0),
         outcome=outcome,
@@ -360,6 +464,12 @@ def _sample_from_payload(entry: dict, *, degraded_reason: str, script_errors: li
         degraded_reason=degraded_reason,
         failure_reasons=failure_reasons,
         script_errors=list(script_errors),
+        axis=str(entry.get("axis", "") or ""),
+        taps=taps,
+        held=[str(action) for action in (entry.get("held") or [])],
+        missing_actions=[str(action) for action in (entry.get("missing_actions") or [])],
+        enemy_hp_lost=max(0, int(entry.get("enemy_hp_lost", 0) or 0)),
+        stamina_spent=float(entry.get("stamina_spent", -1.0) or -1.0),
     )
 
 
@@ -483,6 +593,40 @@ def build_findings(
                 "godot_plan",
             )
         )
+    # The bot's key set comes from the axis (``playtest_bot.BOT_POLICIES``) and
+    # the axis's actions come from the project's input map. When they disagree
+    # the probe cannot press the verb at all -- and a bot that quietly skips a
+    # key it cannot press reports the same green result as one that pressed it,
+    # which is the blindness this whole layer exists to remove. Blocking: an
+    # axis whose own verb has no action is a build that cannot play itself.
+    unpressed = sorted({action for sample in samples for action in sample.missing_actions})
+    if unpressed:
+        axis_names = sorted({sample.axis for sample in samples if sample.axis})
+        findings.append(
+            _finding(
+                "bot_cannot_exercise_axis",
+                "blocking",
+                f"The {', '.join(axis_names) or 'declared'} bot policy presses "
+                f"{len(unpressed)} action(s) the project never declared "
+                f"({', '.join(unpressed)}), so the axis's own verbs were not exercised",
+                "godot_plan",
+            )
+        )
+    # Same gap, one layer up: a project that does not say which axis it was
+    # generated for cannot be played by an axis bot, and the run then measures
+    # nothing but the route. A warning, not a block: greyboxes and projects
+    # generated before the axis was recorded are legitimately in this state, and
+    # the report naming it is the honest part.
+    if samples and all(not sample.axis for sample in samples):
+        findings.append(
+            _finding(
+                "axis_undeclared",
+                "warning",
+                "The project does not declare a mechanic axis, so the bot only walked: "
+                "no verb of the slice was pressed",
+                "godot_plan",
+            )
+        )
     unreadable = [s for s in samples if s.outcome not in READABLE_OUTCOMES]
     if unreadable:
         # The run ended and the probe cannot tell a win from a failure. A
@@ -557,7 +701,8 @@ def build_findings(
     return findings
 
 
-def _goal_notes(request: PlaytestRequest) -> list[str]:
+def _goal_notes(request: PlaytestRequest, axis: str = "") -> list[str]:
+    policy = policy_for(axis)
     notes = [
         (
             "A scripted bot proves the loop is reachable, not that the slice is fun; "
@@ -567,6 +712,7 @@ def _goal_notes(request: PlaytestRequest) -> list[str]:
             "Durations are engine-internal seconds read from game_manager, never frame counts: "
             "a headless run advances frames faster than real time."
         ),
+        f"Bot policy: {policy.axis} -- {policy.intent}.",
     ]
     if request.goal_session_minutes:
         notes.append(
@@ -606,6 +752,9 @@ def run_playtest(
     if not project_dir.is_absolute():
         project_dir = Path(workspace_root) / project_dir
     launch = runner or run_streaming
+    # Read before the engine launches, because it decides what the bot will do:
+    # the axis names the keys, and the report has to name the axis it played.
+    axis = project_axis(project_dir)
 
     report = PlaytestReport(
         project_dir=str(project_dir),
@@ -613,7 +762,7 @@ def run_playtest(
         runs_requested=request.runs,
         goal_session_minutes=request.goal_session_minutes,
         generated_at=datetime.now(UTC).isoformat(timespec="seconds"),
-        goal_notes=_goal_notes(request),
+        goal_notes=_goal_notes(request, axis),
         artifact_paths=[p.as_posix() for p in (paths["probe"], paths["report"])],
     )
 
@@ -649,6 +798,7 @@ def run_playtest(
             max_frames=request.max_frames,
             input_plan=request.input_plan,
             out_file=paths["payload"].as_posix(),
+            axis=axis,
         ),
         encoding="utf-8",
     )

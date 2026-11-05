@@ -223,6 +223,36 @@ def test_create_with_gameplay_scripts_writes_enemy_controller(tmp_path: Path):
     assert 'player.add_to_group("player")' in main
 
 
+def test_the_project_records_the_axis_its_scripts_were_generated_for(tmp_path: Path):
+    """The playtest reads this back to decide which keys its bot may press.
+
+    Written from the same spec the scripts come from, so the axis the bot plays
+    and the axis the controller implements cannot drift apart -- they are one
+    derivation, not two arguments. A greybox has no mechanics, so it has no
+    section: the playtest then reports ``axis_undeclared`` instead of guessing.
+    """
+
+    from fantasy_agent.contracts import PromptRequest
+    from fantasy_agent.generation import design_from_prompt_deterministic
+
+    spec = design_from_prompt_deterministic(
+        PromptRequest(prompt="tactical squad combat with a cover system and a boss")
+    )
+    GodotMCPBridge(tmp_path).create_godot_project_structure(
+        GodotMCPCreateProjectRequest(plan=_plan(), write_files=True, gameplay_spec=spec)
+    )
+    played = (tmp_path / "generated/godot/mcpprototype/project.godot").read_text(encoding="utf-8")
+    assert "[fantasy_agent]" in played
+    assert 'axis="combat"' in played
+
+    greybox = tmp_path / "greybox"
+    GodotMCPBridge(greybox).create_godot_project_structure(
+        GodotMCPCreateProjectRequest(plan=_plan(), write_files=True)
+    )
+    plain = (greybox / "generated/godot/mcpprototype/project.godot").read_text(encoding="utf-8")
+    assert "[fantasy_agent]" not in plain, "a project with no gameplay claimed an axis"
+
+
 def _main_gd_text(workspace: Path, spec=None, scripts=None) -> str:
     GodotMCPBridge(workspace).create_godot_project_structure(
         GodotMCPCreateProjectRequest(

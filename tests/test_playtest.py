@@ -53,6 +53,10 @@ def _sample(**overrides: object) -> PlaytestSample:
         "session_seconds": 8.0,
         "player_moved_distance": 24.0,
         "playable": True,
+        # A run that measured something plausible: the axis comes from the
+        # project, and every generated project records one. Samples that leave
+        # it empty are the old-project case and get their own test.
+        "axis": "parkour",
     }
     payload.update(overrides)
     return PlaytestSample.model_validate(payload)
@@ -238,6 +242,81 @@ def test_probe_script_bakes_its_budget_in():
     assert "const MAX_FRAMES := 1200" in script
     assert 'const INPUT_PLAN := "forward_and_jump"' in script
     assert "__RUNS__" not in script
+    # No axis: the bot walks and says so, rather than inventing a policy.
+    assert 'const AXIS := "generic"' in script
+    assert "const POLICY_TAP := []" in script
+
+
+def test_probe_script_plays_the_axis_it_was_given():
+    script = render_probe_script(
+        runs=2,
+        max_frames=600,
+        input_plan="forward_and_jump",
+        out_file="C:/tmp/out.json",
+        axis="combat",
+    )
+
+    assert 'const AXIS := "combat"' in script
+    assert '["attack", 24, 4, 0]' in script
+    assert '["evade", 60, 3, 10]' in script
+    assert "__DRIVE__" not in script
+
+
+def test_the_probe_reads_the_axis_off_the_project(tmp_path):
+    from fantasy_agent.godot_playtest import project_axis
+
+    project = tmp_path / "p"
+    project.mkdir()
+
+    assert project_axis(project) == "", "a missing project.godot has no axis"
+
+    (project / "project.godot").write_text(
+        "; comment\nconfig_version=5\n\n[application]\nconfig/name=\"x\"\n\n"
+        "[input]\nattack={\"deadzone\":0.5,\"events\":[]}\n\n"
+        '[fantasy_agent]\naxis="combat"\n',
+        encoding="utf-8",
+    )
+    assert project_axis(project) == "combat"
+
+    # A key that merely ends in "axis" is not the axis, and the section has to
+    # end somewhere: a scanner that just greps for `axis=` would read this one.
+    (project / "project.godot").write_text(
+        'config_version=5\n\n[rendering]\nmax_axis=3\n\n[input]\naxis_legacy="x"\n',
+        encoding="utf-8",
+    )
+    assert project_axis(project) == ""
+
+
+def test_a_policy_the_project_cannot_support_is_blocking():
+    """A verb the bot cannot press must not read as a verb that passed.
+
+    The probe reports the actions its policy presses but the InputMap never
+    declares. Without that, the bot skips the key, the run walks to the exit,
+    and the report says the axis was exercised -- which is the same silence the
+    walk-only bot produced for every axis.
+    """
+
+    sample = _sample(axis="combat", missing_actions=["evade"], taps={"attack": 4})
+    report = _report([sample])
+
+    finding = next(f for f in report.findings if f.code == "bot_cannot_exercise_axis")
+    assert finding.severity == "blocking"
+    assert "evade" in finding.message
+    assert report.status == "failed"
+
+
+def test_a_project_that_does_not_say_which_axis_is_a_warning():
+    sample = _sample(axis="", taps={})
+    report = _report([sample])
+
+    codes = [f.code for f in report.findings]
+    assert "axis_undeclared" in codes
+    assert "bot_cannot_exercise_axis" not in codes
+    severity = next(f.severity for f in report.findings if f.code == "axis_undeclared")
+    assert severity == "warning", (
+        "greyboxes and projects generated before the axis was recorded are "
+        "legitimately undeclared; naming it is the honest part, failing it is not"
+    )
 
 
 def test_missing_engine_blocks_before_anything_launches(tmp_path):

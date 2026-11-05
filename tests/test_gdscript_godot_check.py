@@ -17,6 +17,7 @@ already knows the usual install locations.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -35,6 +36,7 @@ from fantasy_agent.gameplay_codegen import (
     deterministic_gameplay_scripts,
 )
 from fantasy_agent.generation import design_from_prompt_deterministic
+from fantasy_agent.playtest_bot import COMMIT_VERBS, policy_for, render_drive_gd
 from fantasy_agent.tool_registry import combined_registry
 
 ALL_AXES = sorted(AXIS_TEMPLATES)
@@ -82,7 +84,14 @@ func _initialize() -> void:
 #: own parent), ``move_forward`` moved the player 0.0m (the spawn was inside a
 #: solid beat marker), the exit stood 3.5m past the last tile, and the enemies
 #: could not fail anyone because the run was already over.
-_PLAYTEST = """extends SceneTree
+_PLAYTEST_TEMPLATE = """extends SceneTree
+
+# The axis bot is spliced in below from fantasy_agent.playtest_bot, the same
+# table the production probe renders from. Two copies of "which key does this
+# axis press" would be two chances for the thing under test and the thing doing
+# the testing to disagree -- and the failure mode of that disagreement is a green
+# run where no key was ever pressed.
+__DRIVE__
 
 
 func _say(key: String, value: Variant) -> void:
@@ -137,6 +146,9 @@ func _initialize() -> void:
 	await _walk_to_the_exit()
 	await _enemy_contact()
 	await _fall_off_the_route()
+	await _health_runs_out()
+	await _axis_verbs()
+	await _commit_gate()
 	await _patrol_stays_on_the_route()
 	await _dash_burst()
 	quit()
@@ -250,10 +262,21 @@ func _walk_to_the_exit() -> void:
 		_say("walk_ended", false)
 		scene.free()
 		return
-	# Clear the threats: this asks whether the *route* carries a walking player
-	# to the exit, which an intercepting enemy would mask.
-	for enemy in get_nodes_in_group("enemy"):
-		enemy.free()
+	# The threats stay alive.
+	#
+	# This probe used to delete every enemy first, with the reasoning that an
+	# intercepting enemy would "mask" the route question. The masking was the
+	# bug: clearing the roster makes "the route carries a walking player" and
+	# "contact costs something" two separate questions, both answerable while
+	# the level itself cannot be walked. That is how a corridor whose enemy
+	# lanes covered its full width shipped green -- the enemies that would have
+	# been standing in it were freed before anyone walked through.
+	#
+	# The question worth asking is the conjunction: with the roster the design
+	# declares, does holding forward still end in a win?
+	var threats := get_nodes_in_group("enemy")
+	_say("walk_threats", threats.size())
+	var start_hp = player.get("hp")
 	for _i in range(30):
 		await physics_frame
 	var start: Vector3 = player.global_position
@@ -263,10 +286,12 @@ func _walk_to_the_exit() -> void:
 		if gm._ended:
 			break
 	Input.action_release("move_forward")
+	var hp_left = player.get("hp")
 	_say("walk_moved", start.distance_to(player.global_position))
 	_say("walk_ended", gm._ended)
 	_say("walk_hud", gm._hud.text)
 	_say("walk_fell_out", player.global_position.y < -5.0)
+	_say("walk_hp_lost", -1 if start_hp == null or hp_left == null else int(start_hp) - int(hp_left))
 	scene.free()
 
 
@@ -280,11 +305,46 @@ func _enemy_contact() -> void:
 		_say("contact_hud", "MISSING")
 		scene.free()
 		return
+	# Contact costs health, it does not end the run -- so this asks how much it
+	# costs, not whether the run is over. Standing in a guard used to be a
+	# one-frame loss, which is exactly why no level with a guard in it could be
+	# walked.
+	var before = player.get("hp")
+	if before == null:
+		_say("contact_hud", "NO_HEALTH")
+		scene.free()
+		return
 	player.global_position = (enemies[0] as Node3D).global_position
 	for _i in range(30):
 		await physics_frame
+	var after = player.get("hp")
+	_say("contact_hp_lost", int(before) - int(after))
 	_say("contact_ended", gm._ended)
 	_say("contact_hud", gm._hud.text)
+	scene.free()
+
+
+func _health_runs_out() -> void:
+	# The other half of the health contract: spending the whole bar does end the
+	# run, and it says so. Without this, "contact costs health" would pass on a
+	# generated project whose player can never die at all.
+	var scene := _spawn()
+	await physics_frame
+	var player := scene.get_node_or_null("FA_Player") as Node3D
+	var gm := get_first_node_in_group("game_manager")
+	var enemies := get_nodes_in_group("enemy")
+	if player == null or gm == null or enemies.is_empty():
+		_say("death_hud", "MISSING")
+		scene.free()
+		return
+	player.set("hp", 1)
+	player.global_position = (enemies[0] as Node3D).global_position
+	for _i in range(60):
+		await physics_frame
+		if gm._ended:
+			break
+	_say("death_ended", gm._ended)
+	_say("death_hud", gm._hud.text)
 	scene.free()
 
 
@@ -303,6 +363,113 @@ func _fall_off_the_route() -> void:
 		if gm._ended:
 			break
 	_say("boundary_hud", gm._hud.text)
+	scene.free()
+
+
+func _enemy_hp_total() -> int:
+	var total := 0
+	for enemy in get_nodes_in_group("enemy"):
+		var hp = enemy.get("hp")
+		if hp != null:
+			total += int(hp)
+	return total
+
+
+# Presses this axis's own verbs and asks whether they moved anything.
+#
+# This is the half the playtest owed and never paid: "the route can be walked"
+# and "the mechanic exists" are different questions, and pressing
+# move_forward for a few seconds answers only the first. The bot's key set comes
+# from the same table the production probe uses, so a verb that is broken here is
+# broken in the shipped playtest too.
+#
+# The player is parked within strike range of a threat but outside contact range
+# (1.5m: attack reaches 2.4m, contact kills at 1.15m), so the strike has a target
+# and the run is not ended by standing inside one.
+func _axis_verbs() -> void:
+	var scene := _spawn()
+	await physics_frame
+	var player := scene.get_node_or_null("FA_Player") as Node3D
+	var gm := get_first_node_in_group("game_manager")
+	_say("verb_axis", AXIS)
+	if player == null or gm == null:
+		_say("verb_ready", false)
+		scene.free()
+		return
+	_say("verb_ready", true)
+	var enemies := get_nodes_in_group("enemy")
+	if not enemies.is_empty():
+		# Alongside the threat, not on top of it: one lane away (1.75m, inside the
+		# 2.4m strike reach) and on the walkway's centre line, because a body
+		# parked outside the tile is a fall, not a mechanic.
+		var target: Vector3 = (enemies[0] as Node3D).global_position
+		player.global_position = Vector3(0.0, target.y, target.z)
+	await physics_frame
+	var hp_before := _enemy_hp_total()
+	# Topped up on purpose. Four chasers converge on a player who is not moving,
+	# and four contacts a second empty a five-point bar before the second strike
+	# lands -- which is the level being dangerous, not the verb being broken. The
+	# health bar is not what this experiment is measuring, so it is taken out of
+	# the picture rather than allowed to end the run mid-measurement.
+	if player.get("hp") != null:
+		player.set("hp", 99)
+	_taps.clear()
+	_policy_missing.clear()
+	# Lowest the bar got, not start-minus-end: ``recover`` refills stamina inside
+	# the same two seconds it is spent in, so an endpoint delta reads 0.0 on a
+	# build where every cost is paid -- the same mistake as measuring a cooldown
+	# by sampling it twice.
+	var stamina_min := 1.0
+	var has_stamina := false
+	for frame in range(120):
+		_policy_drive(frame, false)
+		await physics_frame
+		var stamina_now = player.get("_stamina")
+		if stamina_now != null:
+			has_stamina = true
+			stamina_min = minf(stamina_min, float(stamina_now))
+		if gm._ended:
+			break
+	_say("verb_missing", ",".join(_policy_missing))
+	_say("verb_taps", JSON.stringify(_taps))
+	_say("verb_held", JSON.stringify(_held))
+	_say("verb_enemy_hp_lost", hp_before - _enemy_hp_total())
+	_say("verb_stamina_spent", (1.0 - stamina_min) if has_stamina else -1.0)
+	_say("verb_ended", gm._ended)
+	_say("verb_end_reason", "" if not gm._ended else str(gm.get("last_reason")))
+	scene.free()
+
+
+# The axis's commit verb, pressed on the first frame of a fresh run.
+#
+# It is not part of the bot's policy on purpose: pressing "solve" before the loop
+# produced a key is a failure by design, and a production run that fails on
+# purpose cannot be told apart from a broken build. Measured here instead, where
+# the expected outcome is written down in playtest_bot.COMMIT_VERBS -- so a gate
+# that is (or is not) closed is a fact the suite records rather than a claim
+# nobody checked.
+func _commit_gate() -> void:
+	if COMMIT_ACTION == "":
+		_say("commit_action", "")
+		_say("commit_outcome", "none")
+		return
+	var scene := _spawn()
+	await physics_frame
+	var gm := get_first_node_in_group("game_manager")
+	_say("commit_action", COMMIT_ACTION)
+	if gm == null:
+		_say("commit_outcome", "MISSING")
+		scene.free()
+		return
+	Input.action_press(COMMIT_ACTION)
+	await physics_frame
+	Input.action_release(COMMIT_ACTION)
+	for _i in range(30):
+		await physics_frame
+		if gm._ended:
+			break
+	_say("commit_outcome", "timeout" if not gm._ended else str(gm.get("last_outcome")))
+	_say("commit_reason", str(gm.get("last_reason")))
 	scene.free()
 """
 
@@ -543,8 +710,19 @@ def _registry_project(tmp_path, prompt: str) -> Path:
     return tmp_path / Path(project_file).parent
 
 
-def _play(project: Path) -> dict[str, str]:
-    _write(project, "scripts/playtest.gd", _PLAYTEST)
+def _play(project: Path, axis: str) -> dict[str, str]:
+    """Run the harness against ``project``, with the bot for ``axis`` spliced in.
+
+    The commit verb rides along as a const of its own rather than as part of the
+    policy: the policy must never press it (a deliberate failure inside a
+    win-rate measurement is noise), while this harness presses it *once* to
+    record which way its gate swings.
+    """
+
+    commit = COMMIT_VERBS.get(axis)
+    drive = render_drive_gd(policy_for(axis), input_plan="forward_and_jump")
+    drive += f'\nconst COMMIT_ACTION := "{commit.action if commit else ""}"'
+    _write(project, "scripts/playtest.gd", _PLAYTEST_TEMPLATE.replace("__DRIVE__", drive))
     result = subprocess.run(
         [
             _godot_exe(),
@@ -574,7 +752,7 @@ def _play(project: Path) -> dict[str, str]:
     return report
 
 
-@pytest.mark.parametrize("axis", ["parkour", "stealth", "mobility"])
+@pytest.mark.parametrize("axis", ALL_AXES)
 def test_the_generated_prototype_can_actually_be_played(tmp_path, axis):
     """Load-and-look-for-errors is not a playtest.
 
@@ -582,16 +760,27 @@ def test_the_generated_prototype_can_actually_be_played(tmp_path, axis):
     frames -- which is all this module used to do, and why all of it shipped.
     The prototype is driven with real input now, over real physics frames, and
     asked the questions a player would ask: is there a player, did the run start
-    un-ended, does forward move me, does the route carry me to the exit, does an
-    enemy fail me, and does stepping off the side fail me.
+    un-ended, does forward move me, does the route carry me to the exit *with the
+    roster standing*, does standing in an enemy cost health, does spending the
+    last of it end the run, and does stepping off the side fail me.
 
-    Three axes on purpose: parkour's enemy chases and stealth's patrol, so both
-    branches of the enemy roster move and get checked against the route, plus
-    mobility, whose burst verb needs a measurement rather than a source
-    assertion.
+    All eight axes, because the last two questions are per-axis: the verb
+    experiment presses what *this* axis's controller reads, and the commit gate
+    is the three axes that have one -- puzzle and systems refuse a commit with
+    no work behind it, stealth accepts one at spawn (recorded in
+    ``playtest_bot.COMMIT_VERBS``, and a fact a reviewer should see rather than
+    a claim nobody measured).
+
+    Before that, four axes were chosen for coverage of the *level*: parkour's
+    enemy chases and stealth's patrol, so both branches of the roster move and
+    get checked against the route, plus mobility, whose burst verb needs a
+    measurement rather than a source assertion, and combat -- the axis that
+    declares the largest roster (four enemies, one per lane pair) and the one
+    that used to die half a second after spawn with ``progress: 0``, because its
+    lanes covered the whole corridor.
     """
 
-    report = _play(_registry_project(tmp_path, PROMPT_FOR_AXIS[axis]))
+    report = _play(_registry_project(tmp_path, PROMPT_FOR_AXIS[axis]), axis)
 
     assert report["player_present"] == "true", "nothing to move"
     assert report["game_manager_present"] == "true", "nothing to win or lose"
@@ -602,6 +791,13 @@ def test_the_generated_prototype_can_actually_be_played(tmp_path, axis):
         f"holding forward moved the player {report['walk_moved']}m"
     )
     assert report["walk_fell_out"] == "false", "walking forward left the route"
+    # The roster has to be standing while the walk happens. It used to be
+    # deleted first, which is how a corridor whose enemy lanes covered its whole
+    # width passed this test and then failed every playtest half a second in.
+    assert int(report["walk_threats"]) == int(report["enemy_count"]), (
+        f"the walk was measured with {report['walk_threats']} of "
+        f"{report['enemy_count']} enemies standing"
+    )
     assert report["walk_ended"] == "true", "walking the route to its end never ended the run"
     assert report["walk_hud"].startswith("WIN"), report["walk_hud"]
     assert report["exit_trigger_present"] == "true"
@@ -630,11 +826,21 @@ def test_the_generated_prototype_can_actually_be_played(tmp_path, axis):
             f"{report['enemy_pairs_stacked']} pairs of enemies share a spawn point, "
             "so the roster is smaller than the design declares"
         )
-        assert report["contact_ended"] == "true", "walking into an enemy did not end the run"
-        assert report["contact_hud"].startswith("FAIL"), report["contact_hud"]
+        assert int(report["contact_hp_lost"]) >= 1, (
+            "standing inside an enemy cost no health, so nothing in the level "
+            "can ever lose the run"
+        )
+        assert "hp:" in report["contact_hud"], (
+            f"the HUD does not show the health that contact just spent: {report['contact_hud']}"
+        )
+        assert report["death_ended"] == "true", (
+            "spending the last point of health did not end the run"
+        )
+        assert report["death_hud"].startswith("FAIL"), report["death_hud"]
     else:
         assert report["enemy_count"] == "0", "the design declares no enemies"
         assert report["contact_hud"] == "MISSING", report["contact_hud"]
+        assert report["death_hud"] == "MISSING", report["death_hud"]
     assert report["boundary_hud"].startswith("FAIL"), (
         f"falling off the route was not a failure: {report['boundary_hud']}"
     )
@@ -661,4 +867,57 @@ def test_the_generated_prototype_can_actually_be_played(tmp_path, axis):
         assert dashed > plain * 1.3, (
             f"dashing covered {dashed}m in 6 frames, walking covered {plain}m -- "
             "the burst is not reaching the movement"
+        )
+
+    # ── the axis's own verbs get pressed, and the ones we can price get priced
+    #
+    # "Walked to the exit" says the level is walkable. It does not say the
+    # mechanic the design is about exists: this suite passed for a combat slice
+    # on which `attack` had never been pressed once, and an `attack` that does
+    # nothing at all would have passed with it.
+    assert report["verb_axis"] == axis, (
+        f"the project declares axis {report['verb_axis']!r}, the bot was rendered for {axis!r}"
+    )
+    assert report["verb_ready"] == "true", "no player or no manager to press keys against"
+    assert report["verb_missing"] == "", (
+        f"the {axis} bot presses actions the project never declared: {report['verb_missing']}"
+    )
+    taps = json.loads(report["verb_taps"])
+    held = set(json.loads(report["verb_held"]))
+    unpressed = sorted(policy_for(axis).actions - set(taps) - held)
+    assert not unpressed, (
+        f"the {axis} policy never delivered {unpressed} in 120 frames "
+        f"(taps: {sorted(taps)}, held: {sorted(held)}): a verb the bot cannot "
+        "press is a verb the playtest cannot judge"
+    )
+    assert report["verb_ended"] == "false", (
+        "pressing the axis verbs ended the run — the bot's policy must not be a way "
+        f"to lose ({report['verb_end_reason']})"
+    )
+    # Only the axes whose verb the slice can actually price get a verdict here.
+    # Adding a number to this list means the build can produce it, not that it
+    # would be nice if it did.
+    if policy_for(axis).priced:
+        assert int(report["verb_enemy_hp_lost"]) >= 1, (
+            f"the {axis} bot attacked for two seconds inside reach and no enemy "
+            "lost a point of health: the strike never reaches the enemy"
+        )
+    if "stamina_spent" in policy_for(axis).priced:
+        spent = float(report["verb_stamina_spent"])
+        assert spent > 0.0, (
+            f"the {axis} bot evaded and spent {spent} of the stamina bar: the cost "
+            "is not being paid, so the bar is decoration"
+        )
+
+    # ── the commit verb, and which way its gate swings
+    gate = COMMIT_VERBS.get(axis)
+    if gate is None:
+        assert report["commit_outcome"] == "none", report["commit_outcome"]
+    else:
+        assert report["commit_action"] == gate.action, report
+        assert report["commit_outcome"] == gate.at_spawn, (
+            f"pressing {gate.action} on the first frame now answers "
+            f"{report['commit_outcome']!r}; playtest_bot.COMMIT_VERBS records "
+            f"{gate.at_spawn!r} ({gate.why}). Update the table with the new "
+            "behaviour -- a gate that moved by accident is what this pins."
         )

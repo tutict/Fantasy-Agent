@@ -42,6 +42,7 @@ from dataclasses import dataclass
 
 from fantasy_agent.axis_templates import AXIS_TEMPLATES
 from fantasy_agent.contracts import GameplaySpec, ProductionSpecBundle
+from fantasy_agent.godot_geometry import LETHAL_RADIUS
 from fantasy_agent.godot_mcp import _godot_identifier
 
 logger = logging.getLogger(__name__)
@@ -112,11 +113,16 @@ def generate_gameplay_scripts(
 # Deterministic fallback
 # ──────────────────────────────────────────────────────────────────────────
 
-def _axis_from_verbs(spec: GameplaySpec) -> str:
+def axis_for_spec(spec: GameplaySpec) -> str:
     """Infer the mechanic family from core_verbs.
 
     Scores every axis in ``AXIS_TEMPLATES`` by how many of its verbs the spec
     declares, so a new axis is picked up without touching this function.
+
+    Public because three callers have to agree on the answer: the gameplay
+    codegen that emits the controller, the level generator that records the axis
+    in ``project.godot``, and the playtest that reads it back to decide which
+    keys a bot may press. Deriving it twice would be two chances to disagree.
     """
     verbs = {v.strip().lower() for v in spec.core_verbs}
     best_axis = "generic"
@@ -135,7 +141,7 @@ def deterministic_gameplay_scripts(
     production_spec_bundle: ProductionSpecBundle | None = None,
 ) -> dict[str, str]:
     """Axis-aware scripts, preferring compiled production-spec values."""
-    axis = _axis_from_verbs(spec)
+    axis = axis_for_spec(spec)
     move_speed = (
         production_spec_bundle.numeric.player_move_speed
         if production_spec_bundle is not None
@@ -268,11 +274,17 @@ _COMBAT_PHYSICS = '''
     velocity.x = direction.x * speed
     velocity.z = direction.z * speed
 
-    # [EVADE] a short burst dash on a cooldown.
+    # [EVADE] a short burst dash on a cooldown, paid for out of stamina.
     # The burst is held for a moment, not one frame: a single-frame addition is
     # 7/60 m, which reads as "evade does nothing".
+    #
+    # The cost is the point. The design's stamina system says emptying the bar
+    # "leaves no dodge available, and turns the next tell into guaranteed
+    # damage"; before this the bar was written every frame and read by nobody,
+    # so it described a mechanic the slice did not have.
     _evade_cooldown = maxf(0.0, _evade_cooldown - delta)
-    if Input.is_action_just_pressed("evade") and _evade_cooldown <= 0.0:
+    if Input.is_action_just_pressed("evade") and _evade_cooldown <= 0.0 and _stamina >= evade_cost:
+        _stamina -= evade_cost
         _evade_cooldown = evade_cooldown
         _evade_time = evade_duration
     if _evade_time > 0.0:
@@ -286,9 +298,12 @@ _COMBAT_PHYSICS = '''
         _attack_cooldown = attack_cooldown
         _strike_closest_enemy()
 
-    # [RECOVER] stand still to regain stamina between exchanges
+    # [RECOVER] stand still to regain stamina between exchanges. Bracing recovers
+    # faster: that is what the [POSITION] verb buys, and the reason ``_bracing``
+    # is a read rather than only a write.
     if Input.is_action_pressed("recover") and direction.length() <= 0.1:
-        _stamina = minf(1.0, _stamina + recover_rate * delta)
+        var brace_bonus := brace_recover_multiplier if _bracing else 1.0
+        _stamina = minf(1.0, _stamina + recover_rate * brace_bonus * delta)
 '''
 
 _STRIKE_HELPER = '''
@@ -477,7 +492,9 @@ _AXIS_MECHANICS: dict[str, AxisMechanics] = {
             "@export var evade_impulse := 7.0        # [EVADE_IMPULSE]\n"
             "@export var evade_cooldown := 1.1       # [EVADE_COOLDOWN]\n"
             "@export var evade_duration := 0.18      # [EVADE_DURATION]\n"
+            "@export var evade_cost := 0.34          # [EVADE_COST]\n"
             "@export var brace_speed_multiplier := 0.6  # [BRACE_SPEED_MULTIPLIER]\n"
+            "@export var brace_recover_multiplier := 1.6  # [BRACE_RECOVER_MULTIPLIER]\n"
             "@export var recover_rate := 0.5         # [RECOVER_RATE]\n"
         ),
         state=(
@@ -575,6 +592,67 @@ _AXIS_MECHANICS: dict[str, AxisMechanics] = {
 }
 
 
+#: Design systems an axis declares that this slice's generated code does not
+#: implement, each with the reason it is not there.
+#:
+#: Enumerating them is the point. The alternative is state that looks like a
+#: mechanic -- ``_stamina`` written every frame and read by nobody -- which is
+#: how a spec promising a stamina economy shipped a build with no stamina, and
+#: how ``max_hp`` survived as a number the tuning table could rewrite for no
+#: effect. A dead variable is cheap to write and invisible in review; a dead
+#: variable with a written-down reason is a decision.
+#:
+#: ``tests/test_generated_state_is_consumed.py`` computes the dead set from the
+#: emitted scripts and asserts it is exactly this table's keys, so an entry
+#: cannot go stale (implementing one fails until the entry is removed) and a new
+#: dead variable cannot arrive without a reason.
+UNIMPLEMENTED_MECHANICS: dict[str, dict[str, str]] = {
+    "parkour": {
+        "_wall_running": (
+            "set every frame the player is airborne against a wall; the fall "
+            "speed it would justify is already clamped inline, so nothing reads "
+            "the flag. A wall-run chain counter would."
+        ),
+        "_vaulting": (
+            "set by the vault press and cleared on landing; there is no vault "
+            "window, no ledge grab and no second animation state to gate."
+        ),
+    },
+    "career": {
+        "_confidence": (
+            "raised by [SUPPORT] and never spent or compared, so supporting the "
+            "run costs a portfolio piece and buys nothing measurable."
+        ),
+    },
+    "stealth": {
+        "_scouting": (
+            "mirrors the scout key press; the noise budget it is meant to feed "
+            "does not exist, so scouting costs nothing and hides nothing."
+        ),
+    },
+    "combat": {},
+    "survival": {
+        "_warmth": (
+            "raised by crafting and never read: the drain it is meant to offset "
+            "is applied to ``supplies`` directly."
+        ),
+    },
+    "puzzle": {
+        "_trigger_count": (
+            "counted and never read; progress is reported through "
+            "``register_trigger()`` instead, so this is a second, unused ledger."
+        ),
+    },
+    "mobility": {},
+    "systems": {
+        "_surveyed": (
+            "accumulates while walking and gates nothing; [COMPLETE] checks "
+            "``_interactions``, so surveying the route is unmeasured."
+        ),
+    },
+}
+
+
 def _player_controller(axis: str, *, move_speed: float = 8.0, player_hp: int = 5) -> str:
     mechanics = _AXIS_MECHANICS.get(axis)
     exports = mechanics.exports if mechanics else ""
@@ -587,7 +665,30 @@ def _player_controller(axis: str, *, move_speed: float = 8.0, player_hp: int = 5
 @export var max_hp := {player_hp}              # [PLAYER_HP]
 @export var jump_velocity := 6.0     # [JUMP_VELOCITY]
 @export var gravity := 18.0          # [GRAVITY]
-{exports}{state}
+{exports}{state}var hp := max_hp
+var last_hurt_reason := ""
+
+
+func take_damage(amount: int, reason: String = "") -> void:
+    # Contact and ranged pressure subtract health; only a spent bar ends the
+    # run. Before this, `max_hp` was declared and never read -- the spec's own
+    # first failure state ("health reaches zero") described something the
+    # generated project had no code path for, while the real failure was a
+    # single frame of enemy overlap.
+    if hp <= 0:
+        return
+    hp = maxi(0, hp - amount)
+    if reason != "":
+        last_hurt_reason = reason
+    if hp <= 0:
+        # Looked up instead of routed through ``_notify_game_manager``: that
+        # helper only exists on axes whose mechanics block asks for it, and
+        # running out of health is not axis-specific.
+        var manager := get_tree().get_first_node_in_group("game_manager")
+        if manager != null and manager.has_method("player_died"):
+            manager.call("player_died", last_hurt_reason)
+
+
 func _physics_process(delta: float) -> void:
     var input_dir := Vector2.ZERO
     input_dir.x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
@@ -608,12 +709,31 @@ func _physics_process(delta: float) -> void:
 #: Words a spec's own failure text uses when it means "you left the route".
 _BOUNDARY_WORDS = (
     "boundary",
-    "leaves",
-    "leave",
     "out of bounds",
     "off the route",
-    "fell",
-    "falls",
+    "off the track",
+    "walkway",
+)
+
+#: A leaving verb only says "left the route" when the sentence also names the
+#: thing that was left. Matching the verb alone is how ``Stamina exhaustion
+#: leaves no answer to the boss tell`` became the message a player saw after
+#: walking off the side -- the combat axis was telling them they had fallen when
+#: they had run out of stamina, and the generated build claimed a boundary
+#: failure it did not have.
+_BOUNDARY_VERBS = ("leave", "leaves", "left", "fall", "falls", "fell", "lose", "loses", "lost")
+
+#: The things a route is made of, so a leaving verb has an object.
+_BOUNDARY_PLACES = (
+    "route",
+    "track",
+    "path",
+    "floor",
+    "platform",
+    "course",
+    "arena",
+    "rooftop",
+    "catwalk",
 )
 
 
@@ -657,6 +777,10 @@ def _boundary_failure(fails: list[str], fallback: str) -> str:
         lowered = text.casefold()
         if any(word in lowered for word in _BOUNDARY_WORDS):
             return _gd_literal(text)
+        if any(verb in lowered for verb in _BOUNDARY_VERBS) and any(
+            place in lowered for place in _BOUNDARY_PLACES
+        ):
+            return _gd_literal(text)
     return fallback
 
 
@@ -679,12 +803,27 @@ def _game_manager(
         pressure_limit = float(spec.target_session_minutes * 60)
     fail0 = _gd_literal(fails[0])
     boundary = _boundary_failure(fails, "Left the active route")
+    # Which of the spec's failure states this slice can actually report. The
+    # pressure clock and a spent health bar both report ``fails[0]``; falling off
+    # reports the boundary wording when the spec named one. Everything else is a
+    # promise with no code path, and saying so out loud beats leaving a reader to
+    # assume the manager handles them all -- the old build listed three failure
+    # states and could produce exactly one of them.
+    reportable = {fails[0]}
+    if boundary in fails:
+        reportable.add(boundary)
+    deferred = [text for text in fails if text not in reportable]
+    deferred_literal = json.dumps(deferred, ensure_ascii=False)
     return f'''extends Node
 
 # Real win/fail判定 + HUD, derived from the GameplaySpec (M6a).
 @export var pressure_limit := {pressure_limit}   # [PRESSURE_LIMIT] seconds before failure
 @export var auto_return := 3.0       # [AUTO_RETURN] seconds on end screen
 @export var fall_limit := -12.0      # [FALL_LIMIT] below this the route is lost
+
+#: The spec's failure states this build has no code path for. Printed on start
+#: so the gap shows up in the engine log rather than in a reader's assumption.
+const UNREPORTABLE_FAILURES := {deferred_literal}
 
 var _elapsed := 0.0
 var _ended := false
@@ -700,6 +839,8 @@ var last_reason := ""
 
 func _ready() -> void:
     add_to_group("game_manager")
+    if not UNREPORTABLE_FAILURES.is_empty():
+        print("[FantasyAgent] failure states with no code path in this slice: ", UNREPORTABLE_FAILURES)
     _hud = Label.new()
     _hud.name = "FA_HUD"
     _hud.position = Vector2(24, 24)
@@ -714,14 +855,29 @@ func _process(delta: float) -> void:
     if _ended:
         return
     _elapsed += delta
+    var player := _find_player()
     var remaining := maxf(0.0, pressure_limit - _elapsed)
-    _update_hud("Time left: %0.1fs  |  progress: %d" % [remaining, _progress])
+    _update_hud("Time left: %0.1fs  |  progress: %d%s" % [remaining, _progress, _health_text(player)])
     if remaining <= 0.0:
         _fail("{fail0}")
         return
-    var player := _find_player()
     if player != null and player.global_position.y < fall_limit:
         _fail("{boundary}")
+
+
+func _health_text(player: Node3D) -> String:
+    # Read off the player rather than cached: a project generated without
+    # gameplay scripts has no player, and one with an older player script has no
+    # ``hp`` -- both have to render a HUD, not crash on it.
+    if player == null:
+        return ""
+    var current = player.get("hp")
+    if current == null:
+        return ""
+    var highest = player.get("max_hp")
+    if highest == null:
+        return "  |  hp: %d" % int(current)
+    return "  |  hp: %d/%d" % [int(current), int(highest)]
 
 
 func _find_player() -> Node3D:
@@ -741,6 +897,15 @@ func fail_from_enemy(reason: String) -> void:
     if _ended:
         return
     _fail(reason)
+
+
+func player_died(reason: String = "") -> void:
+    # Contact and ranged pressure subtract health; the run ends when it is gone.
+    # The wording falls back to the spec's own first failure state, so the
+    # design's "health reaches zero" and the code that reports it agree.
+    if _ended:
+        return
+    _fail(reason if reason != "" else "{fail0}")
 
 
 func register_progress(amount: int) -> void:
@@ -807,18 +972,37 @@ def _enemy_controller(axis: str) -> str:
     body_funcs = "\n".join(
         _ENEMY_BEHAVIOR_FUNCS[behavior](contact) for behavior in behaviors
     )
+    # Only the knobs this roster can act on. An export nothing reads is a tuning
+    # value the correction path (``corrections.py`` rewrites anchors) can change
+    # for no effect -- the same shape as a declared-and-unread mechanic, one
+    # layer down.
+    knobs = [
+        "@export var move_speed := 2.4         # [ENEMY_MOVE_SPEED]",
+        "@export var patrol_radius := 2.5      # [PATROL_RADIUS]",
+    ]
+    if {"chase", "ranged"} & set(behaviors):
+        knobs.append("@export var detection_radius := 6.0   # [DETECTION_RADIUS]")
+    if "ranged" in behaviors:
+        knobs.append("@export var ranged_interval := 1.6    # [RANGED_INTERVAL]")
+    knobs_block = "\n".join(knobs)
+    timer_state = "var _ranged_timer := 0.0\n" if "ranged" in behaviors else ""
     return f'''extends Area3D
 
 @export var behavior := "{default_behavior}"      # [ENEMY_BEHAVIOR]
 @export var hp := {enemy_hp}                   # [ENEMY_HP]
-@export var move_speed := 2.4         # [ENEMY_MOVE_SPEED]
-@export var patrol_radius := 2.5      # [PATROL_RADIUS]
-@export var detection_radius := 6.0   # [DETECTION_RADIUS]
-@export var ranged_interval := 1.6    # [RANGED_INTERVAL]
+{knobs_block}
+
+#: Centres closer than this overlap, so the enemy has the player. Emitted from
+#: ``fantasy_agent.godot_geometry``, which also decides the lane enemies stand
+#: in: the two numbers used to be independent literals that happened to be
+#: equal, and the level they produced had no walkable width at all.
+const LETHAL_RADIUS := {LETHAL_RADIUS}
+const CONTACT_DAMAGE := 1
+const CONTACT_INTERVAL := 0.8
 
 var _origin := Vector3.ZERO
 var _direction := 1.0
-var _ranged_timer := 0.0
+{timer_state}var _contact_cooldown := 0.0
 var _player: Node3D
 var _game_manager: Node
 var _label := "{enemy_name}"
@@ -846,6 +1030,7 @@ func take_damage(amount: int) -> void:
 
 
 func _physics_process(delta: float) -> void:
+    _contact_cooldown = maxf(0.0, _contact_cooldown - delta)
     if _player == null:
         _player = get_tree().get_first_node_in_group("player")
     match behavior:
@@ -855,14 +1040,33 @@ func _physics_process(delta: float) -> void:
 
 {body_funcs}
 
-func _fail_if_player_close(reason: String) -> void:
-    if _player != null and global_position.distance_to(_player.global_position) <= 1.15:
+func _hurt_player_if_close(reason: String) -> void:
+    # Contact costs health; it does not end the run. The spec's own words say a
+    # missed exchange "leaves the fight recoverable", and a level where one
+    # touch is fatal cannot be walked at all -- measured on the generated slice:
+    # five runs, five failures, half a second after spawn.
+    if _player != null and global_position.distance_to(_player.global_position) <= LETHAL_RADIUS:
+        _hurt_player(reason)
+
+
+func _hurt_player(reason: String) -> void:
+    # One hit per CONTACT_INTERVAL per enemy, or brushing past a guard would
+    # drain the whole bar in the frames it takes to step around it.
+    if _contact_cooldown > 0.0:
+        return
+    _contact_cooldown = CONTACT_INTERVAL
+    if _player != null and _player.has_method("take_damage"):
+        _player.take_damage(CONTACT_DAMAGE, reason)
+    else:
+        # No player script to subtract from: the contact ends the run rather
+        # than doing nothing, so a project with a different player still has a
+        # failure path.
         _notify_failure(reason)
 
 
 func _on_body_entered(body: Node) -> void:
     if body.is_in_group("player") or body.name == "FA_Player":
-        _notify_failure("{contact}")
+        _hurt_player("{contact}")
 
 
 func _notify_failure(reason: String) -> void:
@@ -882,7 +1086,7 @@ func _patrol(delta: float) -> void:
     position.z += _direction * move_speed * delta
     if abs(position.z - _origin.z) >= patrol_radius:
         _direction *= -1.0
-    _fail_if_player_close("{contact}")
+    _hurt_player_if_close("{contact}")
 '''
 
 
@@ -895,7 +1099,7 @@ func _chase(delta: float) -> void:
     var offset := _player.global_position - global_position
     if offset.length() <= detection_radius:
         global_position += offset.normalized() * move_speed * delta
-    _fail_if_player_close("{contact}")
+    _hurt_player_if_close("{contact}")
 '''
 
 
@@ -903,7 +1107,7 @@ def _stationary_func(contact: str) -> str:
     return f'''
 
 func _stationary(_delta: float) -> void:
-    _fail_if_player_close("{contact}")
+    _hurt_player_if_close("{contact}")
 '''
 
 
@@ -919,7 +1123,7 @@ func _ranged(delta: float) -> void:
     _ranged_timer += delta
     if _ranged_timer >= ranged_interval:
         _ranged_timer = 0.0
-        _notify_failure("{contact}")
+        _hurt_player("{contact}")
 '''
 
 

@@ -62,6 +62,20 @@ sys.path.insert(0, str(ROOT))
 #: (label, file, needle, mutant, test id)
 CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
     (
+        "PT-BOT-1 priced stamina uses a field the sampler never reports",
+        "fantasy_agent/playtest_bot.py",
+        b'priced=("enemy_hp_lost", "stamina_spent")',
+        b'priced=("enemy_hp_lost", "stamina")',
+        "tests/test_playtest_bot.py::test_every_priced_effect_names_a_reported_sample_field",
+    ),
+    (
+        "PT-BOT-2 a held key disappears after a scene restart",
+        "fantasy_agent/playtest_bot.py",
+        b"\\tif not _held.has(action):\n\\t\\t_held.append(action)\n\\tif Input.is_action_pressed(action):\n\\t\\treturn\n\\tInput.action_press(action)\n",
+        b"\\tif Input.is_action_pressed(action):\n\\t\\treturn\n\\tInput.action_press(action)\n\\tif not _held.has(action):\n\\t\\t_held.append(action)\n",
+        "tests/test_playtest_bot.py::test_a_held_key_is_recorded_even_when_it_survives_the_previous_run",
+    ),
+    (
         "HARNESS-UTF8 backend diagnostics fall back to the host codec",
         "scripts/mutation_check_all_guards.py",
         b'        encoding="utf-8",\n        errors="replace",\n',
@@ -495,7 +509,6 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         "D12 a fall off the route stops ending the run",
         "fantasy_agent/gameplay_codegen.py",
         (
-            b"    var player := _find_player()\n"
             b"    if player != null and player.global_position.y < fall_limit:\n"
             b'        _fail("{boundary}")\n'
         ),
@@ -557,6 +570,59 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         (b'    return " ".join(text.split()).replace("\\\\", "\\\\\\\\").replace(\'"\', "\'")\n'),
         b"    return text.replace('\"', \"'\")\n",
         "tests/test_gameplay_codegen_axis.py::test_spec_text_cannot_break_the_generated_literal",
+    ),
+    (
+        "D18 the stamina bar is spent and then never checked",
+        "fantasy_agent/gameplay_codegen.py",
+        (
+            b'    if Input.is_action_just_pressed("evade") and _evade_cooldown <= 0.0'
+            b" and _stamina >= evade_cost:\n"
+        ),
+        b'    if Input.is_action_just_pressed("evade") and _evade_cooldown <= 0.0:\n',
+        (
+            "tests/test_generated_state_is_consumed.py"
+            "::test_axis_mechanic_state_is_read_or_written_down[combat]"
+        ),
+    ),
+    (
+        "D19 the deferral table answers for a mechanic the code implements",
+        "fantasy_agent/gameplay_codegen.py",
+        b'    "combat": {},\r\n',
+        b'    "combat": {"_bracing": "deferred"},\r\n',
+        (
+            "tests/test_generated_state_is_consumed.py"
+            "::test_axis_mechanic_state_is_read_or_written_down[combat]"
+        ),
+    ),
+    (
+        "D20 the combat bot stops pressing the verb its controller reads",
+        "fantasy_agent/playtest_bot.py",
+        b'            Tap("attack", 24, 4),\n',
+        b"",
+        (
+            "tests/test_playtest_bot.py"
+            "::test_the_bot_presses_exactly_the_verbs_the_controller_reads[combat]"
+        ),
+    ),
+    (
+        "D21 the project stops recording which axis it was generated for",
+        "fantasy_agent/godot_mcp.py",
+        b"        self._write_text(project_file, _project_godot(plan, axis=axis))\r\n",
+        b"        self._write_text(project_file, _project_godot(plan))\r\n",
+        (
+            "tests/test_godot_mcp.py"
+            "::test_the_project_records_the_axis_its_scripts_were_generated_for"
+        ),
+    ),
+    (
+        "D22 the strike verb stops reaching the enemy it is aimed at",
+        "fantasy_agent/gameplay_codegen.py",
+        b"        _strike_closest_enemy()\r\n",
+        b"        pass\r\n",
+        (
+            "tests/test_gdscript_godot_check.py"
+            "::test_the_generated_prototype_can_actually_be_played[combat]"
+        ),
     ),
     (
         "H6 the parametrised-guard check stops recognising parametrisation",

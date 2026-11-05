@@ -1263,6 +1263,21 @@ class PlaytestSample(StrictModel):
     degraded_reason: str = ""
     failure_reasons: dict[str, int] = Field(default_factory=dict)
     script_errors: list[str] = Field(default_factory=list)
+    #: The mechanic axis this run was played with, read from the project. Empty
+    #: means the project never declared one, and the bot therefore only walked.
+    axis: str = ""
+    #: Action name -> how many times the bot pressed it. Edge presses only, so a
+    #: held key counts once; the point is "was this verb delivered at all".
+    taps: dict[str, int] = Field(default_factory=dict)
+    held: list[str] = Field(default_factory=list)
+    #: Policy actions the project's InputMap does not declare. Non-empty means
+    #: the axis's own verb could not be pressed, so the run judged the route and
+    #: nothing else.
+    missing_actions: list[str] = Field(default_factory=list)
+    enemy_hp_lost: int = Field(default=0, ge=0)
+    #: Fraction of the player's stamina bar spent, or -1 when the build has no
+    #: stamina at all -- "not measured" and "measured zero" must not read alike.
+    stamina_spent: float = -1.0
 
 
 class PlaytestAggregate(StrictModel):

@@ -230,12 +230,14 @@ def test_the_playtest_stage_runs_the_real_bridge_chain(tmp_path: Path):
         session_id="chain1",
         confirmed=True,
         godot_exe="godot",
+        workspace_root=tmp_path,
         bridge=bridge,
         with_gameplay=True,
     )
 
     assert result.ok
     stage = next(s for s in result.stages if s.name == "playtest")
+    assert (tmp_path / "generated/godot/sessions/chain1/_pipeline_state.json").is_file()
     assert stage.status == "done"
     # One win and one failure is a measurement, not a blocking finding: the
     # gate has to discriminate rather than fail on any imperfection.
