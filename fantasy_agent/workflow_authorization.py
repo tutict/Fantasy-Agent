@@ -12,19 +12,27 @@ import hashlib
 import json
 import math
 import os
+import re
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from fantasy_agent.path_safety import assert_safe_path_segment, resolve_workspace_path
+from fantasy_agent.path_safety import (
+    assert_safe_path_segment,
+    is_absolute_path,
+    resolve_workspace_path,
+)
 from fantasy_agent.studio_projects import (
     ProjectStoreError,
     StudioProjectStore,
     WorkflowJob,
     _ProjectRecord,
+    assert_no_connection_credentials,
+    public_job,
 )
 
 MAX_AUTHORIZATION_SECONDS = 1800
@@ -36,7 +44,7 @@ class AuthorizationError(ValueError):
 
 
 class _AuthorizationModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 class WorkflowAction(_AuthorizationModel):
@@ -54,6 +62,7 @@ class WorkflowAction(_AuthorizationModel):
     @field_validator("arguments")
     @classmethod
     def json_arguments(cls, value: dict[str, Any]) -> dict[str, Any]:
+        assert_no_connection_credentials(value)
         return json.loads(_canonical_json(value))
 
 
@@ -92,6 +101,11 @@ class AuthorizationClaim(_AuthorizationModel):
     job: WorkflowJob
     reused: bool = False
 
+    @field_validator("job")
+    @classmethod
+    def public_job_projection(cls, value: WorkflowJob) -> WorkflowJob:
+        return public_job(value)
+
 
 class WorkflowAuthorizationStore:
     def __init__(
@@ -120,9 +134,9 @@ class WorkflowAuthorizationStore:
             raise ValueError("授权时间预算超出范围。")
         validated = [_action_copy(action) for action in actions]
         paths = self._paths(allowed_asset_paths or [])
-        now = self._now()
 
         def save(record: _ProjectRecord) -> WorkflowGrant:
+            now = self._now()
             if plan_version != record.plan_version or plan_version not in record.plans:
                 raise AuthorizationError("只能授权当前已保存的计划版本。")
             grant = WorkflowGrant(
@@ -159,9 +173,9 @@ class WorkflowAuthorizationStore:
         validated = _action_copy(action)
         paths = self._paths(asset_paths or [])
         key = action_key(validated)
-        now = self._now()
 
         def reserve(record: _ProjectRecord) -> AuthorizationClaim:
+            now = self._now()
             grant = self._valid_grant(record, grant_id, plan_version, now)
             self._check_scope(grant, validated, paths)
             if existing_id := record.request_jobs.get(request_id):
@@ -217,9 +231,9 @@ class WorkflowAuthorizationStore:
     def start_job(self, project_id: str, job_id: str) -> bool:
         """Recheck authorization at queued→running; False means never dispatch again."""
         assert_safe_path_segment(job_id, label="job_id")
-        now = self._now()
 
         def start(record: _ProjectRecord) -> bool:
+            now = self._now()
             if job_id not in record.jobs:
                 raise AuthorizationError("生产任务不存在。")
             job = record.jobs[job_id]
@@ -287,22 +301,34 @@ class WorkflowAuthorizationStore:
             raise AuthorizationError("请求标识已经用于不同内容。")
 
     def _paths(self, paths: list[str]) -> list[str]:
+        """Exact local input allowlist; output containment is a separate policy."""
         canonical: dict[str, str] = {}
         try:
             for path in paths:
-                resolved = resolve_workspace_path(
-                    path,
-                    workspace_root=self.projects.workspace_root,
-                    allow_absolute=True,
-                )
-                # Rejoin to the configured root for a stable Windows drive case.
-                absolute = str(
-                    self.projects.workspace_root
-                    / resolved.relative_to(self.projects.workspace_root)
-                )
+                if path.startswith(("\\\\", "//")) or (
+                    re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", path)
+                    and not re.match(r"^[A-Za-z]:[/\\]", path)
+                ):
+                    raise ValueError("素材输入必须是本机文件路径。")
+                if is_absolute_path(path):
+                    candidate = Path(path.replace("\\", "/"))
+                    if not candidate.is_absolute():
+                        raise ValueError("素材输入必须是本机绝对路径。")
+                    resolved = candidate.resolve()
+                else:
+                    resolved = resolve_workspace_path(
+                        path, workspace_root=self.projects.workspace_root
+                    )
+                try:
+                    relative = resolved.relative_to(self.projects.workspace_root)
+                except ValueError:
+                    absolute = str(resolved)
+                else:
+                    # Rejoin in-root inputs for a stable Windows drive case.
+                    absolute = str(self.projects.workspace_root / relative)
                 canonical[os.path.normcase(absolute)] = absolute
         except (ValueError, TypeError) as exc:
-            raise AuthorizationError("素材路径无效或超出工作区。") from exc
+            raise AuthorizationError("素材输入路径无效，必须是本机文件。") from exc
         return [canonical[key] for key in sorted(canonical)]
 
     def _now(self) -> float:

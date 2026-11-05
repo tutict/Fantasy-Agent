@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Literal, TypeVar
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from fantasy_agent.atomic_write import write_atomic
 from fantasy_agent.contracts import DirectorBuildPlan
@@ -40,6 +40,61 @@ TERMINAL_JOB_STATUSES = frozenset({"done", "failed", "cancelled", "interrupted"}
 _ROOT_LOCKS: dict[str, Any] = {}
 _ROOT_LOCKS_GUARD = threading.Lock()
 _T = TypeVar("_T")
+_CREDENTIAL_KEYS = frozenset(
+    {
+        "connectiontoken",
+        "bearertoken",
+        "accesstoken",
+        "refreshtoken",
+        "authorization",
+        "apikey",
+        "apisecret",
+        "clientsecret",
+        "password",
+        "credentials",
+        "connectioncredentials",
+        "secretkey",
+    }
+)
+_CREDENTIAL_CONTEXTS = frozenset({"connection", "auth", "authentication"})
+
+
+def _credential_payload(
+    value: Any, *, reject: bool = False, credential_context: bool = False
+) -> Any:
+    """Exclude credential fields, without interpreting normal gameplay text.
+
+    The transport must additionally redact actual known bearer-token strings
+    in arbitrary text using its authentication context. Core never stores that
+    connection context or guesses secrets from ordinary gameplay strings.
+    """
+    if isinstance(value, dict):
+        clean = {}
+        for key, child in value.items():
+            normalized = "".join(char for char in str(key).casefold() if char.isalnum())
+            credential = normalized in _CREDENTIAL_KEYS or (
+                credential_context and normalized in {"token", "key", "secret"}
+            )
+            if credential:
+                if reject:
+                    raise ValueError("连接凭证不能作为生产动作参数。")
+                continue
+            clean[key] = _credential_payload(
+                child,
+                reject=reject,
+                credential_context=credential_context or normalized in _CREDENTIAL_CONTEXTS,
+            )
+        return clean
+    if isinstance(value, (list, tuple)):
+        return [
+            _credential_payload(child, reject=reject, credential_context=credential_context)
+            for child in value
+        ]
+    return deepcopy(value)
+
+
+def assert_no_connection_credentials(value: dict[str, Any]) -> None:
+    _credential_payload(value, reject=True)
 
 
 class ProjectStoreError(ValueError):
@@ -47,7 +102,7 @@ class ProjectStoreError(ValueError):
 
 
 class _StateModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 class WorkflowJob(_StateModel):
@@ -66,6 +121,28 @@ class WorkflowJob(_StateModel):
     started_at: float | None = None
     finished_at: float | None = None
     result: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("arguments")
+    @classmethod
+    def arguments_without_credentials(cls, value: dict[str, Any]) -> dict[str, Any]:
+        assert_no_connection_credentials(value)
+        return value
+
+    @field_validator("result")
+    @classmethod
+    def public_result(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return _credential_payload(value)
+
+
+def public_job(job: WorkflowJob) -> WorkflowJob:
+    """An independent public DTO; credential fields never leave the core."""
+    return job.model_copy(
+        deep=True,
+        update={
+            "arguments": _credential_payload(job.arguments),
+            "result": _credential_payload(job.result),
+        },
+    )
 
 
 class ProjectResource(_StateModel):
@@ -244,7 +321,7 @@ class StudioProjectStore:
             if job_id in record.jobs:
                 raise ValueError("任务已经存在。")
             record.jobs[job_id] = job
-            return job
+            return public_job(job)
 
         return self._mutate(project_id, register)
 
@@ -295,11 +372,10 @@ class StudioProjectStore:
             job.status = status
             if job.finished_at is None:
                 job.finished_at = time.time()
-            if result is not None:
-                job.result = result
+            job.result = _credential_payload(result if result is not None else job.result)
             if session_id is not None:
                 job.session_id = session_id
-            return job
+            return public_job(job)
 
         return self._mutate(project_id, update)
 
@@ -323,7 +399,7 @@ class StudioProjectStore:
                 if job.status in {"queued", "running"}:
                     job.status = "interrupted"
                     job.finished_at = time.time()
-                    changed.append(job)
+                    changed.append(public_job(job))
             return changed
 
         return self._mutate(project_id, reconcile)
@@ -389,6 +465,10 @@ class StudioProjectStore:
             for label in ("request_id", "grant_id", "node_id", "session_id"):
                 if value := getattr(job, label):
                     assert_safe_path_segment(value, label=label)
+            if job.grant_id and (
+                not job.request_id or record.request_jobs.get(job.request_id) != key
+            ):
+                raise ValueError("授权任务的原请求引用缺失或不一致。")
         for key, resource in record.resources.items():
             assert_safe_path_segment(key, label="resource_id")
             if key != resource.resource_id:
@@ -402,8 +482,9 @@ class StudioProjectStore:
             )
         for request_id, job_id in record.request_jobs.items():
             assert_safe_path_segment(request_id, label="request_id")
-            if job_id not in record.jobs:
-                raise ValueError("请求任务引用不存在。")
+            job = record.jobs.get(job_id)
+            if job is None or not job.grant_id or not job.request_id:
+                raise ValueError("请求必须引用有授权的生产任务。")
         if record.grants or any(job.grant_id for job in record.jobs.values()):
             # Lazy import keeps the project models independent of authorization
             # during module import; loaded grants still undergo strict validation.
@@ -423,7 +504,7 @@ class StudioProjectStore:
             tasks=[task.model_dump(mode="json") for task in plan.task_breakdown.tasks]
             if plan is not None and plan.task_breakdown is not None
             else [],
-            jobs=list(record.jobs.values()),
+            jobs=[public_job(job) for job in record.jobs.values()],
             resources=list(record.resources.values()),
             sessions=list(
                 dict.fromkeys(job.session_id for job in record.jobs.values() if job.session_id)
