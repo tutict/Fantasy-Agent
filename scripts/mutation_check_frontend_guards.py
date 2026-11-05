@@ -1076,6 +1076,8 @@ def run(relative_test: str) -> tuple[int, str]:
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         env={**os.environ, "NO_COLOR": "1", "FORCE_COLOR": "0"},
     )

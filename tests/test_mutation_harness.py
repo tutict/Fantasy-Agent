@@ -27,6 +27,39 @@ from scripts import mutation_check_all_guards as harness
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+
+def test_backend_runner_reads_utf8_diagnostics_on_a_gbk_host(tmp_path, monkeypatch):
+    script = tmp_path / "scripts" / "run_tests.py"
+    script.parent.mkdir()
+    script.write_text(
+        "import sys\nsys.stdout.buffer.write('中文反馈'.encode('utf-8'))\n"
+        "sys.stderr.write('失败原因')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(harness, "ROOT", tmp_path)
+    monkeypatch.setattr(subprocess, "_text_encoding", lambda: "gbk")
+    monkeypatch.setenv("PYTHONIOENCODING", "gbk")
+    code, output = harness.run("fixture.py")
+    assert code == 0
+    assert output == "中文反馈失败原因"
+
+
+def test_frontend_runner_reads_utf8_diagnostics_on_a_gbk_host(tmp_path, monkeypatch):
+    from scripts import mutation_check_frontend_guards as frontend
+
+    script = tmp_path / "fake_vitest.py"
+    script.write_text(
+        "import sys\nsys.stdout.buffer.write('中文反馈'.encode('utf-8'))\n"
+        "sys.stderr.buffer.write('失败原因'.encode('utf-8'))\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(frontend, "VITEST", script)
+    monkeypatch.setattr(frontend, "_node", lambda: sys.executable)
+    monkeypatch.setattr(subprocess, "_text_encoding", lambda: "gbk")
+    code, output = frontend.run("fixture.test.tsx")
+    assert code == 0
+    assert output.encode() == "中文反馈失败原因".encode()
+
 #: The node-id shapes the harness uses: ``tests/test_foo.py::test_bar``, and the
 #: parametrised ``tests/test_foo.py::test_bar[axis]`` for a guard that is one leg
 #: of a parametrised test.

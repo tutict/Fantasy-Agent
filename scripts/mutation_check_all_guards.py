@@ -62,6 +62,13 @@ sys.path.insert(0, str(ROOT))
 #: (label, file, needle, mutant, test id)
 CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
     (
+        "HARNESS-UTF8 backend diagnostics fall back to the host codec",
+        "scripts/mutation_check_all_guards.py",
+        b'        encoding="utf-8",\n        errors="replace",\n',
+        b'        encoding="gbk",\n        errors="replace",\n',
+        "tests/test_mutation_harness.py::test_backend_runner_reads_utf8_diagnostics_on_a_gbk_host",
+    ),
+    (
         "G1 main.gd indexes the const manifest",
         "fantasy_agent/godot_mcp.py",
         b'HANDOFF.get("gameplay", {{}}) as Dictionary',
@@ -2060,7 +2067,8 @@ def _guard_env() -> dict[str, str]:
     cannot quietly drop the ban and have CI discover it a run later.
     """
 
-    return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+    # The guard and its runner must speak the same encoding on Windows too.
+    return {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"}
 
 
 def run(test: str) -> tuple[int, str]:
@@ -2078,6 +2086,8 @@ def run(test: str) -> tuple[int, str]:
         cwd=ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         env=_guard_env(),
     )
