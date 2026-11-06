@@ -26,12 +26,20 @@ def _plan():
 def _report(wins=0):
     return PlaytestReport(
         runs_requested=3,
-        samples=[PlaytestSample(
-            run_index=i, outcome="win" if i < wins else "fail",
-            reason="" if i < wins else "Route timer expires before extraction",
-            session_seconds=12, player_moved_distance=80, playable=True,
-            axis="parkour", held=["sprint"], taps={"vault": 5, "slide": 2},
-        ) for i in range(3)],
+        samples=[
+            PlaytestSample(
+                run_index=i,
+                outcome="win" if i < wins else "fail",
+                reason="" if i < wins else "Route timer expires before extraction",
+                session_seconds=12,
+                player_moved_distance=80,
+                playable=True,
+                axis="parkour",
+                held=["sprint"],
+                taps={"vault": 5, "slide": 2},
+            )
+            for i in range(3)
+        ],
     )
 
 
@@ -40,7 +48,9 @@ def test_preview_cannot_write_or_execute_even_with_an_injected_runner(tmp_path):
         pytest.fail("unconfirmed experiment executed")
 
     result = _controller().run_evolution(
-        EvolutionRequest(plan=_plan()), experiment_id="preview", workspace_root=tmp_path,
+        EvolutionRequest(plan=_plan()),
+        experiment_id="preview",
+        workspace_root=tmp_path,
         run_iteration=forbidden,
     )
     assert result.status == "confirmation_required"
@@ -52,12 +62,16 @@ def test_candidates_have_distinct_sessions_and_do_not_activate_themselves(tmp_pa
     calls = []
 
     def measured(plan, session_id, remaining):
-        calls.append((plan.production_spec_bundle.numeric.pressure_clock_seconds, session_id, remaining))
+        calls.append(
+            (plan.production_spec_bundle.numeric.pressure_clock_seconds, session_id, remaining)
+        )
         return _report(0 if len(calls) == 1 else 3)
 
     result = _controller().run_evolution(
-        EvolutionRequest(plan=_plan(), confirmed=True), experiment_id="bounded",
-        workspace_root=tmp_path, run_iteration=measured,
+        EvolutionRequest(plan=_plan(), confirmed=True),
+        experiment_id="bounded",
+        workspace_root=tmp_path,
+        run_iteration=measured,
     )
     assert len(calls) == 2
     assert calls[1][0] > calls[0][0]
@@ -82,8 +96,10 @@ def test_no_more_candidates_start_after_the_total_wall_budget(tmp_path):
 
     result = _controller().run_evolution(
         EvolutionRequest(plan=_plan(), confirmed=True, max_wall_seconds=30),
-        experiment_id="deadline", workspace_root=tmp_path,
-        run_iteration=measured, clock=lambda: now[0],
+        experiment_id="deadline",
+        workspace_root=tmp_path,
+        run_iteration=measured,
+        clock=lambda: now[0],
     )
     assert len(calls) == 1
     assert result.report.status == "budget_exhausted"
@@ -101,8 +117,10 @@ def test_cancel_stops_new_work_and_keeps_the_last_measurement(tmp_path):
 
     with cancel_scope(cancel):
         result = _controller().run_evolution(
-            EvolutionRequest(plan=_plan(), confirmed=True), experiment_id="cancelled",
-            workspace_root=tmp_path, run_iteration=measured,
+            EvolutionRequest(plan=_plan(), confirmed=True),
+            experiment_id="cancelled",
+            workspace_root=tmp_path,
+            run_iteration=measured,
         )
     assert len(calls) == 1
     assert result.report.status == "cancelled"
@@ -119,8 +137,10 @@ def test_a_broken_script_requests_manual_rework_instead_of_numeric_retries(tmp_p
         return report
 
     result = _controller().run_evolution(
-        EvolutionRequest(plan=_plan(), confirmed=True), experiment_id="script",
-        workspace_root=tmp_path, run_iteration=measured,
+        EvolutionRequest(plan=_plan(), confirmed=True),
+        experiment_id="script",
+        workspace_root=tmp_path,
+        run_iteration=measured,
     )
     assert len(calls) == 1
     assert result.report.status == "manual_rework"
@@ -136,18 +156,29 @@ def test_adoption_verifies_the_server_record_and_then_records_reusable_experienc
 
     plan = _plan()
     _controller().run_evolution(
-        EvolutionRequest(plan=plan, confirmed=True), experiment_id="adopt",
-        workspace_root=tmp_path, run_iteration=measured,
+        EvolutionRequest(plan=plan, confirmed=True),
+        experiment_id="adopt",
+        workspace_root=tmp_path,
+        run_iteration=measured,
     )
     updated, experience = _controller().adopt_evolution(
-        "adopt", plan, feedback="人工试玩目标更清楚", workspace_root=tmp_path,
+        "adopt",
+        plan,
+        feedback="人工试玩目标更清楚",
+        workspace_root=tmp_path,
     )
-    assert updated.production_spec_bundle.numeric.pressure_clock_seconds > plan.production_spec_bundle.numeric.pressure_clock_seconds
+    assert (
+        updated.production_spec_bundle.numeric.pressure_clock_seconds
+        > plan.production_spec_bundle.numeric.pressure_clock_seconds
+    )
     assert experience.feedback == "人工试玩目标更清楚"
     assert len(list_experiences(workspace_root=tmp_path)) == 1
     suggestion = _controller().suggest_evolution(plan, workspace_root=tmp_path)
     assert suggestion.experience_id == experience.id
-    assert suggestion.plan.production_spec_bundle.numeric.pressure_clock_seconds == updated.production_spec_bundle.numeric.pressure_clock_seconds
+    assert (
+        suggestion.plan.production_spec_bundle.numeric.pressure_clock_seconds
+        == updated.production_spec_bundle.numeric.pressure_clock_seconds
+    )
     assert not hasattr(experience, "confirmed")
 
 
@@ -160,13 +191,58 @@ def test_changed_plan_cannot_adopt_an_old_experiment(tmp_path):
 
     plan = _plan()
     _controller().run_evolution(
-        EvolutionRequest(plan=plan, confirmed=True), experiment_id="stale",
-        workspace_root=tmp_path, run_iteration=measured,
+        EvolutionRequest(plan=plan, confirmed=True),
+        experiment_id="stale",
+        workspace_root=tmp_path,
+        run_iteration=measured,
     )
     plan.gameplay_spec.title = "new idea"
     with pytest.raises(ValueError, match="计划"):
         _controller().adopt_evolution("stale", plan, workspace_root=tmp_path)
     assert list_experiences(workspace_root=tmp_path) == []
+
+
+def test_approved_experience_is_reused_across_project_plan_versions(tmp_path):
+    plan = _plan()
+    first_root, second_root = tmp_path / "versions/v1", tmp_path / "versions/v2"
+    counts = []
+
+    def first_measure(*args):
+        counts.append(args)
+        return _report(0 if len(counts) == 1 else 3)
+
+    _controller().run_evolution(
+        EvolutionRequest(plan=plan, confirmed=True),
+        experiment_id="first-version",
+        workspace_root=first_root,
+        run_iteration=first_measure,
+        experience_workspace_root=tmp_path,
+    )
+    _, experience = _controller().adopt_evolution(
+        "first-version",
+        plan,
+        workspace_root=first_root,
+        experience_workspace_root=tmp_path,
+    )
+    assert [item.id for item in list_experiences(workspace_root=tmp_path)] == [experience.id]
+    assert list_experiences(workspace_root=first_root) == []
+    second_calls = []
+
+    def second_measure(candidate, *_):
+        second_calls.append(candidate.production_spec_bundle.numeric.pressure_clock_seconds)
+        return _report(0 if len(second_calls) == 1 else 3)
+
+    _controller().run_evolution(
+        EvolutionRequest(plan=plan, confirmed=True, max_iterations=1),
+        experiment_id="second-version",
+        workspace_root=second_root,
+        run_iteration=second_measure,
+        experience_workspace_root=tmp_path,
+    )
+    assert len(second_calls) == 2
+    assert second_calls[1] == experience.changes[0].after
+    assert load_report("second-version", workspace_root=second_root) is not None
+    assert load_report("second-version", workspace_root=tmp_path) is None
 
 
 def test_unsupported_engine_is_rejected_before_any_record_or_execution(tmp_path):
@@ -176,8 +252,10 @@ def test_unsupported_engine_is_rejected_before_any_record_or_execution(tmp_path)
     )
     with pytest.raises(ValueError, match="Godot"):
         _controller().run_evolution(
-            EvolutionRequest(plan=plan, confirmed=True), experiment_id="wrong-engine",
-            workspace_root=tmp_path, run_iteration=lambda *_: _report(3),
+            EvolutionRequest(plan=plan, confirmed=True),
+            experiment_id="wrong-engine",
+            workspace_root=tmp_path,
+            run_iteration=lambda *_: _report(3),
         )
     assert not (tmp_path / "generated").exists()
 
@@ -193,8 +271,10 @@ def test_a_report_for_another_mechanic_axis_cannot_drive_retries(tmp_path):
         return report
 
     result = _controller().run_evolution(
-        EvolutionRequest(plan=_plan(), confirmed=True), experiment_id="wrong-axis",
-        workspace_root=tmp_path, run_iteration=measured,
+        EvolutionRequest(plan=_plan(), confirmed=True),
+        experiment_id="wrong-axis",
+        workspace_root=tmp_path,
+        run_iteration=measured,
     )
     assert len(calls) == 1
     assert result.report.status == "manual_rework"
@@ -208,14 +288,27 @@ def test_a_stored_score_without_measured_improvement_cannot_be_adopted(tmp_path)
     plan = _plan()
     changes = propose_changes(plan, _report())
     candidate = apply_changes(plan, changes)
-    save_report(EvolutionReport(
-        experiment_id="invented-score", status="improved", original_plan=plan, best_iteration=1,
-        iterations=[
-            EvolutionIteration(index=0, session_id="base", plan=plan, report=_report()),
-            EvolutionIteration(index=1, session_id="candidate", plan=candidate,
-                               report=_report(), changes=changes, eligible=True, improved=True),
-        ],
-    ), workspace_root=tmp_path)
+    save_report(
+        EvolutionReport(
+            experiment_id="invented-score",
+            status="improved",
+            original_plan=plan,
+            best_iteration=1,
+            iterations=[
+                EvolutionIteration(index=0, session_id="base", plan=plan, report=_report()),
+                EvolutionIteration(
+                    index=1,
+                    session_id="candidate",
+                    plan=candidate,
+                    report=_report(),
+                    changes=changes,
+                    eligible=True,
+                    improved=True,
+                ),
+            ],
+        ),
+        workspace_root=tmp_path,
+    )
     with pytest.raises(ValueError, match="检查"):
         _controller().adopt_evolution("invented-score", plan, workspace_root=tmp_path)
     assert list_experiences(workspace_root=tmp_path) == []

@@ -116,10 +116,17 @@ class BlenderMCPBridge(BaseMCPBridge):
         written_files = self._write_artifact(artifact)
         stdout_path, stderr_path = self._log_paths(artifact.plan_name)
         env = dict(os.environ)
-        env["PYTHONPATH"] = (
-            str(self.workspace_root)
-            if not env.get("PYTHONPATH")
-            else f"{self.workspace_root}{os.pathsep}{env['PYTHONPATH']}"
+        # A project workspace is not the repo: the generated script imports the
+        # library workers, so the repo root must stay importable even when the
+        # caller cleared PYTHONPATH.
+        env["PYTHONPATH"] = os.pathsep.join(
+            part
+            for part in (
+                str(self.workspace_root),
+                str(DEFAULT_WORKSPACE_ROOT),
+                env.get("PYTHONPATH", ""),
+            )
+            if part
         )
 
         try:
@@ -174,7 +181,9 @@ class BlenderMCPBridge(BaseMCPBridge):
             return_code=process.returncode,
             stdout_tail=_tail(process.stdout),
             stderr_tail=_tail(process.stderr),
-            risks=risks if process.returncode == 0 else [*risks, "Blender returned a non-zero code."],
+            risks=risks
+            if process.returncode == 0
+            else [*risks, "Blender returned a non-zero code."],
         )
 
     def _artifact(

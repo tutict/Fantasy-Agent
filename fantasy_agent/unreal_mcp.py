@@ -354,9 +354,7 @@ class UnrealMCPBridge(BaseMCPBridge):
             ),
         )
         if issues:
-            raise UnrealMCPSafetyError(
-                "Level assembly manifest is invalid: " + "; ".join(issues)
-            )
+            raise UnrealMCPSafetyError("Level assembly manifest is invalid: " + "; ".join(issues))
 
         written_files: list[str] = []
         if request.write_files:
@@ -400,7 +398,9 @@ class UnrealMCPBridge(BaseMCPBridge):
         if import_script_path.suffix.lower() != ".py":
             raise UnrealMCPSafetyError("Unreal asset ingest requires a generated Python script.")
         if not import_script_path.exists():
-            raise UnrealMCPSafetyError(f"Unreal asset ingest script does not exist: {request.import_script_path}")
+            raise UnrealMCPSafetyError(
+                f"Unreal asset ingest script does not exist: {request.import_script_path}"
+            )
 
         command = [
             request.unreal_editor_cmd,
@@ -449,7 +449,10 @@ class UnrealMCPBridge(BaseMCPBridge):
             )
         except subprocess.TimeoutExpired as exc:
             stdout = _to_text(exc.stdout)
-            stderr = _to_text(exc.stderr) or f"Unreal asset ingest timed out after {request.timeout_seconds}s."
+            stderr = (
+                _to_text(exc.stderr)
+                or f"Unreal asset ingest timed out after {request.timeout_seconds}s."
+            )
             self._write_text(stdout_path, stdout)
             self._write_text(stderr_path, stderr)
             return UnrealMCPResult(
@@ -490,9 +493,7 @@ class UnrealMCPBridge(BaseMCPBridge):
             ],
         )
 
-    def run_level_assembly(
-        self, request: UnrealMCPRunLevelAssemblyRequest
-    ) -> UnrealMCPResult:
+    def run_level_assembly(self, request: UnrealMCPRunLevelAssemblyRequest) -> UnrealMCPResult:
         project_file = self._assert_unreal_project_file(request.project_file)
         self._assert_relative_under(request.assembly_script_path, "generated/unreal")
         assembly_script_path = self._resolve_workspace_path(request.assembly_script_path)
@@ -762,7 +763,11 @@ class UnrealMCPBridge(BaseMCPBridge):
         return yaml.safe_load(resolved.read_text(encoding="utf-8"))
 
     def _missing_sources(self, jobs: list[UnrealAssetIngestJob]) -> list[str]:
-        return [job.source_file for job in jobs if not self._resolve_workspace_path(job.source_file).exists()]
+        return [
+            job.source_file
+            for job in jobs
+            if not self._resolve_workspace_path(job.source_file).exists()
+        ]
 
     def _validate_ingest_manifest(
         self,
@@ -800,9 +805,10 @@ class UnrealMCPBridge(BaseMCPBridge):
             except UnrealMCPSafetyError as exc:
                 issues.append(str(exc))
 
-            if request.require_existing_sources and not self._resolve_workspace_path(
-                job.source_file
-            ).exists():
+            if (
+                request.require_existing_sources
+                and not self._resolve_workspace_path(job.source_file).exists()
+            ):
                 issues.append(f"missing source file: {job.source_file}")
 
             if job.asset_type == "static_mesh":
@@ -821,9 +827,7 @@ class UnrealMCPBridge(BaseMCPBridge):
 
             if job.asset_type == "texture_reference":
                 if not job.source_file.lower().endswith((".png", ".jpg", ".jpeg", ".webp")):
-                    issues.append(
-                        f"texture reference source must be an image: {job.source_file}"
-                    )
+                    issues.append(f"texture reference source must be an image: {job.source_file}")
                 if job.source == "comfyui" and not job.review_required:
                     warnings.append(f"ComfyUI reference should require review: {job.asset_name}")
 
@@ -836,9 +840,7 @@ class UnrealMCPBridge(BaseMCPBridge):
         ingest_manifest: UnrealAssetIngestManifest,
         assembly_script_path: str,
     ) -> UnrealLevelAssemblyManifest:
-        static_jobs = [
-            job for job in ingest_manifest.jobs if job.asset_type == "static_mesh"
-        ]
+        static_jobs = [job for job in ingest_manifest.jobs if job.asset_type == "static_mesh"]
         jobs_by_name = {job.asset_name: job for job in static_jobs}
 
         def pick(*preferred_names: str, contains: tuple[str, ...] = ()) -> str | None:
@@ -935,32 +937,74 @@ class UnrealMCPBridge(BaseMCPBridge):
         # coordinates that only made sense for a 10-minute route.
         features = (
             (
-                "FA_Ramp_Teach", ramp, "traversal", 0.16, -110.0, 70.0,
-                (0.0, 0.0, 0.0), "Teaches vertical route reading before pressure is added.",
+                "FA_Ramp_Teach",
+                ramp,
+                "traversal",
+                0.16,
+                -110.0,
+                70.0,
+                (0.0, 0.0, 0.0),
+                "Teaches vertical route reading before pressure is added.",
             ),
             (
-                "FA_Vault_Blocker", vault, "obstacle", 0.33, 0.0, 110.0,
-                (0.0, 0.0, 0.0), "Forces an early vault decision on the main route.",
+                "FA_Vault_Blocker",
+                vault,
+                "obstacle",
+                0.33,
+                0.0,
+                110.0,
+                (0.0, 0.0, 0.0),
+                "Forces an early vault decision on the main route.",
             ),
             (
-                "FA_WallRun_Panel", wall, "traversal", 0.50, -260.0, 230.0,
-                (0.0, 0.0, 90.0), "Makes the midpoint combine speed with side-wall commitment.",
+                "FA_WallRun_Panel",
+                wall,
+                "traversal",
+                0.50,
+                -260.0,
+                230.0,
+                (0.0, 0.0, 90.0),
+                "Makes the midpoint combine speed with side-wall commitment.",
             ),
             (
-                "FA_Slide_Barrier", slide, "obstacle", 0.63, 0.0, 90.0,
-                (0.0, 0.0, 0.0), "Creates a low-profile timing gate after the wall-run section.",
+                "FA_Slide_Barrier",
+                slide,
+                "obstacle",
+                0.63,
+                0.0,
+                90.0,
+                (0.0, 0.0, 0.0),
+                "Creates a low-profile timing gate after the wall-run section.",
             ),
             (
-                "FA_Boost_Pad", boost, "traversal", 0.73, 0.0, 40.0,
-                (0.0, 0.0, 0.0), "Marks the acceleration moment into the final run.",
+                "FA_Boost_Pad",
+                boost,
+                "traversal",
+                0.73,
+                0.0,
+                40.0,
+                (0.0, 0.0, 0.0),
+                "Marks the acceleration moment into the final run.",
             ),
             (
-                "FA_Checkpoint_Gate", checkpoint, "checkpoint", 0.81, 0.0, 120.0,
-                (0.0, 0.0, 0.0), "Visible recovery point before the final hazard read.",
+                "FA_Checkpoint_Gate",
+                checkpoint,
+                "checkpoint",
+                0.81,
+                0.0,
+                120.0,
+                (0.0, 0.0, 0.0),
+                "Visible recovery point before the final hazard read.",
             ),
             (
-                "FA_Objective_Prop", objective, "objective", 0.98, 0.0, 120.0,
-                (0.0, 0.0, 0.0), "Readable pickup/target before extraction.",
+                "FA_Objective_Prop",
+                objective,
+                "objective",
+                0.98,
+                0.0,
+                120.0,
+                (0.0, 0.0, 0.0),
+                "Readable pickup/target before extraction.",
             ),
         )
         for actor_name, asset_name, role, fraction, lateral, height, rotation, note in features:
@@ -1045,7 +1089,9 @@ class UnrealMCPBridge(BaseMCPBridge):
         if not floor:
             risks.append("No dedicated floor asset was found; the first static mesh is reused.")
         if not objective or not exit_gate:
-            risks.append("Objective or exit asset was not found; route completion may be incomplete.")
+            risks.append(
+                "Objective or exit asset was not found; route completion may be incomplete."
+            )
         if enemy_risk:
             risks.append(enemy_risk)
 
@@ -1153,7 +1199,7 @@ class UnrealMCPBridge(BaseMCPBridge):
         manifest_path = self._resolve_workspace_path(ingest_manifest_path)
         script_path = self._resolve_workspace_path(manifest.import_script_path)
         self._write_text(manifest_path, json.dumps(manifest.model_dump(mode="json"), indent=2))
-        self._write_text(script_path, _asset_ingest_script(manifest))
+        self._write_text(script_path, _asset_ingest_script(manifest, self.workspace_root))
         return [self._display_path(manifest_path), self._display_path(script_path)]
 
     def _write_level_assembly(
@@ -1164,7 +1210,7 @@ class UnrealMCPBridge(BaseMCPBridge):
         manifest_path = self._resolve_workspace_path(level_manifest_path)
         script_path = self._resolve_workspace_path(manifest.assembly_script_path)
         self._write_text(manifest_path, json.dumps(manifest.model_dump(mode="json"), indent=2))
-        self._write_text(script_path, _level_assembly_script(manifest))
+        self._write_text(script_path, _level_assembly_script(manifest, self.workspace_root))
         return [self._display_path(manifest_path), self._display_path(script_path)]
 
     def _artifact(
@@ -1175,9 +1221,10 @@ class UnrealMCPBridge(BaseMCPBridge):
     ) -> UnrealProjectArtifact:
         project_root = Path(project_dir.replace("\\", "/"))
         project_name = _unreal_identifier(plan.project_name)
-        manifest_path = content_manifest_path or (
-            project_root / "fantasy-agent-content-manifest.json"
-        ).as_posix()
+        manifest_path = (
+            content_manifest_path
+            or (project_root / "fantasy-agent-content-manifest.json").as_posix()
+        )
         content_folders = [
             (project_root / folder.replace("\\", "/")).as_posix() for folder in plan.folders
         ]
@@ -1234,7 +1281,9 @@ class UnrealMCPBridge(BaseMCPBridge):
         for folder in manifest.content_folders:
             normalized = folder.replace("\\", "/")
             if not normalized.startswith("Content/"):
-                raise UnrealMCPSafetyError(f"Unreal content folder must start with Content/: {folder}")
+                raise UnrealMCPSafetyError(
+                    f"Unreal content folder must start with Content/: {folder}"
+                )
         for folder in artifact.content_folders:
             self._assert_relative_under(folder, "generated/unreal")
         for import_manifest in manifest.import_manifests:
@@ -1373,7 +1422,6 @@ class UnrealMCPBridge(BaseMCPBridge):
         with log_path.open("r", encoding="utf-8", errors="replace") as handle:
             handle.seek(start)
             return handle.read()[-limit:]
-
 
 
 def call_unreal_mcp_tool(
@@ -1531,7 +1579,9 @@ def _default_engine_ini(plan: UnrealProjectPlan) -> str:
     )
 
 
-def _asset_ingest_script(manifest: UnrealAssetIngestManifest) -> str:
+def _asset_ingest_script(
+    manifest: UnrealAssetIngestManifest, workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT
+) -> str:
     payload = json.dumps(manifest.model_dump(mode="json"), indent=2)
     return f'''"""Fantasy Agent Unreal asset ingest script.
 
@@ -1547,14 +1597,15 @@ import unreal
 
 
 MANIFEST = json.loads({payload!r})
+WORKSPACE_ROOT = Path({str(workspace_root)!r})
 
 
 def find_repo_root() -> Path:
-    script_path = Path(__file__).resolve()
-    for parent in script_path.parents:
-        if (parent / "fantasy_agent").exists():
-            return parent
-    return script_path.parents[3]
+    # The script runs inside a versioned project workspace, which is not the
+    # library repo. Walking up to the nearest fantasy_agent directory would
+    # resolve to whichever root happens to sit above it, so the workspace is
+    # injected by the bridge instead of guessed from __file__.
+    return WORKSPACE_ROOT
 
 
 REPO_ROOT = find_repo_root()
@@ -1632,7 +1683,9 @@ unreal.log("Fantasy Agent asset ingest complete: {{}} jobs".format(len(MANIFEST[
 '''
 
 
-def _level_assembly_script(manifest: UnrealLevelAssemblyManifest) -> str:
+def _level_assembly_script(
+    manifest: UnrealLevelAssemblyManifest, workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT
+) -> str:
     payload = json.dumps(manifest.model_dump(mode="json"), indent=2)
     script = '''"""Fantasy Agent Unreal level assembly script.
 
@@ -1648,15 +1701,14 @@ import unreal
 
 
 MANIFEST = json.loads(__PAYLOAD__)
+WORKSPACE_ROOT = Path(__WORKSPACE_ROOT__)
 ASSET_LIBRARY = unreal.EditorAssetLibrary
 
 
 def repo_root():
-    script_path = Path(__file__).resolve()
-    for parent in script_path.parents:
-        if (parent / "fantasy_agent").exists():
-            return parent
-    return script_path.parents[3]
+    # Injected by the bridge: a project workspace is not necessarily below the
+    # library repo, so __file__ cannot identify it.
+    return WORKSPACE_ROOT
 
 
 def vector(values):
@@ -1867,7 +1919,13 @@ unreal.log(
     )
 )
 '''
-    return script.replace("__PAYLOAD__", repr(payload))
+    # Replace the structural marker first and insert the payload last: the
+    # manifest is JSON from the workspace and may contain either marker as
+    # literal text. A later replace would rewrite payload data and can produce
+    # a script that no longer parses.
+    return script.replace("__WORKSPACE_ROOT__", repr(str(workspace_root))).replace(
+        "__PAYLOAD__", repr(payload)
+    )
 
 
 def _default_ingest_script_path(project_file: str) -> str:

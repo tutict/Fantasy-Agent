@@ -36,11 +36,19 @@ STDERR = "stderr"
 class ProcessCancelled(RuntimeError):
     """Raised when a streaming run is cancelled before the process exits."""
 
-    def __init__(self, command: object, output: str = "", stderr: str = "") -> None:
+    def __init__(
+        self,
+        command: object,
+        output: str = "",
+        stderr: str = "",
+        *,
+        log_paths: list[str] | None = None,
+    ) -> None:
         super().__init__(f"Process cancelled: {command}")
         self.command = command
         self.output = output
         self.stderr = stderr
+        self.log_paths = list(log_paths or [])
 
 
 _cancel_event: contextvars.ContextVar[threading.Event | None] = contextvars.ContextVar(
@@ -313,7 +321,12 @@ def run_streaming(
         stderr_text = _join_lines(captured[STDERR])
 
     if cancelled:
-        raise ProcessCancelled(command, output=stdout_text, stderr=stderr_text)
+        raise ProcessCancelled(
+            command,
+            output=stdout_text,
+            stderr=stderr_text,
+            log_paths=[str(path) for path in (stdout_path, stderr_path) if path is not None],
+        )
     if timed_out:
         raise subprocess.TimeoutExpired(
             list(command),

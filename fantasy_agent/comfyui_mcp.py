@@ -23,6 +23,7 @@ from fantasy_agent.contracts import (
     ComfyUIWorkflowArtifact,
 )
 from fantasy_agent.mcp_bridge import DEFAULT_WORKSPACE_ROOT, BaseMCPBridge
+from fantasy_agent.path_safety import resolve_workspace_path
 
 SERVER_NAME = "fantasy-agent-comfyui-mcp"
 SERVER_VERSION = "0.1.0"
@@ -147,7 +148,8 @@ class ComfyUIMCPBridge(BaseMCPBridge):
                     endpoint_candidates=request.endpoint_candidates,
                     auto_discover_endpoint=request.auto_discover_endpoint,
                     allow_remote_endpoint=request.allow_remote_endpoint,
-                    preferred_checkpoint_name=request.checkpoint_name or request.plan.checkpoint_name,
+                    preferred_checkpoint_name=request.checkpoint_name
+                    or request.plan.checkpoint_name,
                     require_checkpoint=True,
                 )
             )
@@ -179,10 +181,14 @@ class ComfyUIMCPBridge(BaseMCPBridge):
         stdout_events: list[str] = []
         try:
             for job in manifest.jobs:
-                response = client.queue_prompt(job.workflow, client_id=f"fantasy-agent-{job.job_id}")
+                response = client.queue_prompt(
+                    job.workflow, client_id=f"fantasy-agent-{job.job_id}"
+                )
                 prompt_id = str(response.get("prompt_id") or response.get("id") or "")
                 if not prompt_id:
-                    raise ComfyUIMCPSafetyError(f"ComfyUI did not return a prompt_id for {job.job_id}.")
+                    raise ComfyUIMCPSafetyError(
+                        f"ComfyUI did not return a prompt_id for {job.job_id}."
+                    )
                 prompt_ids.append(prompt_id)
                 stdout_events.append(json.dumps({"job_id": job.job_id, "response": response}))
             generated_images = list(manifest.generated_images)
@@ -269,7 +275,9 @@ class ComfyUIMCPBridge(BaseMCPBridge):
             )
         system = system_stats.get("system", {}) if isinstance(system_stats, dict) else {}
         devices = system_stats.get("devices", []) if isinstance(system_stats, dict) else []
-        device_names = [str(device.get("name", "unknown")) for device in devices if isinstance(device, dict)]
+        device_names = [
+            str(device.get("name", "unknown")) for device in devices if isinstance(device, dict)
+        ]
         status = "ready" if not blockers else "degraded"
         return ComfyUICapabilityProbeResult(
             status=status,
@@ -355,9 +363,7 @@ class ComfyUIMCPBridge(BaseMCPBridge):
         allow_remote_endpoint: bool,
     ) -> list[str]:
         if _has_url_credentials(manifest.endpoint):
-            raise ComfyUIMCPSafetyError(
-                "ComfyUI endpoint must not include URL credentials."
-            )
+            raise ComfyUIMCPSafetyError("ComfyUI endpoint must not include URL credentials.")
         if not allow_remote_endpoint and not local_tools._is_local_http_endpoint(manifest.endpoint):
             raise ComfyUIMCPSafetyError(
                 f"ComfyUI endpoint must be local unless allow_remote_endpoint=true: {manifest.endpoint}"
@@ -390,7 +396,9 @@ class ComfyUIMCPBridge(BaseMCPBridge):
             if _has_url_credentials(endpoint):
                 warnings.append("Skipped ComfyUI endpoint containing URL credentials.")
                 continue
-            if not request.allow_remote_endpoint and not local_tools._is_local_http_endpoint(endpoint):
+            if not request.allow_remote_endpoint and not local_tools._is_local_http_endpoint(
+                endpoint
+            ):
                 warnings.append(f"Skipped non-local ComfyUI endpoint: {endpoint}")
                 continue
             try:
@@ -468,6 +476,12 @@ class ComfyUIMCPBridge(BaseMCPBridge):
         self._assert_relative_under(path, "templates/comfyui")
         resolved = self._resolve_workspace_path(path)
         if not resolved.exists():
+            # Project workspaces contain production outputs. The bundled
+            # templates remain application inputs; only absence uses them.
+            resolved = resolve_workspace_path(
+                path, workspace_root=DEFAULT_WORKSPACE_ROOT, required_prefix="templates/comfyui"
+            )
+        if not resolved.exists():
             raise ComfyUIMCPSafetyError(f"ComfyUI workflow template does not exist: {path}")
         return resolved
 
@@ -515,7 +529,9 @@ def call_comfyui_mcp_tool(
 
 def _probe_content_summary(result: ComfyUICapabilityProbeResult) -> str:
     if result.status == "ready":
-        return f"ComfyUI is ready at {result.endpoint} with checkpoint {result.selected_checkpoint}."
+        return (
+            f"ComfyUI is ready at {result.endpoint} with checkpoint {result.selected_checkpoint}."
+        )
     if result.status == "degraded":
         return f"ComfyUI is reachable at {result.endpoint}, but setup is incomplete: {' '.join(result.blockers)}"
     return f"ComfyUI is unavailable at {result.endpoint}: {' '.join(result.blockers)}"
@@ -523,7 +539,9 @@ def _probe_content_summary(result: ComfyUICapabilityProbeResult) -> str:
 
 def _content_summary(result: ComfyUIMCPResult) -> str:
     if result.status == "blocked":
-        reason = result.stderr_tail or (result.risks[-1] if result.risks else "preflight did not pass.")
+        reason = result.stderr_tail or (
+            result.risks[-1] if result.risks else "preflight did not pass."
+        )
         return f"ComfyUI MCP blocked execution: {reason}"
     if result.status == "failed":
         return "ComfyUI MCP failed. Check returned logs and stderr_tail."

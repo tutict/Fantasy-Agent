@@ -224,7 +224,6 @@ class EnemyPressureReport(StrictModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-
 class DamageModel(StrictModel):
     player_hp: int = Field(default=5, ge=1, le=999)
     enemy_hp_default: int = Field(default=3, ge=1, le=100)
@@ -306,7 +305,9 @@ class NarrativeSpec(StrictModel):
     objective_copy: list[str] = Field(min_length=1)
     failure_feedback: list[str] = Field(min_length=1)
     hud_text: dict[str, str] = Field(default_factory=dict)
-    gameplay_priority_rule: str = "Narrative copy must clarify objectives and failure, not override playable goals."
+    gameplay_priority_rule: str = (
+        "Narrative copy must clarify objectives and failure, not override playable goals."
+    )
 
 
 class ConfigTable(StrictModel):
@@ -706,7 +707,9 @@ class UnrealMCPRunLevelAssemblyRequest(StrictModel):
 class UnrealMCPResult(StrictModel):
     status: Literal["planned", "written", "executed", "failed", "blocked"]
     artifact: UnrealProjectArtifact | None = None
-    manifest: UnrealContentManifest | UnrealAssetIngestManifest | UnrealLevelAssemblyManifest | None = None
+    manifest: (
+        UnrealContentManifest | UnrealAssetIngestManifest | UnrealLevelAssemblyManifest | None
+    ) = None
     validation_report: (
         UnrealAssetIngestValidationReport | UnrealLevelAssemblyValidationReport | None
     ) = None
@@ -952,6 +955,8 @@ class ArtDirectionBrief(StrictModel):
 
 class CreativeReviewItem(StrictModel):
     asset_id: str
+    resource_id: str = ""
+    content_sha256: str = ""
     source: CreativeReviewSource
     asset_path: str
     gameplay_role: str
@@ -977,8 +982,8 @@ class CreativeReviewReport(StrictModel):
 
 
 class ArtifactIdentity(StrictModel):
-    algorithm: Literal['sha256'] = 'sha256'
-    digest: str = Field(pattern=r'^[0-9a-f]{64}$')
+    algorithm: Literal["sha256"] = "sha256"
+    digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class AssetApprovalDecision(StrictModel):

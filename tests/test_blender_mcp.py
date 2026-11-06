@@ -28,6 +28,35 @@ def _plan() -> BlenderAssetPlan:
     )
 
 
+def test_blender_can_import_library_workers_from_a_project_workspace(tmp_path, monkeypatch):
+    import subprocess
+    import sys
+
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    workspace = tmp_path / "versions/v1"
+    workspace.mkdir(parents=True)
+    imports = []
+
+    def run(*args, **kwargs):
+        checked = subprocess.run(
+            [sys.executable, "-c", "import fantasy_agent; print(fantasy_agent.__file__)"],
+            cwd=kwargs["cwd"],
+            env=kwargs["env"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        imports.append(checked)
+        return checked
+
+    BlenderMCPBridge(workspace, runner=run).generate_asset_batch(
+        BlenderMCPExecuteRequest(plan=_plan(), confirmed_side_effects=True)
+    )
+    assert len(imports) == 1
+    assert imports[0].returncode == 0, imports[0].stderr
+    assert str(Path(__file__).resolve().parents[1] / "fantasy_agent") in imports[0].stdout
+
+
 def test_blender_mcp_descriptors_expose_script_and_batch_tools():
     names = {tool["name"] for tool in tool_descriptors()}
 

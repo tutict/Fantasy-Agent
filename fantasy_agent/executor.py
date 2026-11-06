@@ -121,9 +121,7 @@ def _resume_skip(
     # Validated before the state lookup so a bad value fails the same way
     # whether or not a previous run exists.
     target = normalize_resume_from(resume_from)
-    state = load_state(
-        session_id, engine_key=engine_key, workspace_root=workspace_root
-    )
+    state = load_state(session_id, engine_key=engine_key, workspace_root=workspace_root)
     if state is None:
         return set()
     return stages_before(target) & state.done_stages() & RESUMABLE_STAGES
@@ -213,7 +211,9 @@ def _planned_side_effects(
             effects.append(
                 f"Filter Blender exports through approval manifest: {approval_manifest_path}"
             )
-        effects.append(f"Copy exported glb assets approved by manifest into {project_dir}/assets/generated/")
+        effects.append(
+            f"Copy exported glb assets approved by manifest into {project_dir}/assets/generated/"
+        )
     effects.extend(
         [
             (
@@ -324,9 +324,7 @@ def _run_blender_stage(
     except ProcessCancelled:
         raise
     except Exception as exc:  # noqa: BLE001 - degrade gracefully on any failure
-        stages.append(
-            StageResult("blender", "failed", detail=f"{exc}; degrading to greybox")
-        )
+        stages.append(StageResult("blender", "failed", detail=f"{exc}; degrading to greybox"))
         return []
 
     if result.status != "executed":
@@ -384,7 +382,13 @@ def _build_enemy_pressure_report(
     metrics: dict[str, float | int | str] = {
         "declared_enemy_groups": len(plan.gameplay_spec.enemies),
         "tuned_enemy_count": tuned_enemy_count,
-        "pressure_band": "none" if pressure_score == 0 else "high" if pressure_score >= 10 else "medium" if pressure_score >= 5 else "low",
+        "pressure_band": "none"
+        if pressure_score == 0
+        else "high"
+        if pressure_score >= 10
+        else "medium"
+        if pressure_score >= 5
+        else "low",
     }
     return EnemyPressureReport(
         enemy_count=tuned_enemy_count,
@@ -413,7 +417,6 @@ def _write_enemy_pressure_report(
         encoding="utf-8",
     )
     return report_rel
-
 
 
 def _write_production_spec_exports(
@@ -483,8 +486,7 @@ def _write_production_spec_exports(
         "schema_version": bundle.schema_version,
         "target": "godot",
         "traces": [
-            trace.model_dump(mode="json")
-            for trace in [*config_result.traces, *godot_result.traces]
+            trace.model_dump(mode="json") for trace in [*config_result.traces, *godot_result.traces]
         ],
     }
     trace_path.write_text(
@@ -493,7 +495,6 @@ def _write_production_spec_exports(
     )
     written.append(trace_rel)
     return written
-
 
 
 def _write_unreal_spec_artifacts(
@@ -525,9 +526,7 @@ def _write_unreal_spec_artifacts(
         artifact_path.write_text(artifact.content, encoding="utf-8")
         compiled_paths.append(artifact_rel)
 
-    trace_rel = (
-        Path(project_dir) / "Content/FantasyAgent/Data/SpecTrace.json"
-    ).as_posix()
+    trace_rel = (Path(project_dir) / "Content/FantasyAgent/Data/SpecTrace.json").as_posix()
     trace_path = resolve_workspace_path(
         trace_rel,
         workspace_root=workspace_root,
@@ -547,9 +546,7 @@ def _write_unreal_spec_artifacts(
     compiled_paths.append(trace_rel)
 
     qa_report = evaluate_executable_qa(bundle)
-    qa_rel = (
-        Path(project_dir) / "Content/FantasyAgent/Data/QA_Executable.json"
-    ).as_posix()
+    qa_rel = (Path(project_dir) / "Content/FantasyAgent/Data/QA_Executable.json").as_posix()
     qa_path = resolve_workspace_path(
         qa_rel,
         workspace_root=workspace_root,
@@ -561,8 +558,12 @@ def _write_unreal_spec_artifacts(
     )
     return compiled_paths, [qa_rel], qa_report.model_dump(mode="json")
 
+
 def _run_gameplay_codegen(
-    plan: DirectorBuildPlan, stages: list[StageResult]
+    plan: DirectorBuildPlan,
+    stages: list[StageResult],
+    *,
+    use_llm: bool | None = None,
 ) -> tuple[dict[str, str], bool]:
     """Generate gameplay GDScript. Returns (scripts, was_llm_generated).
 
@@ -575,7 +576,7 @@ def _run_gameplay_codegen(
     """
     from fantasy_agent import gameplay_codegen
 
-    if plan.production_spec_bundle is not None:
+    if plan.production_spec_bundle is not None or use_llm is False:
         scripts = gameplay_codegen.deterministic_gameplay_scripts(
             plan.gameplay_spec,
             production_spec_bundle=plan.production_spec_bundle,
@@ -736,9 +737,7 @@ def _attach_approval_gate_report(
     project_dir: str,
     workspace_root: Path | str,
 ) -> None:
-    approval_report = _write_approval_gate_report(
-        approval_result, project_dir, workspace_root
-    )
+    approval_report = _write_approval_gate_report(approval_result, project_dir, workspace_root)
     gate = next((stage for stage in stages if stage.name == "approval_gate"), None)
     if gate is not None:
         gate.artifacts.append(approval_report)
@@ -760,9 +759,7 @@ def _run_copy_assets_stage(
     detail = f"copied {len(copy_result.copied)} glb"
     if copy_result.skipped:
         detail += f", skipped {len(copy_result.skipped)}"
-    stages.append(
-        StageResult("copy_assets", "done", detail=detail, artifacts=copy_result.copied)
-    )
+    stages.append(StageResult("copy_assets", "done", detail=detail, artifacts=copy_result.copied))
 
 
 def _run_copy_refs_stage(
@@ -780,9 +777,7 @@ def _run_copy_refs_stage(
     detail = f"copied {len(ref_result.copied)} references"
     if ref_result.skipped:
         detail += f", skipped {len(ref_result.skipped)}"
-    stages.append(
-        StageResult("copy_refs", "done", detail=detail, artifacts=ref_result.copied)
-    )
+    stages.append(StageResult("copy_refs", "done", detail=detail, artifacts=ref_result.copied))
 
 
 def execute_asset_pipeline(
@@ -825,9 +820,7 @@ def execute_asset_pipeline(
                 metadata=preflight.model_dump(mode="json"),
             )
         )
-        return ExecutionResult(
-            "failed", session_id, stages=stages, planned_side_effects=planned
-        )
+        return ExecutionResult("failed", session_id, stages=stages, planned_side_effects=planned)
     if preflight.issues:
         stages.append(
             StageResult(
@@ -880,6 +873,7 @@ def execute_godot_demo(
     comfyui_bridge: Any | None = None,
     resume_from: str | None = None,
     playtest: bool = True,
+    use_llm: bool | None = None,
 ) -> ExecutionResult:
     """Run the Godot chain, recording stage state so a later run can resume.
 
@@ -906,6 +900,7 @@ def execute_godot_demo(
         comfyui_bridge=comfyui_bridge,
         resume_from=resume_from,
         playtest=playtest,
+        **({"use_llm": use_llm} if use_llm is not None else {}),
     )
     _persist_stages(
         result.stages,
@@ -936,6 +931,7 @@ def _execute_godot_demo_inner(
     comfyui_bridge: Any | None = None,
     resume_from: str | None = None,
     playtest: bool = True,
+    use_llm: bool | None = None,
 ) -> ExecutionResult:
     """Orchestrate (optional ComfyUI/Blender) -> create -> validate -> import -> playtest.
 
@@ -1145,7 +1141,11 @@ def _execute_godot_demo_inner(
     if "gameplay" in skip:
         _skipped("gameplay")
     elif with_gameplay:
-        gameplay_scripts, gameplay_was_llm = _run_gameplay_codegen(plan, stages)
+        gameplay_scripts, gameplay_was_llm = _run_gameplay_codegen(
+            plan,
+            stages,
+            **({"use_llm": use_llm} if use_llm is not None else {}),
+        )
 
     # Stage 1: create project files (with generated gameplay scripts if any).
     create = bridge.create_godot_project_structure(
@@ -1205,18 +1205,14 @@ def _execute_godot_demo_inner(
     if "copy_assets" in skip:
         _skipped("copy_assets")
     elif with_assets and exported_glb:
-        _run_copy_assets_stage(
-            stages, exported_glb, project_dir, workspace_root=workspace_root
-        )
+        _run_copy_assets_stage(stages, exported_glb, project_dir, workspace_root=workspace_root)
 
     # Stage 1c (optional): copy ComfyUI reference images into the project for
     # review (art-direction archive; not applied as textures).
     if "copy_refs" in skip:
         _skipped("copy_refs")
     elif with_visuals and reference_images:
-        _run_copy_refs_stage(
-            stages, reference_images, project_dir, workspace_root=workspace_root
-        )
+        _run_copy_refs_stage(stages, reference_images, project_dir, workspace_root=workspace_root)
 
     # Stage 2: validate.
     validate = bridge.validate_godot_project(
@@ -1224,9 +1220,7 @@ def _execute_godot_demo_inner(
     )
     report = validate.validation_report
     if report is not None and report.issues:
-        stages.append(
-            StageResult("validate", "failed", detail="; ".join(report.issues))
-        )
+        stages.append(StageResult("validate", "failed", detail="; ".join(report.issues)))
         return ExecutionResult("failed", session_id, project_dir, stages, planned)
     stages.append(
         StageResult(
@@ -1286,7 +1280,9 @@ def _execute_godot_demo_inner(
                 )
                 stages.append(
                     StageResult(
-                        "import", "done", detail="headless import ok (fallback)",
+                        "import",
+                        "done",
+                        detail="headless import ok (fallback)",
                         logs=reimport.log_paths,
                     )
                 )
@@ -1370,10 +1366,7 @@ def _run_playtest_stage(
             StageResult(
                 "playtest",
                 "blocked",
-                detail=(
-                    "with_gameplay=False: no game_manager, so win and fail "
-                    "cannot be observed"
-                ),
+                detail=("with_gameplay=False: no game_manager, so win and fail cannot be observed"),
             )
         )
     else:
@@ -1446,7 +1439,9 @@ def _unreal_session_project_dir(session_id: str, project_name: str) -> str:
     return f"generated/unreal/sessions/{session_id}/{safe}"
 
 
-def _unreal_planned_side_effects(project_dir: str, unreal_cmd: str, run_validation: bool) -> list[str]:
+def _unreal_planned_side_effects(
+    project_dir: str, unreal_cmd: str, run_validation: bool
+) -> list[str]:
     effects = [
         f"Write Unreal project files under {project_dir}/ (.uproject, Config, Content, scripts)",
         "Compile ProductionSpecBundle into Unreal DataTable/DataAsset adapter sources",
@@ -1572,7 +1567,9 @@ def execute_unreal_demo(
     project_file = create.artifact.project_file
     stages.append(
         StageResult(
-            "create", "done", detail=f"wrote {len(create.written_files)} files",
+            "create",
+            "done",
+            detail=f"wrote {len(create.written_files)} files",
             artifacts=create.written_files,
         )
     )
@@ -1598,11 +1595,7 @@ def execute_unreal_demo(
         )
         qa_status = qa_metadata.get("status", "failed")
         stage_status = (
-            "done"
-            if qa_status == "passed"
-            else "degraded"
-            if qa_status == "warning"
-            else "failed"
+            "done" if qa_status == "passed" else "degraded" if qa_status == "warning" else "failed"
         )
         stages.append(
             StageResult(
@@ -1696,9 +1689,7 @@ def _write_unreal_import_manifest(plan: DirectorBuildPlan, workspace_root: Path 
     # `rel` is a literal, so this is not a traversal risk today -- but routing it
     # through the shared resolver keeps it consistent with the other ten writers
     # in this module, and keeps it safe if `rel` ever becomes an argument.
-    dest = resolve_workspace_path(
-        rel, workspace_root=workspace_root, required_prefix="generated"
-    )
+    dest = resolve_workspace_path(rel, workspace_root=workspace_root, required_prefix="generated")
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(
         yaml.safe_dump(manifest.model_dump(mode="json"), sort_keys=False, allow_unicode=True),

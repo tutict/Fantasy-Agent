@@ -52,13 +52,14 @@ from pathlib import Path
 
 from fantasy_agent.agent_loop import DEFAULT_MAX_TURNS, AgentRunResult, run_agent
 from fantasy_agent.agent_skills import AGENT_SKILLS, skill_brief
-from fantasy_agent.contracts import ProductionPipeline, ProductionPipelineStage
+from fantasy_agent.contracts import DirectorBuildPlan, ProductionPipeline, ProductionPipelineStage
 from fantasy_agent.human_decision import write_decision_record
 from fantasy_agent.orchestration_state import (
     OrchestrationStageState,
     OrchestrationState,
     save_state,
 )
+from fantasy_agent.path_safety import resolve_workspace_path
 from fantasy_agent.pipeline_state import (
     StageState,
     executor_stages_for,
@@ -70,6 +71,7 @@ from fantasy_agent.tool_registry import (
     EXECUTE,
     READ_ONLY,
     WRITE,
+    ToolOutcome,
     ToolRegistry,
     combined_registry,
 )
@@ -468,10 +470,15 @@ class Orchestrator:
         hand out an approval nobody gave.
         """
 
+        recorded_plan = plan.model_copy(deep=True)
+        for stage in recorded_plan.stages:
+            stage.human_resolution = (
+                self._human_decisions.get(stage.id) if stage.kind == HUMAN_STAGE_KIND else None
+            )
         return OrchestrationState(
             session_id=self.session_id,
             engine=self.engine_key,
-            plan=plan.model_dump(mode="json"),
+            plan=recorded_plan.model_dump(mode="json"),
             stages=[
                 OrchestrationStageState(
                     stage_id=outcome.stage_id,
@@ -553,9 +560,7 @@ class Orchestrator:
 
         executor_stages_for(stage_id)  # raises ValueError for an unknown id
         if decision not in HUMAN_DECISIONS:
-            raise ValueError(
-                f"decision {decision!r} is not one of {list(HUMAN_DECISIONS)}"
-            )
+            raise ValueError(f"decision {decision!r} is not one of {list(HUMAN_DECISIONS)}")
         self._human_decisions[stage_id] = decision
         self._stamp_plan()
 
@@ -598,8 +603,7 @@ class Orchestrator:
         return [
             stage.id
             for stage in sorted(plan.stages, key=lambda entry: entry.order)
-            if stage.kind == HUMAN_STAGE_KIND
-            and stage.id not in self._human_decisions
+            if stage.kind == HUMAN_STAGE_KIND and stage.id not in self._human_decisions
         ]
 
     def rewind_from(self, plan: ProductionPipeline, stage_id: str) -> list[str]:
@@ -863,7 +867,179 @@ class Orchestrator:
         self._run_exit_checks(stage, outcome)
         return outcome
 
-    def _run_exit_checks(self, stage: ProductionPipelineStage, outcome: StageOutcome) -> None:
+    def begin_external_attempt(self, plan: ProductionPipeline, stage_ids: Iterable[str]) -> None:
+        """Invalidate only the attempted nodes and their dependency descendants.
+
+        The workflow has already checked a server grant. Historical completion
+        cannot describe new work; unrelated nodes and explicit grants survive.
+        A downstream human decision must be given again for the new content.
+        """
+        targets = set(stage_ids)
+        known = {stage.id for stage in plan.stages if stage.kind != HUMAN_STAGE_KIND}
+        if not targets <= known:
+            raise ValueError("只能为计划中的生产节点登记新任务。")
+        affected = set(targets)
+        while True:
+            expanded = affected | {
+                stage.id for stage in plan.stages if affected.intersection(stage.depends_on)
+            }
+            if expanded == affected:
+                break
+            affected = expanded
+        self._plan = plan
+        for stage in plan.stages:
+            if stage.id not in affected:
+                continue
+            self._outcomes[stage.id] = StageOutcome(
+                stage.id,
+                RUNNING if stage.id in targets else BLOCKED,
+                detail="新的授权任务正在执行。"
+                if stage.id in targets
+                else "上游已开始新任务，等待其真实结果。",
+            )
+            if stage.kind == HUMAN_STAGE_KIND:
+                self._human_decisions.pop(stage.id, None)
+        for stage in plan.stages:
+            if stage.id in affected:
+                self._record(stage, self._outcomes[stage.id], strict=True)
+
+    def interrupt_external_attempts(self, plan: ProductionPipeline) -> None:
+        """Settle lost workers at Studio startup without inventing any permission."""
+        self._plan = plan
+        for stage in plan.stages:
+            outcome = self._outcomes.get(stage.id)
+            if stage.kind == HUMAN_STAGE_KIND or outcome is None or outcome.status != RUNNING:
+                continue
+            outcome.status = FAILED
+            outcome.detail = "Studio 已重启，上次任务已中断；没有自动重放。"
+            self._record(stage, outcome, strict=True)
+
+    def block_external_attempt(
+        self, plan: ProductionPipeline, stage_id: str, result: ToolOutcome
+    ) -> None:
+        """Settle completed work whose dependencies or review gates remain open."""
+        stage = next((item for item in plan.stages if item.id == stage_id), None)
+        outcome = self._outcomes.get(stage_id)
+        if stage is None or stage.kind == HUMAN_STAGE_KIND or result.name not in stage.mcp_tools:
+            raise ValueError("阻塞结果必须属于该生产节点。")
+        if outcome is None or outcome.status != RUNNING:
+            return
+        self._plan = plan
+        outcome.status = BLOCKED
+        outcome.detail = result.content
+        outcome.tools = list(dict.fromkeys([*outcome.tools, result.name]))
+        outcome.dispatched = True
+        outcome.tool_calls += 1
+        self._record(stage, outcome, strict=True)
+
+    def accept_external_result(
+        self,
+        plan: ProductionPipeline,
+        stage_id: str,
+        result: ToolOutcome,
+        *,
+        artifacts: list[str],
+        plan_evidence: DirectorBuildPlan | None = None,
+        prepared: bool = False,
+        check_arguments: dict[str, dict] | None = None,
+    ) -> StageOutcome:
+        """Record evidence produced by the server, without an application model.
+
+        Only trusted workflow handlers call this method. It is not an MCP
+        operation and never accepts a caller-provided stage status or approval.
+        """
+        stage = next((item for item in plan.stages if item.id == stage_id), None)
+        if stage is None or stage.kind == HUMAN_STAGE_KIND:
+            raise ValueError("节点不存在或需要用户另行审阅。")
+        if result.status == "ok" and any(not self._is_done(dep) for dep in stage.depends_on):
+            raise ValueError("节点依赖尚未完成。")
+        metadata_plan = (
+            stage_id == "gameplay_orchestration"
+            and plan_evidence is not None
+            and result.name == "save_project_plan"
+        )
+        if result.name not in stage.mcp_tools and not metadata_plan:
+            raise ValueError("工具不属于该节点的执行范围。")
+        if stage.requires_confirmation and stage.id not in self._confirmed:
+            raise ValueError("该节点尚未获得用户批准。")
+        outcome = StageOutcome(
+            stage_id,
+            FAILED,
+            detail="未通过真实产物与退出检查。",
+            tools=[result.name],
+            dispatched=True,
+            tool_calls=1,
+            answer=result.content,
+        )
+        if result.status == "ok":
+            if plan_evidence is not None and stage_id == "gameplay_orchestration":
+                observed = result.data.get("summary")
+                if observed != plan_evidence.model_dump(mode="json"):
+                    raise ValueError("策划证据与实际工具结果不一致。")
+                self._registry.remember_plan(observed)
+                outcome.status = DONE
+            elif artifacts:
+                try:
+                    paths = [
+                        resolve_workspace_path(
+                            path,
+                            workspace_root=self.workspace_root,
+                            allow_absolute=True,
+                        )
+                        for path in artifacts
+                    ]
+                    if all(path.is_file() for path in paths):
+                        outcome.status = READY if prepared else DONE
+                except ValueError:
+                    outcome.detail = "产物不存在或超出项目范围。"
+            if outcome.status in {DONE, READY}:
+                outcome.detail = (
+                    "准备文件已写入，尚未完成生产。" if prepared else "已校验服务端实际结果与产物。"
+                )
+                self._run_exit_checks(stage, outcome, check_arguments=check_arguments)
+        else:
+            outcome.detail = result.content
+        self._plan = plan
+        self._outcomes[stage_id] = outcome
+        self._record(stage, outcome, strict=True)
+        return outcome
+
+    def accept_external_human_decision(
+        self, plan: ProductionPipeline, stage_id: str, decision: str
+    ) -> StageOutcome:
+        """Apply a trusted, content-bound user decision, never a model status."""
+        stage = next((item for item in plan.stages if item.id == stage_id), None)
+        if stage is None or stage.kind != HUMAN_STAGE_KIND:
+            raise ValueError("该节点不是人类审阅闸门。")
+        if any(not self._is_done(dep) for dep in stage.depends_on):
+            raise ValueError("审阅依赖尚未完成。")
+        write_decision_record(
+            self.session_id,
+            stage_id,
+            decision,
+            engine_key=self.engine_key,
+            workspace_root=self.workspace_root,
+        )
+        self._plan = plan
+        self.resolve_human_stage(stage_id, decision)
+        outcome = StageOutcome(
+            stage_id,
+            DONE if decision == "approved" else FAILED,
+            detail="用户已批准被审阅的产物版本。"
+            if decision == "approved"
+            else "用户要求返工；下游保持阻塞。",
+        )
+        self._outcomes[stage_id] = outcome
+        self._record(stage, outcome, strict=True)
+        return outcome
+
+    def _run_exit_checks(
+        self,
+        stage: ProductionPipelineStage,
+        outcome: StageOutcome,
+        *,
+        check_arguments: dict[str, dict] | None = None,
+    ) -> None:
         """Read the stage's own output, and fail the stage if it does not hold up.
 
         ``quality_gates`` is prose a human reads; ``exit_checks`` is the part a
@@ -893,7 +1069,7 @@ class Orchestrator:
                     "would have been reported verified without being checked"
                 )
                 return
-            check = self._registry.call(name, {})
+            check = self._registry.call(name, (check_arguments or {}).get(name, {}))
             if check.status != "ok":
                 outcome.status = FAILED
                 outcome.detail = f"exit check {name} did not pass: {check.content}"
@@ -904,7 +1080,13 @@ class Orchestrator:
         prior = self._outcomes.get(stage_id)
         return prior is not None and prior.status == DONE
 
-    def _record(self, stage: ProductionPipelineStage, outcome: StageOutcome) -> None:
+    def _record(
+        self,
+        stage: ProductionPipelineStage,
+        outcome: StageOutcome,
+        *,
+        strict: bool = False,
+    ) -> None:
         """Persist this stage's outcome where the rest of the run can read it.
 
         Every outcome is recorded, including the ones that are still waiting.
@@ -939,6 +1121,8 @@ class Orchestrator:
                 workspace_root=self.workspace_root,
             )
         except Exception:
+            if strict:
+                raise
             # Deliberately without a noqa directive, and that is a fact about
             # ruff rather than an oversight: BLE001 exempts a blind handler that
             # logs the exception, so writing the directive here makes RUF100
@@ -958,11 +1142,11 @@ class Orchestrator:
         try:
             save_state(self.snapshot(self._plan), workspace_root=self.workspace_root)
         except Exception:
+            if strict:
+                raise
             logger.exception("could not snapshot stage %s", stage.id)
 
-    def _record_decision(
-        self, stage: ProductionPipelineStage, decision: str
-    ) -> None:
+    def _record_decision(self, stage: ProductionPipelineStage, decision: str) -> None:
         """Write the decision to disk, where the rest of the session reads it.
 
         The stage counts as done only after this file exists: a human stage's
@@ -990,9 +1174,7 @@ class Orchestrator:
             # logs is exempt, so naming the directive would be flagged unused.
             logger.exception("could not record the decision for stage %s", stage.id)
             return
-        logger.info(
-            "decision %r for stage %s recorded at %s", decision, stage.id, path
-        )
+        logger.info("decision %r for stage %s recorded at %s", decision, stage.id, path)
 
 
 def _ceiling(*, allow_write: bool, allow_execute: bool) -> str:

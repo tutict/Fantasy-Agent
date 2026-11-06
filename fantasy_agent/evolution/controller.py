@@ -95,9 +95,13 @@ def _measurement(payload: PlaytestReport) -> PlaytestReport:
 
 
 def run_evolution(
-    request: EvolutionRequest, *, experiment_id: str, workspace_root: Path | str,
+    request: EvolutionRequest,
+    *,
+    experiment_id: str,
+    workspace_root: Path | str,
     run_iteration: Callable[[DirectorBuildPlan, str, float], PlaytestReport] | None = None,
     clock: Callable[[], float] | None = None,
+    experience_workspace_root: Path | str | None = None,
 ) -> EvolutionJobResult:
     """Run one baseline followed by at most the explicitly granted candidates."""
     request = EvolutionRequest.model_validate(request.model_dump())
@@ -113,7 +117,9 @@ def run_evolution(
     started = tick()
     deadline = started + request.max_wall_seconds
     report = EvolutionReport(
-        experiment_id=experiment_id, status="running", original_plan=request.plan.model_copy(deep=True),
+        experiment_id=experiment_id,
+        status="running",
+        original_plan=request.plan.model_copy(deep=True),
         inputs={"plan_sha256": plan_fingerprint(request.plan)},
         outputs=[f"generated/evolution/experiments/{experiment_id}.json"],
     )
@@ -121,13 +127,21 @@ def run_evolution(
 
     def persist():
         report.elapsed_seconds = max(0.0, tick() - started)
-        report.outputs = [f"generated/evolution/experiments/{experiment_id}.json", *sorted({
-            item.report.project_dir for item in report.iterations if item.report and item.report.project_dir
-        })]
+        report.outputs = [
+            f"generated/evolution/experiments/{experiment_id}.json",
+            *sorted(
+                {
+                    item.report.project_dir
+                    for item in report.iterations
+                    if item.report and item.report.project_dir
+                }
+            ),
+        ]
         if report.status != "running":
             report.next_actions = [
                 "查看候选工程并人工试玩，确认有效后在质量面板采用。"
-                if report.status == "improved" else "检查保留的测量与返工原因，纠偏后明确开始新实验。"
+                if report.status == "improved"
+                else "检查保留的测量与返工原因，纠偏后明确开始新实验。"
             ]
         save_report(report, workspace_root=workspace_root)
 
@@ -141,27 +155,45 @@ def run_evolution(
     try:
         remaining()
         measured = run_iteration or make_iteration_runner(
-            workspace_root=workspace_root, confirmed=request.confirmed, clock=tick,
+            workspace_root=workspace_root,
+            confirmed=request.confirmed,
+            clock=tick,
         )
         current_plan = request.plan.model_copy(deep=True)
-        current_report = _measurement(measured(
-            current_plan, f"{experiment_id}-0", remaining(),
-        ))
-        report.iterations.append(EvolutionIteration(
-            index=0, session_id=f"{experiment_id}-0", plan=current_plan,
-            report=current_report, eligible=not candidate_notes(current_report),
-            notes=measurement_notes(current_report),
-        ))
+        current_report = _measurement(
+            measured(
+                current_plan,
+                f"{experiment_id}-0",
+                remaining(),
+            )
+        )
+        report.iterations.append(
+            EvolutionIteration(
+                index=0,
+                session_id=f"{experiment_id}-0",
+                plan=current_plan,
+                report=current_report,
+                eligible=not candidate_notes(current_report),
+                notes=measurement_notes(current_report),
+            )
+        )
         persist()
         remaining()
         axis_mismatch = {sample.axis for sample in current_report.samples} != {
             axis_for_spec(request.plan.gameplay_spec)
         }
-        if axis_mismatch or measurement_notes(current_report) or any(
-            sample.script_errors or sample.missing_actions for sample in current_report.samples
+        if (
+            axis_mismatch
+            or measurement_notes(current_report)
+            or any(
+                sample.script_errors or sample.missing_actions for sample in current_report.samples
+            )
         ):
             report.status = "manual_rework"
-            report.notes = [*measurement_notes(current_report), "测量、脚本或输入问题需要人工返工。"]
+            report.notes = [
+                *measurement_notes(current_report),
+                "测量、脚本或输入问题需要人工返工。",
+            ]
             if axis_mismatch:
                 report.notes.append("试玩机制轴与当前计划不一致，停止返工。")
         else:
@@ -169,14 +201,31 @@ def run_evolution(
             seen = {plan_fingerprint(current_plan)}
             for index in range(1, request.max_iterations + 1):
                 remaining()
-                suggestion = suggest_evolution(current_plan, workspace_root=workspace_root) if (
-                    request.use_experience and index == 1
-                ) else None
-                changes = (suggestion.changes if suggestion else []) or propose_changes(current_plan, current_report)
+                suggestion = (
+                    suggest_evolution(
+                        current_plan,
+                        workspace_root=(
+                            experience_workspace_root
+                            if experience_workspace_root is not None
+                            else workspace_root
+                        ),
+                    )
+                    if (request.use_experience and index == 1)
+                    else None
+                )
+                changes = (suggestion.changes if suggestion else []) or propose_changes(
+                    current_plan, current_report
+                )
                 if not changes:
-                    report.notes.append("没有可验证的数值修改；未解决的路线、机制和体验问题需人工返工。")
-                    report.status = "improved" if report.best_iteration is not None else (
-                        "unchanged" if not candidate_notes(current_report) else "manual_rework"
+                    report.notes.append(
+                        "没有可验证的数值修改；未解决的路线、机制和体验问题需人工返工。"
+                    )
+                    report.status = (
+                        "improved"
+                        if report.best_iteration is not None
+                        else (
+                            "unchanged" if not candidate_notes(current_report) else "manual_rework"
+                        )
                     )
                     break
                 candidate = apply_changes(current_plan, changes)
@@ -188,11 +237,18 @@ def run_evolution(
                 session_id = f"{experiment_id}-{index}"
                 candidate_report = _measurement(measured(candidate, session_id, remaining()))
                 improved, notes = compare_reports(best_report, candidate_report)
-                report.iterations.append(EvolutionIteration(
-                    index=index, session_id=session_id, plan=candidate, report=candidate_report,
-                    changes=changes, eligible=not candidate_notes(candidate_report), improved=improved,
-                    notes=notes,
-                ))
+                report.iterations.append(
+                    EvolutionIteration(
+                        index=index,
+                        session_id=session_id,
+                        plan=candidate,
+                        report=candidate_report,
+                        changes=changes,
+                        eligible=not candidate_notes(candidate_report),
+                        improved=improved,
+                        notes=notes,
+                    )
+                )
                 if improved:
                     best_report = candidate_report
                     report.best_iteration = index
@@ -214,8 +270,13 @@ def run_evolution(
         report.notes.append(f"实验未完成：{exc}")
     persist()
     return EvolutionJobResult(
-        "cancelled" if report.status == "cancelled" else "failed" if report.status == "failed" else "done",
-        report=report, planned_side_effects=effects,
+        "cancelled"
+        if report.status == "cancelled"
+        else "failed"
+        if report.status == "failed"
+        else "done",
+        report=report,
+        planned_side_effects=effects,
     )
 
 
@@ -228,16 +289,26 @@ def _net_changes(report: EvolutionReport, winner: EvolutionIteration) -> list[Nu
         for segment in name.split("."):
             before, after = before[segment], after[segment]
         if not math.isclose(before, after, rel_tol=1e-9):
-            changes.append(NumericChange(
-                field=name, before=before, after=after, reason="经基线与候选试玩比较，并由用户采用。",
-            ))
+            changes.append(
+                NumericChange(
+                    field=name,
+                    before=before,
+                    after=after,
+                    reason="经基线与候选试玩比较，并由用户采用。",
+                )
+            )
     return changes
 
 
-def adopt_evolution(
-    experiment_id: str, plan: DirectorBuildPlan, *, workspace_root: Path | str, feedback: str = "",
-) -> tuple[DirectorBuildPlan, EvolutionExperience]:
-    """Adopt the stored winner, never a score or approval supplied by a client."""
+def prepare_evolution_adoption(
+    experiment_id: str,
+    plan: DirectorBuildPlan,
+    *,
+    workspace_root: Path | str,
+    feedback: str = "",
+    experience_workspace_root: Path | str | None = None,
+) -> tuple[DirectorBuildPlan, EvolutionExperience, EvolutionReport]:
+    """Validate the stored winner and prepare its adoption without publishing it."""
     with _adoption_lock:
         report = load_report(experiment_id, workspace_root=workspace_root)
         if report is None:
@@ -247,7 +318,9 @@ def adopt_evolution(
         if plan_fingerprint(plan) != plan_fingerprint(report.original_plan):
             raise ValueError("当前计划已变化，请对当前计划重新实验。")
         baseline = next((item for item in report.iterations if item.index == 0), None)
-        winner = next((item for item in report.iterations if item.index == report.best_iteration), None)
+        winner = next(
+            (item for item in report.iterations if item.index == report.best_iteration), None
+        )
         if baseline is None or winner is None or baseline.report is None or winner.report is None:
             raise ValueError("实验缺失真实测量。")
         if not compare_reports(baseline.report, winner.report)[0]:
@@ -259,25 +332,69 @@ def adopt_evolution(
         if plan_fingerprint(updated) != plan_fingerprint(winner.plan):
             raise ValueError("候选包含数值白名单之外的计划变化。")
         experience_id = f"experience-{experiment_id}"
-        existing = next((item for item in list_experiences(workspace_root=workspace_root)
-                         if item.id == experience_id), None)
-        experience = existing or EvolutionExperience(
-            id=experience_id, experiment_id=experiment_id, axis=axis_for_spec(plan.gameplay_spec),
-            changes=changes, feedback=feedback, created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        experience_root = (
+            experience_workspace_root if experience_workspace_root is not None else workspace_root
         )
-        save_experience(experience, workspace_root=workspace_root)
+        existing = next(
+            (
+                item
+                for item in list_experiences(workspace_root=experience_root)
+                if item.id == experience_id
+            ),
+            None,
+        )
+        experience = existing or EvolutionExperience(
+            id=experience_id,
+            experiment_id=experiment_id,
+            axis=axis_for_spec(plan.gameplay_spec),
+            changes=changes,
+            feedback=feedback,
+            created_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        )
         report.adopted_iteration = winner.index
+        return updated, experience, report
+
+
+def adopt_evolution(
+    experiment_id: str,
+    plan: DirectorBuildPlan,
+    *,
+    workspace_root: Path | str,
+    feedback: str = "",
+    experience_workspace_root: Path | str | None = None,
+) -> tuple[DirectorBuildPlan, EvolutionExperience]:
+    """Adopt the stored winner, never a score or approval supplied by a client."""
+    with _adoption_lock:
+        updated, experience, report = prepare_evolution_adoption(
+            experiment_id,
+            plan,
+            workspace_root=workspace_root,
+            feedback=feedback,
+            experience_workspace_root=experience_workspace_root,
+        )
+        save_experience(
+            experience,
+            workspace_root=experience_workspace_root
+            if experience_workspace_root is not None
+            else workspace_root,
+        )
         save_report(report, workspace_root=workspace_root)
         return updated, experience
 
 
-def suggest_evolution(plan: DirectorBuildPlan, *, workspace_root: Path | str) -> EvolutionSuggestion:
+def suggest_evolution(
+    plan: DirectorBuildPlan, *, workspace_root: Path | str
+) -> EvolutionSuggestion:
     _validate_plan(plan)
     for experience in reversed(list_experiences(workspace_root=workspace_root)):
         changes = changes_from_experience(plan, experience)
         if changes:
             return EvolutionSuggestion(
-                apply_changes(plan, changes), changes, experience.id,
+                apply_changes(plan, changes),
+                changes,
+                experience.id,
                 ["该建议来自人工采用的实测经验；用于新任务时仍需重新验证。"],
             )
-    return EvolutionSuggestion(plan.model_copy(deep=True), notes=["当前机制轴没有可应用的已采用经验。"])
+    return EvolutionSuggestion(
+        plan.model_copy(deep=True), notes=["当前机制轴没有可应用的已采用经验。"]
+    )

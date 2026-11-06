@@ -29,6 +29,7 @@ from fantasy_agent.godot_playtest import run_playtest, summarize_playtest
 from fantasy_agent.mcp_bridge import DEFAULT_WORKSPACE_ROOT, BaseMCPBridge
 from fantasy_agent.path_safety import WorkspacePathError, resolve_workspace_path
 from fantasy_agent.process_runner import (
+    ProcessCancelled,
     current_cancel_event,
     is_streaming_runner,
 )
@@ -175,8 +176,7 @@ class GodotMCPBridge(BaseMCPBridge):
             )
             if not named:
                 issues.append(
-                    "no project file was named and this run has no godot_plan "
-                    "to derive one from"
+                    "no project file was named and this run has no godot_plan to derive one from"
                 )
 
         if named:
@@ -253,6 +253,17 @@ class GodotMCPBridge(BaseMCPBridge):
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
             )
+        except ProcessCancelled as exc:
+            exc.log_paths = list(
+                dict.fromkeys(
+                    [
+                        *exc.log_paths,
+                        self._display_path(stdout_path),
+                        self._display_path(stderr_path),
+                    ]
+                )
+            )
+            raise
         except FileNotFoundError as exc:
             stderr = f"Godot executable not found: {request.godot_executable}"
             self._write_text(stderr_path, stderr)
@@ -265,7 +276,9 @@ class GodotMCPBridge(BaseMCPBridge):
             )
         except subprocess.TimeoutExpired as exc:
             stdout = _to_text(exc.stdout)
-            stderr = _to_text(exc.stderr) or f"Godot import timed out after {request.timeout_seconds}s."
+            stderr = (
+                _to_text(exc.stderr) or f"Godot import timed out after {request.timeout_seconds}s."
+            )
             self._write_text(stdout_path, stdout)
             self._write_text(stderr_path, stderr)
             return GodotMCPResult(
@@ -286,7 +299,9 @@ class GodotMCPBridge(BaseMCPBridge):
             return_code=process.returncode,
             stdout_tail=_tail(process.stdout),
             stderr_tail=_tail(process.stderr),
-            risks=risks if process.returncode == 0 else [*risks, "Godot import returned a non-zero code."],
+            risks=risks
+            if process.returncode == 0
+            else [*risks, "Godot import returned a non-zero code."],
         )
 
     def playtest_project(self, request: PlaytestRequest, session_id: str = "") -> PlaytestReport:
@@ -402,7 +417,9 @@ class GodotMCPBridge(BaseMCPBridge):
         project_dir = self._resolve_workspace_path(artifact.project_dir)
         project_dir.mkdir(parents=True, exist_ok=True)
         for folder in plan.folders:
-            self._resolve_workspace_path(_join_project_path(Path(artifact.project_dir), folder)).mkdir(
+            self._resolve_workspace_path(
+                _join_project_path(Path(artifact.project_dir), folder)
+            ).mkdir(
                 parents=True,
                 exist_ok=True,
             )
@@ -428,7 +445,9 @@ class GodotMCPBridge(BaseMCPBridge):
             main_script = (Path(artifact.project_dir) / "scripts" / "main.gd").as_posix()
             artifact.script_paths.append(main_script)
         if player_script is None:
-            player_script = (Path(artifact.project_dir) / "scripts" / "player_controller.gd").as_posix()
+            player_script = (
+                Path(artifact.project_dir) / "scripts" / "player_controller.gd"
+            ).as_posix()
             artifact.script_paths.append(player_script)
 
         self._write_text(project_file, _project_godot(plan, axis=axis))
@@ -473,9 +492,7 @@ class GodotMCPBridge(BaseMCPBridge):
             written.append(self._display_path(resolved))
         self._write_text(
             manifest_path,
-            json.dumps(
-                _manifest(plan, artifact, self.workspace_root, gameplay_scripts), indent=2
-            ),
+            json.dumps(_manifest(plan, artifact, self.workspace_root, gameplay_scripts), indent=2),
         )
         written.append(self._display_path(manifest_path))
         return written
@@ -538,8 +555,10 @@ class GodotMCPBridge(BaseMCPBridge):
     def _log_paths(self, project_name: str, operation: str) -> tuple[Path, Path]:
         safe_name = _slug(project_name)
         log_dir = self.workspace_root / "generated" / "logs" / "godot"
-        return log_dir / f"{safe_name}_{operation}.stdout.log", log_dir / f"{safe_name}_{operation}.stderr.log"
-
+        return (
+            log_dir / f"{safe_name}_{operation}.stdout.log",
+            log_dir / f"{safe_name}_{operation}.stderr.log",
+        )
 
 
 def call_godot_mcp_tool(
@@ -795,9 +814,7 @@ def _route_body_from_production_specs(
         bundle.level.final_test,
     ]
     beats_by_name = (
-        {beat.name: beat for beat in gameplay_spec.level_beats}
-        if gameplay_spec is not None
-        else {}
+        {beat.name: beat for beat in gameplay_spec.level_beats} if gameplay_spec is not None else {}
     )
     markers: list[tuple[str, str, str, str]] = []
     for index, segment in enumerate(segments):
@@ -838,7 +855,7 @@ def resolve_enemy_pressure_tuning(
     return explicit or EnemyPressureTuning()
 
 
-_GAMEPLAY_SPAWN_GD = '''
+_GAMEPLAY_SPAWN_GD = """
 func _spawn_gameplay() -> void:
     var player_script := load("res://scripts/player_controller.gd")
     if player_script != null:
@@ -1018,7 +1035,7 @@ func _decorate_enemy(enemy: Area3D, behavior: String) -> void:
     label.position = Vector3(0.0, 0.9, 0.0)
     label.pixel_size = 0.03
     enemy.add_child(label)
-'''
+"""
 
 
 def _main_gd(
@@ -1084,14 +1101,14 @@ def _main_gd(
         production_spec_bundle.narrative.hud_text.get("objective")
         or production_spec_bundle.narrative.objective_copy[-1]
         if production_spec_bundle is not None
-        else gameplay_spec.win_state if gameplay_spec is not None else "Reach exit"
+        else gameplay_spec.win_state
+        if gameplay_spec is not None
+        else "Reach exit"
     )
     objective_literal = json.dumps(objective_text, ensure_ascii=False)
     # When real gameplay scripts are present, spawn a controllable player and a
     # game manager, and wire the exit gate's body to reach_exit().
-    gameplay_ready = (
-        "    _spawn_gameplay()\n" if with_gameplay else ""
-    )
+    gameplay_ready = "    _spawn_gameplay()\n" if with_gameplay else ""
     gameplay_funcs = _GAMEPLAY_SPAWN_GD if with_gameplay else ""
     # The lane the enemies stand in is not a tuning value: it is the other half
     # of the lethal-radius contract the enemy controller measures against. Both
@@ -1102,7 +1119,7 @@ def _main_gd(
         lane_list = [ENEMY_LANE, -ENEMY_LANE]
         check_lane_layout(lane_list)
         lane_const = f"const ENEMY_LANE := {ENEMY_LANE:g}\n"
-    return f'''extends Node3D
+    return f"""extends Node3D
 
 const HANDOFF := {payload}
 const MAT_SAFE := Color(0.0, 1.0, 0.8, 1.0)
@@ -1225,7 +1242,7 @@ func _material(color: Color) -> StandardMaterial3D:
     material.albedo_color = color
     material.roughness = 0.85
     return material
-'''
+"""
 
 
 def _player_controller_gd(plan: GodotProjectPlan) -> str:
@@ -1257,7 +1274,6 @@ func fantasy_agent_handoff() -> Dictionary:
         "notes": "Replace with gameplay-specific movement after the greybox loop is validated."
     }}
 '''
-
 
 
 def _enemy_controller_gd() -> str:
@@ -1310,7 +1326,9 @@ def _manifest(
     }
 
 
-def _script_anchors(artifact: GodotProjectArtifact, gameplay_scripts: dict[str, str]) -> dict[str, dict[str, float]]:
+def _script_anchors(
+    artifact: GodotProjectArtifact, gameplay_scripts: dict[str, str]
+) -> dict[str, dict[str, float]]:
     """Anchor values keyed by manifest path, parsed from the sources written.
 
     Only the sources handed to this call are parsed: the engine script is
@@ -1325,7 +1343,8 @@ def _script_anchors(artifact: GodotProjectArtifact, gameplay_scripts: dict[str, 
         if not relative.endswith(".gd"):
             continue
         values = {
-            match.group("anchor"): float(match.group("value")) for match in ANCHOR_RE.finditer(source)
+            match.group("anchor"): float(match.group("value"))
+            for match in ANCHOR_RE.finditer(source)
         }
         if not values:
             continue
@@ -1343,7 +1362,11 @@ def _artifact_hashes(artifact: GodotProjectArtifact, workspace_root: Path | str)
     """
 
     paths: list[str] = []
-    for value in (artifact.script_paths, artifact.scene_paths, [artifact.project_file, artifact.main_scene_path]):
+    for value in (
+        artifact.script_paths,
+        artifact.scene_paths,
+        [artifact.project_file, artifact.main_scene_path],
+    ):
         for item in value:
             if item and item not in paths:
                 paths.append(item)

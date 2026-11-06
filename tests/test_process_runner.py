@@ -39,14 +39,17 @@ def _pid_alive(pid: int) -> bool:
     if os.name == "nt":
         # tasklist prints in the console codepage; replace so a stray
         # multi-byte glyph cannot blow up the probe on zh-CN Windows.
-        listed = subprocess.run(
-            ["tasklist", "/FI", f"PID eq {pid}"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        ).stdout or ""
+        listed = (
+            subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            ).stdout
+            or ""
+        )
         columns = (line.split() for line in listed.splitlines())
         return any(len(parts) > 1 and parts[1] == str(pid) for parts in columns)
     return Path(f"/proc/{pid}").exists()
@@ -140,6 +143,7 @@ def test_cancel_stops_the_run_early(tmp_path: Path):
     elapsed = time.monotonic() - started
     assert elapsed < 25, f"cancel should return quickly, took {elapsed:.1f}s"
     assert excinfo.value.output
+    assert excinfo.value.log_paths == [str(tmp_path / "out.log")]
 
 
 def test_cancel_is_picked_up_from_the_context(tmp_path: Path):
@@ -274,7 +278,7 @@ def test_broken_on_line_is_reported_not_swallowed(tmp_path: Path):
 
     result = process_runner.run_streaming(
         [sys.executable, "-c", "print('hello')"],
-        on_line=[] .append,  # one-argument sink; the API passes (stream, line)
+        on_line=[].append,  # one-argument sink; the API passes (stream, line)
         timeout=60,
     )
 

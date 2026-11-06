@@ -50,6 +50,54 @@ def _plan() -> UnrealProjectPlan:
     )
 
 
+def test_generated_editor_scripts_resolve_their_project_workspace(tmp_path):
+    import ast
+
+    (tmp_path / "fantasy_agent").mkdir()
+    workspace = tmp_path / "generated/studio/projects/demo/workspace/versions/v1"
+    workspace.mkdir(parents=True)
+    _write_level_source_manifests(workspace)
+    bridge = UnrealMCPBridge(workspace)
+    project = bridge.create_project_structure(
+        UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True)
+    )
+    ingest = bridge.prepare_asset_ingest(
+        UnrealMCPPrepareAssetIngestRequest(
+            project_file=project.artifact.project_file,
+            blender_import_manifest_path="generated/level-import-manifest.json",
+            write_files=True,
+        )
+    )
+    level = bridge.prepare_level_assembly(
+        UnrealMCPPrepareLevelAssemblyRequest(
+            project_file=project.artifact.project_file,
+            ingest_manifest_path=ingest.written_files[0],
+            write_files=True,
+        )
+    )
+    for relative, name in [
+        (ingest.written_files[1], "find_repo_root"),
+        (level.written_files[1], "repo_root"),
+    ]:
+        script_path = workspace / relative
+        tree = ast.parse(script_path.read_text(encoding="utf-8"))
+        nodes = [
+            node
+            for node in tree.body
+            if (isinstance(node, ast.FunctionDef) and node.name == name)
+            or (
+                isinstance(node, ast.Assign)
+                and any(
+                    isinstance(target, ast.Name) and target.id == "WORKSPACE_ROOT"
+                    for target in node.targets
+                )
+            )
+        ]
+        namespace = {"Path": Path, "__file__": str(script_path)}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), str(script_path), "exec"), namespace)  # noqa: S102 - 只执行生成脚本里纯路径解析函数与常量赋值，验证工作区解析
+        assert namespace[name]() == workspace
+
+
 def test_unreal_mcp_descriptors_expose_project_and_commandlet_tools():
     names = {tool["name"] for tool in tool_descriptors()}
 
@@ -82,18 +130,12 @@ def test_create_project_structure_can_write_handoff_files(tmp_path: Path):
     ]
     assert (tmp_path / "generated/unreal/mcpprototype/MCPPrototype.uproject").exists()
     assert (tmp_path / "generated/unreal/mcpprototype/Content/Maps").exists()
-    assert (
-        "AnimationRecorderBoneCompressionSettings="
-        in (tmp_path / "generated/unreal/mcpprototype/Config/DefaultEngine.ini").read_text(
-            encoding="utf-8"
-        )
-    )
-    assert (
-        "GameDefaultMap=/Game/Maps/M_Prototype_Greybox"
-        in (tmp_path / "generated/unreal/mcpprototype/Config/DefaultEngine.ini").read_text(
-            encoding="utf-8"
-        )
-    )
+    assert "AnimationRecorderBoneCompressionSettings=" in (
+        tmp_path / "generated/unreal/mcpprototype/Config/DefaultEngine.ini"
+    ).read_text(encoding="utf-8")
+    assert "GameDefaultMap=/Game/Maps/M_Prototype_Greybox" in (
+        tmp_path / "generated/unreal/mcpprototype/Config/DefaultEngine.ini"
+    ).read_text(encoding="utf-8")
     descriptor = json.loads(
         (tmp_path / "generated/unreal/mcpprototype/MCPPrototype.uproject").read_text(
             encoding="utf-8"
@@ -145,9 +187,7 @@ def test_run_editor_commandlet_uses_fake_runner_and_captures_logs(tmp_path: Path
     # matched because NTFS is case-insensitive. The sibling assertions below
     # (import, level_assembly, asset_ingest) are already lowercase for the same
     # reason.
-    assert (
-        tmp_path / "generated/logs/unreal/mcpprototype_datavalidation.stdout.log"
-    ).exists()
+    assert (tmp_path / "generated/logs/unreal/mcpprototype_datavalidation.stdout.log").exists()
 
 
 def test_prepare_asset_ingest_writes_blender_and_comfyui_import_script(tmp_path: Path):
@@ -268,9 +308,7 @@ def test_prepare_level_assembly_writes_map_manifest_and_script(tmp_path: Path):
     assert result.manifest.playtest_report_path == (
         "generated/unreal/mcpprototype/fantasy-agent-playtest-smoke.json"
     )
-    assert any(
-        placement.gameplay_role == "objective" for placement in result.manifest.placements
-    )
+    assert any(placement.gameplay_role == "objective" for placement in result.manifest.placements)
     assert any(placement.gameplay_role == "exit" for placement in result.manifest.placements)
 
 
@@ -406,7 +444,9 @@ def test_run_asset_ingest_blocks_without_confirmation(tmp_path: Path):
 
 def test_run_asset_ingest_uses_fake_runner_and_captures_logs(tmp_path: Path):
     def fake_runner(*args, **kwargs):
-        return subprocess.CompletedProcess(args=args[0], returncode=0, stdout="ingest ok", stderr="")
+        return subprocess.CompletedProcess(
+            args=args[0], returncode=0, stdout="ingest ok", stderr=""
+        )
 
     _write_source_manifests(tmp_path)
     bridge = UnrealMCPBridge(tmp_path, runner=fake_runner)
@@ -666,9 +706,7 @@ def _assemble(
 ):
     _write_level_source_manifests(tmp_path, assets)
     bridge = UnrealMCPBridge(tmp_path)
-    bridge.create_project_structure(
-        UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True)
-    )
+    bridge.create_project_structure(UnrealMCPCreateProjectRequest(plan=_plan(), write_files=True))
     bridge.prepare_asset_ingest(
         UnrealMCPPrepareAssetIngestRequest(
             project_file="generated/unreal/mcpprototype/MCPPrototype.uproject",
@@ -714,9 +752,7 @@ def test_route_length_follows_the_design_duration(tmp_path: Path):
 
     long = _assemble(
         tmp_path,
-        gameplay_spec=_spec_with_beats(
-            ("A", 4), ("B", 4), ("C", 4), ("D", 3)
-        ),
+        gameplay_spec=_spec_with_beats(("A", 4), ("B", 4), ("C", 4), ("D", 3)),
     )
 
     def floors(manifest):
@@ -1030,4 +1066,3 @@ def test_two_long_path_projects_get_different_caches():
 
     assert first != second
     assert first.parent == second.parent
-

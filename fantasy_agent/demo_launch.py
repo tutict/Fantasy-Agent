@@ -67,6 +67,7 @@ class DemoLaunch:
     comfyui_endpoint: str | None = None
     workspace_root: Path | str = DEFAULT_WORKSPACE_ROOT
     resolved: ResolvedExecutables | None = None
+    use_llm: bool | None = None
 
 
 def new_session_id() -> str:
@@ -182,8 +183,7 @@ def normalize_demo_resume(
     if engine != "godot":
         raise DemoLaunchError(
             "resume_not_supported",
-            "Unreal resume is not wired; --from-stage cannot be ignored "
-                "on the Unreal path.",
+            "Unreal resume is not wired; --from-stage cannot be ignored on the Unreal path.",
         )
     if not session_id:
         raise DemoLaunchError(
@@ -239,4 +239,5 @@ def launch_demo(request: DemoLaunch) -> ExecutionResult:
         enemy_tuning=request.enemy_tuning,
         approval_manifest_path=request.approval_manifest_path,
         resume_from=resume_from,
+        **({"use_llm": request.use_llm} if request.use_llm is not None else {}),
     )

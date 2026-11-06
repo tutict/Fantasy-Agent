@@ -25,6 +25,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from fantasy_agent.process_runner import ProcessCancelled
+
 READ_ONLY = "read_only"  # computes and returns a plan; never writes or launches
 WRITE = "write"  # writes under generated/
 EXECUTE = "execute"  # launches Blender / Godot / Unreal / ComfyUI
@@ -46,6 +48,9 @@ class ToolSpec:
     handler: Callable[[dict[str, Any]], Any]
     permission: str = READ_ONLY
     server: str = "fantasy-agent"
+    # Session records are writes, but are separate from production permission.
+    effect_scope: str = "production"
+    title: str = ""
 
     # Argument that unlocks the tool's real side effect, e.g. `write_files`
     # or `confirmed_side_effects`. MCP tools default it to false, so a
@@ -192,8 +197,7 @@ class ToolRegistry:
                 derived.register(spec)
         if unknown:
             raise ValueError(
-                f"unknown tool {', '.join(sorted(unknown))}; "
-                f"available: {', '.join(self.names())}"
+                f"unknown tool {', '.join(sorted(unknown))}; available: {', '.join(self.names())}"
             )
         # Shares the parent's dict on purpose -- see the docstring.
         derived.artifacts = self.artifacts
@@ -248,7 +252,20 @@ class ToolRegistry:
             )
 
         try:
-            payload = spec.handler(self._call_arguments(spec, arguments, allow_write, allow_execute))
+            payload = spec.handler(
+                self._call_arguments(spec, arguments, allow_write, allow_execute)
+            )
+        except ProcessCancelled as exc:
+            return ToolOutcome(
+                name,
+                "error",
+                "本机工具已取消，已产生的日志保留。",
+                {
+                    "log_paths": exc.log_paths,
+                    "stdout_tail": exc.output[-4000:],
+                    "stderr_tail": exc.stderr[-4000:],
+                },
+            )
         except Exception as exc:  # noqa: BLE001 - a bad tool call must not kill the loop
             return ToolOutcome(name, "error", f"{type(exc).__name__}: {exc}")
 
@@ -309,7 +326,9 @@ class ToolRegistry:
                 args[argument] = value
 
         if spec.confirm_field and spec.confirm_field not in args:
-            granted = allow_execute if spec.permission == EXECUTE else (allow_write or allow_execute)
+            granted = (
+                allow_execute if spec.permission == EXECUTE else (allow_write or allow_execute)
+            )
             if granted:
                 args[spec.confirm_field] = True
 
@@ -376,7 +395,11 @@ _SEED_SCHEMA: dict[str, Any] = {
 }
 
 
-def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
+def default_registry(
+    target: ToolRegistry | None = None,
+    *,
+    use_llm: bool | None = None,
+) -> ToolRegistry:
     """The planning tools, wired to the shared planning actions.
 
     Pass ``target`` to add them to an existing registry so both sets share one
@@ -396,7 +419,11 @@ def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
         def handler(arguments: dict[str, Any]) -> dict[str, Any]:
             from fantasy_agent.api_settings import llm_enabled
 
-            action = run_planning_action(tool_name, arguments, use_llm=llm_enabled())
+            action = run_planning_action(
+                tool_name,
+                arguments,
+                use_llm=llm_enabled() if use_llm is None else use_llm,
+            )
             return {"message": action.message, "data": registry_payload(action)}
 
         return handler
@@ -449,7 +476,6 @@ def default_registry(target: ToolRegistry | None = None) -> ToolRegistry:
 
     register_check_tools(registry)
     return registry
-
 
 
 # Which sub-plan of a DirectorBuildPlan each engine tool consumes. The model
@@ -628,10 +654,14 @@ def _register_engine_server(
         )
 
 
-def combined_registry(workspace_root: Path | str | None = None) -> ToolRegistry:
+def combined_registry(
+    workspace_root: Path | str | None = None,
+    *,
+    use_llm: bool | None = None,
+) -> ToolRegistry:
     """Planning tools and engine tools sharing one artifact store."""
 
-    return default_registry(engine_registry(workspace_root))
+    return default_registry(engine_registry(workspace_root), use_llm=use_llm)
 
 
 def _confirm_field(schema: dict[str, Any]) -> str | None:
