@@ -107,7 +107,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
     (
         "FE-I18N-4 a handoff freezes the previous interface language",
         "apps/frontend/src/console/hooks.ts",
-        b'handoff?.plan ? titleForPlan(handoff.plan) : storedTitle || t("emptyTitle")',
+        b'locale === "en" && handoff?.title ? handoff.title : handoff?.plan ? titleForPlan(handoff.plan) : t("emptyTitle")',
         b'handoff?.title || titleForPlan(handoff?.plan || {}) || t("emptyTitle")',
         "src/console/hooks.test.tsx",
         "uses the current locale instead of the title saved under another language",
@@ -147,16 +147,16 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
     (
         "FE-EVO-1 preview manufactures an execution grant",
         "apps/frontend/src/shared/api.ts",
-        b'    method: "POST", body: JSON.stringify({ ...request, confirmed: false })\n',
-        b'    method: "POST", body: JSON.stringify({ ...request, confirmed: true })\n',
+        b'    method: "POST", body: JSON.stringify({ ...projectBinding(), ...request, confirmed: false })\n',
+        b'    method: "POST", body: JSON.stringify({ ...projectBinding(), ...request, confirmed: true })\n',
         "src/console/evolution/EvolutionPanel.test.tsx",
         "starts no work until the user confirms the reviewed experiment",
     ),
     (
         "FE-EVO-2 cancelling the prompt executes the experiment",
         "apps/frontend/src/console/evolution/EvolutionPanel.tsx",
-        b"onConfirm={() => void confirmExperiment()} onCancel={() => setPreview(null)}",
-        b"onConfirm={() => void confirmExperiment()} onCancel={() => void confirmExperiment()}",
+        b"onConfirm={(confirmedByUser) => void confirmExperiment(confirmedByUser)} onCancel={() => setPreview(null)}",
+        b"onConfirm={(confirmedByUser) => void confirmExperiment(confirmedByUser)} onCancel={() => void confirmExperiment(true)}",
         "src/console/evolution/EvolutionPanel.test.tsx",
         "cancels the confirmation without executing",
     ),
@@ -205,7 +205,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "apps/frontend/src/console/FlowConsole.tsx",
         b'      window.open("/workbench", "_blank", "noopener");\n',
         (
-            b'      window.open(`/workbench?${new URLSearchParams({ locale, theme })}`, '
+            b"      window.open(`/workbench?${new URLSearchParams({ locale, theme })}`, "
             b'"_blank", "noopener");\n'
         ),
         "src/shared/localeOwnership.test.ts",
@@ -224,25 +224,13 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "does not read or send an embed flag",
     ),
     (
-        # `selectedEngineVersion`'s second implementation, restored in full: a
-        # local no-argument copy, and the call site that used to reach it. The
-        # old one answered from a substring match on stage ids, which is looser
-        # about a corrupt handoff than the planModel check.
+        # Reintroducing a no-argument engine selector restores a second owner.
         "FE4-4 the shell grows a second engine-version implementation",
         "apps/frontend/src/studio/StudioShell.tsx",
+        b"  const engineVersion = selectedEngineVersion(project.active?.plan ?? null);\n",
         (
-            b"function handedOffEngineVersion(): string {\n"
-            b"  return selectedEngineVersion(readHandoffPlan());\n"
-            b"}\n"
-        ),
-        (
-            b'function selectedEngineVersion(): string {\n'
-            b'  return "godot";\n'
-            b"}\n"
-            b"\n"
-            b"function handedOffEngineVersion(): string {\n"
-            b"  return selectedEngineVersion();\n"
-            b"}\n"
+            b"  const engineVersion = selectedEngineVersion();\n"
+            b'  function selectedEngineVersion(): string { return "godot"; }\n'
         ),
         "src/shared/localeOwnership.test.ts",
         "answers the engine version from one implementation",
@@ -322,10 +310,10 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # cancels the run the human just approved.
         "FE5-1 the playtest confirm block also cancels on proceed",
         "apps/frontend/src/console/playtest/PlaytestConfirmBlock.tsx",
-        b'        <button className="primary-action" type="button" id="playtest-proceed" onClick={onProceed}>\n',
+        b'        <button className="primary-action" type="button" id="playtest-proceed" value="approved" onClick={(event) => onProceed(event.currentTarget.value === "approved")}>\n',
         (
-            b'        <button className="primary-action" type="button" id="playtest-proceed" '
-            b'onClick={() => { onProceed(); onCancel(); }}>\n'
+            b'        <button className="primary-action" type="button" id="playtest-proceed" value="approved" '
+            b'onClick={(event) => { onProceed(event.currentTarget.value === "approved"); onCancel(); }}>\n'
         ),
         "src/console/playtestPanel.test.tsx",
         "runs the playtest only after the human accepts",
@@ -337,8 +325,8 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # wrong node -- and the type accepts both because both are strings.
         "FE5-2 a playtest finding resumes from the rework target",
         "apps/frontend/src/console/playtest/PlaytestReportCard.tsx",
-        b"onClick={() => onResume(finding.resume_stage || \"\")}",
-        b"onClick={() => onResume(finding.rework_target || \"\")}",
+        b'onClick={() => onResume(finding.resume_stage || "")}',
+        b'onClick={() => onResume(finding.rework_target || "")}',
         "src/console/playtestPanel.test.tsx",
         "resumes from the stage the backend translated, not one the panel made up",
     ),
@@ -383,7 +371,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "FE6-3 a stylesheet grows a hardcoded color again",
         "apps/frontend/src/styles/console.css",
         b".rework-status {\n",
-        b'.rework-status {\n  color: #ff0000;\n',
+        b".rework-status {\n  color: #ff0000;\n",
         "src/shared/cssHygiene.test.ts",
         "keeps colors in tokens; a fallback in var() is not an exemption",
     ),
@@ -609,10 +597,10 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "apps/frontend/src/studio/StudioShell.tsx",
         (
             b"              <ErrorBoundary t={t}>\n"
-            b"                <PlanningWorkbench journeyStep={viewedJourneyStep === \"plan\" ? \"plan\" : \"idea\"} />\n"
+            b'                <PlanningWorkbench journeyStep={viewedJourneyStep === "plan" ? "plan" : "idea"} />\n'
             b"              </ErrorBoundary>"
         ),
-        b"              <PlanningWorkbench journeyStep={viewedJourneyStep === \"plan\" ? \"plan\" : \"idea\"} />",
+        b'              <PlanningWorkbench journeyStep={viewedJourneyStep === "plan" ? "plan" : "idea"} />',
         "src/studio/StudioShell.test.tsx",
         "keeps the shell standing when one panel's render throws",
     ),
@@ -686,8 +674,8 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "FE10-1 the api panel mounts with the shell again",
         "apps/frontend/src/studio/StudioShell.tsx",
         (
-            b"          {visitedPanels.includes(\"api\") && (\n"
-            b"            <section className={`api-panel ${activePanel === \"api\" ? \"active\" : \"\"}`} data-panel=\"api\">\n"
+            b'          {visitedPanels.includes("api") && (\n'
+            b'            <section className={`api-panel ${activePanel === "api" ? "active" : ""}`} data-panel="api">\n'
             b"              <ErrorBoundary t={t}>\n"
             b"                <ApiSettingsPanel t={t} />\n"
             b"              </ErrorBoundary>\n"
@@ -695,7 +683,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
             b"          )}"
         ),
         (
-            b"          <section className={`api-panel ${activePanel === \"api\" ? \"active\" : \"\"}`} data-panel=\"api\">\n"
+            b'          <section className={`api-panel ${activePanel === "api" ? "active" : ""}`} data-panel="api">\n'
             b"            <ErrorBoundary t={t}>\n"
             b"              <ApiSettingsPanel t={t} />\n"
             b"            </ErrorBoundary>\n"
@@ -712,8 +700,8 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # own case above and this is the same rule's other half.
         "FE10-2 the tool status is re-fetched on every mcp visit",
         "apps/frontend/src/studio/StudioShell.tsx",
-        b"    if (activePanel === \"mcp\" && !mcpStatus && !checkingMcp) {",
-        b"    if (activePanel === \"mcp\" && !checkingMcp) {",
+        b'    if (activePanel === "mcp" && !mcpStatus && !checkingMcp) {',
+        b'    if (activePanel === "mcp" && !checkingMcp) {',
         "src/studio/StudioShell.test.tsx",
         "does not read settings until the panel that needs them is opened",
     ),
@@ -775,16 +763,8 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # state is a claim the panel may only make from data it has.
         "FE11-5 a failed load answers with an empty library again",
         "apps/frontend/src/assets/AssetLibrary.tsx",
-        (
-            b"        ) : overview ? (\n"
-            b"          <GeneratedEmptyState t={t} />\n"
-            b"        ) : null}\n"
-        ),
-        (
-            b"        ) : (\n"
-            b"          <GeneratedEmptyState t={t} />\n"
-            b"        )}\n"
-        ),
+        (b"        ) : overview ? (\n          <GeneratedEmptyState t={t} />\n        ) : null}\n"),
+        (b"        ) : (\n          <GeneratedEmptyState t={t} />\n        )}\n"),
         "src/assets/AssetLibrary.test.tsx",
         "surfaces a failed load as an error instead of an empty library",
     ),
@@ -827,7 +807,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         # translated one in every rendering test.
         "FE12-3 the send button is hardcoded and its key is orphaned",
         "apps/frontend/src/workbench/PlanningWorkbench.tsx",
-        b"              {t(\"send\")}\n",
+        b'              {t("send")}\n',
         b"              Send\n",
         "src/shared/panelI18n.test.ts",
         "has no orphaned workbench keys",
@@ -941,9 +921,9 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "apps/frontend/src/shared/cssHygiene.test.ts",
         b"    const KNOWN_SHARED: Record<string, string> = {};",
         (
-            b'    const KNOWN_SHARED: Record<string, string> = {\n'
+            b"    const KNOWN_SHARED: Record<string, string> = {\n"
             b'      "mcp-status-grid": "a studio-only layout rule that has never collided"\n'
-            b'    };'
+            b"    };"
         ),
         "src/shared/cssHygiene.test.ts",
         "keeps any two stylesheets from dressing the same class",
@@ -1117,7 +1097,155 @@ CASES: tuple[tuple[str, str, bytes, bytes, str, str], ...] = (
         "src/console/planRail.test.tsx",
         "does not count plan-time confirmations as active approvals",
     ),
+    (
+        "FE21-1 legacy import loses its one-time marker",
+        "apps/frontend/src/shared/projectStore.ts",
+        b"const imported = await client.importLegacy(legacy); write(IMPORT_KEY, imported.project_id);",
+        b"const imported = await client.importLegacy(legacy);",
+        "src/shared/projectStore.test.ts",
+        "imports a legacy handoff once and keeps the original draft",
+    ),
+    (
+        "FE21-2 a conflict deletes the local draft",
+        "apps/frontend/src/shared/projectStore.ts",
+        b"          install(error.latest);",
+        b"          discardDraft(); install(error.latest);",
+        "src/shared/projectStore.test.ts",
+        "keeps a draft and the latest snapshot after a CAS conflict",
+    ),
+    (
+        "FE21-3 an old workflow result becomes current",
+        "apps/frontend/src/shared/WorkflowJobs.tsx",
+        b"item.plan_version === project?.plan_version && ",
+        b"",
+        "src/shared/WorkflowJobs.test.tsx",
+        "does not project a previous version result onto the current plan",
+    ),
+    (
+        "FE21-4 connection mount reads a secret without a copy click",
+        "apps/frontend/src/studio/settings/McpConnectionPanel.tsx",
+        b"if (!active) return; void refresh(); const timer",
+        b"if (!active) return; void refresh(); void copyToken(); const timer",
+        "src/studio/settings/McpConnectionPanel.test.tsx",
+        "reads the Token only for explicit copy and never renders or stores it",
+    ),
+    (
+        "FE21-5 resource preview interprets HTML",
+        "apps/frontend/src/shared/WorkflowJobs.tsx",
+        b'<pre>{typeof preview.data === "string" ? preview.data : JSON.stringify(preview.data, null, 2)}</pre>',
+        b'<pre dangerouslySetInnerHTML={{ __html: typeof preview.data === "string" ? preview.data : JSON.stringify(preview.data, null, 2) }} />',
+        "src/shared/WorkflowJobs.test.tsx",
+        "renders HTML as text and never as an active document",
+    ),
 )
+
+CASES += (
+    (
+        "FE21-6 candidate adoption saves the plan twice",
+        "apps/frontend/src/console/evolution/EvolutionPanel.tsx",
+        b"        projectStore.acceptSaved(result as ProjectSnapshot, binding);",
+        b"        onAdoptBundle(result.plan.production_spec_bundle);",
+        "src/shared/uiProjectBinding.test.tsx",
+        "adopts the saved backend version without saving its bundle a second time",
+    ),
+    (
+        "FE21-7 an earlier refresh overwrites an accepted version",
+        "apps/frontend/src/shared/projectStore.ts",
+        b"    // Invalidate reads that started before this save, even within the same project.\n    ++selection;",
+        b"    // mutation: earlier reads retain the same selection epoch",
+        "src/shared/projectStore.test.ts",
+        "keeps a saved authoritative version when an earlier refresh arrives late",
+    ),
+    (
+        "FE21-8 a project decision uses the global session",
+        "apps/frontend/src/orchestration/OrchestrationBoard.tsx",
+        b"  const boundSessionId = workflowSession?.session_id ?? sessionId;",
+        b"  const boundSessionId = sessionId;",
+        "src/shared/uiProjectBinding.test.tsx",
+        "sends a project gate decision to the workflow's session and engine",
+    ),
+    (
+        "FE21-9 saving an earlier draft deletes a newer draft",
+        "apps/frontend/src/shared/projectStore.ts",
+        b"      if (drafts[project.project_id] === draft) {",
+        b"      if (true) {",
+        "src/shared/projectStore.test.ts",
+        "does not erase a newer draft when an earlier draft save completes",
+    ),
+    (
+        "FE21-10 a late cancellation error reaches the new project",
+        "apps/frontend/src/shared/WorkflowJobs.tsx",
+        b'    catch { if (currentBinding.current === key) setError(t("failed")); }',
+        b'    catch { setError(t("failed")); }',
+        "src/shared/WorkflowJobs.test.tsx",
+        "does not attach a late cancellation error to a different project",
+    ),
+    (
+        "FE21-11 a late first plan creates another project",
+        "apps/frontend/src/workbench/PlanningWorkbench.tsx",
+        b"      if (!origin.active && projectStore.selectedProjectId()) return;",
+        b"      // mutation: late first planning can create a project",
+        "src/workbench/PlanningWorkbench.test.tsx",
+        "does not create or select a late first plan after the user selects an existing project",
+    ),
+    (
+        "FE21-12 an earlier refresh overwrites a CAS saved draft",
+        "apps/frontend/src/shared/projectStore.ts",
+        b"        const savedEpoch = ++selection;",
+        b"        const savedEpoch = selection;",
+        "src/shared/projectStore.test.ts",
+        "keeps the CAS saved draft version when an earlier refresh arrives late",
+    ),
+    (
+        "FE21-13 an earlier refresh overwrites a conflict snapshot",
+        "apps/frontend/src/shared/projectStore.ts",
+        b"          ++selection; // The conflict response is newer than any outstanding read.",
+        b"          // mutation: conflict retains the outstanding read epoch",
+        "src/shared/projectStore.test.ts",
+        "keeps the latest conflict version when an earlier refresh arrives late",
+    ),
+    (
+        "FE21-14 the asset library ignores the selected project",
+        "apps/frontend/src/assets/AssetLibrary.tsx",
+        b"      const loaded = await getAssetLibrary(binding);",
+        b"      const loaded = await getAssetLibrary();",
+        "src/assets/AssetLibrary.test.tsx",
+        "reads the selected project version and can open the shared workspace library",
+    ),
+    (
+        "FE21-15 a previous project supplies the asset list",
+        "apps/frontend/src/assets/AssetLibrary.tsx",
+        b"      if (scopeKey !== currentScope.current) return;\n      setOverview(loaded);",
+        b"      // mutation: the previous project may install its asset list\n      setOverview(loaded);",
+        "src/assets/AssetLibrary.test.tsx",
+        "does not display assets from a project whose read completed after switching",
+    ),
+    (
+        "FE21-16 workflow synchronization prevents a saved draft installation",
+        "apps/frontend/src/shared/projectStore.ts",
+        b"      if (activeId === project.project_id && saved.project_id === project.project_id\n",
+        b"      if (!state.workflow && activeId === project.project_id && saved.project_id === project.project_id\n",
+        "src/shared/projectStore.test.ts",
+        "accepts a draft save after same-version workflow synchronization",
+    ),
+    (
+        "FE21-17 workflow synchronization hides a save conflict",
+        "apps/frontend/src/shared/projectStore.ts",
+        b"      if (activeId === project.project_id) {\n",
+        b"      if (!state.workflow && activeId === project.project_id) {\n",
+        "src/shared/projectStore.test.ts",
+        "accepts a save conflict after same-version workflow synchronization",
+    ),
+    (
+        "FE21-18 a late save rolls the project version backward",
+        "apps/frontend/src/shared/projectStore.ts",
+        b"        && saved.plan_version > (state.active?.plan_version ?? 0)) {\n",
+        b"        ) {\n",
+        "src/shared/projectStore.test.ts",
+        "does not replace a newer project version with a late saved draft",
+    ),
+)
+
 
 #: vitest's `Tests` line. Absent means the run died before reporting.
 #:
@@ -1336,7 +1464,9 @@ def main(argv: list[str] | None = None) -> int:
         needle, mutant = _as_eol(needle, eol), _as_eol(mutant, eol)
 
         if original.count(needle) != 1:
-            print(f"{label:48} {OUTCOMES['skipped']:24} needle appears {original.count(needle)}x in {relative}")
+            print(
+                f"{label:48} {OUTCOMES['skipped']:24} needle appears {original.count(needle)}x in {relative}"
+            )
             print(f"{'':49}0 matches is a rename, or residue of a run killed mid-case;")
             print(f"{'':49}check `git diff {relative}` before touching the needle.")
             failures.append(label)

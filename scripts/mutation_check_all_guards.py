@@ -825,8 +825,10 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # the stage does not also offer the model.
         "T12 the exit check is looked up in the model's whitelist",
         "fantasy_agent/orchestrator.py",
-        b"            check = self._registry.call(name, {})\n",
-        (b"            check = self._registry.scoped(outcome.tools).call(name, {})\n"),
+        b"            check = self._registry.call(name, (check_arguments or {}).get(name, {}))\n",
+        (
+            b"            check = self._registry.scoped(outcome.tools).call(name, (check_arguments or {}).get(name, {}))\n"
+        ),
         "tests/test_orchestrator.py::test_an_exit_check_runs_even_when_it_is_not_in_the_stages_whitelist",
     ),
     (
@@ -888,8 +890,14 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # and a global grant would authorise every stage in the plan.
         "T18 a stage that asks for confirmation runs anyway",
         "fantasy_agent/orchestrator.py",
-        b"        if stage.requires_confirmation and stage.id not in self._confirmed:\n",
-        b"        if False:\n",
+        # The confirmation check now exists in both the normal pass and the
+        # external result entry. Pin the first one by its preceding comment;
+        # a bare line no longer identifies a single site and mutates nothing.
+        (
+            b"        # mis-declaration still surfaces, one approval later.\n"
+            b"        if stage.requires_confirmation and stage.id not in self._confirmed:\n"
+        ),
+        (b"        # mis-declaration still surfaces, one approval later.\n        if False:\n"),
         "tests/test_orchestrator.py::test_a_stage_that_asks_for_confirmation_waits_for_a_person",
     ),
     (
@@ -1024,19 +1032,12 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # see, which is the point: the key must have one home.
         "F4-3 the shell grows a second copy of the locale key",
         "apps/frontend/src/studio/StudioShell.tsx",
+        b'import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY } from "../shared/storage";\n',
         (
-            b'import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, '
-            b'readHandoffPlan } from "../shared/storage";\n'
+            b'import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY } from "../shared/storage";\n'
+            b'\nconst MIRRORED_LOCALE_KEY = "fantasy-agent-studio-locale";\n'
         ),
-        (
-            b"import {\n"
-            b"  STUDIO_SIDEBAR_COLLAPSED_KEY,\n"
-            b"  STUDIO_SIDEBAR_WIDTH_KEY,\n"
-            b"  STUDIO_LOCALE_KEY,\n"
-            b"  readHandoffPlan,\n"
-            b'} from "../shared/storage";\n'
-        ),
-        "tests/test_studio_app.py::test_studio_shell_includes_bilingual_ui_controls",
+        "tests/test_studio_app.py::test_store_keys_are_defined_once_and_imported_everywhere",
     ),
     (
         # `selectedEngineVersion`'s second implementation, restored. The loose
@@ -1044,10 +1045,10 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # guard pins the call, so the identifier can no longer satisfy it.
         "F4-4 the engine version is decoded out of localStorage again",
         "apps/frontend/src/studio/StudioShell.tsx",
-        b"  return selectedEngineVersion(readHandoffPlan());\n",
+        b"  const engineVersion = selectedEngineVersion(project.active?.plan ?? null);\n",
         (
             b'  const raw = JSON.parse(localStorage.getItem("fantasy-agent-planning-handoff") || "null");\n'
-            b'  return raw?.engine_version ?? "godot";\n'
+            b'  const engineVersion = raw?.engine_version ?? "godot";\n'
         ),
         "tests/test_studio_app.py::test_studio_shell_includes_bilingual_ui_controls",
     ),
@@ -1087,13 +1088,9 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # shell off from the handoff with nothing going red.
         "F4-7 the handoff key is spelled out a second time",
         "apps/frontend/src/studio/StudioShell.tsx",
+        b'import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY } from "../shared/storage";\n',
         (
-            b'import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, '
-            b'readHandoffPlan } from "../shared/storage";\n'
-        ),
-        (
-            b'import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, '
-            b'readHandoffPlan } from "../shared/storage";\n'
+            b'import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY } from "../shared/storage";\n'
             b'\nconst MIRRORED_HANDOFF_KEY = "fantasy-agent-planning-handoff";\n'
         ),
         "tests/test_studio_app.py::test_store_keys_are_defined_once_and_imported_everywhere",
@@ -1214,14 +1211,8 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # runs across 60 scene restarts and spent the whole wall budget. Every
         # other finding is guarded by ``aggregate.runs``, so demoting this one
         # puts the gate back to answering "done" for a slice it never saw.
-        (
-            b'                "playtest_unmeasured",\n'
-            b'                "blocking",\n'
-        ),
-        (
-            b'                "playtest_unmeasured",\n'
-            b'                "warning",\n'
-        ),
+        (b'                "playtest_unmeasured",\n                "blocking",\n'),
+        (b'                "playtest_unmeasured",\n                "warning",\n'),
         "tests/test_playtest.py::test_a_slice_nobody_could_measure_is_not_a_pass",
     ),
     (
@@ -1232,14 +1223,8 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # the slice passes by not being counted. Measured on this machine
         # against the 2026-07-13 golden slice, which was winning every run on
         # frame 2 through an exit trigger that overlapped its own gate body.
-        (
-            b'                "outcome_unreadable",\n'
-            b'                "blocking",\n'
-        ),
-        (
-            b'                "outcome_unreadable",\n'
-            b'                "warning",\n'
-        ),
+        (b'                "outcome_unreadable",\n                "blocking",\n'),
+        (b'                "outcome_unreadable",\n                "warning",\n'),
         "tests/test_playtest.py::test_an_unreadable_outcome_is_not_a_run_that_passed",
     ),
     (
@@ -1274,14 +1259,8 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # report that always says "everything drifted" is a report nobody reads.
         # The mutation makes the hash check vacuously true, which is exactly the
         # shape of the bug: the scan still runs, it just stops being evidence.
-        (
-            b"        if current and current != expected:\n"
-            b"            drifted.append(\n"
-        ),
-        (
-            b"        if current and current == expected:\n"
-            b"            drifted.append(\n"
-        ),
+        (b"        if current and current != expected:\n            drifted.append(\n"),
+        (b"        if current and current == expected:\n            drifted.append(\n"),
         "tests/test_corrections.py::test_an_untouched_project_reports_nothing",
     ),
     (
@@ -1334,7 +1313,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # Dropping the engine-only note leaves the operator thinking a change to
         # a DSL-less constant is safe. It is not: the next run overwrites it.
         (
-            b'        report.notes.append(\n'
+            b"        report.notes.append(\n"
             b'            f"{len(engine_only)} edited value(s) are engine constants '
             b'with no field in the "\n'
         ),
@@ -1580,10 +1559,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # path that most needs it.
         "HG2 the decision is not stamped when it is given",
         "fantasy_agent/orchestrator.py",
-        (
-            b"        self._human_decisions[stage_id] = decision\n"
-            b"        self._stamp_plan()\n"
-        ),
+        (b"        self._human_decisions[stage_id] = decision\n        self._stamp_plan()\n"),
         (
             b"        self._human_decisions[stage_id] = decision\n"
             b"        pass  # mutation: the stamp waits for the next pass\n"
@@ -1652,10 +1628,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # still lists every human stage, decided or not.
         "HG9 the pending list stops shrinking",
         "fantasy_agent/orchestrator.py",
-        (
-            b"            if stage.kind == HUMAN_STAGE_KIND\n"
-            b"            and stage.id not in self._human_decisions\n"
-        ),
+        b"            if stage.kind == HUMAN_STAGE_KIND and stage.id not in self._human_decisions\n",
         b"            if stage.kind == HUMAN_STAGE_KIND\n",
         "tests/test_orchestrator_human_gate.py::test_pending_human_gates_lists_only_gates_nobody_has_decided",
     ),
@@ -1680,11 +1653,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # back, which only the snapshot can answer.
         "HG8 the endpoint stops persisting the decision",
         "apps/studio/app/main.py",
-        (
-            b"        save_state(\n"
-            b'            session["orchestrator"].snapshot(plan), workspace_root=REPO_ROOT\n'
-            b"        )\n"
-        ),
+        b'        save_state(session["orchestrator"].snapshot(plan), workspace_root=REPO_ROOT)\n',
         b"        pass  # mutation: the decision lives only in memory\n",
         "tests/test_studio_app.py::test_the_decision_endpoint_resolves_a_gate_and_survives_a_restart",
     ),
@@ -1702,9 +1671,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # reading it off the plan.
         "HG10 a forged stamp is laundered through the snapshot",
         "fantasy_agent/orchestrator.py",
-        (
-            b"            stage.human_resolution = self._human_decisions.get(stage.id)\n"
-        ),
+        (b"            stage.human_resolution = self._human_decisions.get(stage.id)\n"),
         (
             b"            decision = self._human_decisions.get(stage.id)\n"
             b"            if decision is not None:\n"
@@ -1723,10 +1690,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # without touching the map's authority.
         "HG11 a decision on a restored board is lost",
         "fantasy_agent/orchestrator.py",
-        (
-            b"        self._plan = plan\n"
-            b"        for entry in snapshot.stages:\n"
-        ),
+        (b"        self._plan = plan\n        for entry in snapshot.stages:\n"),
         (
             b"        pass  # mutation: the plan is not adopted\n"
             b"        for entry in snapshot.stages:\n"
@@ -1756,10 +1720,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         # today, and the shape that makes the next reader wrong.
         "HG13 restore redeems a stamp on a stage that is not a gate",
         "fantasy_agent/orchestrator.py",
-        (
-            b"            if stage.kind != HUMAN_STAGE_KIND:\n"
-            b"                continue\n"
-        ),
+        (b"            if stage.kind != HUMAN_STAGE_KIND:\n                continue\n"),
         (
             b"            if False:  # mutation: any kind of stage is redeemed\n"
             b"                continue\n"
@@ -1780,7 +1741,7 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         ),
         (
             b'_SAFE_SEGMENT = re.compile(r"\\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\\Z")'
-            b'  # mutation: trailing dot allowed again'
+            b"  # mutation: trailing dot allowed again"
         ),
         "tests/test_orchestration_state.py::test_a_session_id_that_the_filesystem_would_rewrite_is_refused",
     ),
@@ -2031,6 +1992,227 @@ CASES: tuple[tuple[str, str, bytes, bytes, str], ...] = (
         b'        raise HTTPException(status_code=404, detail=f"',
         b'        raise HTTPException(status_code=400, detail=f"',
         "tests/test_studio_app.py::test_asset_remove_api_answers_404_for_an_unknown_id",
+    ),
+)
+
+
+CASES += (
+    (
+        "MCP1 project decisions stop using atomic publication",
+        "fantasy_agent/studio_projects.py",
+        b"        write_atomic(self.record_path(record.project_id), checked.model_dump_json(indent=2))\n",
+        b"        self.record_path(record.project_id).parent.mkdir(parents=True, exist_ok=True)\n        self.record_path(record.project_id).write_text(checked.model_dump_json(indent=2), encoding='utf-8')\n",
+        "tests/test_workflow_authorization.py::test_failed_atomic_claim_consumes_nothing_and_registers_no_job",
+    ),
+    (
+        "MCP2 authorization can exceed thirty minutes",
+        "fantasy_agent/workflow_authorization.py",
+        b"MAX_AUTHORIZATION_SECONDS = 1800\n",
+        b"MAX_AUTHORIZATION_SECONDS = 3600\n",
+        "tests/test_workflow_authorization.py::test_authorization_duration_cannot_expand_budget[1801]",
+    ),
+    (
+        "MCP3 a node gets a fourth rework",
+        "fantasy_agent/workflow_authorization.py",
+        b"MAX_NODE_REWORKS = 3\n",
+        b"MAX_NODE_REWORKS = 4\n",
+        "tests/test_workflow_authorization.py::test_explicit_node_rework_is_bounded_to_three_additional_attempts",
+    ),
+    (
+        "MCP4 approved arguments stop participating in action identity",
+        "fantasy_agent/workflow_authorization.py",
+        b'return hashlib.sha256(_canonical_json(action.model_dump(mode="json")).encode()).hexdigest()',
+        b'return hashlib.sha256(_canonical_json(action.model_dump(mode="json", exclude={"arguments"})).encode()).hexdigest()',
+        "tests/test_workflow_authorization.py::test_grant_scope_is_revalidated_for_every_claim[arguments]",
+    ),
+    (
+        "MCP5 duplicate production stops returning its original task",
+        "fantasy_agent/workflow_authorization.py",
+        b"            if not rework and normal is not None:\n",
+        b"            if False:  # mutation: duplicate action is no longer reused\n",
+        "tests/test_studio_workflow.py::test_claim_then_queue_real_bridge_and_idempotent_original_job",
+    ),
+    (
+        "MCP6 repeated requests stop rechecking expiry",
+        "fantasy_agent/workflow_authorization.py",
+        b"        if not grant.issued_at <= now < grant.expires_at:\n",
+        b"        if False:  # mutation: an expired grant stays usable\n",
+        "tests/test_workflow_authorization.py::test_even_idempotent_reuse_rechecks_expiry_and_current_version",
+    ),
+    (
+        "MCP7 an incorrect bearer token connects",
+        "apps/studio/app/mcp_connection.py",
+        b"            return hmac.compare_digest(self._token.encode(), token.encode())\n",
+        b"            return True  # mutation: any bearer matches\n",
+        "tests/test_studio_mcp_protocol.py::test_transport_auth_disabled_origin_host_and_immediate_close[POST]",
+    ),
+    (
+        "MCP8 hidden paths can be proposed as authorization arguments",
+        "fantasy_agent/studio_workflow.py",
+        b"        if list(Draft202012Validator(schema).iter_errors(arguments)):\n",
+        b"        if False:  # mutation: unadvertised parameters are accepted\n",
+        "tests/test_studio_workflow.py::test_blender_output_manifest_path_cannot_be_supplied_by_the_model",
+    ),
+    (
+        "MCP9 new content retains an old human gate decision",
+        "fantasy_agent/orchestrator.py",
+        b"            if stage.kind == HUMAN_STAGE_KIND:\n                self._human_decisions.pop(stage.id, None)\n",
+        b"            if stage.kind == HUMAN_STAGE_KIND:\n                pass  # mutation: keep the prior content's decision\n",
+        "tests/test_studio_workflow.py::test_new_asset_attempt_invalidates_the_approved_dependents",
+    ),
+    (
+        "MCP10 an old success hides a new external failure",
+        "fantasy_agent/orchestrator.py",
+        b'            raise ValueError("\xe8\xaf\xa5\xe8\x8a\x82\xe7\x82\xb9\xe5\xb0\x9a\xe6\x9c\xaa\xe8\x8e\xb7\xe5\xbe\x97\xe7\x94\xa8\xe6\x88\xb7\xe6\x89\xb9\xe5\x87\x86\xe3\x80\x82")\n        outcome = StageOutcome(\n',
+        b'            raise ValueError("\xe8\xaf\xa5\xe8\x8a\x82\xe7\x82\xb9\xe5\xb0\x9a\xe6\x9c\xaa\xe8\x8e\xb7\xe5\xbe\x97\xe7\x94\xa8\xe6\x88\xb7\xe6\x89\xb9\xe5\x87\x86\xe3\x80\x82")\n        prior = self._outcomes.get(stage_id)\n        if prior is not None and prior.status == DONE:\n            return prior\n        outcome = StageOutcome(\n',
+        "tests/test_studio_workflow.py::test_new_external_failure_replaces_an_old_success",
+    ),
+    (
+        "MCP11 a later job overwrites the previous job log",
+        "fantasy_agent/studio_workflow.py",
+        b"        payload = self._preserve_job_logs(root, job, payload)\n",
+        b"        # mutation: shared worker log paths are not snapshotted\n",
+        "tests/test_studio_workflow.py::test_completed_job_logs_survive_a_later_import_of_the_same_project",
+    ),
+    (
+        "MCP12 prepared expected images become actual resources",
+        "fantasy_agent/studio_workflow.py",
+        b'                    if key in inputs or (prepared and key == "generated_images"):\n',
+        b"                    if key in inputs:\n",
+        "tests/test_studio_workflow.py::test_visual_preparation_does_not_register_a_prior_expected_image",
+    ),
+    (
+        "MCP13 nonasset resources become reviewable",
+        "fantasy_agent/studio_workflow.py",
+        b"        active = self.asset_review.active_assets(snapshot, plan_version)\n",
+        b"        active = snapshot.resources\n",
+        "tests/test_studio_workflow.py::test_asset_review_intent_refuses_nonassets_and_wrong_version_paths[artifact-v1]",
+    ),
+    (
+        "MCP14 credential aliases stop using canonical case",
+        "fantasy_agent/studio_workflow.py",
+        b'    parts = [part.rstrip(" .").casefold() for part in candidate.parts]\n',
+        b"    parts = list(candidate.parts)\n",
+        "tests/test_studio_workflow.py::test_private_configuration_aliases_cannot_be_ingested[LLM-API.JSON]",
+    ),
+    (
+        "MCP15 project creation starts asset integration",
+        "fantasy_agent/studio_workflow_evidence.py",
+        b'            stage.mcp_tools = [\n                name for name in stage.mcp_tools if name != "create_godot_project_structure"\n            ]\n',
+        b"            stage.mcp_tools = list(stage.mcp_tools)\n",
+        "tests/test_studio_workflow.py::test_creating_a_project_does_not_leave_unstarted_asset_integration_running",
+    ),
+    (
+        "MCP16 adoption leaves the public job unadopted",
+        "fantasy_agent/studio_workflow.py",
+        b'            data["report"] = _json(adopted_report)\n',
+        b"            # mutation: retain the old job report\n",
+        "tests/test_studio_workflow.py::test_adoption_updates_the_job_and_preserves_its_original_report_resources[rooftop parkour chase across neon towers]",
+    ),
+    (
+        "MCP17 experience publishes before the adoption transaction",
+        "fantasy_agent/studio_workflow.py",
+        b"            saved = self.projects.adopt_candidate(\n",
+        b"            save_report(adopted_report, workspace_root=root)\n            save_experience(experience, workspace_root=self.projects.production_workspace(project_id))\n            saved = self.projects.adopt_candidate(\n",
+        "tests/test_studio_workflow.py::test_failed_adoption_commit_does_not_publish_plan_report_or_experience[rooftop parkour chase across neon towers]",
+    ),
+    (
+        "MCP18 committed adoption projections do not recover",
+        "fantasy_agent/studio_workflow.py",
+        b"                    self._repair_adoption_projections(project.project_id, decision)\n",
+        b"                    pass  # mutation: committed projections never recover\n",
+        "tests/test_studio_workflow.py::test_committed_adoption_repairs_projections_at_restart_without_replaying[rooftop parkour chase across neon towers]",
+    ),
+    (
+        "MCP19 adoption overwrites the original report resource",
+        "fantasy_agent/studio_workflow.py",
+        b'            experiment_report = (\n                job.tool_name == "run_evolution"\n',
+        b"            experiment_report = (\n                False\n",
+        "tests/test_studio_workflow.py::test_adoption_updates_the_job_and_preserves_its_original_report_resources[rooftop parkour chase across neon towers]",
+    ),
+    (
+        "MCP20 cancellation drops the bridge log references",
+        "fantasy_agent/tool_registry.py",
+        b'                    "log_paths": exc.log_paths,\n',
+        b'                    "log_paths": [],\n',
+        "tests/test_studio_workflow.py::test_cancelled_import_keeps_its_logs_after_a_later_import",
+    ),
+    (
+        "MCP21 standalone playtest reports have no resource",
+        "fantasy_agent/studio_workflow.py",
+        b'            "artifact_paths",\n',
+        b"            # mutation: standalone playtest outputs are not cataloged\n",
+        "tests/test_studio_workflow.py::test_independent_playtest_reports_qa_without_restarting_production",
+    ),
+    (
+        "MCP22 the asset panel reads the global workspace",
+        "apps/studio/app/main.py",
+        b"            root = service._root(project_id, plan_version)\n",
+        b"            root = REPO_ROOT\n",
+        "tests/test_studio_workflow.py::test_mcp_ingest_and_review_share_the_project_asset_panel",
+    ),
+    (
+        "MCP23 independent QA uses the production node grant",
+        "fantasy_agent/studio_workflow.py",
+        b'        if name in {"playtest_godot_project", "run_editor_commandlet", "run_evolution"}:\n',
+        b'        if name == "run_evolution":\n',
+        "tests/test_studio_workflow.py::test_independent_playtest_reports_qa_without_restarting_production",
+    ),
+    (
+        "MCP24 adoption summary hides project resource references",
+        "apps/studio/app/main.py",
+        b"            return {**result, **service.snapshot(req.project_id)}\n",
+        b"            return {**service.snapshot(req.project_id), **result}\n",
+        "tests/test_studio_workflow.py::test_ui_adoption_uses_the_same_atomic_project_decision[rooftop parkour chase across neon towers]",
+    ),
+    (
+        "MCP25 streaming cancellation loses its log paths",
+        "fantasy_agent/process_runner.py",
+        b"            log_paths=[str(path) for path in (stdout_path, stderr_path) if path is not None],\n",
+        b"            log_paths=[],\n",
+        "tests/test_process_runner.py::test_cancel_stops_the_run_early",
+    ),
+    (
+        "MCP26 client credentials leak into command arguments",
+        "scripts/studio_mcp_e2e.py",
+        b'        for key in ("name", "base_url", "wire_api", "requires_openai_auth", "env_key")\n',
+        b'        for key in ("name", "base_url", "wire_api", "requires_openai_auth", "env_key", "experimental_bearer_token")\n',
+        "tests/test_studio_mcp_e2e.py::test_codex_provider_secret_stays_in_child_environment_and_out_of_arguments",
+    ),
+    (
+        "MCP27 interrupted work keeps a running card after restart",
+        "fantasy_agent/studio_workflow.py",
+        b"                    orchestrator.interrupt_external_attempts(\n                        self.workflow_pipeline(project.project_id, version)\n                    )\n",
+        b"                    pass  # mutation: keep lost workers running\n",
+        "tests/test_studio_workflow.py::test_restart_settles_the_running_cards_without_replaying_the_worker",
+    ),
+    (
+        "MCP28 missing client key escapes the authentication failure",
+        "scripts/studio_mcp_e2e.py",
+        b"        if not environment.get(key):\n",
+        b"        if False:  # mutation: accept an absent client key\n",
+        "tests/test_studio_mcp_e2e.py::test_codex_provider_environment_key_must_exist",
+    ),
+    (
+        "MCP29 unmet dependencies leave completed work running",
+        "fantasy_agent/studio_workflow.py",
+        b"                orchestrator.block_external_attempt(\n                    stages,\n                    evidence.stage_id,\n                    ToolOutcome(name, \"error\", str(exc), data),\n                )\n",
+        b"                pass  # mutation: leave completed work running\n",
+        "tests/test_studio_workflow.py::test_finished_evolution_with_unmet_production_dependencies_is_not_running[rooftop parkour chase across neon towers]",
+    ),
+    (
+        "MCP30 client URL credentials enter arguments",
+        "scripts/studio_mcp_e2e.py",
+        b"            or parsed.query\n",
+        b"            or False  # mutation: credential queries enter argv\n",
+        "tests/test_studio_mcp_e2e.py::test_codex_provider_rejects_credentials_in_urls_before_building_arguments[api-key]",
+    ),
+    (
+        "MCP31 the client inherits the host delegation key",
+        "scripts/studio_mcp_e2e.py",
+        b'    environment.pop("CODEX_API_KEY", None)\n',
+        b"    # mutation: inherit host authentication into a new client\n",
+        "tests/test_studio_mcp_e2e.py::test_codex_acceptance_does_not_inherit_the_host_delegation_key",
     ),
 )
 
