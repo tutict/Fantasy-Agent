@@ -45,7 +45,7 @@ export function LogBlock({ title, lines }: { title: string; lines: string[] }) {
   return <section className="log-block"><p className="empty-title">{title}</p><pre>{lines.join("\n") || "-"}</pre></section>;
 }
 
-export function ConfirmDialog({ open, title, body, confirmLabel, cancelLabel, onConfirm, onCancel, children }: { open: boolean; title: string; body: string; confirmLabel: string; cancelLabel: string; onConfirm: () => void; onCancel: () => void; children?: ReactNode }) {
+export function ConfirmDialog({ open, title, body, confirmLabel, cancelLabel, onConfirm, onCancel, children }: { open: boolean; title: string; body: string; confirmLabel: string; cancelLabel: string; onConfirm: (confirmedByUser: boolean) => void; onCancel: () => void; children?: ReactNode }) {
   const confirmRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (open) confirmRef.current?.focus();
@@ -66,7 +66,7 @@ export function ConfirmDialog({ open, title, body, confirmLabel, cancelLabel, on
       {children}
       <div>
         <Button type="button" onClick={onCancel}>{cancelLabel}</Button>
-        <Button ref={confirmRef} type="button" tone="danger" onClick={onConfirm}>{confirmLabel}</Button>
+        <Button ref={confirmRef} type="button" tone="danger" value="approved" onClick={(event) => onConfirm(event.currentTarget.value === "approved")}>{confirmLabel}</Button>
       </div>
     </div>
   );

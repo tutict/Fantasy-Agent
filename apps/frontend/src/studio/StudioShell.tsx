@@ -14,13 +14,16 @@ import { JOURNEY_PANELS, JOURNEY_STEP_KEYS, type JourneyStepId } from "../shared
 import { journeyStepForPanel, withJourneyStep } from "../shared/journeyRouting";
 import { JourneyHeader } from "../shared/ui/primitives";
 import { ErrorBoundary } from "../shared/ui/ErrorBoundary";
-import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY, readHandoffPlan } from "../shared/storage";
+import { STUDIO_SIDEBAR_COLLAPSED_KEY, STUDIO_SIDEBAR_WIDTH_KEY } from "../shared/storage";
 import type {
   McpStatus
 } from "../shared/types";
 import { PlanningWorkbench } from "../workbench/PlanningWorkbench";
 import { AgentPanel } from "./settings/AgentPanel";
 import { ApiSettingsPanel } from "./settings/ApiSettingsPanel";
+import { ProjectControls } from "../shared/ProjectControls";
+import { useProject } from "../shared/projectStore";
+import { McpConnectionPanel } from "./settings/McpConnectionPanel";
 import { McpServiceGrid } from "./settings/McpCard";
 import "../styles/studio.css";
 
@@ -117,6 +120,8 @@ export function StudioShell() {
   // lived in iframes -- three documents, three <html>. They are inline now.
   const { locale, theme, setLocale, setTheme } = useLocaleTheme();
   const { snapshot, update } = useJourney();
+  const project = useProject();
+  const engineVersion = selectedEngineVersion(project.active?.plan ?? null);
   const [activePanel, setActivePanel] = useState<PanelKey>(panelFromPathname);
   const [locationJourneyStep, setLocationJourneyStep] = useState<JourneyStepId | null>(() => journeyStepFromLocation(panelFromPathname()));
   // Mounted on first visit, then kept mounted and hidden with CSS.
@@ -146,8 +151,8 @@ export function StudioShell() {
   const t = useMemo(() => makeTranslator(locale, studioI18n), [locale]);
 
   useEffect(() => {
-    update({ plan: readHandoffPlan() });
-  }, [update]);
+    update({ plan: project.active?.plan ?? null, session: project.workflow ?? null });
+  }, [project.active?.plan, project.workflow, update]);
 
   useEffect(() => {
     document.title = t("documentTitle");
@@ -208,14 +213,14 @@ export function StudioShell() {
     setCheckingMcp(true);
     setMcpError(null);
     try {
-      setMcpStatus(await getMcpStatus(handedOffEngineVersion()));
+      setMcpStatus(await getMcpStatus(engineVersion));
     } catch (error) {
       setMcpStatus(null);
       setMcpError(String(error));
     } finally {
       setCheckingMcp(false);
     }
-  }, []);
+  }, [engineVersion]);
 
   useEffect(() => {
     if (activePanel === "mcp" && !mcpStatus && !checkingMcp) {
@@ -389,6 +394,7 @@ export function StudioShell() {
       <section className="studio-main">
         <header className="studio-topbar">
           <JourneyHeader snapshot={snapshot} locale={locale} t={t} />
+          <ProjectControls />
         </header>
 
         <section className="studio-panel-frame">
@@ -457,6 +463,7 @@ export function StudioShell() {
             </section>
           )}
           <section className={`mcp-panel ${activePanel === "mcp" ? "active" : ""}`} data-panel="mcp">
+            <ErrorBoundary t={t}><McpConnectionPanel active={activePanel === "mcp"} /></ErrorBoundary>
             <div className="mcp-header">
               <div>
                 <h3>{t("mcpStatusTitle")}</h3>
@@ -470,7 +477,7 @@ export function StudioShell() {
               {checkingMcp
                 ? t("mcpChecking")
                 : mcpStatus
-                  ? `${t("mcpSelectedEngine")}: ${mcpStatus.engine || handedOffEngineVersion()} - ${mcpStatus.required_ready ?? 0}/${mcpStatus.required_total ?? 0} ${t("mcpStatusSummary")}`
+                  ? `${t("mcpSelectedEngine")}: ${mcpStatus.engine || engineVersion} - ${mcpStatus.required_ready ?? 0}/${mcpStatus.required_total ?? 0} ${t("mcpStatusSummary")}`
                   : t("mcpChecking")}
             </p>
             {/* The grid, not the section: the header and the summary above are
@@ -524,22 +531,5 @@ export function StudioShell() {
       </section>
     </main>
   );
-}
-
-/**
- * The engine version of the plan the workbench handed over.
- *
- * This used to be a second implementation here -- `JSON.parse` straight out of
- * `localStorage`, then a substring match on stage ids. `shared/planModel.ts`
- * already answered the same question from a plan, so there were two truths, and
- * the copy here was the looser one: `id.includes("godot")` against a planModel
- * check for the exact stage id. The contract makes them equivalent
- * (`ProductionPipelineStage.id` is an 8-member `Literal`, and the only member
- * containing "godot" is `godot_quick_play`), so folding them into one is a
- * behaviour-preserving simplification rather than a behaviour change -- and it
- * drops a decoder that answered "UE5" to both "no handoff" and "corrupt handoff".
- */
-function handedOffEngineVersion(): string {
-  return selectedEngineVersion(readHandoffPlan());
 }
 

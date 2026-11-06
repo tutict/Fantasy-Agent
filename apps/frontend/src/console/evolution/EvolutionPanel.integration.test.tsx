@@ -1,3 +1,4 @@
+import { installProjectFixture } from "../../../test-support/projectBackend";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { LocaleThemeProvider } from "../../shared/localeTheme";
@@ -19,3 +20,5 @@ it("keeps the visited evolution work mounted when leaving quality", () => {
   expect(container.querySelector('[data-panel="evolution"]')).toBe(panel);
   expect(panel?.parentElement?.hasAttribute("hidden")).toBe(true);
 });
+
+installProjectFixture();

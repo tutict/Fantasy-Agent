@@ -1,3 +1,4 @@
+import { installProjectFixture } from "../../test-support/projectBackend";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -448,3 +449,5 @@ describe("information density per view", () => {
     );
   });
 });
+
+installProjectFixture();

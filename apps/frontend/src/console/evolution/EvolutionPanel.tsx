@@ -5,6 +5,8 @@ import {
 } from "../../shared/api";
 import type { Translator } from "../../shared/i18n";
 import { usesGodotEngine } from "../../shared/planModel";
+import { projectStore } from "../../shared/projectStore";
+import type { ProjectBinding, ProjectSnapshot } from "../../shared/projectTypes";
 import type {
   DirectorBuildPlan, EvolutionOptions, EvolutionReport, EvolutionSuggestion, NumericChange,
   ProductionSpecBundle
@@ -30,9 +32,9 @@ const FIELD_KEYS: Record<NumericChange["field"], string> = {
   "numeric.enemy_pressure.detection_radius_multiplier": "evolutionDetection"
 };
 
-function savedExperiment(): string | null {
+function savedExperiment(storageKey = EXPERIMENT_KEY): string | null {
   try {
-    const value = localStorage.getItem(EXPERIMENT_KEY);
+    const value = localStorage.getItem(storageKey);
     return value && /^[a-zA-Z0-9_-]{1,96}$/.test(value) ? value : null;
   } catch {
     return null;
@@ -48,8 +50,10 @@ function Changes({ changes, t }: { changes: NumericChange[]; t: Translator }) {
   ))}</ul>;
 }
 
-export function EvolutionPanel({ plan, t, active = true, onAdoptBundle, onRunningChange }: {
+export function EvolutionPanel({ plan, binding, t, active = true, onAdoptBundle, onRunningChange, externalReport }: {
   plan: DirectorBuildPlan | null;
+  binding?: ProjectBinding;
+  externalReport?: EvolutionReport;
   t: Translator;
   active?: boolean;
   onAdoptBundle: (bundle: ProductionSpecBundle) => void;
@@ -60,15 +64,17 @@ export function EvolutionPanel({ plan, t, active = true, onAdoptBundle, onRunnin
   const [maxWallSeconds, setMaxWallSeconds] = useState(600);
   const [useExperience, setUseExperience] = useState(true);
   const [preview, setPreview] = useState<{ request: EvolutionOptions; key: string; effects: string[] } | null>(null);
-  const [experimentId, setExperimentId] = useState<string | null>(savedExperiment);
-  const [report, setReport] = useState<EvolutionReport | null>(null);
+  const storageKey = binding ? `${EXPERIMENT_KEY}:${binding.project_id}:${binding.plan_version}` : EXPERIMENT_KEY;
+  const [experimentId, setExperimentId] = useState<string | null>(() => savedExperiment(storageKey));
+  const [localReport, setReport] = useState<EvolutionReport | null>(null);
+  const report = externalReport ?? localReport;
   const [polling, setPolling] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [feedback, setFeedback] = useState("");
   const [suggestion, setSuggestion] = useState<{ value: EvolutionSuggestion; key: string } | null>(null);
   const [experienceCount, setExperienceCount] = useState<number | null>(null);
-  const planKey = useMemo(() => JSON.stringify(plan), [plan]);
+  const planKey = useMemo(() => JSON.stringify([binding?.project_id, binding?.plan_version, plan]), [binding?.project_id, binding?.plan_version, plan]);
   const currentPlanKey = useRef(planKey);
   currentPlanKey.current = planKey;
   const reviewKey = JSON.stringify([planKey, maxIterations, maxWallSeconds, useExperience]);
@@ -80,6 +86,10 @@ export function EvolutionPanel({ plan, t, active = true, onAdoptBundle, onRunnin
 
   useEffect(() => { setPreview(null); }, [reviewKey]);
   useEffect(() => { setSuggestion(null); }, [planKey]);
+  useEffect(() => {
+    setExperimentId(savedExperiment(storageKey)); setReport(null); setPolling(false);
+    setError(""); setBusy(false); setExperienceCount(null);
+  }, [storageKey]);
   useEffect(() => { onRunningChange?.(polling); }, [polling, onRunningChange]);
 
   useEffect(() => {
@@ -106,56 +116,59 @@ export function EvolutionPanel({ plan, t, active = true, onAdoptBundle, onRunnin
     }
     void poll();
     return () => { abandoned = true; if (timer) clearTimeout(timer); };
-  }, [experimentId, active, polling, t]);
+  }, [experimentId, active, polling, planKey, t]);
 
   async function reviewExperiment() {
     if (!plan || !canRun || !validBudget) return;
     const key = reviewKey;
     const request: EvolutionOptions = JSON.parse(JSON.stringify({
-      plan, max_iterations: maxIterations, max_wall_seconds: maxWallSeconds, use_experience: useExperience
+      ...binding, plan, max_iterations: maxIterations, max_wall_seconds: maxWallSeconds, use_experience: useExperience
     }));
     setBusy(true);
     setError("");
     try {
       const result = await previewEvolution(request);
-      if (key !== currentReviewKey.current) { setError(t("evolutionPlanChanged")); return; }
+      if (key !== currentReviewKey.current) return;
       setPreview({ request, key, effects: result.planned_side_effects });
     } catch (failure) {
-      setError(String(failure instanceof Error ? failure.message : failure));
-    } finally { setBusy(false); }
+      if (key === currentReviewKey.current) setError(String(failure instanceof Error ? failure.message : failure));
+    } finally { if (key === currentReviewKey.current) setBusy(false); }
   }
 
-  async function confirmExperiment() {
+  async function confirmExperiment(confirmedByUser: boolean) {
+    if (!confirmedByUser) return;
     if (!preview || preview.key !== currentReviewKey.current) {
       setPreview(null); setError(t("evolutionPlanChanged")); return;
     }
     // This handler is called only by the user's confirmation button.
-    const confirmedByUser = true;
     const request = preview.request;
+    const key = preview.key;
     setPreview(null);
     setBusy(true);
     setError("");
     try {
       const result = await startEvolution(request, confirmedByUser);
+      if (key !== currentReviewKey.current) return;
       setExperimentId(result.experiment_id);
       setReport(null);
       setPolling(true);
       setOpen(true);
-      try { localStorage.setItem(EXPERIMENT_KEY, result.experiment_id); }
+      try { localStorage.setItem(storageKey, result.experiment_id); }
       catch { setError(t("evolutionStorageError")); }
     } catch (failure) {
-      setError(String(failure instanceof Error ? failure.message : failure));
-    } finally { setBusy(false); }
+      if (key === currentReviewKey.current) setError(String(failure instanceof Error ? failure.message : failure));
+    } finally { if (key === currentReviewKey.current) setBusy(false); }
   }
 
   async function cancelExperiment() {
     if (!experimentId) return;
+    const key = planKey;
     setBusy(true);
     try {
       await cancelEvolution(experimentId);
     } catch (failure) {
-      setError(String(failure instanceof Error ? failure.message : failure));
-    } finally { setBusy(false); }
+      if (key === currentPlanKey.current) setError(String(failure instanceof Error ? failure.message : failure));
+    } finally { if (key === currentPlanKey.current) setBusy(false); }
   }
 
   async function adoptCandidate() {
@@ -163,14 +176,17 @@ export function EvolutionPanel({ plan, t, active = true, onAdoptBundle, onRunnin
     const key = planKey;
     setBusy(true); setError("");
     try {
-      const result = await adoptEvolution(experimentId, plan, feedback);
-      if (key !== currentPlanKey.current) { setError(t("evolutionPlanChanged")); return; }
+      const result = await adoptEvolution(experimentId, plan, feedback, binding);
+      if (key !== currentPlanKey.current) return;
       if (!result.plan.production_spec_bundle) throw new Error(t("evolutionNeedsPlan"));
-      onAdoptBundle(result.plan.production_spec_bundle);
+      if (binding) {
+        if (result.project_id !== binding.project_id || !Number.isInteger(result.plan_version)) throw new Error(t("evolutionPlanChanged"));
+        projectStore.acceptSaved(result as ProjectSnapshot, binding);
+      } else onAdoptBundle(result.plan.production_spec_bundle);
       setReport((current) => current ? { ...current, adopted_iteration: current.best_iteration } : current);
     } catch (failure) {
-      setError(String(failure instanceof Error ? failure.message : failure));
-    } finally { setBusy(false); }
+      if (key === currentPlanKey.current) setError(String(failure instanceof Error ? failure.message : failure));
+    } finally { if (key === currentPlanKey.current) setBusy(false); }
   }
 
   async function readExperience() {
@@ -179,12 +195,12 @@ export function EvolutionPanel({ plan, t, active = true, onAdoptBundle, onRunnin
     setBusy(true); setError(""); setSuggestion(null);
     try {
       const [history, value] = await Promise.all([getEvolutionExperiences(), suggestEvolution(plan)]);
-      if (JSON.stringify(plan) !== key || currentReviewKey.current !== reviewKey) return;
+      if (currentPlanKey.current !== key || currentReviewKey.current !== reviewKey) return;
       setExperienceCount(history.experiences.length);
       setSuggestion({ value, key });
     } catch (failure) {
-      setError(String(failure instanceof Error ? failure.message : failure));
-    } finally { setBusy(false); }
+      if (key === currentPlanKey.current) setError(String(failure instanceof Error ? failure.message : failure));
+    } finally { if (key === currentPlanKey.current) setBusy(false); }
   }
 
   const winner = report?.iterations.find((iteration) => iteration.index === report.best_iteration);
@@ -261,7 +277,7 @@ export function EvolutionPanel({ plan, t, active = true, onAdoptBundle, onRunnin
             {iteration.notes.map((note, index) => <p className="ui-hint" key={index}>{note}</p>)}
           </details>)}
           {(report.next_actions ?? []).map((action, index) => <p className="ui-hint" key={`action-${index}`}>{action}</p>)}
-          {report.adopted_iteration !== null ? <p role="status">{t("evolutionAdopted")}</p> : winner?.eligible && report.status === "improved" ? <div>
+          {report.adopted_iteration !== null ? <p role="status">{t("evolutionAdopted")}</p> : !externalReport && winner?.eligible && report.status === "improved" ? <div>
             <label className="field-label" htmlFor="evolution-feedback">{t("evolutionFeedback")}</label>
             <textarea id="evolution-feedback" rows={2} maxLength={4000} value={feedback} onChange={(event) => setFeedback(event.target.value)} />
             <Button type="button" disabled={busy || polling || !plan} onClick={() => void adoptCandidate()}>{t("evolutionAdopt")}</Button>
@@ -271,7 +287,7 @@ export function EvolutionPanel({ plan, t, active = true, onAdoptBundle, onRunnin
       <ConfirmDialog open={Boolean(preview)} title={t("evolutionConfirmTitle")}
         body={t("evolutionConfirmHint")}
         confirmLabel={t("evolutionConfirmStart")} cancelLabel={t("generateConfirmCancel")}
-        onConfirm={() => void confirmExperiment()} onCancel={() => setPreview(null)}>
+        onConfirm={(confirmedByUser) => void confirmExperiment(confirmedByUser)} onCancel={() => setPreview(null)}>
         <ul className="evolution-effects">{(preview?.effects ?? []).map((effect, index) => <li key={index}>{effect}</li>)}</ul>
       </ConfirmDialog>
     </details>

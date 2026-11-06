@@ -355,7 +355,7 @@ textarea:focus-visible {
 /* The board's two "it is someone's turn" states, and the shell's word for a
    model that declined. All three are waiting, not warning: nothing has gone
    wrong yet. `attention` is the journey step's waiting. */
-[data-status="awaiting_confirmation"],
+[data-status="awaiting_confirmation"], [data-status="confirmation_required"],
 [data-status="refused"],
 /* A rework stage nobody chose to rework. It is neither progress nor failure,
    and it used to be painted the saturated blue of a stage that is running --
@@ -383,7 +383,7 @@ textarea:focus-visible {
 /* `warning` was `warn` here until the pill primitive and the validator each
    had their own spelling of it; the validator's is the one that survived,
    because two components render its values and one renders theirs. */
-[data-status="warning"],
+[data-status="warning"], [data-status="expired"], [data-status="interrupted"],
 [data-status="degraded"],
 [data-state="warning"],
 [data-state="degraded"] {
@@ -400,7 +400,7 @@ textarea:focus-visible {
   --tone: var(--brand);
   --tone-soft: var(--brand-soft);
 }
-[data-status="pending_user_review"],
+[data-status="pending_user_review"], [data-status="pending_review"], [data-status="pending_adoption"],
 [data-status="awaiting_human"] {
   --tone: var(--status-human);
   --tone-soft: var(--status-human-soft);
@@ -504,3 +504,21 @@ textarea:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+/* Project context and result evidence are shared by the inline workspaces. */
+.project-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); font-size: var(--text-s); }
+.project-controls label { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); }
+.project-controls select, .project-controls input { max-width: 100%; min-width: 0; padding: var(--space-2); border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--surface); color: var(--text); font: inherit; }
+.project-controls form { display: flex; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3) 0; }
+.project-controls details { min-width: 0; }
+.project-version { color: var(--muted); font-size: var(--text-xs); }
+.project-error { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--status-danger); width: 100%; }
+.project-draft { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); padding: var(--space-3) 0; }
+.project-draft p { margin: 0; }
+.project-workflow { padding: var(--space-4) 0; min-width: 0; }
+.project-workflow h3 { font-size: var(--text-l); margin: 0 0 var(--space-3); }
+.project-job { border-bottom: 1px solid var(--line); padding: var(--space-3) 0; }
+.project-job summary { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-3); cursor: pointer; }
+.project-job pre { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-s); }
+.project-resource { padding: var(--space-2) 0; overflow-wrap: anywhere; }
+.project-resource img { max-width: 100%; max-height: 480px; object-fit: contain; }
+.project-resource code { margin-right: var(--space-2); }

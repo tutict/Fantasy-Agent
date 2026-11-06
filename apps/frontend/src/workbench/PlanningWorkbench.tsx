@@ -23,7 +23,8 @@ import { useJourney } from "../shared/journeyContext";
 import { callWorkbenchTool } from "../shared/api";
 import { workbenchI18n, makeTranslator } from "../shared/i18n";
 import { useLocaleTheme } from "../shared/localeTheme";
-import { savePlanningHandoff } from "../shared/storage";
+import { projectStore, useProject } from "../shared/projectStore";
+import { DraftActions } from "../shared/DraftActions";
 import type {
   DirectorBuildPlan,
   IdeaSeed,
@@ -34,6 +35,7 @@ import type {
   WorkbenchPanelKey,
   WorkbenchToolResult
 } from "../shared/types";
+import { readConversationDraft, saveConversationDraft } from "./conversationDraft";
 import { DiscoveryThread, type ThreadEntry } from "./DiscoveryThread";
 import {
   BuildPanel,
@@ -97,22 +99,26 @@ export function PlanningWorkbench({ journeyStep = "idea" }: { journeyStep?: "ide
   const [status, setStatus] = useState<StatusState>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  const [chatInput, setChatInput] = useState("");
-  const [rawIdea, setRawIdea] = useState("");
-  const [answers, setAnswers] = useState<InterviewAnswer[]>([]);
-  const [seed, setSeed] = useState<IdeaSeed | null>(null);
-  const [seedConfirmed, setSeedConfirmed] = useState(false);
+  const [savedConversation] = useState(readConversationDraft);
+  const [chatInput, setChatInput] = useState(savedConversation.chatInput ?? "");
+  const [rawIdea, setRawIdea] = useState(savedConversation.rawIdea ?? "");
+  const [answers, setAnswers] = useState<InterviewAnswer[]>(savedConversation.answers ?? []);
+  const [seed, setSeed] = useState<IdeaSeed | null>(savedConversation.seed ?? null);
+  const [seedConfirmed, setSeedConfirmed] = useState(savedConversation.seedConfirmed ?? false);
   const [seedOpen, setSeedOpen] = useState(false);
-  const [plan, setPlan] = useState<DirectorBuildPlan | null>(null);
-  useEffect(() => update({ plan }), [plan, update]);
-  const [fields, setFields] = useState<SeedEditorFields>(EMPTY_SEED_FIELDS);
-  const [config, setConfig] = useState<WorkbenchConfig>(() => defaultConfig());
+  const project = useProject();
+  const [showLatest, setShowLatest] = useState(false);
+  const plan = (showLatest ? null : project.draft?.plan) ?? project.active?.plan ?? null;
+  useEffect(() => update({ plan: project.active?.plan ?? null }), [project.active?.plan, update]);
+  const [fields, setFields] = useState<SeedEditorFields>(savedConversation.fields ?? EMPTY_SEED_FIELDS);
+  const [config, setConfig] = useState<WorkbenchConfig>(() => savedConversation.config ?? defaultConfig());
   const [mainView, setMainView] = useState<MainView>("chat");
   const [toolsOpen, setToolsOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<WorkbenchPanelKey>("overview");
   const [running, setRunning] = useState<string | null>(null);
 
   const t = useMemo(() => makeTranslator(locale, workbenchI18n), [locale]);
+  useEffect(() => saveConversationDraft({ chatInput, rawIdea, answers, seed, seedConfirmed, fields, config }), [chatInput, rawIdea, answers, seed, seedConfirmed, fields, config]);
 
   const question = currentInterviewQuestion(answers, locale);
   const busy = running !== null;
@@ -159,7 +165,10 @@ export function PlanningWorkbench({ journeyStep = "idea" }: { journeyStep?: "ide
   }, []);
 
   const ingest = useCallback(
-    (result: WorkbenchToolResult) => {
+    (result: WorkbenchToolResult, origin = projectStore.getSnapshot()) => {
+      // A first plan cannot create a new project after the user selected one
+      // while this planning call was in flight, including a pending selection.
+      if (!origin.active && projectStore.selectedProjectId()) return;
       const { structured, meta } = normalizeToolResult(result);
 
       const nextSeed = structured.idea_seed ?? meta.ideaSeed;
@@ -204,13 +213,11 @@ export function PlanningWorkbench({ journeyStep = "idea" }: { journeyStep?: "ide
       }
 
       if (nextPlan || Object.keys(planPatch).length) {
-        setPlan((previous) => {
-          const merged = mergePlanPatch(nextPlan ?? previous, planPatch);
-          if (merged.gameplay_spec) {
-            savePlanningHandoff(merged, planDisplayTitle(merged, locale), "planning-workbench");
-          }
-          return merged;
-        });
+        const merged = mergePlanPatch(nextPlan ?? origin.draft?.plan ?? origin.active?.plan ?? null, planPatch);
+        if (origin.active) projectStore.setDraftFor(merged, origin.active.project_id, origin.draft?.baseVersion ?? origin.active.plan_version);
+        else if (merged.gameplay_spec) void projectStore.create(planDisplayTitle(merged, locale) || "新项目", merged);
+        else projectStore.setDraftFor(merged, "unassigned", 0);
+        setShowLatest(false);
       }
 
       // `resultPanel` returns a tab this view actually has: the backend names
@@ -228,12 +235,13 @@ export function PlanningWorkbench({ journeyStep = "idea" }: { journeyStep?: "ide
 
   const runTool = useCallback(
     async (tool: string, payload: PromptRequest | ReturnType<typeof ideaDiscoveryPayload>) => {
+      const origin = projectStore.getSnapshot();
       setRunning(tool);
       setStatus("running");
       setError(null);
       try {
         const result = await callWorkbenchTool(tool, payload);
-        ingest(result);
+        ingest(result, origin);
         setStatus("ready");
       } catch (failure) {
         setStatus("error");
@@ -472,6 +480,7 @@ export function PlanningWorkbench({ journeyStep = "idea" }: { journeyStep?: "ide
         )}
 
         <div className="wb-main-body">
+          <DraftActions showLatest={showLatest} onShowLatest={(value) => { setShowLatest(value); if (value) setMainView("plan"); }} />
           {error ? (
             <p className="wb-notice" role="alert">
               {error}

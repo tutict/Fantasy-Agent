@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { projectStore, useProject } from "../shared/projectStore";
+import { WorkflowJobs, currentWorkflowResult } from "../shared/WorkflowJobs";
 import { useJourney } from "../shared/journeyContext";
 import { operationPhase, operationReason, JOURNEY_STEP_KEYS, type JourneyStepId } from "../shared/productionJourney";
 import { ConfirmDialog, LogBlock, StatusBadge } from "../shared/ui/primitives";
@@ -131,7 +133,19 @@ export function FlowConsole({
   // its own document, wrong now that it renders inside the shell, where two
   // effects writing the same attribute is a race with no author.
   const { locale, theme, setLocale, setTheme } = useLocaleTheme();
+  const project = useProject();
+  const bindingKey = `${project.active?.project_id ?? ""}:${project.active?.plan_version ?? 0}`;
+  const currentBinding = useRef(bindingKey);
+  currentBinding.current = bindingKey;
+  const [demoBinding, setDemoBinding] = useState("");
+  const [assetBinding, setAssetBinding] = useState("");
+  const [playtestBinding, setPlaytestBinding] = useState("");
+  const [reviewBinding, setReviewBinding] = useState("");
   const [status, setStatus] = useState<StatusState>("idle");
+  const setDemoStatus = useCallback((next: StatusState) => { if (demoBinding === currentBinding.current) setStatus(next); }, [demoBinding]);
+  const setAssetStatus = useCallback((next: StatusState) => { if (assetBinding === currentBinding.current) setStatus(next); }, [assetBinding]);
+  const setPlaytestStatus = useCallback((next: StatusState) => { if (playtestBinding === currentBinding.current) setStatus(next); }, [playtestBinding]);
+  useEffect(() => setStatus("idle"), [bindingKey]);
   const [activeTab, setActiveTab] = useState<TabKey>(focus);
   const [pendingResume, setPendingResume] = useState<string | null>(null);
   const [pendingManualTarget, setPendingManualTarget] = useState<string | null>(null);
@@ -173,6 +187,7 @@ export function FlowConsole({
   const { enemyTuning, setEnemyTuningValue } = useEnemyTuning();
   const {
     currentPlan,
+    currentReview,
     currentHandoff,
     reviewDecisions,
     setReviewDecisions,
@@ -214,11 +229,12 @@ export function FlowConsole({
     useSpecRegen(currentPlan);
   const { approvalManifestPath, onWriteApprovalManifest } = useApprovalManifest({
     currentPlan,
+    review: currentReview,
     reviewDecisions,
     setStatus,
     addActivity,
     t,
-    onBundleSynced: updateProductionSpecBundle
+    onBundleSynced: project.active ? () => { void projectStore.refresh(); } : updateProductionSpecBundle
   });
 
   const modeLabel = useCallback((mode: CorrectionMode) => t(correctionModeKeys[mode] || "modeGameplay"), [t]);
@@ -233,13 +249,13 @@ export function FlowConsole({
    */
   const {
     jobId: pollJobId,
-    result: generateResult,
+    result: localGenerateResult,
     cancelling: demoCancelling,
     cancel: cancelDemoJob,
     start: startDemoJob,
     reset: resetDemoJob
   } = useDemoJobPolling({
-    setStatus,
+    setStatus: setDemoStatus,
     addActivity,
     doneLabel: t("generateDone"),
     failedLabel: t("generateFailed"),
@@ -249,13 +265,13 @@ export function FlowConsole({
 
   const {
     jobId: pollAssetJobId,
-    result: assetResult,
+    result: localAssetResult,
     cancelling: assetCancelling,
     cancel: cancelAssetJob,
     start: startAssetJob,
     reset: resetAssetJob
   } = useAssetJobPolling({
-    setStatus,
+    setStatus: setAssetStatus,
     addActivity,
     doneLabel: t("assetExecutionDone"),
     failedLabel: t("assetExecutionFailed"),
@@ -264,23 +280,39 @@ export function FlowConsole({
 
   const {
     jobId: pollPlaytestJobId,
-    result: playtestResult,
+    result: localPlaytestResult,
     cancelling: playtestCancelling,
     cancel: cancelPlaytestRun,
     start: startPlaytestJob,
     reset: resetPlaytestJob
   } = usePlaytestJobPolling({
-    setStatus,
+    setStatus: setPlaytestStatus,
     addActivity,
     doneLabel: t("playtestDone"),
     failedLabel: t("playtestFailed"),
     cancelledLabel: t("playtestCancelled")
   });
 
+  const externalGenerate = currentWorkflowResult(project.active, project.jobs, "execute_demo") as ExecuteResult | undefined;
+  const externalAssets = currentWorkflowResult(project.active, project.jobs, "execute_assets") as ExecuteResult | undefined;
+  const externalPlaytestData = currentWorkflowResult(project.active, project.jobs, "playtest_godot_project");
+  const externalPlaytest = externalPlaytestData && "aggregate" in externalPlaytestData ? { status: String(externalPlaytestData.status ?? "done"), report: externalPlaytestData as PlaytestReport, project_dir: String(externalPlaytestData.project_dir ?? "") } : externalPlaytestData as PlaytestResult | undefined;
+  const externalEvolutionData = currentWorkflowResult(project.active, project.jobs, "run_evolution");
+  const externalEvolutionReport = externalEvolutionData && "report" in externalEvolutionData ? externalEvolutionData.report : externalEvolutionData;
+  const externalEvolution = externalEvolutionReport && typeof externalEvolutionReport === "object"
+    && "iterations" in externalEvolutionReport && Array.isArray(externalEvolutionReport.iterations)
+    ? externalEvolutionReport as import("../shared/types").EvolutionReport : undefined;
+  const generateResult = externalGenerate ?? (demoBinding === bindingKey ? localGenerateResult : null);
+  const assetResult = externalAssets ?? (assetBinding === bindingKey ? localAssetResult : null);
+  const playtestResult = externalPlaytest ?? (playtestBinding === bindingKey ? localPlaytestResult : null);
+  useEffect(() => {
+    if (reviewBinding && reviewBinding !== bindingKey) { setGenerateEffects(null); setAssetEffects(null); setPlaytestEffects(null); setPendingResume(null); }
+  }, [bindingKey, reviewBinding]);
+
   // Once a run settles, read back which nodes finished so the operator can
   // re-run one of them instead of the whole chain.
   const { state: sessionState } = useSessionState({
-    sessionId,
+    sessionId: demoBinding === bindingKey ? sessionId : null,
     engine: usesGodotEngine(currentPlan) ? "godot" : "unreal",
     busy: Boolean(pollJobId)
   });
@@ -414,6 +446,7 @@ const demoPhase = operationPhase({
   };
 
   const onGenerateClick = async () => {
+    setReviewBinding(bindingKey);
     if (!currentPlan) {
       addActivity(t("generateRequiresPlan"), t("openPlanningHint"));
       setStatus("error");
@@ -429,6 +462,7 @@ const demoPhase = operationPhase({
         enemyTuning,
         approvalManifestPath || "generated/asset-approval-manifest.yaml"
       );
+      if (currentBinding.current !== bindingKey) return;
       setGenerateEffects(preview.planned_side_effects || []);
     } catch (error) {
       setStatus("error");
@@ -436,8 +470,9 @@ const demoPhase = operationPhase({
     }
   };
 
-  const startGenerate = async (resumeFrom?: string) => {
-    if (!currentPlan) return;
+  const startGenerate = async (confirmedByUser: boolean, resumeFrom?: string) => {
+    setDemoBinding(bindingKey);
+    if (!currentPlan || !confirmedByUser) return;
     setGenerateEffects(null);
     resetDemoJob();
     setStatus("running");
@@ -456,7 +491,7 @@ const demoPhase = operationPhase({
         withGameplay,
         enemyTuning,
         approvalManifestPath || "generated/asset-approval-manifest.yaml",
-        resumeFrom ? { sessionId: sessionId || undefined, resumeFrom } : {}
+        { ...(resumeFrom ? { sessionId: sessionId || undefined, resumeFrom } : {}), confirmedByUser }
       );
       if (started.job_id) {
         startDemoJob(started.job_id);
@@ -472,6 +507,7 @@ const demoPhase = operationPhase({
   };
 
   const onPlaytestClick = async () => {
+    setReviewBinding(bindingKey);
     if (!playtestProjectDir) {
       addActivity(t("playtestFailed"), t("playtestNeedsProject"));
       setStatus("error");
@@ -483,6 +519,7 @@ const demoPhase = operationPhase({
         runs: playtestRuns,
         goal_session_minutes: currentPlan?.gameplay_spec?.target_session_minutes
       });
+      if (currentBinding.current !== bindingKey) return;
       setPlaytestEffects(preview.planned_side_effects || []);
     } catch (error) {
       setStatus("error");
@@ -490,8 +527,9 @@ const demoPhase = operationPhase({
     }
   };
 
-  const startPlaytestRun = async () => {
-    if (!playtestProjectDir) return;
+  const startPlaytestRun = async (confirmedByUser: boolean) => {
+    setPlaytestBinding(bindingKey);
+    if (!playtestProjectDir || !confirmedByUser) return;
     setPlaytestEffects(null);
     resetPlaytestJob();
     setStatus("running");
@@ -501,7 +539,7 @@ const demoPhase = operationPhase({
         project_dir: playtestProjectDir,
         runs: playtestRuns,
         goal_session_minutes: currentPlan?.gameplay_spec?.target_session_minutes
-      });
+      }, confirmedByUser);
       if (started.job_id) {
         startPlaytestJob(started.job_id);
       } else {
@@ -515,6 +553,7 @@ const demoPhase = operationPhase({
   };
 
   const onAssetExecutionClick = async () => {
+    setReviewBinding(bindingKey);
     if (!currentPlan) {
       addActivity(t("generateRequiresPlan"), t("openPlanningHint"));
       setStatus("error");
@@ -522,6 +561,7 @@ const demoPhase = operationPhase({
     }
     try {
       const preview = await previewAssetExecution(currentPlan, assetWithAssets, assetWithVisuals);
+      if (currentBinding.current !== bindingKey) return;
       setAssetEffects(preview.planned_side_effects || []);
     } catch (error) {
       setStatus("error");
@@ -529,14 +569,15 @@ const demoPhase = operationPhase({
     }
   };
 
-  const startAssetWorkers = async () => {
-    if (!currentPlan) return;
+  const startAssetWorkers = async (confirmedByUser: boolean) => {
+    setAssetBinding(bindingKey);
+    if (!currentPlan || !confirmedByUser) return;
     setAssetEffects(null);
     resetAssetJob();
     setStatus("running");
     addActivity(t("assetExecutionRunning"), "");
     try {
-      const started = await startAssetExecution(currentPlan, assetWithAssets, assetWithVisuals);
+      const started = await startAssetExecution(currentPlan, assetWithAssets, assetWithVisuals, confirmedByUser);
       if (started.job_id) {
         startAssetJob(started.job_id);
       } else {
@@ -556,12 +597,13 @@ const demoPhase = operationPhase({
   // place that shows a stage's real status now; this view shows what it can
   // actually vouch for.
   const metrics = {
-    reviewItems: String(currentPlan?.creative_review?.items?.length || 0),
+    reviewItems: String(currentReview?.items?.length || 0),
     blockedTasks: String((currentPlan?.task_breakdown?.tasks || []).filter((task) => task.status === "blocked").length)
   };
 
   return (
     <main className="shell" data-journey-step={journeyStep}>
+      <WorkflowJobs />
       <header className="top-bar">
         <div className="brand-block">
           <span className="brand-mark" aria-hidden="true">FA</span>
@@ -648,12 +690,6 @@ const demoPhase = operationPhase({
                 <>
                   <strong>{renderHandoffTitle(currentHandoff)}</strong>
                   <div className="handoff-meta">
-                    <span>
-                      {t("handoffSource")}: {currentHandoff.source || "-"}
-                    </span>
-                    <span>
-                      {t("handoffTime")}: {formatSavedAt(currentHandoff.savedAt, locale)}
-                    </span>
                     <span>
                       {t("session")}: {currentHandoff.plan.gameplay_spec?.target_session_minutes || "-"} {t("minutes")}
                     </span>
@@ -832,7 +868,7 @@ const demoPhase = operationPhase({
           <section className="content-frame">
             <Panel tab="review" activeTab={activeTab}>
               <ReviewPanel
-                review={currentPlan?.creative_review}
+                review={currentReview}
                 locale={locale}
                 decisions={reviewDecisions}
                 setDecision={(assetId, decision) => {
@@ -846,7 +882,9 @@ const demoPhase = operationPhase({
             </Panel>
             <Panel tab="specs" activeTab={activeTab}>
               {evolutionVisited ? <div hidden={journeyStep !== "qa"}>
-                <EvolutionPanel plan={currentPlan} t={t} active={active && journeyStep === "qa"}
+                <EvolutionPanel externalReport={externalEvolution} plan={currentPlan}
+                  binding={project.active ? { project_id: project.active.project_id, plan_version: project.active.plan_version } : undefined}
+                  t={t} active={active && journeyStep === "qa"}
                   onAdoptBundle={updateProductionSpecBundle} onRunningChange={setEvolutionRunning} />
               </div> : null}
               <SpecBundlePanel
@@ -906,7 +944,7 @@ const demoPhase = operationPhase({
                 <p>{t("assetConfirmIntro")}</p>
                 <ul>{assetEffects.map((effect) => <li key={effect}>{effect}</li>)}</ul>
                 <div className="handoff-actions">
-                  <button className="primary-action" type="button" id="asset-execute-proceed" onClick={() => void startAssetWorkers()}>
+                  <button className="primary-action" type="button" id="asset-execute-proceed" value="approved" onClick={(event) => void startAssetWorkers(event.currentTarget.value === "approved")}>
                     {t("assetConfirmProceed")}
                   </button>
                   <button className="ghost-action" type="button" id="asset-execute-cancel" onClick={() => setAssetEffects(null)}>
@@ -991,7 +1029,7 @@ const demoPhase = operationPhase({
                 <p>{t("generateConfirmIntro")}</p>
                 <ul>{generateEffects.map((effect) => <li key={effect}>{effect}</li>)}</ul>
                 <div className="handoff-actions">
-                  <button className="primary-action" type="button" id="generate-proceed" onClick={() => void startGenerate()}>
+                  <button className="primary-action" type="button" id="generate-proceed" value="approved" onClick={(event) => void startGenerate(event.currentTarget.value === "approved")}>
                     {t("generateConfirmProceed")}
                   </button>
                   <button className="ghost-action" type="button" id="generate-cancel" onClick={() => setGenerateEffects(null)}>
@@ -1073,7 +1111,7 @@ const demoPhase = operationPhase({
                 </button>
               ) : null}
               {playtestEffects ? (
-                <PlaytestConfirmBlock effects={playtestEffects} t={t} onProceed={() => void startPlaytestRun()} onCancel={() => setPlaytestEffects(null)} />
+                <PlaytestConfirmBlock effects={playtestEffects} t={t} onProceed={(confirmedByUser) => void startPlaytestRun(confirmedByUser)} onCancel={() => setPlaytestEffects(null)} />
               ) : null}
               {playtestResult?.report ? (
                 <PlaytestReportCard report={playtestResult.report} t={t} onResume={(stage) => setPendingResume(stage)} />
@@ -1111,7 +1149,7 @@ const demoPhase = operationPhase({
         confirmLabel={t("reworkResume")}
         cancelLabel={t("generateConfirmCancel")}
         onCancel={() => setPendingResume(null)}
-        onConfirm={() => { const stage = pendingResume; setPendingResume(null); if (stage) void startGenerate(stage); }}
+        onConfirm={(confirmedByUser) => { const stage = pendingResume; setPendingResume(null); if (stage) void startGenerate(confirmedByUser, stage); }}
       />
       <ConfirmDialog
         open={Boolean(pendingManualTarget)}
@@ -1144,7 +1182,7 @@ const demoPhase = operationPhase({
  * carries the rework target the board understands, so "this is broken" and
  * "resume from here" stay one click apart.
  */
-import { AssetList, Metric, Panel, SegmentedControl, formatSavedAt, manualStatusLabel } from "./FlowConsole.parts";
+import { AssetList, Metric, Panel, SegmentedControl, manualStatusLabel } from "./FlowConsole.parts";
 import { ExecutionStageCard } from "./executionStage/ExecutionStageCard";
 import { CorrectionReportCard } from "./correction/CorrectionReportCard";
 import { PlaytestConfirmBlock } from "./playtest/PlaytestConfirmBlock";

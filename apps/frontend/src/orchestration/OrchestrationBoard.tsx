@@ -8,9 +8,8 @@
  * here, as a card that renders the *runtime* status of a plan rather than a
  * snapshot of it.
  *
- * Where the plan comes from: the handed-off plan in localStorage, which is the
- * same object the flow console executes. That is why the run request carries a
- * plan instead of a prompt -- the cards and the pass have to describe one plan.
+ * Backend project snapshots own the plan and workflow. A project-bound pass
+ * synchronizes recorded evidence; production runs from the console or Agent.
  *
  * What is deliberately *not* here:
  *
@@ -26,20 +25,22 @@
  *     click and nothing else.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useJourney } from "../shared/journeyContext";
 import { EmptyState } from "../shared/ui/primitives";
 
 import { decideHumanGate, getOrchestrationState, runOrchestration } from "../shared/api";
 import { localizedTitle, planDisplayTitle, planningText } from "../shared/planModel";
 import {
-  readHandoffPlan,
   readOrchestrationEngine,
   readOrchestrationSessionId,
   saveOrchestrationEngine,
   saveOrchestrationSessionId
 } from "../shared/storage";
-import type { DirectorBuildPlan, Locale, OrchestrationSession } from "../shared/types";
+import { projectStore, useProject } from "../shared/projectStore";
+import { WorkflowJobs } from "../shared/WorkflowJobs";
+import type { ProjectWorkflow } from "../shared/projectTypes";
+import type { Locale, OrchestrationSession } from "../shared/types";
 import {
   HUMAN_STAGE_KIND,
   boardCards,
@@ -73,7 +74,12 @@ export function OrchestrationBoard({
   onOpenConsole: (stageId?: string) => void;
 }) {
   const { update } = useJourney();
-  const [plan, setPlan] = useState<DirectorBuildPlan | null>(() => readHandoffPlan());
+  const project = useProject();
+  const plan = project.active?.plan ?? null;
+  const bindingKey = `${project.active?.project_id ?? ""}:${project.active?.plan_version ?? 0}`;
+  const currentBinding = useRef(bindingKey);
+  currentBinding.current = bindingKey;
+  const [sessionBinding, setSessionBinding] = useState(bindingKey);
   const [session, setSession] = useState<OrchestrationSession | null>(null);
   const [sessionId] = useState(() => readOrchestrationSessionId() || newSessionId());
   // Which engine's snapshot directory this session lives in. Read from storage
@@ -90,9 +96,15 @@ export function OrchestrationBoard({
   const [maxTurns, setMaxTurns] = useState(8);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
+  const workflowSession = project.workflow?.project_id === project.active?.project_id
+    && project.workflow?.plan_version === project.active?.plan_version && project.workflow?.stages?.length
+    ? project.workflow : null;
+  const visibleSession = workflowSession ?? (sessionBinding === bindingKey ? session : null);
+  const boundSessionId = workflowSession?.session_id ?? sessionId;
+  const boundEngine = workflowSession?.engine === "unreal" ? "unreal" : workflowSession?.engine === "godot" ? "godot" : engine;
 
   useEffect(() => {
-    if (active) setPlan(readHandoffPlan());
+    if (active) void projectStore.refresh();
   }, [active]);
 
   // Adopt whatever this session has already done, and pick up the route's
@@ -109,7 +121,7 @@ export function OrchestrationBoard({
         // Only adopt a session that ran: `found: false` means the id is new, and
         // `stages` is empty then anyway, but claiming an empty session would
         // hide the plan behind an empty board.
-        if (state.found && state.stages?.length) setSession(state);
+        if (state.found && state.stages?.length) { setSession(state); setSessionBinding(bindingKey); }
       })
       .catch(() => {
         // A board with no drill-down and no recovered session is still a board:
@@ -131,14 +143,19 @@ export function OrchestrationBoard({
       try {
         const payload = await runOrchestration({
           plan,
-          session_id: sessionId,
+          project_id: project.active?.project_id,
+          plan_version: project.active?.plan_version,
+          session_id: boundSessionId,
           confirm_stages: approved,
           rewind_stage: rewindStage,
           allow_write: allowWrite,
           allow_execute: allowExecute,
           max_turns: maxTurns
         });
+        if (currentBinding.current !== bindingKey) return;
+        if (project.active) projectStore.acceptWorkflow(payload as ProjectWorkflow, project.active);
         setSession(payload);
+        setSessionBinding(bindingKey);
         if (payload.stage_translation) setTranslation(payload.stage_translation);
         // The server decided which engine it ran under, from the plan it was
         // posted. Recording that is what keeps the next read pointed at the same
@@ -150,12 +167,12 @@ export function OrchestrationBoard({
         setApproved([]);
         if (payload.status === "error") setFailure(payload.error || t("orchestrationFailed"));
       } catch (error) {
-        setFailure(`${t("orchestrationFailed")} ${error}`);
+        if (currentBinding.current === bindingKey) setFailure(`${t("orchestrationFailed")} ${error}`);
       } finally {
-        setBusy(false);
+        if (currentBinding.current === bindingKey) setBusy(false);
       }
     },
-    [allowExecute, allowWrite, approved, maxTurns, plan, sessionId, t]
+    [allowExecute, allowWrite, approved, bindingKey, boundSessionId, maxTurns, plan, project.active, t]
   );
 
   const decide = useCallback(
@@ -167,8 +184,11 @@ export function OrchestrationBoard({
       setBusy(true);
       setFailure("");
       try {
-        const payload = await decideHumanGate(sessionId, stageId, decision, engine);
+        const payload = await decideHumanGate(boundSessionId, stageId, decision, boundEngine);
+        if (currentBinding.current !== bindingKey) return;
+        if (project.active) projectStore.acceptWorkflow(payload as ProjectWorkflow, project.active);
         setSession(payload);
+        setSessionBinding(bindingKey);
         if (payload.stage_translation) setTranslation(payload.stage_translation);
         // The server recorded which engine it ran under; recording that keeps
         // the next read pointed at the same directory.
@@ -191,20 +211,21 @@ export function OrchestrationBoard({
         // same call the run button makes, with the operator's own grants.
         await run("");
       } catch (error) {
-        setFailure(`${t("orchestrationDecisionFailed")} ${error}`);
+        if (currentBinding.current === bindingKey) setFailure(`${t("orchestrationDecisionFailed")} ${error}`);
       } finally {
-        setBusy(false);
+        if (currentBinding.current === bindingKey) setBusy(false);
       }
     },
-    [engine, plan, run, sessionId, t]
+    [bindingKey, boundEngine, boundSessionId, plan, project.active, run, t]
   );
 
-  const cards = boardCards(plan, session);
-  useEffect(() => update({ plan, session }), [plan, session, update]);
-  const pending = session?.pending_confirmations ?? [];
+  const cards = boardCards(plan, visibleSession);
+  useEffect(() => update({ plan, session: visibleSession }), [plan, visibleSession, update]);
+  useEffect(() => { setApproved([]); setAllowWrite(false); setAllowExecute(false); setFailure(""); setBusy(false); }, [bindingKey]);
+  const pending = visibleSession?.pending_confirmations ?? [];
   // Gates nobody has decided yet. Its own list, its own line: a gate is
   // decided, not approved, and the two summaries answer different questions.
-  const pendingGates = session?.pending_human_gates ?? [];
+  const pendingGates = visibleSession?.pending_human_gates ?? [];
   const gates = cards.filter((card) => card.kind === HUMAN_STAGE_KIND);
 
   const toggle = (list: string[], id: string): string[] =>
@@ -217,19 +238,20 @@ export function OrchestrationBoard({
 
   return (
     <div className="or-shell" data-testid="orchestration-board">
+      <WorkflowJobs />
       <header className="api-header">
         <div>
           <h3>{t("orchestrationTitle")}</h3>
-          <p>{t("orchestrationHint")}</p>
+          <p>{t(project.active ? "orchestrationSyncHint" : "orchestrationHint")}</p>
         </div>
       </header>
 
       <p className="api-summary" data-state={failure ? "error" : "ok"} id="orchestration-summary">
         {failure ||
-          (session
-            ? `[${planningText(session.status, locale)}] ${t("orchestrationSession")}: ${session.session_id}${
-                session.rewound?.length
-                  ? ` · ${t("orchestrationRewound")}: ${session.rewound.join(", ")}`
+          (visibleSession
+            ? `[${planningText(visibleSession.status, locale)}] ${t("orchestrationSession")}: ${visibleSession.session_id}${
+                visibleSession.rewound?.length
+                  ? ` · ${t("orchestrationRewound")}: ${visibleSession.rewound.join(", ")}`
                   : ""
               }`
             : t("orchestrationNoRunYet"))}
@@ -248,7 +270,7 @@ export function OrchestrationBoard({
             type="button"
             id="orchestration-reload"
             onClick={() => {
-              setPlan(readHandoffPlan());
+              void projectStore.refresh();
               setFailure("");
             }}
           >
@@ -266,7 +288,7 @@ export function OrchestrationBoard({
           void run("");
         }}
       >
-        <div className="api-field">
+        {!workflowSession ? <><div className="api-field">
           <label htmlFor="orchestration-max-turns">{t("orchestrationMaxTurns")}</label>
           <input
             id="orchestration-max-turns"
@@ -297,7 +319,7 @@ export function OrchestrationBoard({
             onChange={(event) => setAllowExecute(event.target.checked)}
           />
           <span>{t("orchestrationAllowExecute")}</span>
-        </label>
+        </label></> : null}
 
         <div className="api-actions">
           <button
@@ -307,7 +329,7 @@ export function OrchestrationBoard({
             disabled={busy || !cards.length}
             aria-describedby="orchestration-run-reason"
           >
-            {busy ? t("orchestrationRunning") : session ? t("orchestrationContinue") : t("orchestrationRun")}
+            {busy ? t("orchestrationRunning") : project.active ? t("orchestrationSync") : visibleSession ? t("orchestrationContinue") : t("orchestrationRun")}
           </button>
           <p id="orchestration-run-reason">{busy ? t("operationRunning") : cards.length ? t("operationIdle") : t("operationNeedsPlan")}</p>
         </div>
@@ -347,7 +369,8 @@ export function OrchestrationBoard({
               card={card}
               locale={locale}
               t={t}
-              steps={drilldown(card, translation)}
+              steps={drilldown(card, workflowSession?.stage_translation ?? translation)}
+              canDispatch={!workflowSession}
               open={expanded.includes(card.id)}
               onToggleOpen={() => setExpanded((list) => toggle(list, card.id))}
               approved={approved.includes(card.id)}
@@ -359,7 +382,7 @@ export function OrchestrationBoard({
               // is nothing on the server to attach it to, and a button that
               // could only answer "run the plan first" would be a dead end
               // that looks like a control.
-              decidable={session !== null && decidableCards([card]).length > 0}
+              decidable={visibleSession !== null && decidableCards([card]).length > 0}
               onDecide={(decision) => void decide(card.id, decision)}
             />
           ))}

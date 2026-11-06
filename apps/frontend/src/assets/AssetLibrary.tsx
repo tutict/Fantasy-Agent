@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   AssetEntryCard,
@@ -12,6 +12,8 @@ import { getAssetLibrary, ingestAsset, removeAsset } from "../shared/api";
 import type { Translator } from "../shared/i18n";
 import { Button, ConfirmDialog } from "../shared/ui/primitives";
 import type { AssetLibraryEntry, AssetLibraryOverview } from "../shared/types";
+import type { ProjectBinding } from "../shared/projectTypes";
+import { useProject } from "../shared/projectStore";
 import "../styles/assets.css";
 
 /**
@@ -50,6 +52,14 @@ const STATUS_FILTERS: Array<[string, string]> = [
 ];
 
 export function AssetLibrary({ t }: { t: Translator }) {
+  const project = useProject().active;
+  const [libraryScope, setLibraryScope] = useState<"project" | "workspace">("project");
+  const binding = useMemo(() => project && libraryScope === "project"
+    ? { project_id: project.project_id, plan_version: project.plan_version } : undefined,
+  [project?.project_id, project?.plan_version, libraryScope]);
+  const scopeKey = JSON.stringify([binding?.project_id, binding?.plan_version]);
+  const currentScope = useRef(scopeKey);
+  currentScope.current = scopeKey;
   const [overview, setOverview] = useState<AssetLibraryOverview | null>(null);
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState("");
@@ -65,24 +75,29 @@ export function AssetLibrary({ t }: { t: Translator }) {
 
   const [kindFilter, setKindFilter] = useState<AssetKind | "all">("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [pendingRemoval, setPendingRemoval] = useState<AssetLibraryEntry | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<{
+    entry: AssetLibraryEntry; binding?: ProjectBinding; key: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setBusy(true);
     setFailure("");
     try {
-      setOverview(await getAssetLibrary());
+      const loaded = await getAssetLibrary(binding);
+      if (scopeKey !== currentScope.current) return;
+      setOverview(loaded);
     } catch (error) {
       // The last good overview stays put behind the failure. Clearing it would
       // trade a stale list for an empty one, and "nothing is in the library" is
       // exactly the claim a failed read cannot make.
-      setFailure(`${t("assetsLoadFailed")} ${error}`);
+      if (scopeKey === currentScope.current) setFailure(`${t("assetsLoadFailed")} ${error}`);
     } finally {
-      setBusy(false);
+      if (scopeKey === currentScope.current) setBusy(false);
     }
-  }, [t]);
+  }, [t, binding, scopeKey]);
 
   useEffect(() => {
+    setOverview(null); setNotice(""); setFailure(""); setPendingRemoval(null);
     void load();
   }, [load]);
 
@@ -120,7 +135,8 @@ export function AssetLibrary({ t }: { t: Translator }) {
           .split(",")
           .map((tag) => tag.trim())
           .filter(Boolean)
-      });
+      }, binding);
+      if (scopeKey !== currentScope.current) return;
       setName("");
       setSourcePath("");
       setAuthor("");
@@ -130,27 +146,29 @@ export function AssetLibrary({ t }: { t: Translator }) {
       setNotice(t("assetsIngested", { name: response.entry.name }));
       await load();
     } catch (error) {
-      setFailure(`${t("assetsIngestFailed")} ${error}`);
+      if (scopeKey === currentScope.current) setFailure(`${t("assetsIngestFailed")} ${error}`);
     } finally {
-      setBusy(false);
+      if (scopeKey === currentScope.current) setBusy(false);
     }
   };
 
   const confirmRemoval = async () => {
-    const entry = pendingRemoval;
-    if (!entry) return;
+    const pending = pendingRemoval;
+    if (!pending || pending.key !== currentScope.current) return;
+    const entry = pending.entry;
     setPendingRemoval(null);
     setBusy(true);
     setFailure("");
     setNotice("");
     try {
-      await removeAsset(entry.id);
+      await removeAsset(entry.id, pending.binding);
+      if (pending.key !== currentScope.current) return;
       setNotice(t("assetsRemoved", { name: entry.name }));
       await load();
     } catch (error) {
-      setFailure(`${t("assetsRemoveFailed")} ${error}`);
+      if (pending.key === currentScope.current) setFailure(`${t("assetsRemoveFailed")} ${error}`);
     } finally {
-      setBusy(false);
+      if (pending.key === currentScope.current) setBusy(false);
     }
   };
 
@@ -160,6 +178,12 @@ export function AssetLibrary({ t }: { t: Translator }) {
         <div>
           <h3>{t("assetsTitle")}</h3>
           <p>{t("assetsHint")}</p>
+          <label htmlFor="as-scope">{t("assetsScope")}</label>{" "}
+          <select id="as-scope" value={binding ? "project" : "workspace"}
+            onChange={(event) => setLibraryScope(event.target.value === "workspace" ? "workspace" : "project")}>
+            {project ? <option value="project">{t("assetsScopeProject", { name: project.name, version: project.plan_version })}</option> : null}
+            <option value="workspace">{t("assetsScopeWorkspace")}</option>
+          </select>
         </div>
         <Button className="as-refresh" type="button" id="as-refresh" onClick={() => void load()} disabled={busy}>
           {t("assetsRefresh")}
@@ -173,9 +197,9 @@ export function AssetLibrary({ t }: { t: Translator }) {
         {failure || notice || (overview ? t("assetsCount", { library: entries.length, generated: generated.length }) : "")}
       </p>
       {overview ? (
-        <p className="as-path-note">
-          {t("assetsLibraryPath")}: <code>{overview.library_path}</code>
-        </p>
+        <details className="as-path-note">
+          <summary>{t("assetsLibraryPath")}</summary><code>{overview.library_path}</code>
+        </details>
       ) : null}
 
       <details className="as-ingest-drawer">
@@ -287,7 +311,7 @@ export function AssetLibrary({ t }: { t: Translator }) {
                 entry={entry}
                 t={t}
                 key={entry.id}
-                onRemove={(target) => setPendingRemoval(target)}
+                onRemove={(entry) => setPendingRemoval({ entry, binding, key: scopeKey })}
               />
             ))}
           </div>

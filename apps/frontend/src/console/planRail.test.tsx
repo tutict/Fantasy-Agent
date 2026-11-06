@@ -1,3 +1,4 @@
+import { installProjectFixture } from "../../test-support/projectBackend";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -161,3 +162,5 @@ describe("the plan rail's fold", () => {
     expect(operator.textContent).not.toContain("Planned Blender task");
   });
 });
+
+installProjectFixture();

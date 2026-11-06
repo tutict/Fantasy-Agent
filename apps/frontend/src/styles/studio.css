@@ -867,6 +867,7 @@ button:disabled {
    block was the sidebar's card styles and is gone with them. */
 .studio-topbar {
   min-height: auto;
+  flex-direction: column;
   align-items: stretch;
 }
 
@@ -971,3 +972,15 @@ button:disabled {
     text-align: left;
   }
 }
+
+
+.mcp-connection { max-width: 75ch; padding-bottom: var(--space-5); margin-bottom: var(--space-5); border-bottom: 1px solid var(--line); }
+.mcp-connection h3 { font-size: var(--text-l); margin: 0 0 var(--space-2); }
+.mcp-connection p { line-height: 1.6; }
+.mcp-connection-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.mcp-connection-facts { display: grid; gap: var(--space-3); margin: var(--space-5) 0; }
+.mcp-connection-facts div { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.mcp-connection-facts dt { color: var(--muted); }
+.mcp-connection-facts dd { margin: 0; overflow-wrap: anywhere; }
+.mcp-connection details { margin-top: var(--space-5); }
+.mcp-connection pre { padding: var(--space-3); background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--text-s); }

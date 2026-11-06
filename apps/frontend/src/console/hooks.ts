@@ -13,8 +13,10 @@ import {
   previewSpecBundle,
   writeApprovalManifest
 } from "../shared/api";
-import { HANDOFF_KEY, readPlanningHandoff, savePlanningHandoff } from "../shared/storage";
+import { projectStore, useProject } from "../shared/projectStore";
+import { projectClient } from "../shared/projectClient";
 import type {
+  CreativeReview,
   CorrectionMode,
   CorrectionReport,
   DirectorBuildPlan,
@@ -310,115 +312,35 @@ export function usePlanningHandoff({
   addActivity: (label: string, message: string) => void;
   setStatus: (status: StatusState) => void;
 }) {
-  const [currentPlan, setCurrentPlan] = useState<DirectorBuildPlan | null>(null);
-  const [currentHandoff, setCurrentHandoff] = useState<PlanningHandoff | null>(null);
+  const project = useProject();
+  const currentPlan = project.active?.plan ?? null;
+  const currentReview = project.active?.creative_review ?? currentPlan?.creative_review;
+  const currentHandoff: PlanningHandoff | null = currentPlan ? { plan: currentPlan, title: project.active?.name, source: "studio-project", savedAt: String(project.active?.updated_at ?? "") } : null;
   const [reviewDecisions, setReviewDecisions] = useState<Record<string, string>>({});
-
   const titleForPlan = useCallback((plan: DirectorBuildPlan) => preferredTitle(plan, locale, t), [locale, t]);
-  const renderHandoffTitle = useCallback(
-    (handoff: PlanningHandoff | null) => {
-      const storedTitle = handoff?.title;
-      if (locale === "en" && storedTitle && !/[\u3400-\u9fff]/.test(storedTitle)) return storedTitle;
-      return handoff?.plan ? titleForPlan(handoff.plan) : storedTitle || t("emptyTitle");
-    },
-    [locale, titleForPlan, t]
-  );
-
-  const mergeReviewDefaults = useCallback((plan: DirectorBuildPlan) => {
-    setReviewDecisions((decisions) => {
-      const next = { ...decisions };
-      for (const item of plan.creative_review?.items || []) {
-        if (item.asset_id) next[item.asset_id] = next[item.asset_id] || item.approval_status || "";
-      }
-      return next;
-    });
-  }, []);
-
-  const acceptHandoff = useCallback(
-    (handoff: PlanningHandoff, activityLabel: string) => {
-      setCurrentHandoff(handoff);
-      if (handoff.plan) {
-        setCurrentPlan(handoff.plan);
-        mergeReviewDefaults(handoff.plan);
-      }
-      setStatus("ready");
-      addActivity(activityLabel, renderHandoffTitle(handoff));
-    },
-    [addActivity, mergeReviewDefaults, renderHandoffTitle, setStatus]
-  );
-
-  const loadPlanningHandoff = useCallback(
-    (options: { silent?: boolean; activityLabel?: string } = {}) => {
-      const handoff = readPlanningHandoff(titleForPlan);
-      setCurrentHandoff(handoff);
-      if (!handoff?.plan) {
-        if (!options.silent) {
-          setStatus("error");
-          addActivity(t("handoffEmpty"), t("openPlanningHint"));
-        }
-        return false;
-      }
-      setCurrentPlan(handoff.plan);
-      mergeReviewDefaults(handoff.plan);
-      setStatus("ready");
-      if (!options.silent) addActivity(options.activityLabel || t("handoffLoaded"), renderHandoffTitle(handoff));
-      return true;
-    },
-    [addActivity, mergeReviewDefaults, renderHandoffTitle, setStatus, t, titleForPlan]
-  );
-
-  // Loaded once on mount (the console only mounts when it is first opened, so
-  // it is active by then) and again on every later activation. The silent flag
-  // keeps a panel switch from writing an activity line every time.
+  const renderHandoffTitle = useCallback((handoff: PlanningHandoff | null) => locale === "en" && handoff?.title ? handoff.title : handoff?.plan ? titleForPlan(handoff.plan) : t("emptyTitle"), [locale, titleForPlan, t]);
   useEffect(() => {
-    if (active) loadPlanningHandoff({ silent: true });
-  }, [active, loadPlanningHandoff]);
-
-  // Still worth keeping for the case it was written for -- a second browser tab
-  // -- but it is no longer how a handoff reaches *this* view: within one
-  // document `storage` is not delivered to the writer's own document. The
-  // activation effect above is what does that now.
-  useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === HANDOFF_KEY) loadPlanningHandoff({ activityLabel: t("handoffReceived") });
-    };
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      const data = event.data as { method?: string; plan?: DirectorBuildPlan; source?: string };
-      if (data?.method === "fantasy-agent/planning-handoff" && data.plan?.gameplay_spec) {
-        const handoff = savePlanningHandoff(data.plan, preferredTitle(data.plan, locale, t), data.source || "planning-workbench");
-        acceptHandoff(handoff, t("handoffReceived"));
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("message", onMessage);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("message", onMessage);
-    };
-  }, [acceptHandoff, loadPlanningHandoff, locale, t]);
-
-  const updateProductionSpecBundle = useCallback(
-    (bundle: ProductionSpecBundle) => {
-      if (!currentPlan) return;
-      const nextPlan = { ...currentPlan, production_spec_bundle: bundle };
-      // Persist the synced plan so a reload (or another tab) keeps the
-      // approval state the backend already wrote to
-      // generated/specs/production-spec-bundle.yaml instead of reverting
-      // to the pre-sync handoff.
-      const handoff = savePlanningHandoff(
-        nextPlan,
-        currentHandoff?.title || titleForPlan(nextPlan),
-        currentHandoff?.source || "flow-console"
-      );
-      setCurrentHandoff(handoff);
-      setCurrentPlan(nextPlan);
-    },
-    [currentHandoff, currentPlan, titleForPlan]
-  );
+    const defaults: Record<string, string> = {};
+    for (const item of currentReview?.items ?? []) if (item.asset_id) defaults[item.asset_id] = item.approval_status ?? "";
+    setReviewDecisions(defaults);
+  }, [currentReview]);
+  const loadPlanningHandoff = useCallback((options: { silent?: boolean; activityLabel?: string } = {}) => {
+    void projectStore.refresh();
+    if (!currentPlan) { if (!options.silent) { setStatus("error"); addActivity(t("handoffEmpty"), t("openPlanningHint")); } return false; }
+    if (!options.silent) { setStatus("ready"); addActivity(options.activityLabel || t("handoffLoaded"), titleForPlan(currentPlan)); }
+    return true;
+  }, [addActivity, currentPlan, setStatus, t, titleForPlan]);
+  useEffect(() => { if (active) void projectStore.refresh(); }, [active]);
+  const updateProductionSpecBundle = useCallback((bundle: ProductionSpecBundle) => {
+    const captured = project.active;
+    if (!captured?.plan) return;
+    void projectClient.save(captured.project_id, { ...captured.plan, production_spec_bundle: bundle }, captured.plan_version)
+      .then(() => projectStore.refresh()).catch((failure) => { setStatus("error"); addActivity(t("handoffEmpty"), String(failure)); void projectStore.refresh(); });
+  }, [addActivity, project.active, setStatus, t]);
 
   return {
     currentPlan,
+    currentReview,
     currentHandoff,
     reviewDecisions,
     setReviewDecisions,
@@ -554,6 +476,7 @@ export function usePlaytestJobPolling(
 
 export function useApprovalManifest({
   currentPlan,
+  review,
   reviewDecisions,
   setStatus,
   addActivity,
@@ -561,6 +484,7 @@ export function useApprovalManifest({
   onBundleSynced
 }: {
   currentPlan: DirectorBuildPlan | null;
+  review?: CreativeReview;
   reviewDecisions: Record<string, string>;
   setStatus: (status: StatusState) => void;
   addActivity: (label: string, message: string) => void;
@@ -570,14 +494,15 @@ export function useApprovalManifest({
   const [approvalManifestPath, setApprovalManifestPath] = useState("");
 
   const onWriteApprovalManifest = useCallback(async () => {
-    if (!currentPlan?.creative_review) {
+    const effectiveReview = review ?? currentPlan?.creative_review;
+    if (!effectiveReview || !currentPlan) {
       setStatus("error");
       addActivity(t("approvalManifestFailed"), t("noItems"));
       return;
     }
     try {
       const response = await writeApprovalManifest(
-        currentPlan.creative_review,
+        effectiveReview,
         reviewDecisions,
         currentPlan.production_spec_bundle,
         usesGodotEngine(currentPlan) ? 'godot' : 'unreal'
@@ -589,7 +514,7 @@ export function useApprovalManifest({
       setStatus("error");
       addActivity(t("approvalManifestFailed"), String(error));
     }
-  }, [addActivity, currentPlan, onBundleSynced, reviewDecisions, setStatus, t]);
+  }, [addActivity, currentPlan, onBundleSynced, review, reviewDecisions, setStatus, t]);
 
   return { approvalManifestPath, setApprovalManifestPath, onWriteApprovalManifest };
 }

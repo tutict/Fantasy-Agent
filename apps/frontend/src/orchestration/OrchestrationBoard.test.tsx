@@ -1,9 +1,12 @@
+import { installProjectFixture } from "../../test-support/projectBackend";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { studioI18n, makeTranslator } from "../shared/i18n";
+import { projectStore } from "../shared/projectStore";
 import { HANDOFF_KEY } from "../shared/storage";
 import type { DirectorBuildPlan, OrchestrationSession } from "../shared/types";
+import { LocaleThemeProvider } from "../shared/localeTheme";
 import { JourneyProvider } from "../shared/journeyContext";
 import { OrchestrationBoard } from "./OrchestrationBoard";
 
@@ -159,13 +162,13 @@ function stubFetch(handler: (url: string, body: Record<string, unknown> | null) 
 
 function board(overrides: Partial<Parameters<typeof OrchestrationBoard>[0]> = {}) {
   return (
-    <JourneyProvider><OrchestrationBoard
+    <LocaleThemeProvider><JourneyProvider><OrchestrationBoard
       active
       locale="en"
       t={t}
       onOpenConsole={() => undefined}
       {...overrides}
-     /></JourneyProvider>
+     /></JourneyProvider></LocaleThemeProvider>
   );
 }
 
@@ -224,6 +227,7 @@ describe("before a run", () => {
 
   it("says there is no plan instead of rendering an empty board", () => {
     localStorage.clear();
+    projectStore.reset();
     render(board());
 
     expect(screen.getByText(/No plan yet/)).toBeTruthy();
@@ -247,7 +251,7 @@ describe("before a run", () => {
 describe("running a pass", () => {
   it("posts the plan it is showing, not a prompt", async () => {
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
 
     await waitFor(() => expect(calls.some((call) => call.url.includes("/api/orchestration/run"))).toBe(true));
     const run = calls.find((call) => call.url.includes("/api/orchestration/run"))!;
@@ -259,7 +263,7 @@ describe("running a pass", () => {
 
   it("sends no approval and no rework that nobody asked for", async () => {
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
 
     await waitFor(() => expect(calls.some((call) => call.url.includes("/api/orchestration/run"))).toBe(true));
     const run = calls.find((call) => call.url.includes("/api/orchestration/run"))!;
@@ -273,7 +277,7 @@ describe("running a pass", () => {
     render(board());
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
 
     await waitFor(() => expect(calls.some((call) => call.url.includes("/api/orchestration/run"))).toBe(true));
     const run = calls.find((call) => call.url.includes("/api/orchestration/run"))!;
@@ -283,7 +287,7 @@ describe("running a pass", () => {
   it("sends the rework target from the card's own button", async () => {
     stubFetch(() => sessionPayload());
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
     await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
 
     const rework = document.querySelector('[data-rework="blender_modeling"]') as HTMLButtonElement;
@@ -299,7 +303,7 @@ describe("running a pass", () => {
   it("reports a failed pass without losing the cards", async () => {
     stubFetch(() => sessionPayload());
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
 
     await waitFor(() => expect(screen.getByText(/gameplay_orchestration failed/)).toBeTruthy());
     expect(document.querySelectorAll(".or-card")).toHaveLength(2);
@@ -312,7 +316,7 @@ describe("running a pass", () => {
   it("surfaces a transport failure instead of rendering nothing", async () => {
     vi.stubGlobal("fetch", () => Promise.reject(new Error("offline")));
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
 
     await waitFor(() => expect(screen.getByText(/offline/)).toBeTruthy());
   });
@@ -323,7 +327,7 @@ describe("after a run", () => {
 
   it("shows the runtime status and the exit detail the plan could not", async () => {
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
 
     await waitFor(() =>
       expect(
@@ -337,14 +341,14 @@ describe("after a run", () => {
 
   it("lists the stages still waiting on a person", async () => {
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
 
     await waitFor(() => expect(screen.getByText(/1 stage\(s\) waiting for your approval/)).toBeTruthy());
   });
 
   it("offers no approve button on the human gate", async () => {
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
     await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
 
     const gate = document.querySelector('[data-stage="creative_review"]')!;
@@ -355,7 +359,7 @@ describe("after a run", () => {
 
   it("drills from a card into the execution steps behind it", async () => {
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
     await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
 
     const drill = document.querySelector('[data-drilldown="blender_modeling"]') as HTMLButtonElement;
@@ -428,7 +432,7 @@ describe("deciding a human gate", () => {
     // that looks like a control.
     expect(document.querySelector('button[data-decision="approved"]')).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
     await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
 
     const gate = document.querySelector('[data-stage="creative_review"]')!;
@@ -445,7 +449,7 @@ describe("deciding a human gate", () => {
       url.includes("/decision") ? decisionPayload("approved") : sessionPayload({ status: "done", error: "" })
     );
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
     await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
 
     await decide("approved");
@@ -460,9 +464,8 @@ describe("deciding a human gate", () => {
       `/api/orchestration/${String(run.body?.session_id)}/stages/creative_review/decision`
     );
     expect(decision.url).toContain("engine=godot");
-    // The decision is the only thing in the body, and it is the one that was
-    // clicked: no default, no second value riding along.
-    expect(decision.body).toEqual({ decision: "approved" });
+    // The click is bound to the backend project and version shown by the board.
+    expect(decision.body).toEqual({ decision: "approved", project_id: "fixture-project", plan_version: 1 });
 
     // The endpoint records and persists; it does not advance. So the board
     // chains the pass -- the same request the run button makes.
@@ -489,7 +492,7 @@ describe("deciding a human gate", () => {
         : decisionPayload(decided, { status: "done", error: "" });
     });
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
     await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
 
     await decide("rejected");
@@ -506,7 +509,7 @@ describe("deciding a human gate", () => {
   it("lists the gates still waiting for a decision, apart from the approvals", async () => {
     stubFetch(() => sessionPayload({ pending_human_gates: ["creative_review"] }));
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
 
     await waitFor(() =>
       expect(screen.getByText(/1 human gate\(s\) waiting for your decision/)).toBeTruthy()
@@ -528,7 +531,7 @@ describe("deciding a human gate", () => {
         : sessionPayload()
     );
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
     await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
 
     await decide("approved");
@@ -550,7 +553,7 @@ describe("deciding a human gate", () => {
           })
     );
     render(board());
-    fireEvent.click(screen.getByRole("button", { name: /^Run$/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Sync workflow$/ }));
     await waitFor(() => expect(document.querySelectorAll(".or-card")).toHaveLength(2));
 
     await decide("approved");
@@ -559,3 +562,5 @@ describe("deciding a human gate", () => {
     expect(document.querySelectorAll(".or-card")).toHaveLength(2);
   });
 });
+
+installProjectFixture();

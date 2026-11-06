@@ -149,6 +149,24 @@ wc -l apps/frontend/src/workbench/PlanningWorkbench.tsx \
 
 **不加第三个 provider。** 视图私有状态留在视图自己的 hook 里；跨视图才进 context。
 
+## 6.1 后台项目与本地草稿
+
+`shared/projectStore.ts` 是面板共同使用的项目状态，通过 `useSyncExternalStore` 订阅，不增加 provider。`shared/projectClient.ts` 只做项目 HTTP 调用，不依赖旧 `api.ts`（旧 API 的项目适配读 store，逆向导入会形成初始化环）。
+
+- 后台 `ProjectSnapshot.plan` 与 `plan_version` 是已保存计划的权威；外壳、控制台与编排板都读取它。
+- 策划工作台可以展示自己的未提交草稿。草稿存项目引用和原始 `baseVersion`；外部修改不会重写这个基版本。CAS 冲突保留草稿，同时显示最新快照，先查看最新计划后才能将草稿保存为新版本。
+- 浏览器只持久化活动项目引用、未提交草稿、点子对话和界面偏好。legacy handoff 首次启动调用后台幂等导入，导入成功才记录迁移标记，原始交接仍保留；失败显示重试入口。
+- 已访问面板仍保持挂载。共享订阅定期读取后台项目、工作流和任务详情，Codex 修改会进入同一份快照；未访问视图不另起轮询。
+- 在飞计划生成、执行和任务结果绑定提交时的项目与版本。旧版本任务仍列在工作流中，带版本提示；执行、试玩与进化卡片只接收当前版本的结果。
+
+## 6.2 本机连接与工作流证据
+
+`studio/settings/McpConnectionPanel.tsx` 沿用设置入口，先分别报告服务开关、最近 Agent 访问、当前版本有效授权，再按需展开连接配置。开启连接由用户按钮触发；Token 只在复制点击中读取并直接交给剪贴板，不进入组件 state、localStorage、页面文本或日志。配置使用环境变量引用，并给出 Codex 与 WorkBuddy 两种片段，说明客户端的 MCP 原生确认设置；页面不修改任何客户端的全局策略。
+
+`shared/WorkflowJobs.tsx` 给编排板和控制台显示同一份项目任务、计划版本、状态、阻塞、日志摘要、取消和资源读取入口。文本资源经 React 转义展示；只有明确的栅格图片 MIME 允许图片预览，HTML/SVG 不作为活动文档执行。任务详情读取失败明确给出重试动作。
+
+新增共享 `project-*` 类归 `styles/ui.css`，连接页的 `mcp-connection*` 类归 `styles/studio.css`；组件与样式配对已登记在 `cssHygiene.test.ts`。状态仍通过共享 `data-status` 词汇表着色。连接与项目文案由双语 `projectI18n.ts` 持有并受字典一致性检查。
+
 ## 7. 改界面前要跑什么
 
 ```bash

@@ -1,3 +1,4 @@
+import { installProjectFixture } from "../../test-support/projectBackend";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -393,7 +394,7 @@ describe("locale and theme have one owner", () => {
     expect(assets.querySelectorAll(".studio-nav-dot").length).toBe(1);
   });
 
-  it("restores the handed-off project into the journey on a fresh render", () => {
+  it("restores the handed-off project into the journey on a fresh render", async () => {
     localStorage.setItem("fantasy-agent-studio-locale", "zh-CN");
     localStorage.setItem(
       "fantasy-agent-planning-handoff",
@@ -406,14 +407,14 @@ describe("locale and theme have one owner", () => {
       })
     );
     renderShell();
-    expect(document.querySelector(".journey-header h2")?.textContent).toBe("屋顶追逐");
+    await waitFor(() => expect(document.querySelector(".journey-header h2")?.textContent).toBe("屋顶追逐"));
     expect(screen.getByText("Godot 4.6")).toBeTruthy();
     const activeSteps = [...document.querySelectorAll(".studio-nav button.active")].map((button) => button.getAttribute("data-journey"));
     expect(activeSteps).toEqual(["plan"]);
     expect(document.querySelector('[data-journey="plan"]')?.getAttribute("aria-current")).toBe("step");
 
     fireEvent.click(document.querySelector('[data-journey="execute"]') as HTMLButtonElement);
-    expect(document.querySelector(".journey-header h2")?.textContent).toBe("屋顶追逐");
+    await waitFor(() => expect(document.querySelector(".journey-header h2")?.textContent).toBe("屋顶追逐"));
     const viewedSteps = [...document.querySelectorAll(".studio-nav button.active")].map((button) => button.getAttribute("data-journey"));
     expect(viewedSteps).toEqual(["execute"]);
     expect(document.querySelector('[data-journey="plan"]')?.getAttribute("aria-current")).toBe("step");
@@ -428,3 +429,5 @@ describe("locale and theme have one owner", () => {
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
   });
 });
+
+installProjectFixture();

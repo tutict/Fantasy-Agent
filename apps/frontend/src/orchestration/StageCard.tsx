@@ -37,7 +37,8 @@ export function StageCard({
   onRework,
   onOpenConsole,
   decidable,
-  onDecide
+  onDecide,
+  canDispatch = true
 }: {
   card: BoardCard;
   locale: Locale;
@@ -53,10 +54,11 @@ export function StageCard({
   /** A human gate with a session behind it and nobody's decision on it yet. */
   decidable: boolean;
   onDecide: (decision: string) => void;
+  canDispatch?: boolean;
 }) {
   const isHuman = card.kind === HUMAN_STAGE_KIND;
-  const canApprove = approvableCards([card]).length > 0;
-  const canRework = reworkableCards([card]).length > 0;
+  const canApprove = canDispatch && approvableCards([card]).length > 0;
+  const canRework = canDispatch && reworkableCards([card]).length > 0;
 
   return (
     <article className="or-card" data-stage={card.id} data-status={card.status} data-plan-status={card.plan_status}>

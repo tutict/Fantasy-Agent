@@ -7,7 +7,9 @@ import {
   getSessionState,
   openManualCorrectionTarget,
   previewExecute,
-  startExecute
+  startExecute,
+  startAssetExecution,
+  startPlaytest
 } from "./api";
 import type { DirectorBuildPlan } from "./types";
 
@@ -94,7 +96,7 @@ describe("manual correction approval gate", () => {
 });
 
 describe("execute requests", () => {
-  it("marks the preview as unconfirmed and the real run as confirmed", async () => {
+  it("forwards an explicit approval and keeps unapproved direct calls unconfirmed", async () => {
     const fetchMock = jsonFetch({ status: "ok" });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -102,7 +104,18 @@ describe("execute requests", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body as string).confirmed).toBe(false);
 
     await startExecute(PLAN, "godot", false, false, false, TUNING);
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string).confirmed).toBe(true);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body as string).confirmed).toBe(false);
+
+    await startExecute(PLAN, "godot", false, false, false, TUNING, undefined, { confirmedByUser: true });
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body as string).confirmed).toBe(true);
+  });
+
+  it("never approves asset production or playtesting by default", async () => {
+    const fetchMock = jsonFetch({ status: "confirmation_required" });
+    vi.stubGlobal("fetch", fetchMock);
+    await startAssetExecution(PLAN, false, false);
+    await startPlaytest({ project_dir: "generated/godot/demo" });
+    expect(fetchMock.mock.calls.map((call) => JSON.parse(call[1].body as string).confirmed)).toEqual([false, false]);
   });
 
   it("forwards resume options so a re-run can skip finished stages", async () => {

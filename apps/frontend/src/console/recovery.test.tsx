@@ -1,3 +1,4 @@
+import { installProjectFixture } from "../../test-support/projectBackend";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FlowConsole } from "./FlowConsole";
@@ -36,3 +37,5 @@ describe("failure recovery and approval return", () => {
     expect(fetch).toHaveBeenCalled();
   });
 });
+
+installProjectFixture();

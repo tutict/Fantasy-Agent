@@ -1,3 +1,4 @@
+import { installProjectFixture } from "../../test-support/projectBackend";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -133,3 +134,5 @@ describe("manual correction approval gate", () => {
     expect(onNavigateStep).toHaveBeenCalledWith("orchestrate");
   });
 });
+
+installProjectFixture();

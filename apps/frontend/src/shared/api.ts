@@ -1,3 +1,5 @@
+import { projectBinding, projectStore } from "./projectStore";
+import type { ProjectBinding, ProjectSnapshot } from "./projectTypes";
 import type {
   AgentRunRequest,
   AgentRunResult,
@@ -101,14 +103,14 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function previewEvolution(request: EvolutionOptions): Promise<EvolutionPreview> {
   return jsonRequest<EvolutionPreview>("/api/evolution/run", {
-    method: "POST", body: JSON.stringify({ ...request, confirmed: false })
+    method: "POST", body: JSON.stringify({ ...projectBinding(), ...request, confirmed: false })
   });
 }
 
 /** The caller supplies the grant created by the experiment confirmation button. */
 export function startEvolution(request: EvolutionOptions, confirmedByUser: boolean): Promise<EvolutionStart> {
   return jsonRequest<EvolutionStart>("/api/evolution/run", {
-    method: "POST", body: JSON.stringify({ ...request, confirmed: confirmedByUser })
+    method: "POST", body: JSON.stringify({ ...projectBinding(), ...request, confirmed: confirmedByUser })
   });
 }
 
@@ -120,11 +122,11 @@ export function cancelEvolution(experimentId: string): Promise<{ status: string 
   return jsonRequest(`/api/evolution/${encodeURIComponent(experimentId)}/cancel`, { method: "POST" });
 }
 
-export function adoptEvolution(experimentId: string, plan: DirectorBuildPlan, feedback: string): Promise<{
+export function adoptEvolution(experimentId: string, plan: DirectorBuildPlan, feedback: string, binding = projectBinding()): Promise<{
   status: string; plan: DirectorBuildPlan; experience: EvolutionExperience;
-}> {
+} & Partial<ProjectSnapshot>> {
   return jsonRequest(`/api/evolution/${encodeURIComponent(experimentId)}/adopt`, {
-    method: "POST", body: JSON.stringify({ plan, feedback })
+    method: "POST", body: JSON.stringify({ plan, feedback, ...binding })
   });
 }
 
@@ -133,7 +135,7 @@ export function getEvolutionExperiences(): Promise<{ experiences: EvolutionExper
 }
 
 export function suggestEvolution(plan: DirectorBuildPlan): Promise<EvolutionSuggestion> {
-  return jsonRequest("/api/evolution/suggest", { method: "POST", body: JSON.stringify({ plan }) });
+  return jsonRequest("/api/evolution/suggest", { method: "POST", body: JSON.stringify({ plan, ...projectBinding() }) });
 }
 
 export function getManualCorrectionTargets(engine: string): Promise<ManualTargetsPayload> {
@@ -192,6 +194,7 @@ export function callWorkbenchTool(
 }
 
 export interface ExecuteRunOptions {
+  confirmedByUser?: boolean;
   /** Reuse a previous run's session so finished stages can be skipped. */
   sessionId?: string;
   /** Node to resume at; earlier stages that succeeded are skipped. */
@@ -212,6 +215,7 @@ export function previewExecute(
     method: "POST",
     body: JSON.stringify({
       plan,
+      ...projectBinding(),
       engine,
       with_assets: withAssets,
       with_visuals: withVisuals,
@@ -239,6 +243,7 @@ export function startExecute(
     method: "POST",
     body: JSON.stringify({
       plan,
+      ...projectBinding(),
       engine,
       with_assets: withAssets,
       with_visuals: withVisuals,
@@ -247,7 +252,7 @@ export function startExecute(
       approval_manifest_path: approvalManifestPath || undefined,
       session_id: options.sessionId || undefined,
       resume_from: options.resumeFrom || undefined,
-      confirmed: true
+      confirmed: options.confirmedByUser ?? false
     })
   });
 }
@@ -331,11 +336,14 @@ export function decideHumanGate(
   engine: "godot" | "unreal"
 ): Promise<OrchestrationSession> {
   const query = new URLSearchParams({ engine });
+  const review = projectStore.getSnapshot().active?.creative_review;
+  const subjects = review?.items?.flatMap((item) => item.resource_id && item.content_sha256
+    ? [{ resource_id: item.resource_id, sha256: item.content_sha256 }] : []) ?? [];
   return jsonRequest<OrchestrationSession>(
     `/api/orchestration/${encodeURIComponent(sessionId)}/stages/${encodeURIComponent(stageId)}/decision?${query.toString()}`,
     {
       method: "POST",
-      body: JSON.stringify({ decision } satisfies HumanDecisionRequest)
+      body: JSON.stringify({ decision, ...projectBinding(), ...(subjects.length ? { subjects } : {}) } satisfies HumanDecisionRequest)
     }
   );
 }
@@ -422,7 +430,10 @@ export function writeApprovalManifest(
     method: "POST",
     body: JSON.stringify({
       review,
+      ...projectBinding(),
       decisions,
+      subjects: review.items?.flatMap((item) => item.resource_id && item.content_sha256
+        ? [{ resource_id: item.resource_id, sha256: item.content_sha256 }] : []) ?? [],
       production_spec_bundle: productionSpecBundle,
       target
     })
@@ -439,6 +450,7 @@ export function previewAssetExecution(
     method: "POST",
     body: JSON.stringify({
       plan,
+      ...projectBinding(),
       with_assets: withAssets,
       with_visuals: withVisuals,
       confirmed: false
@@ -449,15 +461,17 @@ export function previewAssetExecution(
 export function startAssetExecution(
   plan: DirectorBuildPlan,
   withAssets: boolean,
-  withVisuals: boolean
+  withVisuals: boolean,
+  confirmedByUser = false
 ): Promise<AssetExecuteStart> {
   return jsonRequest<AssetExecuteStart>("/api/assets/execute", {
     method: "POST",
     body: JSON.stringify({
       plan,
+      ...projectBinding(),
       with_assets: withAssets,
       with_visuals: withVisuals,
-      confirmed: true
+      confirmed: confirmedByUser
     })
   });
 }
@@ -481,8 +495,11 @@ export function cancelAssetExecutionJob(jobId: string): Promise<JobCancelRespons
  * which the panel shows as an error rather than as an empty generated list --
  * "nothing was generated" is a claim, and a broken file is not evidence.
  */
-export function getAssetLibrary(): Promise<AssetLibraryOverview> {
-  return jsonRequest<AssetLibraryOverview>("/api/assets");
+const assetScopeUrl = (path: string, binding?: ProjectBinding) => binding
+  ? `${path}?project_id=${encodeURIComponent(binding.project_id)}&plan_version=${binding.plan_version}` : path;
+
+export function getAssetLibrary(binding?: ProjectBinding): Promise<AssetLibraryOverview> {
+  return jsonRequest<AssetLibraryOverview>(assetScopeUrl("/api/assets", binding));
 }
 
 /**
@@ -493,10 +510,10 @@ export function getAssetLibrary(): Promise<AssetLibraryOverview> {
  * time. The path is a path on this machine -- the backend never fetches from
  * the network, which is the whole product's local-first posture.
  */
-export function ingestAsset(request: AssetIngestRequest): Promise<{ status: string; entry: AssetLibraryEntry }> {
+export function ingestAsset(request: AssetIngestRequest, binding?: ProjectBinding): Promise<{ status: string; entry: AssetLibraryEntry }> {
   return jsonRequest<{ status: string; entry: AssetLibraryEntry }>("/api/assets", {
     method: "POST",
-    body: JSON.stringify(request)
+    body: JSON.stringify({ ...request, ...binding })
   });
 }
 
@@ -508,9 +525,9 @@ export function ingestAsset(request: AssetIngestRequest): Promise<{ status: stri
  * unlinking anything. An unknown id is a 404, which surfaces through the same
  * error unwrapping as every other failure.
  */
-export function removeAsset(assetId: string): Promise<{ status: string; removed_id: string }> {
+export function removeAsset(assetId: string, binding?: ProjectBinding): Promise<{ status: string; removed_id: string }> {
   return jsonRequest<{ status: string; removed_id: string }>(
-    `/api/assets/${encodeURIComponent(assetId)}`,
+    assetScopeUrl(`/api/assets/${encodeURIComponent(assetId)}`, binding),
     { method: "DELETE" }
   );
 }
@@ -562,7 +579,7 @@ export function previewPlaytest(request: {
 }): Promise<PlaytestPreview> {
   return jsonRequest<PlaytestPreview>("/api/playtest/run", {
     method: "POST",
-    body: JSON.stringify({ ...request, confirmed: false })
+    body: JSON.stringify({ ...request, ...projectBinding(), confirmed: false })
   });
 }
 
@@ -571,10 +588,10 @@ export function startPlaytest(request: {
   runs?: number;
   input_plan?: string;
   goal_session_minutes?: number;
-}): Promise<PlaytestStart> {
+}, confirmedByUser = false): Promise<PlaytestStart> {
   return jsonRequest<PlaytestStart>("/api/playtest/run", {
     method: "POST",
-    body: JSON.stringify({ ...request, confirmed: true })
+    body: JSON.stringify({ ...request, ...projectBinding(), confirmed: confirmedByUser })
   });
 }
 

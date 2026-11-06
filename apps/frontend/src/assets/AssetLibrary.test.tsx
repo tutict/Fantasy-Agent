@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AssetLibrary } from "./AssetLibrary";
@@ -6,6 +6,20 @@ import { formatBytes, shortSha, statusLabelKey } from "./parts";
 import { getAssetLibrary, ingestAsset, removeAsset } from "../shared/api";
 import { makeTranslator, studioI18n } from "../shared/i18n";
 import type { AssetLibraryOverview } from "../shared/types";
+import type { ProjectSnapshot } from "../shared/projectTypes";
+
+const projectContext = vi.hoisted(() => {
+  const context: { active: ProjectSnapshot | null } = { active: null };
+  return context;
+});
+vi.mock("../shared/projectStore", () => ({ useProject: () => projectContext }));
+
+function selectedProject(id: string, version = 1): ProjectSnapshot {
+  return {
+    project_id: id, name: `项目 ${id}`, plan_version: version, plan: null, jobs: [], tasks: [],
+    resources: [], sessions: [], decisions: [], authorizations: [], created_at: "", updated_at: "",
+  };
+}
 
 /**
  * The asset library panel.
@@ -94,6 +108,7 @@ function loadedLibrary() {
 }
 
 beforeEach(() => {
+  projectContext.active = null;
   vi.mocked(getAssetLibrary).mockResolvedValue(overview());
   vi.mocked(ingestAsset).mockResolvedValue({
     status: "ingested",
@@ -135,6 +150,27 @@ async function entryCard(name: string): Promise<HTMLElement> {
 }
 
 describe("asset library panel", () => {
+  it("reads the selected project version and can open the shared workspace library", async () => {
+    projectContext.active = selectedProject("p", 3);
+    renderPanel();
+    await waitFor(() => expect(getAssetLibrary).toHaveBeenCalledWith({ project_id: "p", plan_version: 3 }));
+    fireEvent.change(screen.getByLabelText("资产范围"), { target: { value: "workspace" } });
+    await waitFor(() => expect(getAssetLibrary).toHaveBeenLastCalledWith(undefined));
+  });
+
+  it("does not display assets from a project whose read completed after switching", async () => {
+    let finish!: (value: AssetLibraryOverview) => void;
+    projectContext.active = selectedProject("p");
+    vi.mocked(getAssetLibrary).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const panel = renderPanel();
+    await waitFor(() => expect(getAssetLibrary).toHaveBeenCalledTimes(1));
+    projectContext.active = selectedProject("q", 2);
+    panel.rerender(<AssetLibrary t={t} />);
+    await waitFor(() => expect(getAssetLibrary).toHaveBeenCalledWith({ project_id: "q", plan_version: 2 }));
+    await act(async () => finish(loadedLibrary()));
+    expect(screen.queryByText("自然包")).toBeNull();
+  });
+
   it("shows the ingest form and both sections when the library is empty", async () => {
     renderPanel();
 
@@ -245,7 +281,7 @@ describe("asset library panel", () => {
     fireEvent.click(within(await entryCard("自然包")).getByText("移除"));
     fireEvent.click(within(screen.getByRole("dialog")).getByText("移除"));
     await waitFor(() => {
-      expect(removeAsset).toHaveBeenCalledWith("asset-0123456789ab");
+      expect(removeAsset).toHaveBeenCalledWith("asset-0123456789ab", undefined);
     });
     expect(await screen.findByText("已移除 自然包。")).toBeTruthy();
   });

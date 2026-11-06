@@ -1,9 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { installProjectFixture, projectBackend } from "../../test-support/projectBackend";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlanningWorkbench } from "./PlanningWorkbench";
 import { JourneyProvider } from "../shared/journeyContext";
 import { LocaleThemeProvider } from "../shared/localeTheme";
+import { projectStore } from "../shared/projectStore";
+import type { ProjectSnapshot } from "../shared/projectTypes";
 
 /**
  * These cover the behaviour that the retired static page got right by accident
@@ -315,12 +318,44 @@ describe("planning workbench tool calls", () => {
     await waitFor(() => expect(toolButton("generate_game_production_plan").disabled).toBe(false));
     fireEvent.click(toolButton("generate_game_production_plan"));
 
-    await waitFor(() => expect(localStorage.getItem(HANDOFF_KEY)).not.toBeNull());
-    const handoff = JSON.parse(localStorage.getItem(HANDOFF_KEY) ?? "{}");
-    expect(handoff.source).toBe("planning-workbench");
-    expect(handoff.title).toBe("Neon Rooftops");
-    expect(handoff.plan.gameplay_spec.title).toBe("Neon Rooftops");
+    await waitFor(() => expect(projectBackend.read()?.plan?.gameplay_spec?.title).toBe("Neon Rooftops"));
+    expect(projectBackend.read()?.name).toBe("Neon Rooftops");
+    expect(localStorage.getItem(HANDOFF_KEY)).toBeNull();
     expect(screen.getByTestId("plan-title").textContent).toBe("Neon Rooftops");
+  });
+
+  it("does not create or select a late first plan after the user selects an existing project", async () => {
+    // Exercise real project HTTP calls rather than the legacy handoff fixture.
+    vi.restoreAllMocks(); projectStore.reset();
+    const existingPlan = { ...planPayload(), gameplay_spec: { ...SPEC, title: "Existing Courtyard" } };
+    const existing: ProjectSnapshot = { project_id: "existing", plan_version: 1, name: "Courtyard", plan: existingPlan,
+      tasks: [], jobs: [], sessions: [], resources: [], decisions: [], authorizations: [], created_at: 0, updated_at: 1 };
+    let available = false;
+    let finish!: (response: Response) => void;
+    vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {};
+      calls.push({ url, body });
+      if (url.includes("generate_game_production_plan")) return new Promise<Response>((resolve) => { finish = resolve; });
+      const payload = url === "/api/projects" ? init?.method === "POST"
+        ? { ...existing, project_id: "unexpected-new", plan: body.plan }
+        : { projects: available ? [existing] : [] }
+        : url.endsWith("/workflow") ? { project_id: "existing", plan_version: 1, stages: [] } : existing;
+      return Promise.resolve(new Response(JSON.stringify(payload), { headers: { "Content-Type": "application/json" } }));
+    });
+    renderWorkbench();
+    await waitFor(() => expect(projectStore.getSnapshot().loaded).toBe(true));
+    expect(projectStore.getSnapshot().active).toBeNull();
+    send("rooftop parkour courier"); fillSeed(); fireEvent.click(confirmButton());
+    fireEvent.click(toolButton("generate_game_production_plan"));
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    available = true;
+    await act(() => projectStore.select("existing"));
+    await act(async () => { finish(new Response(JSON.stringify(planEnvelope()), { headers: { "Content-Type": "application/json" } })); await Promise.resolve(); });
+    expect(calls.filter((call) => call.url === "/api/projects" && "name" in call.body)).toEqual([]);
+    expect(projectStore.getSnapshot().active?.project_id).toBe("existing");
+    expect(projectStore.getSnapshot().active?.plan?.gameplay_spec?.title).toBe("Existing Courtyard");
+    expect(projectStore.getSnapshot().draft).toBeNull();
   });
 
   it("renders the tasks returned by the backend", async () => {
@@ -413,3 +448,5 @@ describe("planning workbench tool calls", () => {
     expect(screen.getByTestId("status-chip").getAttribute("data-status")).toBe("error");
   });
 });
+
+installProjectFixture();

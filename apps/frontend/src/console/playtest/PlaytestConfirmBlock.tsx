@@ -6,7 +6,7 @@ export function PlaytestConfirmBlock({
 }: {
   effects: string[];
   t: (key: string, args?: Record<string, unknown>) => string;
-  onProceed: () => void;
+  onProceed: (confirmedByUser: boolean) => void;
   onCancel: () => void;
 }) {
   // The engine really launches on proceed, so the block lists the effects the
@@ -18,7 +18,7 @@ export function PlaytestConfirmBlock({
       <p>{t("playtestConfirmIntro")}</p>
       <ul>{effects.map((effect) => <li key={effect}>{effect}</li>)}</ul>
       <div className="handoff-actions">
-        <button className="primary-action" type="button" id="playtest-proceed" onClick={onProceed}>
+        <button className="primary-action" type="button" id="playtest-proceed" value="approved" onClick={(event) => onProceed(event.currentTarget.value === "approved")}>
           {t("generateConfirmProceed")}
         </button>
         <button className="ghost-action" type="button" id="playtest-cancel" onClick={onCancel}>

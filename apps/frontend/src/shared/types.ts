@@ -198,6 +198,8 @@ export interface OrchestrationSession {
  * from a click -- never defaulted to `true` at a call site.
  */
 export interface OrchestrationRunRequest {
+  project_id?: string;
+  plan_version?: number;
   plan: DirectorBuildPlan;
   engine?: string;
   session_id?: string;
@@ -218,7 +220,10 @@ export interface OrchestrationRunRequest {
  * `orchestration/orchestrationModel`.
  */
 export interface HumanDecisionRequest {
+  project_id?: string;
+  plan_version?: number;
   decision: string;
+  subjects?: Array<{ resource_id: string; sha256: string }>;
 }
 
 export interface TaskItem {
@@ -242,6 +247,8 @@ export interface TaskBreakdown {
 
 export interface CreativeReviewItem {
   asset_id?: string;
+  resource_id?: string;
+  content_sha256?: string;
   approval_status?: string;
   user_prompt?: string;
   asset_path?: string;
@@ -765,6 +772,8 @@ export interface NumericChange {
 }
 
 export interface EvolutionOptions {
+  project_id?: string;
+  plan_version?: number;
   plan: DirectorBuildPlan;
   max_iterations: number;
   max_wall_seconds: number;

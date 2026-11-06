@@ -1,3 +1,4 @@
+import { installProjectFixture } from "../../test-support/projectBackend";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { useMemo } from "react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -35,3 +36,5 @@ describe("localized planning handoff", () => {
     expect(result.current.renderHandoffTitle(result.current.currentHandoff)).toBe("屋顶跑酷追逐");
   });
 });
+
+installProjectFixture();

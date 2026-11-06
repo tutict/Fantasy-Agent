@@ -388,6 +388,10 @@ describe("stylesheet hygiene", () => {
       ["studio/settings/AgentPanel.tsx", "studio.css"],
       ["studio/settings/ToolCatalogPanel.tsx", "studio.css"],
       ["studio/settings/McpCard.tsx", "studio.css"],
+      ["studio/settings/McpConnectionPanel.tsx", ["studio.css", "ui.css"]],
+      ["shared/ProjectControls.tsx", "ui.css"],
+      ["shared/DraftActions.tsx", "ui.css"],
+      ["shared/WorkflowJobs.tsx", "ui.css"],
       // The boundary's fallback is the shared panels' empty state wearing a
       // different hat -- a panel with nothing to show -- so its one class is
       // `wb-empty`, and §4 puts `wb-*` in the shared namespace whose rules live
