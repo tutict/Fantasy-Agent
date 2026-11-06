@@ -8,6 +8,8 @@ dependencies = [
     "fastapi>=0.141",
     "pydantic>=2.13",
     "pyyaml>=6.0.3",
+    "mcp==2.3.0",
+    "jsonschema>=4.26",
     "uvicorn[standard]>=0.52"
 ]
 

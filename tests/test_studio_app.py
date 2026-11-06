@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import socket
+import sys
 import threading
 import time
 from pathlib import Path
@@ -19,22 +20,30 @@ def _load_studio_app():
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    # Pydantic resolves string annotations via sys.modules[cls.__module__]. An
+    # unregistered dynamic module leaves local forward references (ReviewSubject,
+    # DirectorBuildPlan) undefined, which used to be papered over by per-model
+    # model_rebuild() calls in main.py.
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
     return module
 
 
-def _materialize_review_artifacts(review, root: Path, *, target: str = 'unreal'):
+def _materialize_review_artifacts(review, root: Path, *, target: str = "unreal"):
     for item in review.items:
         artifact_path = Path(item.asset_path)
         if (
-            target == 'godot'
-            and item.source == 'blender'
-            and artifact_path.suffix.casefold() == '.fbx'
+            target == "godot"
+            and item.source == "blender"
+            and artifact_path.suffix.casefold() == ".fbx"
         ):
-            artifact_path = artifact_path.with_suffix('.glb')
+            artifact_path = artifact_path.with_suffix(".glb")
         artifact_path = root / artifact_path
         artifact_path.parent.mkdir(parents=True, exist_ok=True)
-        artifact_path.write_bytes(f'reviewed-{item.asset_id}'.encode())
+        artifact_path.write_bytes(f"reviewed-{item.asset_id}".encode())
     return review
 
 
@@ -74,8 +83,11 @@ def test_studio_serves_combined_desktop_panel(monkeypatch, tmp_path):
         "/api/manual-correction/open",
         "/api/tools/{tool_name}",
     } <= paths
-    # The standalone workbench must not expose an inbound MCP endpoint.
-    assert "/mcp" not in paths
+    # Studio owns exactly one loopback MCP entry on its own port now. Its
+    # peer/Host/Origin/Bearer gates are pinned in test_studio_mcp_protocol.py;
+    # a second inbound transport is still forbidden.
+    assert "/mcp" in paths
+    assert [path for path in paths if path.startswith("/mcp")] == ["/mcp"]
     assert "/debug/tool/{tool_name}" not in paths
     # The hand-written pages are gone -- not just superseded, deleted -- and so
     # are the mounts that used to serve them. Leaving either in place is how a
@@ -294,9 +306,9 @@ def test_a_remote_comfyui_endpoint_is_never_probed_by_the_panel(monkeypatch):
         assert "remote.invalid" not in url, url
         assert "127.0.0.1" in url or "localhost" in url, url
     assert comfyui["status"] == "unavailable"
-    assert all(
-        "remote.invalid" not in failure for failure in comfyui["metadata"]["failures"]
-    ), comfyui["metadata"]["failures"]
+    assert all("remote.invalid" not in failure for failure in comfyui["metadata"]["failures"]), (
+        comfyui["metadata"]["failures"]
+    )
 
 
 def test_the_comfyui_panel_opens_no_socket_of_its_own(monkeypatch):
@@ -402,11 +414,15 @@ def test_the_comfyui_probe_still_prefers_a_configured_endpoint(monkeypatch):
 
 def test_studio_shell_includes_bilingual_ui_controls():
     module = _load_studio_app()
-    frontend_source = module.REPO_ROOT.joinpath("apps/frontend/src/studio/StudioShell.tsx").read_text(encoding="utf-8")
-    frontend_i18n = module.REPO_ROOT.joinpath("apps/frontend/src/shared/i18n.ts").read_text(encoding="utf-8")
-    locale_theme_source = module.REPO_ROOT.joinpath("apps/frontend/src/shared/localeTheme.tsx").read_text(
+    frontend_source = module.REPO_ROOT.joinpath(
+        "apps/frontend/src/studio/StudioShell.tsx"
+    ).read_text(encoding="utf-8")
+    frontend_i18n = module.REPO_ROOT.joinpath("apps/frontend/src/shared/i18n.ts").read_text(
         encoding="utf-8"
     )
+    locale_theme_source = module.REPO_ROOT.joinpath(
+        "apps/frontend/src/shared/localeTheme.tsx"
+    ).read_text(encoding="utf-8")
     workbench_source = module.REPO_ROOT.joinpath(
         "apps/frontend/src/workbench/PlanningWorkbench.tsx"
     ).read_text(encoding="utf-8")
@@ -426,7 +442,7 @@ def test_studio_shell_includes_bilingual_ui_controls():
     assert "data-target={key}" in frontend_source
     assert "activePanel, setActivePanel] = useState<PanelKey>(" in frontend_source
     for panel in ("workbench", "console"):
-        assert f'{panel}: {{ titleKey:' in frontend_source
+        assert f"{panel}: {{ titleKey:" in frontend_source
     assert 'id="mcp-refresh"' in frontend_source
     assert 'id="mcp-status-grid"' in frontend_source
     assert "getMcpStatus" in frontend_source
@@ -460,10 +476,18 @@ def test_studio_shell_includes_bilingual_ui_controls():
     # true after the call is swapped back out for a hand-rolled decoder. The
     # mutation that reintroduces one proved it -- only the `JSON.parse` line
     # below went red, this one sat green with the import satisfying it.
-    assert "selectedEngineVersion(readHandoffPlan())" in frontend_source
+    assert "selectedEngineVersion(project.active?.plan ?? null)" in frontend_source
     assert "JSON.parse(localStorage.getItem" not in frontend_source
-    # The workbench hands its plan to the console through this localStorage key.
-    assert "savePlanningHandoff" in workbench_source
+    # The workbench hands its plan to the shared project store now; the backend
+    # owns the plan and the store performs the one-shot legacy handoff import.
+    # A second localStorage writer here would split the truth again.
+    assert "projectStore.create(" in workbench_source
+    assert "projectStore.setDraftFor(" in workbench_source
+    assert "savePlanningHandoff" not in workbench_source
+    project_store_source = module.REPO_ROOT.joinpath(
+        "apps/frontend/src/shared/projectStore.ts"
+    ).read_text(encoding="utf-8")
+    assert "read(HANDOFF_KEY)" in project_store_source
 
 
 def test_store_keys_are_defined_once_and_imported_everywhere():
@@ -493,7 +517,11 @@ def test_store_keys_are_defined_once_and_imported_everywhere():
 
     offenders = []
     for path in src.rglob("*.ts*"):
-        if path.name in {"storage.ts"} or path.name.endswith(".test.ts") or path.name.endswith(".test.tsx"):
+        if (
+            path.name in {"storage.ts"}
+            or path.name.endswith(".test.ts")
+            or path.name.endswith(".test.tsx")
+        ):
             continue
         text = path.read_text(encoding="utf-8")
         for key in ("fantasy-agent-planning-handoff", "fantasy-agent-studio-locale"):
@@ -543,9 +571,7 @@ def test_studio_routes_plan_and_workbench_tools_through_one_server():
     assert plan.production_pipeline is not None
     assert plan.production_pipeline.next_stage == "comfyui_visual_production"
 
-    tool = module._workbench_tool(
-        "prepare_production_pipeline", request.model_dump(mode="json")
-    )
+    tool = module._workbench_tool("prepare_production_pipeline", request.model_dump(mode="json"))
     assert tool["structuredContent"]["kind"] == "production_pipeline"
 
     unknown = module._workbench_tool("does_not_exist", request.model_dump(mode="json"))
@@ -584,7 +610,9 @@ def test_execute_starts_job_and_polls(monkeypatch):
     def fake_godot(plan_arg, **kwargs):
         if not kwargs.get("confirmed"):
             return ExecutionResult(
-                status="confirmation_required", session_id="x", planned_side_effects=["write project"]
+                status="confirmation_required",
+                session_id="x",
+                planned_side_effects=["write project"],
             )
         return ExecutionResult(
             status="done",
@@ -598,7 +626,9 @@ def test_execute_starts_job_and_polls(monkeypatch):
 
     monkeypatch.setattr(module, "launch_demo", fake_launch)
 
-    started = module.execute_demo(module.ExecuteDemoRequest(plan=plan, engine="Godot 4", confirmed=True))
+    started = module.execute_demo(
+        module.ExecuteDemoRequest(plan=plan, engine="Godot 4", confirmed=True)
+    )
     assert started["status"] == "running"
     job_id = started["job_id"]
 
@@ -664,12 +694,8 @@ def test_session_state_endpoint_reads_persisted_stages(monkeypatch, tmp_path):
     module = _load_studio_app()
     monkeypatch.setattr(module, "REPO_ROOT", tmp_path)
 
-    record_stage(
-        "sess-1", StageState(name="blender", status="failed"), workspace_root=tmp_path
-    )
-    record_stage(
-        "sess-1", StageState(name="create", status="done"), workspace_root=tmp_path
-    )
+    record_stage("sess-1", StageState(name="blender", status="failed"), workspace_root=tmp_path)
+    record_stage("sess-1", StageState(name="create", status="done"), workspace_root=tmp_path)
 
     state = module.session_state("sess-1", engine="godot")
     assert state["found"]
@@ -699,21 +725,21 @@ def test_write_approval_manifest_api_writes_generated_yaml(monkeypatch, tmp_path
     review = _materialize_review_artifacts(
         plan.creative_review,
         tmp_path,
-        target='godot',
+        target="godot",
     )
     first = review.items[0].asset_id
     second = review.items[1].asset_id
-    blender_item = next(item for item in review.items if item.source == 'blender')
+    blender_item = next(item for item in review.items if item.source == "blender")
     req = module.ApprovalManifestRequest(
         review=review,
-        target='godot',
+        target="godot",
         decisions={
             first: "approved",
             second: "needs_revision",
             blender_item.asset_id: "approved",
         },
     )
-    assert req.target == 'godot'
+    assert req.target == "godot"
 
     response = module.write_approval_manifest(req)
 
@@ -730,10 +756,10 @@ def test_write_approval_manifest_api_writes_generated_yaml(monkeypatch, tmp_path
         for decision in response.manifest.decisions
         if decision.asset_id == blender_item.asset_id
     )
-    assert blender_item.asset_path.endswith('.fbx')
-    assert blender_decision.asset_path == Path(blender_item.asset_path).with_suffix(
-        '.glb'
-    ).as_posix()
+    assert blender_item.asset_path.endswith(".fbx")
+    assert (
+        blender_decision.asset_path == Path(blender_item.asset_path).with_suffix(".glb").as_posix()
+    )
     assert blender_decision.artifact_identity is not None
 
 
@@ -757,30 +783,26 @@ def test_write_approval_manifest_api_rejects_invalid_public_blender_glb(
     from fantasy_agent.workflows import run_director_workflow
 
     module = _load_studio_app()
-    workspace_root = tmp_path / 'workspace'
+    workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
-    outside_glb = tmp_path / 'outside.glb'
-    outside_glb.write_bytes(b'outside-secret')
-    monkeypatch.setattr(module, 'REPO_ROOT', workspace_root)
-    plan = run_director_workflow(
-        PromptRequest(prompt='rooftop parkour chase', target_minutes=10)
-    )
-    blender_item = next(
-        item for item in plan.creative_review.items if item.source == 'blender'
-    )
-    if case == 'outside':
+    outside_glb = tmp_path / "outside.glb"
+    outside_glb.write_bytes(b"outside-secret")
+    monkeypatch.setattr(module, "REPO_ROOT", workspace_root)
+    plan = run_director_workflow(PromptRequest(prompt="rooftop parkour chase", target_minutes=10))
+    blender_item = next(item for item in plan.creative_review.items if item.source == "blender")
+    if case == "outside":
         review_item = blender_item.model_copy(
-            update={'asset_path': (tmp_path / 'outside.fbx').as_posix()}
+            update={"asset_path": (tmp_path / "outside.fbx").as_posix()}
         )
-    elif case == 'traversal':
-        review_item = blender_item.model_copy(update={'asset_path': '../outside.fbx'})
-    elif case == 'symlink':
-        linked_glb = workspace_root / 'linked.glb'
+    elif case == "traversal":
+        review_item = blender_item.model_copy(update={"asset_path": "../outside.fbx"})
+    elif case == "symlink":
+        linked_glb = workspace_root / "linked.glb"
         linked_glb.symlink_to(outside_glb)
-        review_item = blender_item.model_copy(update={'asset_path': 'linked.fbx'})
+        review_item = blender_item.model_copy(update={"asset_path": "linked.fbx"})
     else:
         review_item = blender_item
-    invalid_review = plan.creative_review.model_copy(update={'items': [review_item]})
+    invalid_review = plan.creative_review.model_copy(update={"items": [review_item]})
 
     with pytest.raises(HTTPException) as rejected:
         module.write_approval_manifest(
@@ -792,7 +814,7 @@ def test_write_approval_manifest_api_rejects_invalid_public_blender_glb(
         )
     assert rejected.value.status_code == 400
     assert detail_part in str(rejected.value.detail)
-    assert not (workspace_root / 'generated' / 'asset-approval-manifest.yaml').exists()
+    assert not (workspace_root / "generated" / "asset-approval-manifest.yaml").exists()
 
 
 def test_asset_execute_confirmation_gate_runs_no_job():
@@ -803,7 +825,9 @@ def test_asset_execute_confirmation_gate_runs_no_job():
     plan = run_director_workflow(
         PromptRequest(prompt="rooftop parkour chase", target_minutes=10, engine_version="Godot 4")
     )
-    req = module.AssetExecutionRequest(plan=plan, with_assets=True, with_visuals=True, confirmed=False)
+    req = module.AssetExecutionRequest(
+        plan=plan, with_assets=True, with_visuals=True, confirmed=False
+    )
     result = module.execute_assets(req)
 
     assert result["status"] == "confirmation_required"
@@ -867,8 +891,12 @@ def test_execute_demo_job_ids_do_not_collide(monkeypatch):
         return ExecutionResult(status="done", session_id=request.session_id or "x")
 
     monkeypatch.setattr(module, "launch_demo", fake_launch)
-    first = module.execute_demo(module.ExecuteDemoRequest(plan=plan, engine="godot", confirmed=True))
-    second = module.execute_demo(module.ExecuteDemoRequest(plan=plan, engine="godot", confirmed=True))
+    first = module.execute_demo(
+        module.ExecuteDemoRequest(plan=plan, engine="godot", confirmed=True)
+    )
+    second = module.execute_demo(
+        module.ExecuteDemoRequest(plan=plan, engine="godot", confirmed=True)
+    )
 
     assert first["job_id"] != second["job_id"]
     module._EXECUTE_POOL.shutdown(wait=True)
@@ -973,6 +1001,7 @@ def test_approval_manifest_api_returns_synchronized_bundle(monkeypatch, tmp_path
     assert synced.blocked_reason is None
     assert (tmp_path / "generated" / "specs" / "production-spec-bundle.yaml").exists()
 
+
 def test_spec_bundle_preview_api_returns_validation_artifacts_and_traces():
     module = _load_studio_app()
     from fantasy_agent.contracts import PromptRequest
@@ -995,7 +1024,9 @@ def test_spec_bundle_preview_api_returns_validation_artifacts_and_traces():
     assert response.traces
     # The godot preview must report the same artifact set execution writes:
     # the adapter runtime plus the per-table config exports.
-    assert any(artifact.path == "data/production-spec-runtime.json" for artifact in response.artifacts)
+    assert any(
+        artifact.path == "data/production-spec-runtime.json" for artifact in response.artifacts
+    )
     assert any(artifact.path.startswith("data/config/") for artifact in response.artifacts)
     assert any(trace.spec_field.startswith("config_tables.tables.") for trace in response.traces)
     assert response.executable_qa.results
@@ -1072,9 +1103,9 @@ def test_request_models_reject_unknown_fields():
 
 def test_frontend_includes_spec_bundle_panel():
     module = _load_studio_app()
-    flow_source = module.REPO_ROOT.joinpath(
-        "apps/frontend/src/console/FlowConsole.tsx"
-    ).read_text(encoding="utf-8")
+    flow_source = module.REPO_ROOT.joinpath("apps/frontend/src/console/FlowConsole.tsx").read_text(
+        encoding="utf-8"
+    )
     rendering_source = module.REPO_ROOT.joinpath(
         "apps/frontend/src/console/rendering.tsx"
     ).read_text(encoding="utf-8")
@@ -1221,9 +1252,9 @@ def test_correction_targets_report_probe_results_not_just_ids(monkeypatch):
 
 def test_frontend_includes_agent_panel():
     module = _load_studio_app()
-    shell = module.REPO_ROOT.joinpath(
-        "apps/frontend/src/studio/StudioShell.tsx"
-    ).read_text(encoding="utf-8")
+    shell = module.REPO_ROOT.joinpath("apps/frontend/src/studio/StudioShell.tsx").read_text(
+        encoding="utf-8"
+    )
     api = module.REPO_ROOT.joinpath("apps/frontend/src/shared/api.ts").read_text(encoding="utf-8")
 
     assert "AgentPanel" in shell
@@ -1280,7 +1311,10 @@ def test_frontend_includes_the_spec_regen_and_blender_script_panels():
     assert "SpecRegenPanel" in rendering, "the spec regen panel is not defined"
     assert "<SpecRegenPanel" in flow_console, "the spec tab never mounts the spec regen panel"
     assert blender_panel.exists(), "the Blender script panel is not defined"
-    assert "BlenderScriptPanel" in build_panel, "the build panel never mounts the Blender script panel"
+    assert "BlenderScriptPanel" in build_panel, (
+        "the build panel never mounts the Blender script panel"
+    )
+
 
 # ── the orchestration board ─────────────────────────────────────────────────
 
@@ -1401,9 +1435,7 @@ def test_a_card_carries_the_plan_fields_it_is_drawn_from(tmp_path: Path):
     module = _studio(tmp_path)
 
     payload = module.run_orchestration(module.OrchestrationRunRequest(plan=_plan()))
-    card = next(
-        entry for entry in payload["stages"] if entry["stage_id"] == "blender_modeling"
-    )
+    card = next(entry for entry in payload["stages"] if entry["stage_id"] == "blender_modeling")
 
     for field in ("purpose", "owner_agent", "depends_on", "mcp_tools", "quality_gates", "risks"):
         assert field in card, field
@@ -1599,9 +1631,7 @@ def _gate_only_plan():
     """
 
     plan = _plan()
-    gate = next(
-        stage for stage in plan.production_pipeline.stages if stage.id == "creative_review"
-    )
+    gate = next(stage for stage in plan.production_pipeline.stages if stage.id == "creative_review")
     gate.depends_on = []
     plan.production_pipeline.stages = [gate]
     return plan
@@ -1767,9 +1797,7 @@ def test_a_decision_outside_the_vocabulary_is_reported_with_the_cards(tmp_path: 
 def test_a_decision_for_a_stage_the_plan_does_not_have_is_reported(tmp_path: Path):
     module = _studio(tmp_path)
 
-    first = module.run_orchestration(
-        module.OrchestrationRunRequest(plan=_gate_only_plan())
-    )
+    first = module.run_orchestration(module.OrchestrationRunRequest(plan=_gate_only_plan()))
 
     payload = module.decide_orchestration_stage(
         first["session_id"],
@@ -1876,7 +1904,10 @@ def test_workbench_slice_keeps_snake_and_camel_case():
     )
     assert pipeline["structuredContent"]["kind"] == "production_pipeline"
     assert pipeline["_meta"]["activePanel"] == "pipeline"
-    assert pipeline["_meta"]["productionPipeline"] == pipeline["structuredContent"]["production_pipeline"]
+    assert (
+        pipeline["_meta"]["productionPipeline"]
+        == pipeline["structuredContent"]["production_pipeline"]
+    )
 
 
 def test_execute_resume_errors_stay_http_400():
@@ -2183,11 +2214,7 @@ def test_the_engine_a_read_names_is_one_of_the_two_real_ones(tmp_path: Path):
         if getattr(route, "path", "") not in wanted:
             continue
         seen.add(route.path)
-        params = [
-            field
-            for field in route.dependant.query_params
-            if field.name == "engine"
-        ]
+        params = [field for field in route.dependant.query_params if field.name == "engine"]
         assert len(params) == 1, f"{route.path} lost its engine parameter"
 
         # FastAPI validates a query parameter by running its annotation through
@@ -2333,8 +2360,7 @@ def test_both_orchestration_endpoints_adopt_a_snapshot_the_same_way(tmp_path: Pa
     # number is asserted rather than left open so the next one has to be looked
     # at on purpose.
     assert source.count("_restore_orchestration(session_id, engine)") == 3, (
-        "the run, the read and the decision endpoint must all go through "
-        "_restore_orchestration"
+        "the run, the read and the decision endpoint must all go through _restore_orchestration"
     )
     assert source.count("def _restore_orchestration(") == 1, (
         "there must be exactly one implementation of the snapshot lookup"

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import ipaddress
+import json
 import logging
 import shutil
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -11,8 +14,10 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from apps.studio.app.mcp_connection import MCPConnection, local_request_allowed
+from apps.studio.app.mcp_server import StudioMCPTransport
 from fantasy_agent import api_settings, local_tools
 from fantasy_agent.api_settings import llm_enabled, public_settings
 from fantasy_agent.asset_library import (
@@ -73,7 +78,10 @@ from fantasy_agent.mcp import initial_mcp_contracts
 from fantasy_agent.path_safety import WorkspacePathError, resolve_workspace_path
 from fantasy_agent.planning_actions import PlanningAction, UnknownPlanningTool, run_planning_action
 from fantasy_agent.studio_jobs import InMemoryJobRegistry
+from fantasy_agent.studio_projects import ProjectVersionConflict, StudioProjectStore
+from fantasy_agent.studio_workflow import StudioWorkflowService
 from fantasy_agent.tool_registry import tool_catalog
+from fantasy_agent.workflow_authorization import WorkflowAuthorizationStore
 from fantasy_agent.workflows import (
     build_asset_approval_manifest,
     prepare_blender_assets,
@@ -97,10 +105,27 @@ FRONTEND_INDEX_PATH = FRONTEND_DIST_DIR / "index.html"
 #: board, so without this the only trace would be an empty stage list.
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def studio_lifespan(host: FastAPI):
+    service = studio_workflow_service()
+    # Loading/GET never reconciles jobs. A live service is reconciled once even
+    # when test/application lifespan contexts are entered more than once.
+    if getattr(host.state, "reconciled_service", None) is not service:
+        service.recover_interrupted()
+        host.state.reconciled_service = service
+    transport = StudioMCPTransport(service, studio_mcp_connection())
+    host.state.mcp_transport = transport
+    async with transport.manager.run():
+        yield
+    host.state.mcp_transport = None
+
+
 app = FastAPI(
     title="Fantasy Agent Studio",
     version=STUDIO_VERSION,
     description="Standalone local workbench for Fantasy Agent production workflows.",
+    lifespan=studio_lifespan,
 )
 
 # The hand-written pages under `apps/studio/static/` are gone, along with the
@@ -118,13 +143,28 @@ class ManualCorrectionOpenRequest(StrictModel):
     confirmed_side_effects: bool = False
 
 
+class ProjectBinding(StrictModel):
+    project_id: str | None = Field(default=None, min_length=1)
+    plan_version: int | None = Field(default=None, ge=0, strict=True)
+
+    @model_validator(mode="after")
+    def paired_reference(self):
+        if (self.project_id is None) != (self.plan_version is None):
+            raise ValueError("项目和计划版本必须同时提供。")
+        return self
 
 
-class ApprovalManifestRequest(StrictModel):
+class ReviewSubject(StrictModel):
+    resource_id: str
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class ApprovalManifestRequest(ProjectBinding):
     review: CreativeReviewReport
-    target: str = 'unreal'
+    target: str = "unreal"
     decisions: dict[str, str] = Field(default_factory=dict)
     production_spec_bundle: ProductionSpecBundle | None = None
+    subjects: list[ReviewSubject] = Field(default_factory=list)
 
 
 class ApprovalManifestResponse(BaseModel):
@@ -146,14 +186,14 @@ class SpecBundlePreviewResponse(BaseModel):
     executable_qa: ExecutableQAReport
 
 
-class AssetExecutionRequest(StrictModel):
+class AssetExecutionRequest(ProjectBinding):
     plan: DirectorBuildPlan
     with_assets: bool = False
     with_visuals: bool = False
     confirmed: bool = False
 
 
-class AssetIngestRequest(StrictModel):
+class AssetIngestRequest(ProjectBinding):
     """Ingest one local open-source asset file into the library.
 
     ``source_path`` points at a file on this machine -- the product is
@@ -182,7 +222,7 @@ class AssetRemoveResponse(BaseModel):
     removed_id: str
 
 
-class ExecuteDemoRequest(StrictModel):
+class ExecuteDemoRequest(ProjectBinding):
     plan: DirectorBuildPlan
     engine: str = ""  # inferred from plan when empty
     with_assets: bool = False
@@ -221,6 +261,299 @@ _PLAYTEST_POOL = ThreadPoolExecutor(max_workers=1)
 _PLAYTEST_JOB_REGISTRY = InMemoryJobRegistry(_PLAYTEST_POOL)
 _EVOLUTION_JOB_REGISTRY = InMemoryJobRegistry(_EXECUTE_POOL)
 _EVOLUTION_JOBS: dict[str, str] = {}
+
+
+def studio_workflow_service() -> StudioWorkflowService:
+    service = getattr(app.state, "workflow_service", None)
+    if service is None:
+        projects = StudioProjectStore(REPO_ROOT)
+        service = StudioWorkflowService(
+            projects,
+            WorkflowAuthorizationStore(projects),
+            execute_jobs=_EXECUTE_JOB_REGISTRY,
+            asset_jobs=_ASSET_JOB_REGISTRY,
+            playtest_jobs=_PLAYTEST_JOB_REGISTRY,
+            evolution_jobs=_EVOLUTION_JOB_REGISTRY,
+        )
+        app.state.workflow_service = service
+    return service
+
+
+def studio_mcp_connection() -> MCPConnection:
+    connection = getattr(app.state, "mcp_connection", None)
+    if connection is None:
+        connection = MCPConnection(REPO_ROOT)
+        app.state.mcp_connection = connection
+    return connection
+
+
+class _MCPApplication:
+    async def __call__(self, scope, receive, send):
+        transport = getattr(app.state, "mcp_transport", None)
+        if transport is None:
+            await JSONResponse({"detail": "Studio 连接尚未就绪。"}, status_code=503)(
+                scope, receive, send
+            )
+            return
+        await transport(scope, receive, send)
+
+
+# Exact path, no mount redirect and no second port or role-level endpoint.
+app.add_route("/mcp", _MCPApplication(), methods=["GET", "POST", "DELETE"])
+
+
+@app.middleware("http")
+async def protect_local_workflow(request: Request, call_next):
+    try:
+        if request.client is None or not ipaddress.ip_address(request.client.host).is_loopback:
+            return JSONResponse({"detail": "Studio 只允许本机访问。"}, status_code=403)
+    except ValueError:
+        return JSONResponse({"detail": "Studio 只允许本机访问。"}, status_code=403)
+    if request.url.path.startswith(("/api/mcp/", "/api/projects")):
+        if not local_request_allowed(
+            request.scope, require_origin=request.method not in {"GET", "HEAD"}
+        ):
+            return JSONResponse({"detail": "仅允许同源本机操作。"}, status_code=403)
+        body = await request.body()
+        connection = studio_mcp_connection()
+        try:
+            decoded = json.loads(body) if body else None
+        except (ValueError, UnicodeDecodeError):
+            decoded = None
+        if connection.contains_secret(body) or connection.contains_secret(decoded):
+            return JSONResponse({"detail": "连接凭据不能写入项目数据。"}, status_code=400)
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store"
+        return response
+    return await call_next(request)
+
+
+def _mcp_base(request: Request) -> str:
+    return str(request.base_url).rstrip("/")
+
+
+def _project_response(value: Any, *, status_code: int = 200) -> JSONResponse:
+    if hasattr(value, "model_dump"):
+        value = value.model_dump(mode="json")
+    return JSONResponse(studio_mcp_connection().sanitize(value), status_code=status_code)
+
+
+def _project_operation(operation: Callable[[], Any]) -> JSONResponse:
+    try:
+        return _project_response(operation())
+    except ProjectVersionConflict as exc:
+        return _project_response(
+            {
+                "status": "version_conflict",
+                "summary": "计划版本已变化，请读取最新项目。",
+                "latest": exc.latest.model_dump(mode="json"),
+            },
+            status_code=409,
+        )
+    except (ValueError, OSError):
+        return _project_response(
+            {"status": "blocked", "summary": "项目参数无效、产物已变化或状态无法读取。"},
+            status_code=400,
+        )
+
+
+def _require_project(project_id: str) -> StudioWorkflowService:
+    service = studio_workflow_service()
+    try:
+        found = service.projects.snapshot(project_id)
+    except (ValueError, OSError):
+        raise HTTPException(400, "项目标识或项目状态无效。") from None
+    if found is None:
+        raise HTTPException(404, "项目不存在。")
+    return service
+
+
+def _bound_request(req: ProjectBinding):
+    if req.project_id is None:
+        return None
+    service = _require_project(req.project_id)
+    snapshot = service.projects.snapshot(req.project_id)
+    if snapshot.plan_version != req.plan_version:
+        raise HTTPException(
+            409,
+            detail={
+                "status": "version_conflict",
+                "summary": "计划已变化，请刷新后确认。",
+                "latest": service.snapshot(req.project_id),
+            },
+        )
+    if snapshot.plan is None:
+        raise HTTPException(400, detail="项目尚未保存计划。")
+    if hasattr(req, "plan") and req.plan.model_dump(mode="json") != snapshot.plan.model_dump(
+        mode="json"
+    ):
+        raise HTTPException(
+            409,
+            detail={
+                "status": "version_conflict",
+                "summary": "请先保存当前草稿再执行。",
+                "latest": service.snapshot(req.project_id),
+            },
+        )
+    return service, snapshot, service._root(req.project_id, req.plan_version)
+
+
+def _request_root(req: ProjectBinding) -> Path:
+    if req.project_id is None:
+        return REPO_ROOT
+    return studio_workflow_service()._root(req.project_id, req.plan_version)
+
+
+def _durable_job_response(job_id: str):
+    service = studio_workflow_service()
+    found = service.locate_job(job_id)
+    if found is None:
+        return None
+    project_id, job = found
+    payload = service.get_job(project_id, job.job_id)
+    result = payload.get("result", {})
+    if isinstance(result, dict) and "data" in result and "kind" in result:
+        payload["result"] = result["data"]
+    if payload["status"] == "queued":
+        payload["status"] = "running"
+    return studio_mcp_connection().sanitize(payload)
+
+
+def _validate_ui_subjects(snapshot, subjects: list[ReviewSubject]) -> list[str]:
+    if not subjects:
+        raise ValueError("尚无被审阅的产物版本，请先生成并刷新资产。")
+    known = {
+        resource.resource_id: resource
+        for resource in snapshot.resources
+        if resource.plan_version == snapshot.plan_version
+    }
+    for subject in subjects:
+        resource = known.get(subject.resource_id)
+        if resource is None or resource.sha256 != subject.sha256:
+            raise ValueError("被审阅的资产版本已变化，请刷新后重新审阅。")
+    return list(dict.fromkeys(subject.resource_id for subject in subjects))
+
+
+class StudioProjectCreateRequest(StrictModel):
+    name: str = Field(min_length=1, max_length=120)
+    plan: DirectorBuildPlan | None = None
+
+
+class StudioProjectPlanRequest(StrictModel):
+    plan: DirectorBuildPlan
+    expected_version: int = Field(ge=0)
+
+
+class StudioProjectImportRequest(StrictModel):
+    plan: DirectorBuildPlan
+    import_key: str = "legacy-handoff"
+
+
+@app.get("/api/mcp/connection")
+def mcp_connection_state(request: Request):
+    return studio_mcp_connection().state(_mcp_base(request))
+
+
+@app.post("/api/mcp/connection/enable")
+def mcp_connection_enable(request: Request):
+    studio_mcp_connection().set_enabled(True)
+    return mcp_connection_state(request)
+
+
+@app.post("/api/mcp/connection/disable")
+def mcp_connection_disable(request: Request):
+    studio_mcp_connection().set_enabled(False)
+    return mcp_connection_state(request)
+
+
+@app.post("/api/mcp/connection/token")
+def mcp_connection_copy_token():
+    return JSONResponse(
+        {"token": studio_mcp_connection().copy_token()}, headers={"Cache-Control": "no-store"}
+    )
+
+
+@app.post("/api/mcp/connection/rotate")
+def mcp_connection_rotate(request: Request):
+    studio_mcp_connection().rotate()
+    return mcp_connection_state(request)
+
+
+@app.get("/api/mcp/connection/config")
+def mcp_connection_config(request: Request):
+    return studio_mcp_connection().config(_mcp_base(request))
+
+
+@app.get("/api/projects")
+def studio_projects_list():
+    return _project_operation(
+        lambda: {
+            "projects": [
+                studio_workflow_service().snapshot(p.project_id)
+                for p in studio_workflow_service().projects.list_projects()
+            ]
+        }
+    )
+
+
+@app.post("/api/projects")
+def studio_projects_create(payload: StudioProjectCreateRequest):
+    def create():
+        service = studio_workflow_service()
+        project = service.projects.create(payload.name)
+        if payload.plan is not None:
+            service.save_plan(project.project_id, payload.plan, 0)
+        return service.snapshot(project.project_id)
+
+    return _project_operation(create)
+
+
+@app.post("/api/projects/import")
+def studio_projects_import(payload: StudioProjectImportRequest):
+    def import_plan():
+        service = studio_workflow_service()
+        project = service.projects.import_legacy(payload.plan, import_key=payload.import_key)
+        return service.snapshot(project.project_id)
+
+    return _project_operation(import_plan)
+
+
+@app.get("/api/projects/{project_id}")
+def studio_project_get(project_id: str, plan_version: int | None = None):
+    service = _require_project(project_id)
+    return _project_operation(lambda: service.snapshot(project_id, plan_version))
+
+
+@app.put("/api/projects/{project_id}/plan")
+def studio_project_update_plan(project_id: str, payload: StudioProjectPlanRequest):
+    service = _require_project(project_id)
+    return _project_operation(
+        lambda: service.save_plan(project_id, payload.plan, payload.expected_version)
+    )
+
+
+@app.get("/api/projects/{project_id}/workflow")
+def studio_project_workflow(project_id: str, plan_version: int | None = None):
+    service = _require_project(project_id)
+    return _project_operation(lambda: service.workflow_state(project_id, plan_version))
+
+
+@app.get("/api/projects/{project_id}/jobs/{job_id}")
+def studio_project_job(project_id: str, job_id: str):
+    service = _require_project(project_id)
+    return _project_operation(lambda: service.get_job(project_id, job_id))
+
+
+@app.post("/api/projects/{project_id}/jobs/{job_id}/cancel")
+def studio_project_job_cancel(project_id: str, job_id: str):
+    service = _require_project(project_id)
+    return _project_operation(lambda: service.cancel_job(project_id, job_id))
+
+
+@app.get("/api/projects/{project_id}/resources/{resource_id}")
+def studio_project_resource(project_id: str, resource_id: str):
+    service = _require_project(project_id)
+    return _project_operation(lambda: service.read_resource(project_id, resource_id))
 
 
 def _frontend_index_or() -> FileResponse:
@@ -631,7 +964,6 @@ def corrections_inspect(project_dir: str) -> dict[str, Any]:
     return {"report": report.model_dump(mode="json"), "summary": summarize_corrections(report)}
 
 
-
 def _planning(name: str, request: PromptRequest) -> PlanningAction:
     """Run one prompt-shaped planning action with the Studio LLM switch."""
 
@@ -754,6 +1086,7 @@ def creative_review(request: CreativeReviewRequest) -> CreativeReviewReport:
 def qa(spec: GameplaySpec) -> QAPlan:
     return prepare_qa_plan(spec)
 
+
 def _plan_summary(plan: DirectorBuildPlan) -> dict[str, Any]:
     """Flatten a build plan into the summary block the workbench UI renders."""
 
@@ -768,7 +1101,9 @@ def _plan_summary(plan: DirectorBuildPlan) -> dict[str, Any]:
         "win_state": spec.win_state,
         "failure_states": spec.failure_states,
         "next_actions": plan.next_actions,
-        "production_pipeline_stages": [stage.title for stage in pipeline.stages] if pipeline else [],
+        "production_pipeline_stages": [stage.title for stage in pipeline.stages]
+        if pipeline
+        else [],
     }
 
 
@@ -944,8 +1279,7 @@ def _qa_envelope(action: PlanningAction) -> tuple[dict[str, Any], str, dict[str,
     payload = built.qa_plan.model_dump(mode="json")
     title = built.gameplay_spec.title
     text = (
-        f"Prepared QA checks for a {built.qa_plan.target_session_minutes}-minute "
-        f"slice of {title}."
+        f"Prepared QA checks for a {built.qa_plan.target_session_minutes}-minute slice of {title}."
     )
     return (
         {"gameplay_title": title, "qa_plan": payload},
@@ -1019,7 +1353,6 @@ async def workbench_tool(tool_name: str, request: Request) -> dict[str, Any]:
     return _workbench_tool(tool_name, arguments or {})
 
 
-
 def _approval_manifest_path() -> Path:
     path = REPO_ROOT / "generated" / "asset-approval-manifest.yaml"
     resolved = path.resolve()
@@ -1054,6 +1387,38 @@ def preview_spec_bundle(req: SpecBundlePreviewRequest) -> SpecBundlePreviewRespo
 @app.post("/api/creative-review/approval-manifest", response_model=ApprovalManifestResponse)
 def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestResponse:
     import yaml
+
+    binding = _bound_request(req)
+    if binding is not None:
+        service, snapshot, _root = binding
+        try:
+            resource_ids = _validate_ui_subjects(snapshot, req.subjects)
+            review = service.asset_review.review_report(snapshot)
+            by_resource = {item.resource_id: item for item in review.items}
+            for resource_id in resource_ids:
+                item = by_resource[resource_id]
+                decision = req.decisions.get(item.asset_id, "pending_user_review")
+                if decision not in {"approved", "rejected", "needs_revision"}:
+                    continue
+                intent = service.request_asset_review(
+                    req.project_id, plan_version=snapshot.plan_version, resource_ids=[resource_id]
+                )
+                service.apply_asset_review(
+                    req.project_id,
+                    intent["intent_id"],
+                    approved=decision == "approved",
+                    decision=decision,
+                )
+            manifest = service.asset_review.write_manifest(req.project_id, snapshot.plan_version)
+            effective = service.asset_review.effective_plan(req.project_id, snapshot.plan_version)
+            return ApprovalManifestResponse(
+                status="written",
+                manifest_path="generated/asset-approval-manifest.yaml",
+                manifest=manifest,
+                production_spec_bundle=effective.production_spec_bundle,
+            )
+        except (ValueError, OSError) as exc:
+            raise HTTPException(409, detail=str(exc)) from exc
 
     try:
         manifest = build_asset_approval_manifest(
@@ -1109,18 +1474,20 @@ def write_approval_manifest(req: ApprovalManifestRequest) -> ApprovalManifestRes
     )
 
 
-def _build_asset_execution_result(req: AssetExecutionRequest, *, confirmed: bool):
+def _build_asset_execution_result(
+    req: AssetExecutionRequest, *, confirmed: bool, session_id: str = ""
+):
     from datetime import UTC, datetime
 
     from fantasy_agent.executor import execute_asset_pipeline
     from fantasy_agent.local_tools import _find_blender
 
-    session_id = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+    session_id = session_id or datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
     return execute_asset_pipeline(
         req.plan,
         session_id=session_id,
         confirmed=confirmed,
-        workspace_root=REPO_ROOT,
+        workspace_root=_request_root(req),
         with_assets=req.with_assets,
         blender_exe=_find_blender() or "blender",
         with_visuals=req.with_visuals,
@@ -1129,9 +1496,25 @@ def _build_asset_execution_result(req: AssetExecutionRequest, *, confirmed: bool
 
 @app.post("/api/assets/execute")
 def execute_assets(req: AssetExecutionRequest) -> dict[str, Any]:
+    binding = _bound_request(req)
     if not req.confirmed:
         preview = _build_asset_execution_result(req, confirmed=False)
         return _ASSET_JOB_REGISTRY.preview(preview)
+
+    if binding is not None:
+        service, snapshot, _ = binding
+        session_id = f"assets-{uuid4().hex}"
+        return service.submit_ui_job(
+            req.project_id,
+            plan_version=snapshot.plan_version,
+            tool_name="execute_assets",
+            arguments={"with_assets": req.with_assets, "with_visuals": req.with_visuals},
+            worker=lambda: _build_asset_execution_result(
+                req, confirmed=req.confirmed, session_id=session_id
+            ),
+            confirmed_by_user=req.confirmed,
+            session_id=session_id,
+        )
 
     job_id = _ASSET_JOB_REGISTRY.submit(lambda: _build_asset_execution_result(req, confirmed=True))
     return {"status": "running", "job_id": job_id}
@@ -1139,16 +1522,22 @@ def execute_assets(req: AssetExecutionRequest) -> dict[str, Any]:
 
 @app.get("/api/assets/execute/{job_id}")
 def asset_execute_status(job_id: str) -> dict[str, Any]:
-    return _ASSET_JOB_REGISTRY.status(job_id)
+    return _durable_job_response(job_id) or _ASSET_JOB_REGISTRY.status(job_id)
 
 
 @app.post("/api/assets/execute/{job_id}/cancel")
 def asset_execute_cancel(job_id: str) -> dict[str, Any]:
+    service = studio_workflow_service()
+    if found := service.locate_job(job_id):
+        return service.cancel_job(found[0], found[1].job_id)
     return _ASSET_JOB_REGISTRY.cancel(job_id)
 
 
 @app.get("/api/assets")
-def asset_library_overview_endpoint() -> AssetLibraryOverview:
+def asset_library_overview_endpoint(
+    project_id: str | None = None,
+    plan_version: int | None = None,
+) -> AssetLibraryOverview:
     """Everything the asset panel renders: ingested entries + review decisions.
 
     Read-only and synchronous -- it reads two YAML files and decides nothing,
@@ -1158,8 +1547,18 @@ def asset_library_overview_endpoint() -> AssetLibraryOverview:
     evidence for it.
     """
 
+    if (project_id is None) != (plan_version is None):
+        raise HTTPException(422, "项目和计划版本必须同时提供。")
+    root = REPO_ROOT
+    if project_id is not None:
+        service = _require_project(project_id)
+        try:
+            service._snapshot(project_id, plan_version)
+            root = service._root(project_id, plan_version)
+        except ValueError as exc:
+            raise HTTPException(404, "项目计划版本不存在。") from exc
     try:
-        return library_overview(workspace_root=REPO_ROOT)
+        return library_overview(workspace_root=root)
     except AssetLibraryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1175,26 +1574,43 @@ def asset_ingest_endpoint(req: AssetIngestRequest) -> AssetIngestResponse:
     burns no engine time.
     """
 
+    binding = _bound_request(req)
     try:
-        entry = ingest_asset(
-            name=req.name,
-            source_path=req.source_path,
-            license=req.license,
-            author=req.author,
-            source_url=req.source_url,
-            notes=req.notes,
-            tags=req.tags,
-            workspace_root=REPO_ROOT,
-        )
+        with binding[0].projects._lock if binding else nullcontext():
+            if binding:
+                _bound_request(req)
+            arguments = req.model_dump(exclude={"project_id", "plan_version"})
+            if binding:
+                arguments = binding[0]._arguments("ingest_asset", arguments)
+            entry = ingest_asset(**arguments, workspace_root=binding[2] if binding else REPO_ROOT)
+            if binding:
+                service, _, root = binding
+                service.projects.register_resource(
+                    req.project_id,
+                    resource_id=entry.id,
+                    kind="asset",
+                    asset_key=entry.id,
+                    path=(root / entry.path)
+                    .relative_to(service.projects.production_workspace(req.project_id))
+                    .as_posix(),
+                    plan_version=req.plan_version,
+                    sha256=entry.sha256,
+                )
     except AssetLibraryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except OSError as exc:
         raise HTTPException(status_code=400, detail=f"资产无法读取：{exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return AssetIngestResponse(status="ingested", entry=entry)
 
 
 @app.delete("/api/assets/{asset_id}")
-def asset_remove_endpoint(asset_id: str) -> AssetRemoveResponse:
+def asset_remove_endpoint(
+    asset_id: str,
+    project_id: str | None = None,
+    plan_version: int | None = None,
+) -> AssetRemoveResponse:
     """Remove one library entry and delete its copy inside the library.
 
     The id is matched as a plain string and never becomes part of a path --
@@ -1203,8 +1619,25 @@ def asset_remove_endpoint(asset_id: str) -> AssetRemoveResponse:
     id is a 404, not a 400: the request was well-formed, the thing is absent.
     """
 
+    if (project_id is None) != (plan_version is None):
+        raise HTTPException(422, "项目和计划版本必须同时提供。")
+    binding = _bound_request(ProjectBinding(project_id=project_id, plan_version=plan_version))
     try:
-        entry = remove_asset(asset_id, workspace_root=REPO_ROOT)
+        with binding[0].projects._lock if binding else nullcontext():
+            if binding:
+                _bound_request(ProjectBinding(project_id=project_id, plan_version=plan_version))
+            root = binding[2] if binding else REPO_ROOT
+            entry = remove_asset(asset_id, workspace_root=root)
+            if binding and entry is not None:
+                service = binding[0]
+                service.projects.remove_asset_resources(
+                    project_id,
+                    (root / entry.path)
+                    .relative_to(service.projects.production_workspace(project_id))
+                    .as_posix(),
+                    expected_version=plan_version,
+                )
+                service.asset_review.write_manifest(project_id, plan_version)
     except AssetLibraryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if entry is None:
@@ -1212,7 +1645,7 @@ def asset_remove_endpoint(asset_id: str) -> AssetRemoveResponse:
     return AssetRemoveResponse(status="removed", removed_id=entry.id)
 
 
-class PlaytestRunRequest(PlaytestRequest):
+class PlaytestRunRequest(PlaytestRequest, ProjectBinding):
     """Wire shape of one playtest run.
 
     It inherits the library contract instead of restating it, so the bounds
@@ -1227,7 +1660,9 @@ class PlaytestRunRequest(PlaytestRequest):
 
 
 def _playtest_request(req: PlaytestRunRequest) -> PlaytestRequest:
-    return PlaytestRequest(**req.model_dump(exclude={"confirmed", "session_id"}))
+    return PlaytestRequest(
+        **req.model_dump(exclude={"confirmed", "session_id", "project_id", "plan_version"})
+    )
 
 
 def _build_playtest_result(req: PlaytestRunRequest, *, confirmed: bool) -> PlaytestResult:
@@ -1244,7 +1679,9 @@ def _build_playtest_result(req: PlaytestRunRequest, *, confirmed: bool) -> Playt
             project_dir=req.project_dir,
             planned_side_effects=planned_playtest_side_effects(request),
         )
-    report = run_playtest(request, workspace_root=REPO_ROOT, session_id=req.session_id or None)
+    report = run_playtest(
+        request, workspace_root=_request_root(req), session_id=req.session_id or None
+    )
     # "done" is the *job* status the poller understands; the verdict lives in
     # report.status, so a run that measured a failure is still a run that ran.
     return PlaytestResult(
@@ -1258,8 +1695,24 @@ def _build_playtest_result(req: PlaytestRunRequest, *, confirmed: bool) -> Playt
 
 @app.post("/api/playtest/run")
 def run_playtest_job(req: PlaytestRunRequest) -> dict[str, Any]:
+    binding = _bound_request(req)
+    if binding is not None:
+        resolve_workspace_path(req.project_dir, workspace_root=binding[2], allow_absolute=True)
     if not req.confirmed:
         return _PLAYTEST_JOB_REGISTRY.preview(_build_playtest_result(req, confirmed=False))
+
+    if binding is not None:
+        service, snapshot, _ = binding
+        request = req.model_copy(update={"session_id": req.session_id or f"playtest-{uuid4().hex}"})
+        return service.submit_ui_job(
+            req.project_id,
+            plan_version=snapshot.plan_version,
+            tool_name="playtest_godot_project",
+            arguments=_playtest_request(req).model_dump(mode="json"),
+            confirmed_by_user=req.confirmed,
+            worker=lambda: _build_playtest_result(request, confirmed=request.confirmed),
+            session_id=request.session_id,
+        )
 
     job_id = _PLAYTEST_JOB_REGISTRY.submit(lambda: _build_playtest_result(req, confirmed=True))
     return {"status": "running", "job_id": job_id}
@@ -1267,20 +1720,27 @@ def run_playtest_job(req: PlaytestRunRequest) -> dict[str, Any]:
 
 @app.get("/api/playtest/{job_id}")
 def playtest_status(job_id: str) -> dict[str, Any]:
-    return _PLAYTEST_JOB_REGISTRY.status(job_id)
+    return _durable_job_response(job_id) or _PLAYTEST_JOB_REGISTRY.status(job_id)
 
 
 @app.post("/api/playtest/{job_id}/cancel")
 def playtest_cancel(job_id: str) -> dict[str, Any]:
+    service = studio_workflow_service()
+    if found := service.locate_job(job_id):
+        return service.cancel_job(found[0], found[1].job_id)
     return _PLAYTEST_JOB_REGISTRY.cancel(job_id)
 
 
-class EvolutionPlanRequest(StrictModel):
+class EvolutionPlanRequest(ProjectBinding):
     plan: DirectorBuildPlan
 
 
 class EvolutionAdoptRequest(EvolutionPlanRequest):
     feedback: str = Field(default="", max_length=4000)
+
+
+class StudioEvolutionRequest(EvolutionRequest, ProjectBinding):
+    pass
 
 
 EvolutionPlanRequest.model_rebuild(_types_namespace={"DirectorBuildPlan": DirectorBuildPlan})
@@ -1298,8 +1758,14 @@ def evolution_experiences() -> dict[str, Any]:
 
 @app.post("/api/evolution/suggest")
 def evolution_suggest(req: EvolutionPlanRequest) -> dict[str, Any]:
+    binding = _bound_request(req)
     try:
-        suggestion = suggest_evolution(req.plan, workspace_root=REPO_ROOT)
+        suggestion = suggest_evolution(
+            req.plan,
+            workspace_root=(
+                binding[0].projects.production_workspace(req.project_id) if binding else REPO_ROOT
+            ),
+        )
     except EvolutionLibraryError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
@@ -1307,31 +1773,70 @@ def evolution_suggest(req: EvolutionPlanRequest) -> dict[str, Any]:
     return {
         "plan": suggestion.plan.model_dump(mode="json"),
         "changes": [item.model_dump(mode="json") for item in suggestion.changes],
-        "experience_id": suggestion.experience_id, "notes": suggestion.notes,
+        "experience_id": suggestion.experience_id,
+        "notes": suggestion.notes,
     }
 
 
 @app.post("/api/evolution/run")
-def evolution_run(req: EvolutionRequest) -> dict[str, Any]:
+def evolution_run(req: StudioEvolutionRequest) -> dict[str, Any]:
+    binding = _bound_request(req)
+    root = _request_root(req)
+    request = EvolutionRequest.model_validate(
+        req.model_dump(exclude={"project_id", "plan_version"})
+    )
     experiment_id = f"evolution-{uuid4().hex[:12]}"
     try:
         preview = run_evolution(
-            req.model_copy(update={"confirmed": False}),
-            experiment_id=experiment_id, workspace_root=REPO_ROOT,
+            request.model_copy(update={"confirmed": False}),
+            experiment_id=experiment_id,
+            workspace_root=root,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not req.confirmed:
         return _EVOLUTION_JOB_REGISTRY.preview(preview)
-    job_id = _EVOLUTION_JOB_REGISTRY.submit(lambda: run_evolution(
-        req, experiment_id=experiment_id, workspace_root=REPO_ROOT,
-    ))
+    if binding is not None:
+        service, snapshot, _ = binding
+        started = service.submit_ui_job(
+            req.project_id,
+            plan_version=snapshot.plan_version,
+            tool_name="run_evolution",
+            arguments={
+                **request.model_dump(mode="json", exclude={"plan", "confirmed"}),
+                "experiment_id": experiment_id,
+            },
+            worker=lambda: run_evolution(
+                request,
+                experiment_id=experiment_id,
+                workspace_root=root,
+                experience_workspace_root=service.projects.production_workspace(req.project_id),
+            ),
+            confirmed_by_user=req.confirmed,
+            session_id=experiment_id,
+        )
+        _EVOLUTION_JOBS[experiment_id] = started["job_id"]
+        return {**started, "experiment_id": experiment_id}
+    job_id = _EVOLUTION_JOB_REGISTRY.submit(
+        lambda: run_evolution(
+            request,
+            experiment_id=experiment_id,
+            workspace_root=REPO_ROOT,
+        )
+    )
     _EVOLUTION_JOBS[experiment_id] = job_id
     return {"status": "running", "experiment_id": experiment_id, "job_id": job_id}
 
 
 @app.get("/api/evolution/{experiment_id}")
 def evolution_status(experiment_id: str) -> dict[str, Any]:
+    durable = _durable_job_response(experiment_id)
+    if durable is not None:
+        return {
+            **durable,
+            "experiment_id": experiment_id,
+            "report": durable.get("result", {}).get("report"),
+        }
     try:
         report = load_report(experiment_id, workspace_root=REPO_ROOT)
     except EvolutionLibraryError as exc:
@@ -1341,8 +1846,11 @@ def evolution_status(experiment_id: str) -> dict[str, Any]:
     job_id = _EVOLUTION_JOBS.get(experiment_id)
     job = _EVOLUTION_JOB_REGISTRY.status(job_id) if job_id else None
     if job is not None:
-        payload = {"status": job["status"], "experiment_id": experiment_id,
-                   "report": report.model_dump(mode="json") if report else None}
+        payload = {
+            "status": job["status"],
+            "experiment_id": experiment_id,
+            "report": report.model_dump(mode="json") if report else None,
+        }
         if job.get("error"):
             payload["error"] = job["error"]
         return payload
@@ -1350,15 +1858,25 @@ def evolution_status(experiment_id: str) -> dict[str, Any]:
         return {"status": "unknown", "experiment_id": experiment_id, "report": None}
     if report.status == "running":
         # Cold GET only describes the lost worker, never registers or restarts it.
-        report = report.model_copy(update={
-            "status": "interrupted", "notes": [*report.notes, "Studio 已重启，实验中断；可明确开始新实验。"],
-        })
+        report = report.model_copy(
+            update={
+                "status": "interrupted",
+                "notes": [*report.notes, "Studio 已重启，实验中断；可明确开始新实验。"],
+            }
+        )
     status = report.status if report.status in {"cancelled", "failed", "interrupted"} else "done"
-    return {"status": status, "experiment_id": experiment_id, "report": report.model_dump(mode="json")}
+    return {
+        "status": status,
+        "experiment_id": experiment_id,
+        "report": report.model_dump(mode="json"),
+    }
 
 
 @app.post("/api/evolution/{experiment_id}/cancel")
 def evolution_cancel(experiment_id: str) -> dict[str, Any]:
+    service = studio_workflow_service()
+    if found := service.locate_job(experiment_id):
+        return {**service.cancel_job(found[0], found[1].job_id), "experiment_id": experiment_id}
     job_id = _EVOLUTION_JOBS.get(experiment_id)
     if job_id is None:
         return evolution_status(experiment_id)
@@ -1367,18 +1885,46 @@ def evolution_cancel(experiment_id: str) -> dict[str, Any]:
 
 @app.post("/api/evolution/{experiment_id}/adopt")
 def evolution_adopt(experiment_id: str, req: EvolutionAdoptRequest) -> dict[str, Any]:
+    binding = _bound_request(req)
+    if binding is not None:
+        service, snapshot, _ = binding
+        with service.projects._lock:
+            _bound_request(req)
+            found = service.locate_job(experiment_id)
+            if found is None or found[0] != req.project_id:
+                raise HTTPException(404, "该实验不属于当前项目。")
+            intent = service.request_candidate_adoption(
+                req.project_id,
+                plan_version=snapshot.plan_version,
+                job_id=found[1].job_id,
+            )
+            # This REST action is the existing panel's explicit adoption click;
+            # the external MCP registry has no apply/confirmed entry point.
+            result = service.apply_candidate_adoption(
+                req.project_id,
+                intent["intent_id"],
+                approved=True,
+                feedback=req.feedback,
+            )
+            return {**result, **service.snapshot(req.project_id)}
     try:
         if load_report(experiment_id, workspace_root=REPO_ROOT) is None:
             raise HTTPException(status_code=404, detail="实验不存在。")
         plan, experience = adopt_evolution(
-            experiment_id, req.plan, feedback=req.feedback, workspace_root=REPO_ROOT,
+            experiment_id,
+            req.plan,
+            feedback=req.feedback,
+            workspace_root=REPO_ROOT,
         )
     except EvolutionLibraryError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"status": "adopted", "plan": plan.model_dump(mode="json"),
-            "experience": experience.model_dump(mode="json")}
+    return {
+        "status": "adopted",
+        "plan": plan.model_dump(mode="json"),
+        "experience": experience.model_dump(mode="json"),
+    }
 
 
 def _resume_http_detail(exc: DemoLaunchError) -> str:
@@ -1403,11 +1949,13 @@ def _demo_request(req: ExecuteDemoRequest, *, confirmed: bool, session_id: str) 
         with_gameplay=req.with_gameplay,
         enemy_tuning=req.enemy_tuning,
         approval_manifest_path=req.approval_manifest_path,
+        workspace_root=_request_root(req),
     )
 
 
 @app.post("/api/execute")
 def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
+    binding = _bound_request(req)
     engine = infer_demo_engine(req.plan, req.engine)
     # Validate against the caller-supplied session id before minting one.
     # A resume with no id must fail here, not start a new session in the worker.
@@ -1424,10 +1972,33 @@ def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
         validate_session_id(req.session_id)
     except DemoLaunchError as exc:
         raise HTTPException(status_code=400, detail=_resume_http_detail(exc)) from exc
-    session_id = req.session_id or new_session_id()
+    session_id = req.session_id or (
+        f"{new_session_id()}-{uuid4().hex[:8]}" if binding else new_session_id()
+    )
     if not req.confirmed:
         preview = launch_demo(_demo_request(req, confirmed=False, session_id=session_id))
         return {**_EXECUTE_JOB_REGISTRY.preview(preview, engine=engine), "session_id": session_id}
+
+    if binding is not None:
+        service, snapshot, _ = binding
+        started = service.submit_ui_job(
+            req.project_id,
+            plan_version=snapshot.plan_version,
+            tool_name="execute_demo",
+            session_id=session_id,
+            arguments={
+                **req.model_dump(
+                    mode="json",
+                    exclude={"plan", "project_id", "plan_version", "confirmed", "session_id"},
+                ),
+                "engine": engine,
+            },
+            worker=lambda: launch_demo(
+                _demo_request(req, confirmed=req.confirmed, session_id=session_id)
+            ),
+            confirmed_by_user=req.confirmed,
+        )
+        return {**started, "engine": engine}
 
     confirmed = _demo_request(req, confirmed=True, session_id=session_id)
     job_id = _EXECUTE_JOB_REGISTRY.submit(lambda: launch_demo(confirmed))
@@ -1436,11 +2007,14 @@ def execute_demo(req: ExecuteDemoRequest) -> dict[str, Any]:
 
 @app.get("/api/execute/{job_id}")
 def execute_status(job_id: str) -> dict[str, Any]:
-    return _EXECUTE_JOB_REGISTRY.status(job_id)
+    return _durable_job_response(job_id) or _EXECUTE_JOB_REGISTRY.status(job_id)
 
 
 @app.post("/api/execute/{job_id}/cancel")
 def execute_cancel(job_id: str) -> dict[str, Any]:
+    service = studio_workflow_service()
+    if found := service.locate_job(job_id):
+        return service.cancel_job(found[0], found[1].job_id)
     return _EXECUTE_JOB_REGISTRY.cancel(job_id)
 
 
@@ -1482,13 +2056,11 @@ def run_planning_agent(req: AgentRunRequest) -> dict[str, Any]:
         "tool_calls": result.tool_calls,
         "refusals": result.refusals,
         "error": result.error,
-        "steps": [
-            {"text": step.text, "calls": step.calls} for step in result.steps
-        ],
+        "steps": [{"text": step.text, "calls": step.calls} for step in result.steps],
     }
 
 
-class OrchestrationRunRequest(StrictModel):
+class OrchestrationRunRequest(ProjectBinding):
     """One pass over a plan's stages, carrying the operator's approvals.
 
     The plan is posted from the board rather than re-derived from a prompt here,
@@ -1502,6 +2074,10 @@ class OrchestrationRunRequest(StrictModel):
     `confirmed_side_effects` / `confirmed` must come from a click, never from a
     value written at the call site. `confirm_stages` is the same kind of flag,
     so it is read off the request body and nothing else.
+
+    With a project reference this is an evidence refresh only. Production and
+    rework use the console or the authorized Agent workflow; this request
+    cannot issue production grants or dispatch an application model.
     """
 
     plan: DirectorBuildPlan
@@ -1523,7 +2099,7 @@ class OrchestrationRunRequest(StrictModel):
 OrchestrationRunRequest.model_rebuild()
 
 
-class HumanDecisionRequest(StrictModel):
+class HumanDecisionRequest(ProjectBinding):
     """A person's decision for one human gate.
 
     The decision is the only thing in the body, and it is read off the request
@@ -1535,6 +2111,7 @@ class HumanDecisionRequest(StrictModel):
     """
 
     decision: str
+    subjects: list[ReviewSubject] = Field(default_factory=list)
 
 
 #: Live orchestrators, one per session id.
@@ -1641,9 +2218,7 @@ def _orchestration_payload(session: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _restore_orchestration(
-    session_id: str, engine: str
-) -> dict[str, Any] | None:
+def _restore_orchestration(session_id: str, engine: str) -> dict[str, Any] | None:
     """Rebuild a session from its on-disk snapshot, or None if there is none.
 
     Shared by both orchestration endpoints on purpose: this repo has been bitten
@@ -1665,9 +2240,7 @@ def _restore_orchestration(
     from fantasy_agent.path_safety import WorkspacePathError
 
     try:
-        snapshot = load_snapshot(
-            session_id, engine_key=engine, workspace_root=REPO_ROOT
-        )
+        snapshot = load_snapshot(session_id, engine_key=engine, workspace_root=REPO_ROOT)
     except WorkspacePathError as exc:
         # An id that cannot be a directory name addresses no session, and the
         # board asking about it deserves the same answer as asking about one
@@ -1688,9 +2261,7 @@ def _restore_orchestration(
         )
         return None
     try:
-        orchestrator = Orchestrator.restore(
-            snapshot, plan=plan, workspace_root=REPO_ROOT
-        )
+        orchestrator = Orchestrator.restore(snapshot, plan=plan, workspace_root=REPO_ROOT)
     except ValueError as exc:
         logger.warning(
             "orchestration snapshot for %r has an unusable confirmation or decision: %s",
@@ -1710,10 +2281,24 @@ def _restore_orchestration(
 def run_orchestration(req: OrchestrationRunRequest) -> dict[str, Any]:
     """Advance a plan once, stage by stage, with the caller's approvals attached.
 
-    Never raises, same contract as `/api/agent/run`: a failure is a status the
-    caller can branch on, because the board has to keep rendering the stages it
-    already has rather than losing them to an error screen.
+    Project-bound requests only synchronize the durable external workflow and
+    reject a stale project reference or any production approval/rework flags.
+    Legacy requests keep the status-based failure contract of `/api/agent/run`.
     """
+
+    if req.project_id is not None:
+        service = _require_project(req.project_id)
+        with service.projects._lock:
+            _bound_request(req)
+            if req.allow_write or req.allow_execute or req.confirm_stages or req.rewind_stage:
+                raise HTTPException(
+                    400,
+                    "项目编排板只同步流程证据；生产执行和节点返工请使用流程控制台或 Agent。",
+                )
+            try:
+                return service.workflow_state(req.project_id, req.plan_version)
+            except (ValueError, OSError):
+                raise HTTPException(400, "项目流程证据无法读取，请刷新项目后重试。") from None
 
     from uuid import uuid4
 
@@ -1819,9 +2404,10 @@ def decide_orchestration_stage(
     decision the operator gave and ask for it again: an approval that never
     takes effect, one verb over from the one AGENTS.md names.
 
-    Never raises, same contract as the other two endpoints: a failure is a
-    status the board can branch on, with the cards still attached rather than
-    an empty stage list.
+    A project reference instead records a content-bound asset review in the
+    shared durable workflow. Invalid/stale references use HTTP 400/409, as the
+    other project-bound requests do. Legacy failures remain a status the board
+    can branch on, with the cards still attached.
 
     `engine` is only consulted when the session is not live, to find the
     snapshot a restarted Studio left on disk; a live session already knows
@@ -1830,6 +2416,50 @@ def decide_orchestration_stage(
 
     from fantasy_agent.orchestration_state import save_state
     from fantasy_agent.orchestrator import HUMAN_STAGE_KIND
+
+    if req.project_id is not None:
+        service = _require_project(req.project_id)
+        # Keep CAS, the UI's content identity, and the service's review intent
+        # in the same project transaction. request/apply still rehash the file
+        # so an external writer cannot replace the user's reviewed contents.
+        with service.projects._lock:
+            _, snapshot, _ = _bound_request(req)
+            try:
+                state = service.workflow_state(req.project_id, req.plan_version)
+                if session_id != state.get("session_id") or engine != state.get("engine"):
+                    raise ValueError("审阅会话或引擎不属于当前项目版本，请刷新流程。")
+                pipeline = snapshot.plan.production_pipeline
+                stage = (
+                    next((item for item in pipeline.stages if item.id == stage_id), None)
+                    if pipeline is not None
+                    else None
+                )
+                if stage_id != "creative_review" or stage is None or stage.kind != HUMAN_STAGE_KIND:
+                    raise ValueError("项目编排板只能决定当前计划的 Creative Review 人类审阅节点。")
+                if req.decision not in {"approved", "rejected"}:
+                    raise ValueError("审阅决定必须是批准或拒绝。")
+                resource_ids = _validate_ui_subjects(snapshot, req.subjects)
+                intent = service.request_asset_review(
+                    req.project_id,
+                    plan_version=req.plan_version,
+                    resource_ids=resource_ids,
+                )
+                service.apply_asset_review(
+                    req.project_id,
+                    intent["intent_id"],
+                    approved=req.decision == "approved",
+                    decision=req.decision,
+                )
+                return service.workflow_state(req.project_id, req.plan_version)
+            except ProjectVersionConflict:
+                # Re-read through the common CAS response after an intent was
+                # prepared against a version that is no longer current.
+                _bound_request(req)
+                raise HTTPException(409, "计划版本已变化，请刷新后重新审阅。") from None
+            except (ValueError, OSError):
+                raise HTTPException(
+                    400, "审阅会话、节点或资产版本无效；请刷新当前项目后重新审阅。"
+                ) from None
 
     session = _ORCHESTRATION_SESSIONS.get(session_id)
     if session is None:
@@ -1888,9 +2518,7 @@ def decide_orchestration_stage(
         return payload
 
     try:
-        save_state(
-            session["orchestrator"].snapshot(plan), workspace_root=REPO_ROOT
-        )
+        save_state(session["orchestrator"].snapshot(plan), workspace_root=REPO_ROOT)
     # No `noqa: BLE001` here on purpose: a blind handler that only logs is
     # exempt from the directive, so naming it would be flagged unused -- the
     # same shape `Orchestrator._record` uses.
@@ -1916,9 +2544,7 @@ def decide_orchestration_stage(
 
 
 @app.get("/api/orchestration/{session_id}")
-def orchestration_state(
-    session_id: str, engine: DemoEngine = "godot"
-) -> dict[str, Any]:
+def orchestration_state(session_id: str, engine: DemoEngine = "godot") -> dict[str, Any]:
     """What a session has done so far, without advancing it.
 
     The board polls this after a run so a card's status is read from the same
@@ -2007,4 +2633,3 @@ def session_state(session_id: str, engine: DemoEngine = "godot") -> dict[str, An
         "done": sorted(state.done_stages()),
         "failed": sorted(state.failed_stages()),
     }
-

@@ -11,7 +11,7 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - 不创建空洞的程序化空间。
 - 不隐藏不确定性。必须标出假设和未解决的生产风险。
 - 本地工具（Blender / ComfyUI / Unreal / Godot / GitHub CLI）的实际操作必须在执行前声明清楚。
-- Studio 是唯一的对外入口，只监听 `127.0.0.1`；不得新增任何供外部客户端接入的 MCP 端点。
+- Studio 是唯一的对外入口，只监听 `127.0.0.1`；允许显式开启同端口 `/mcp` 本机 Agent 入口，必须校验 loopback peer、Host、Origin 与 Bearer Token，默认关闭。不得增加角色 RPC、第二端口或面向远程客户端的 MCP 端点。
 - QA 检查必须先于打包和视觉扩展。
 - 面向人的文档、界面和设计说明优先使用简体中文。
 - 实现标识保持英文：类名、Blueprint 名、目录路径、MCP tool 名和 metric key 不翻译。
@@ -35,7 +35,7 @@ Fantasy Agent 的生产角色是 `fantasy_agent/` 下的模块化库内工人，
 - **不要**在 `apps/studio/static/` 下新增或恢复文件；`escapeHtml()` 那套手写页约定随之作废。React 侧插值默认转义，别用 `dangerouslySetInnerHTML`。
 - 策划工作台在 `apps/frontend/src/workbench/`（`PlanningWorkbench` 主组件 + `workbenchModel` 纯函数 + `PlanPanels` 面板，清单以 `workbenchModel.ts` 的 `PANEL_KEYS` 为准）。旧静态页 `planning-workbench.html` 已删除，`/workbench` 与其它路由一样走 dist 优先。
 - 工作台通过 `POST /api/tools/{name}` 调后端策划工具。工具名是跨端契约：改动任一侧后跑 `tests/test_workbench_tool_coverage.py`，前端引用不存在的工具、或后端新增未接 UI 的工具都会红。
-- 工作台只做策划，不写文件、不起进程 —— 执行一律在流程控制台。所以这里没有 `confirmed_side_effects` 之类的审批标记，唯一闸门是「点子确认后才能跑计划工具」。
+- 工作台只做策划；允许通过 Studio 保存项目、计划版本等 session metadata，不启动生产进程。生产执行由流程控制台或获授权的本机 MCP 工作流触发。MCP 的授权、资产审阅与候选采纳只能通过用户原生 elicitation 回复兑现，任何工具参数中的 `confirmed` 或 `apply_*` 都不能作为另一批准入口；策划入口仍以用户点子确认为闸门。
 - 新增/改名后端端点后，跑 `tests/test_frontend_endpoint_coverage.py`：前端引用了不存在的端点会红；后端新增了前端没接的端点必须登记进 `KNOWN_WITHOUT_UI` 并写明原因。
 - i18n 的中英字典必须同步加 key：`npm run frontend:test` 里的字典一致性测试会抓单边缺失和空文案。
 - **设计 token 只在一个地方定义**：`styles/tokens.css`（明暗两套；**以该文件为准，不要在任何文档里写死数量或档数**——写死过一次，`docs/ui/tokens.md` §0 给了一条可复算的命令），由 `main.tsx` 导入**一次**。其余 `styles/*.css` 只放布局，不得在根作用域（`:root` / `[data-theme]`）定义 `--*`——多份全局 `:root` 同时生效时，同一个 token 取哪个值由打包顺序决定，没有任何检查会报。组件作用域的 `--*`（如 `.studio-shell` 的 `--sidebar-width`）是合法的局部状态，不受此限。`shared/tokenOwnership.test.ts` 双向钉着这条。

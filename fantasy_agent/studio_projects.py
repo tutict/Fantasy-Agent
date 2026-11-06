@@ -115,6 +115,7 @@ class WorkflowJob(_StateModel):
     request_id: str = ""
     asset_paths: list[str] = Field(default_factory=list)
     rework: bool = False
+    execution_context: dict[str, Any] = Field(default_factory=dict)
     status: JobStatus = "queued"
     session_id: str = ""
     created_at: float = Field(default_factory=time.time)
@@ -122,7 +123,7 @@ class WorkflowJob(_StateModel):
     finished_at: float | None = None
     result: dict[str, Any] = Field(default_factory=dict)
 
-    @field_validator("arguments")
+    @field_validator("arguments", "execution_context")
     @classmethod
     def arguments_without_credentials(cls, value: dict[str, Any]) -> dict[str, Any]:
         assert_no_connection_credentials(value)
@@ -140,6 +141,7 @@ def public_job(job: WorkflowJob) -> WorkflowJob:
         deep=True,
         update={
             "arguments": _credential_payload(job.arguments),
+            "execution_context": _credential_payload(job.execution_context),
             "result": _credential_payload(job.result),
         },
     )
@@ -149,8 +151,11 @@ class ProjectResource(_StateModel):
     resource_id: str
     path: str
     kind: str = "artifact"
+    asset_key: str = ""
     plan_version: int = Field(default=0, ge=0)
     job_id: str = ""
+    sha256: str = ""
+    mime_type: str = "application/octet-stream"
 
 
 class ProjectSnapshot(_StateModel):
@@ -162,6 +167,7 @@ class ProjectSnapshot(_StateModel):
     jobs: list[WorkflowJob] = Field(default_factory=list)
     sessions: list[str] = Field(default_factory=list)
     resources: list[ProjectResource] = Field(default_factory=list)
+    decisions: dict[str, dict[str, Any]] = Field(default_factory=dict)
     created_at: float = 0
     updated_at: float = 0
 
@@ -180,6 +186,7 @@ class _ProjectRecord(_StateModel):
     plans: dict[int, DirectorBuildPlan] = Field(default_factory=dict)
     jobs: dict[str, WorkflowJob] = Field(default_factory=dict)
     request_jobs: dict[str, str] = Field(default_factory=dict)
+    decisions: dict[str, dict[str, Any]] = Field(default_factory=dict)
     resources: dict[str, ProjectResource] = Field(default_factory=dict)
     grants: dict[str, dict[str, Any]] = Field(default_factory=dict)
     import_key: str = ""
@@ -332,8 +339,11 @@ class StudioProjectStore:
         resource_id: str,
         path: str,
         kind: str = "artifact",
+        asset_key: str = "",
         plan_version: int | None = None,
         job_id: str = "",
+        sha256: str = "",
+        mime_type: str = "application/octet-stream",
     ) -> ProjectResource:
         root = self.production_workspace(project_id)
         resolved = resolve_workspace_path(path, workspace_root=root)
@@ -344,13 +354,111 @@ class StudioProjectStore:
                 resource_id=resource_id,
                 path=relative,
                 kind=kind,
+                asset_key=asset_key,
                 plan_version=record.plan_version if plan_version is None else plan_version,
                 job_id=job_id,
+                sha256=sha256,
+                mime_type=mime_type,
             )
             record.resources[resource_id] = resource
             return resource
 
         return self._mutate(project_id, register)
+
+    def save_decision(
+        self,
+        project_id: str,
+        decision_id: str,
+        decision: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Trusted user decision, bound to existing plan history and immutable evidence."""
+        assert_safe_path_segment(decision_id, label="decision_id")
+        assert_no_connection_credentials(decision)
+
+        def save(record: _ProjectRecord) -> dict[str, Any]:
+            if decision.get("plan_version") not in record.plans:
+                raise ValueError("审阅决定没有对应的计划版本。")
+            if decision_id in record.decisions and record.decisions[decision_id] != decision:
+                raise ValueError("已记录的审阅决定不能被覆盖。")
+            record.decisions[decision_id] = deepcopy(decision)
+            return record.decisions[decision_id]
+
+        return self._mutate(project_id, save)
+
+    def remove_asset_resources(self, project_id: str, path: str, *, expected_version: int) -> None:
+        """Drop references only to the explicitly deleted library copy."""
+        resolved = resolve_workspace_path(
+            path, workspace_root=self.production_workspace(project_id)
+        )
+        relative = display_workspace_path(
+            resolved, workspace_root=self.production_workspace(project_id)
+        )
+
+        def remove(record: _ProjectRecord) -> None:
+            if record.plan_version != expected_version:
+                raise ProjectVersionConflict(self._snapshot(record))
+            record.resources = {
+                key: item
+                for key, item in record.resources.items()
+                if item.path != relative or item.plan_version != expected_version
+            }
+
+        self._mutate(project_id, remove)
+
+    def adopt_candidate(
+        self,
+        project_id: str,
+        *,
+        plan: DirectorBuildPlan,
+        expected_version: int,
+        decision_id: str,
+        decision: dict[str, Any],
+        job_id: str,
+        result: dict[str, Any],
+        report_resource: ProjectResource,
+    ) -> ProjectSnapshot:
+        """Commit the adopted plan, human decision and public job result together.
+
+        Experience/report files are recoverable projections of this record.
+        A failed publication leaves the original plan and unadopted result.
+        """
+        validated = _plan_copy(plan)
+        assert_safe_path_segment(decision_id, label="decision_id")
+        assert_no_connection_credentials(decision)
+        report_resource = report_resource.model_copy(deep=True)
+        report_resource.path = display_workspace_path(
+            resolve_workspace_path(
+                report_resource.path, workspace_root=self.production_workspace(project_id)
+            ),
+            workspace_root=self.production_workspace(project_id),
+        )
+
+        def adopt(record: _ProjectRecord) -> ProjectSnapshot:
+            if record.plan_version != expected_version:
+                raise ProjectVersionConflict(self._snapshot(record))
+            job = record.jobs.get(job_id)
+            if (
+                job is None
+                or job.tool_name != "run_evolution"
+                or job.status != "done"
+                or job.plan_version != expected_version
+                or decision.get("kind") != "candidate_adoption"
+                or decision.get("status") != "approved"
+                or decision.get("plan_version") != expected_version
+                or decision.get("job_id") != job_id
+                or report_resource.job_id != job_id
+                or report_resource.plan_version != expected_version
+                or decision_id in record.decisions
+            ):
+                raise ValueError("采纳必须引用本版本已完成的实验和用户决定。")
+            record.plan_version += 1
+            record.plans[record.plan_version] = validated
+            record.decisions[decision_id] = deepcopy(decision)
+            job.result = _credential_payload(result)
+            record.resources[report_resource.resource_id] = report_resource
+            return self._snapshot(record)
+
+        return self._mutate(project_id, adopt)
 
     def update_job(
         self,
@@ -378,6 +486,19 @@ class StudioProjectStore:
             return public_job(job)
 
         return self._mutate(project_id, update)
+
+    def bind_job_session(self, project_id: str, job_id: str, session_id: str) -> WorkflowJob:
+        """Attach a server-derived session before submission, never replacing an old one."""
+        assert_safe_path_segment(session_id, label="session_id")
+
+        def bind(record: _ProjectRecord) -> WorkflowJob:
+            job = record.jobs[job_id]
+            if job.status != "queued" or (job.session_id and job.session_id != session_id):
+                raise ValueError("任务会话已经固定。")
+            job.session_id = session_id
+            return public_job(job)
+
+        return self._mutate(project_id, bind)
 
     def start_job(self, project_id: str, job_id: str) -> bool:
         """Trusted non-production start. Production must use authorization.start_job."""
@@ -491,6 +612,11 @@ class StudioProjectStore:
             from fantasy_agent.workflow_authorization import validate_grant_records
 
             validate_grant_records(record)
+        for decision_id, decision in record.decisions.items():
+            assert_safe_path_segment(decision_id, label="decision_id")
+            if decision.get("plan_version") not in record.plans:
+                raise ValueError("审阅决定引用的计划不存在。")
+            assert_no_connection_credentials(decision)
 
     @staticmethod
     def _snapshot(record: _ProjectRecord, version: int | None = None) -> ProjectSnapshot:
@@ -506,6 +632,7 @@ class StudioProjectStore:
             else [],
             jobs=[public_job(job) for job in record.jobs.values()],
             resources=list(record.resources.values()),
+            decisions=_credential_payload(record.decisions),
             sessions=list(
                 dict.fromkeys(job.session_id for job in record.jobs.values() if job.session_id)
             ),
@@ -517,6 +644,11 @@ class StudioProjectStore:
 def _plan_copy(plan: DirectorBuildPlan | dict[str, Any]) -> DirectorBuildPlan:
     payload = plan.model_dump(mode="json") if isinstance(plan, DirectorBuildPlan) else plan
     try:
-        return DirectorBuildPlan.model_validate_json(json.dumps(payload, allow_nan=False))
+        validated = DirectorBuildPlan.model_validate_json(json.dumps(payload, allow_nan=False))
+        # Saved plans are session metadata. User decisions have their own
+        # durable ledger; a model-authored plan cannot redeem a human gate.
+        for stage in validated.production_pipeline.stages:
+            stage.human_resolution = None
+        return validated
     except (ValidationError, ValueError, TypeError) as exc:
         raise ValueError("计划必须符合 DirectorBuildPlan 合约。") from exc

@@ -164,6 +164,7 @@ class WorkflowAuthorizationStore:
         action: WorkflowAction | dict[str, Any],
         asset_paths: list[str] | None = None,
         rework: bool = False,
+        execution_context: dict[str, Any] | None = None,
     ) -> AuthorizationClaim:
         """Commit usage and job together before dispatch. Rework is server-validated."""
         assert_safe_path_segment(grant_id, label="grant_id")
@@ -173,6 +174,8 @@ class WorkflowAuthorizationStore:
         validated = _action_copy(action)
         paths = self._paths(asset_paths or [])
         key = action_key(validated)
+        context = json.loads(_canonical_json(execution_context or {}))
+        assert_no_connection_credentials(context)
 
         def reserve(record: _ProjectRecord) -> AuthorizationClaim:
             now = self._now()
@@ -180,7 +183,7 @@ class WorkflowAuthorizationStore:
             self._check_scope(grant, validated, paths)
             if existing_id := record.request_jobs.get(request_id):
                 existing = record.jobs[existing_id]
-                self._check_same_request(existing, grant_id, key, paths, rework)
+                self._check_same_request(existing, grant_id, key, paths, rework, context)
                 return AuthorizationClaim(job=existing, reused=True)
             normal = next(
                 (
@@ -191,11 +194,13 @@ class WorkflowAuthorizationStore:
                 None,
             )
             if not rework and normal is not None:
-                self._check_same_request(normal, grant_id, key, paths, False)
+                self._check_same_request(normal, grant_id, key, paths, False, context)
                 record.request_jobs[request_id] = normal.job_id
                 return AuthorizationClaim(job=normal, reused=True)
             if rework:
-                if not validated.node_id or normal is None:
+                if not validated.node_id or (
+                    normal is None and not _approved_rework_source(record, grant, key, context)
+                ):
                     raise AuthorizationError("节点返工需要该动作的已有正常任务。")
                 spent = sum(use.rework and use.node_id == validated.node_id for use in grant.uses)
                 if spent >= grant.max_reworks:
@@ -210,6 +215,7 @@ class WorkflowAuthorizationStore:
                 request_id=request_id,
                 asset_paths=paths,
                 rework=rework,
+                execution_context=context,
                 created_at=now,
             )
             grant.uses.append(
@@ -247,6 +253,37 @@ class WorkflowAuthorizationStore:
             return self.projects._start_job(job, now)
 
         return self._transaction(project_id, start)
+
+    def grants(self, project_id: str) -> list[WorkflowGrant]:
+        """Read the actual server ledger; job status is never an approval source."""
+        with self.projects._lock:
+            record = self.projects._load(project_id)
+            if record is None:
+                raise AuthorizationError("项目不存在。")
+            return [
+                WorkflowGrant.model_validate(value).model_copy(deep=True)
+                for value in record.grants.values()
+            ]
+
+    def get_grant(
+        self,
+        project_id: str,
+        grant_id: str,
+        *,
+        plan_version: int | None = None,
+    ) -> WorkflowGrant:
+        """An optional version requests current authorization validation, without writing."""
+        with self.projects._lock:
+            record = self.projects._load(project_id)
+            if record is None:
+                raise AuthorizationError("项目不存在。")
+            if plan_version is not None:
+                grant = self._valid_grant(record, grant_id, plan_version, self._now())
+            else:
+                if grant_id not in record.grants:
+                    raise AuthorizationError("生产授权不存在。")
+                grant = WorkflowGrant.model_validate(record.grants[grant_id])
+            return grant.model_copy(deep=True)
 
     def _transaction(self, project_id: str, operation):
         try:
@@ -288,6 +325,7 @@ class WorkflowAuthorizationStore:
         key: str,
         paths: list[str],
         rework: bool,
+        execution_context: dict[str, Any],
     ) -> None:
         original = WorkflowAction(
             tool_name=job.tool_name, arguments=job.arguments, node_id=job.node_id
@@ -296,6 +334,7 @@ class WorkflowAuthorizationStore:
             job.grant_id != grant_id
             or action_key(original) != key
             or job.rework != rework
+            or job.execution_context != execution_context
             or set(map(os.path.normcase, job.asset_paths)) != set(map(os.path.normcase, paths))
         ):
             raise AuthorizationError("请求标识已经用于不同内容。")
@@ -370,6 +409,38 @@ def _action_copy(action: WorkflowAction | dict[str, Any]) -> WorkflowAction:
         raise AuthorizationError("生产动作参数无效。") from exc
 
 
+def _approved_rework_source(
+    record: _ProjectRecord, grant: WorkflowGrant, key: str, context: dict[str, Any]
+) -> bool:
+    """Continue a real prior session only under a new explicit matching grant."""
+    source_id = context.get("source_job_id")
+    if not isinstance(source_id, str):
+        return False
+    source = record.jobs.get(source_id)
+    if (
+        source is None
+        or not source.grant_id
+        or source.grant_id == grant.grant_id
+        or source.plan_version != grant.plan_version
+        or source.status not in {"done", "failed", "cancelled", "interrupted"}
+        or not source.session_id
+        or context.get("session_id") != source.session_id
+        or source.grant_id not in record.grants
+    ):
+        return False
+    action = WorkflowAction(
+        tool_name=source.tool_name, arguments=source.arguments, node_id=source.node_id
+    )
+    original = WorkflowGrant.model_validate(record.grants[source.grant_id])
+    return action_key(action) == key and any(
+        use.action_key == key
+        and not use.rework
+        and (normal := record.jobs.get(use.job_id)) is not None
+        and normal.session_id == source.session_id
+        for use in original.uses
+    )
+
+
 def validate_grant_records(record: _ProjectRecord) -> None:
     """Validate durable usage against jobs; corruption cannot reset a budget."""
     claimed_jobs: set[str] = set()
@@ -404,7 +475,12 @@ def validate_grant_records(record: _ProjectRecord) -> None:
             ):
                 raise ValueError("授权任务素材超出范围。")
             if use.rework:
-                if use.action_key not in normal or not use.node_id:
+                if not use.node_id or (
+                    use.action_key not in normal
+                    and not _approved_rework_source(
+                        record, grant, use.action_key, job.execution_context
+                    )
+                ):
                     raise ValueError("返工缺失正常动作记录。")
                 reworks[use.node_id] = reworks.get(use.node_id, 0) + 1
                 if reworks[use.node_id] > grant.max_reworks:

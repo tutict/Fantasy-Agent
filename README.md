@@ -306,7 +306,7 @@ Fantasy-Agent/
 - `prepare_creative_review_plan`
 - `prepare_qa_plan`
 
-所有工具端点都只监听 `127.0.0.1`，不接受外部客户端接入。
+所有工具端点都只监听 `127.0.0.1`。外部 Agent 只能通过显式开启的同端口 `/mcp` 本机入口接入（默认关闭，校验 loopback peer、Host、Origin 与 Bearer Token），配置见 `docs/architecture/workbuddy-mcp-connection.md`。
 
 ## 开发
 
