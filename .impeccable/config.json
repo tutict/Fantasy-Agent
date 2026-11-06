@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "side-tab",
+        "value": "*",
+        "files": [
+          "apps/frontend/src/styles/orchestration.css"
+        ],
+        "createdAt": "2026-11-06T07:06:49.178Z",
+        "reason": "Agent review: existing design from a72ebf1 explicitly documents the 3px runtime-state edge at lines 125-129; StageCard binds data-status and shows a text status label. Preserve the intentional board status cue; this session did not change the stylesheet."
+      }
+    ]
+  }
+}
